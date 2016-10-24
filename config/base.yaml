@@ -1,0 +1,8 @@
+serviceName: minions-client-go
+
+logging:
+  level: info
+  stdout: true
+
+jaeger:
+  disabled: false
