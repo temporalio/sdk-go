@@ -1,0 +1,13 @@
+{
+    "time": "2016-10-25T00:06:03.047Z",
+    "version": 1477353963047,
+    "remotes": {
+        "code.uber.internal/devexp/minions": {
+            "time": 1477353963047,
+            "version": 1477353963047,
+            "shasums": {
+                "minions.thrift": "5c6c12e8414e2b604ea3a782611195bae6bd8421"
+            }
+        }
+    }
+}
