@@ -11,9 +11,15 @@ type (
 		TaskListName string
 
 		// Defines how many concurrent poll requests for the task list by this worker.
-		ConcurrentPollingSize int
-		// Defines how many task executor for the task list by this worker.
-		TaskExecutorPoolSize int
+		ConcurrentPollRoutineSize int
+
+		// Defines how many executions for task list by this worker.
+		// TODO: In future we want to separate the activity executions as they take longer than polls.
+		// ConcurrentExecutionRoutineSize int
+
+		// User can provide an identity for the debuggability. If not provided the framework has
+		// a default option.
+		Identity string
 	}
 
 	// WorkflowWorker wraps the code for hosting workflow types.
@@ -23,66 +29,126 @@ type (
 		executionParameters WorkerExecutionParameters
 		workflowDefFactory  WorkflowDefinitionFactory
 		workflowService     m.TChanWorkflowService
-		// TaskPoller to poll the tasks.
-		pollerTask TaskPoller
+		poller              TaskPoller // TaskPoller to poll the tasks.
+		worker              *baseWorker
+		identity            string
 	}
 
+	// ActivityRegistry collection of activity implementations
+	ActivityRegistry map[string]ActivityImplementation
+
 	// ActivityWorker wraps the code for hosting activity types.
+	// TODO: Worker doing heartbeating automatically while activity task is running
 	ActivityWorker struct {
 		executionParameters WorkerExecutionParameters
-		activityRegistry    map[m.ActivityType]*ActivityImplementation
+		activityRegistry    ActivityRegistry
 		workflowService     m.TChanWorkflowService
-		// TaskPoller to poll the tasks.
-		pollerTask TaskPoller
+		poller              *activityTaskPoller
+		worker              *baseWorker
+		identity            string
+	}
+
+	// Worker overrides.
+	workerOverrides struct {
+		workflowTaskHander  WorkflowTaskHandler
+		activityTaskHandler ActivityTaskHandler
 	}
 )
 
 // NewWorkflowWorker returns an instance of the workflow worker.
 func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory, service m.TChanWorkflowService) *WorkflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, nil)
+}
+
+func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
+	service m.TChanWorkflowService, overrides *workerOverrides) *WorkflowWorker {
+	var taskHandler WorkflowTaskHandler // = &WorkflowTaskHandler{}
+	if overrides != nil && overrides.workflowTaskHander != nil {
+		taskHandler = overrides.workflowTaskHander
+	}
+	identity := params.Identity
+	if identity == "" {
+		identity = GetWorkerIdentity(params.TaskListName)
+	}
+	poller := newWorkflowTaskPoller(
+		service,
+		params.TaskListName,
+		identity,
+		taskHandler)
+	worker := newBaseWorker(baseWorkerOptions{
+		routineCount:    params.ConcurrentPollRoutineSize,
+		taskPoller:      poller,
+		workflowService: service,
+		identity:        identity})
+
 	return &WorkflowWorker{
 		executionParameters: params,
 		workflowDefFactory:  factory,
 		workflowService:     service,
-		// PollerTask: &DecisionTaskPoller{}
+		poller:              poller,
+		worker:              worker,
+		identity:            identity,
 	}
 }
 
 // Start the worker.
-func (ww *WorkflowWorker) Start() error {
-	// TODO:
-	return nil
+func (ww *WorkflowWorker) Start() {
+	ww.worker.Start()
 }
 
-// Stop the worker.
-func (ww *WorkflowWorker) Stop() error {
-	// TODO:
-	return nil
+// Shutdown the worker.
+func (ww *WorkflowWorker) Shutdown() {
+	ww.worker.Shutdown()
 }
 
 // NewActivityWorker returns an instance of the activity worker.
 func NewActivityWorker(executionParameters WorkerExecutionParameters, service m.TChanWorkflowService) *ActivityWorker {
+	return newActivityWorkerInternal(executionParameters, service, nil)
+}
+
+func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, service m.TChanWorkflowService,
+	overrides *workerOverrides) *ActivityWorker {
+	var taskHandler ActivityTaskHandler // = &ActivityTaskHandler{}
+	if overrides != nil && overrides.activityTaskHandler != nil {
+		taskHandler = overrides.activityTaskHandler
+	}
+	identity := executionParameters.Identity
+	if identity == "" {
+		identity = GetWorkerIdentity(executionParameters.TaskListName)
+	}
+	poller := newActivityTaskPoller(
+		service,
+		executionParameters.TaskListName,
+		identity,
+		taskHandler)
+	worker := newBaseWorker(baseWorkerOptions{
+		routineCount:    executionParameters.ConcurrentPollRoutineSize,
+		taskPoller:      poller,
+		workflowService: service,
+		identity:        identity})
+
 	return &ActivityWorker{
 		executionParameters: executionParameters,
-		activityRegistry:    make(map[m.ActivityType]*ActivityImplementation),
+		activityRegistry:    make(map[string]ActivityImplementation),
 		workflowService:     service,
-		// PollerTask: &ActivityTaskPoller{}
+		worker:              worker,
+		poller:              poller,
+		identity:            identity,
 	}
 }
 
 // AddActivityImplementationInstance adds an instance for the registry.
-func (aw *ActivityWorker) AddActivityImplementationInstance(activity ActivityImplementation) error {
-	// TODO:
-	return nil
+func (aw *ActivityWorker) AddActivityImplementationInstance(activityType m.ActivityType, activity ActivityImplementation) {
+	aw.activityRegistry[activityType.GetName()] = activity
 }
 
 // Start the worker.
-func (aw *ActivityWorker) Start() error {
-	// TODO:
-	return nil
+func (aw *ActivityWorker) Start() {
+	// TODO: register all the types with activity event handler
+	aw.worker.Start()
 }
 
-// Stop the worker.
-func (aw *ActivityWorker) Stop() error {
-	// TODO:
-	return nil
+// Shutdown the worker.
+func (aw *ActivityWorker) Shutdown() {
+	aw.worker.Shutdown()
 }

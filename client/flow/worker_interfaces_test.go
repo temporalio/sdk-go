@@ -74,7 +74,7 @@ func (wdf workflowDefinitionFactory) GetWorkflowDefinition(workflowType m.Workfl
 func (s *InterfacesTestSuite) SetupTest() {
 }
 
-func TestWorkersTestSuite(t *testing.T) {
+func TestInterfacesTestSuite(t *testing.T) {
 	suite.Run(t, new(InterfacesTestSuite))
 }
 
@@ -82,28 +82,25 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Workflow execution parameters.
 	workflowExecutionParameters := WorkerExecutionParameters{}
 	workflowExecutionParameters.TaskListName = "testTaskList"
-	workflowExecutionParameters.ConcurrentPollingSize = 4
-	workflowExecutionParameters.TaskExecutorPoolSize = 4
+	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Create service endpoint
 	service := new(mocks.TChanWorkflowService)
 
 	// Launch worker.
 	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, workflowDefinitionFactory{}, service)
-	err := workflowWorker.Start()
-	s.NoError(err, "Failed to start workflow worker")
+	workflowWorker.Start()
 
 	// Create activity execution parameters.
 	activityExecutionParameters := WorkerExecutionParameters{}
 	activityExecutionParameters.TaskListName = "testTaskList"
-	activityExecutionParameters.ConcurrentPollingSize = 10
-	activityExecutionParameters.TaskExecutorPoolSize = 100
+	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
 	activityWorker := NewActivityWorker(activityExecutionParameters, service)
-	activityWorker.AddActivityImplementationInstance(&greeeterActivity{})
-	err = activityWorker.Start()
-	s.NoError(err, "Failed to start activity worker")
+	activity := &greeeterActivity{}
+	activityWorker.AddActivityImplementationInstance(activity.ActivityType(), activity)
+	activityWorker.Start()
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{

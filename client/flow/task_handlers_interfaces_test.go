@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"context"
 	"testing"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
@@ -69,7 +70,7 @@ func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*ActivityI
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
-func (ath sampleActivityTaskHandler) Execute(activityTask *ActivityTask) interface{} {
+func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) interface{} {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeeterActivity{}
 	activityContext := &activityExecutionContext{}
@@ -131,7 +132,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	// Execute activity task and respond to the service.
 	activationRegistry := make(map[m.ActivityType]*ActivityImplementation)
 	activityTaskHandler := newSampleActivityTaskHandler(activationRegistry)
-	request := activityTaskHandler.Execute(&ActivityTask{response})
+	request := activityTaskHandler.Execute(nil, &ActivityTask{response})
 	switch request.(type) {
 	case m.RespondActivityTaskCompletedRequest:
 		err = service.RespondActivityTaskCompleted(ctx, request.(*m.RespondActivityTaskCompletedRequest))

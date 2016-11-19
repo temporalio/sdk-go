@@ -85,11 +85,6 @@ type (
 		workflowType      m.WorkflowType
 		taskListName      string
 	}
-
-	// TaskPoller interface to poll for a single task.
-	TaskPoller interface {
-		PollAndProcessSingleTask()
-	}
 )
 
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow
