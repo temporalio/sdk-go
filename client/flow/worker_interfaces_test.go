@@ -7,6 +7,7 @@ import (
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	"code.uber.internal/devexp/minions-client-go.git/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -87,8 +88,15 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Create service endpoint
 	service := new(mocks.TChanWorkflowService)
 
+	// mocks
+	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
+	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
+	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+
 	// Launch worker.
 	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, workflowDefinitionFactory{}, service)
+	defer workflowWorker.Shutdown()
 	workflowWorker.Start()
 
 	// Create activity execution parameters.
@@ -100,6 +108,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityWorker := NewActivityWorker(activityExecutionParameters, service)
 	activity := &greeeterActivity{}
 	activityWorker.AddActivityImplementationInstance(activity.ActivityType(), activity)
+	defer activityWorker.Shutdown()
 	activityWorker.Start()
 
 	// Start a workflow.

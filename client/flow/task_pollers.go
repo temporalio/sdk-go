@@ -127,6 +127,9 @@ func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
 	if err != nil {
 		return nil, err
 	}
+	if response == nil || len(response.GetTaskToken()) == 0 {
+		return &WorkflowTask{}, nil
+	}
 	return &WorkflowTask{task: response}, nil
 }
 
@@ -154,6 +157,9 @@ func (atp *activityTaskPoller) poll() (*ActivityTask, error) {
 	response, err := atp.service.PollForActivityTask(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+	if response == nil || len(response.GetTaskToken()) == 0 {
+		return &ActivityTask{}, nil
 	}
 	return &ActivityTask{task: response}, nil
 }

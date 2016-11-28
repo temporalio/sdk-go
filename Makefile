@@ -9,7 +9,12 @@ THRIFT_SRCS = $(THRIFT_DIR)/minions.thrift
 # list all executables
 PROGS = example
 
-example: $(wildcard *.go)
+example: example.go \
+	$(wildcard *.go) \
+	$(wildcard config/*.go) \
+	$(wildcard common/**/*.go) \
+	$(wildcard client/flow/*.go) \
+
 
 -include go-build/rules.mk
 
