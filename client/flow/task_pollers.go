@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"fmt"
 	"time"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
@@ -62,6 +63,8 @@ func isServiceTransientError(err error) bool {
 		return false
 	case *m.EntityNotExistsError:
 		return false
+	case *m.WorkflowExecutionAlreadyStartedError:
+		return false
 	}
 
 	// m.InternalServiceError
@@ -69,8 +72,7 @@ func isServiceTransientError(err error) bool {
 }
 
 func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler WorkflowTaskHandler) *workflowTaskPoller {
-	logger := log.WithFields(log.Fields{tagTaskListName: taskListName})
+	taskHandler WorkflowTaskHandler, logger *log.Entry) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:       service,
 		taskListName:  taskListName,
@@ -134,8 +136,7 @@ func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler ActivityTaskHandler) *activityTaskPoller {
-	logger := log.WithFields(log.Fields{tagTaskListName: taskListName})
+	taskHandler ActivityTaskHandler, logger *log.Entry) *activityTaskPoller {
 	return &activityTaskPoller{
 		service:       service,
 		taskListName:  taskListName,
@@ -180,12 +181,15 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	// Process the activity task.
 	ctx, cancel := thrift.NewContext(serviceTimeOut)
 	defer cancel()
-	result := atp.taskHandler.Execute(ctx, activityTask)
+	result, err := atp.taskHandler.Execute(ctx, activityTask)
+	if err != nil {
+		return err
+	}
 
 	// TODO: Handle Cancel of the activity after the thrift method is introduced.
 	switch result.(type) {
 	// Report success untill we succeed
-	case m.RespondActivityTaskCompletedRequest:
+	case *m.RespondActivityTaskCompletedRequest:
 		err = backoff.Retry(
 			func() error {
 				ctx, cancel := thrift.NewContext(serviceTimeOut)
@@ -198,7 +202,7 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 			return err
 		}
 		// Report failure untill we succeed
-	case m.RespondActivityTaskFailedRequest:
+	case *m.RespondActivityTaskFailedRequest:
 		err = backoff.Retry(
 			func() error {
 				ctx, cancel := thrift.NewContext(serviceTimeOut)
@@ -209,6 +213,8 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 		if err != nil {
 			return err
 		}
+	default:
+		panic(fmt.Errorf("Unhandled activity response type: %v", result))
 	}
 	return nil
 }

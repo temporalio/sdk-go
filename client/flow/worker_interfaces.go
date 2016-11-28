@@ -13,16 +13,16 @@ type (
 	// TODO: Should model around GO context (When adding Cancel feature)
 	WorkflowContext interface {
 		ActivityClient
-		WorkflowInfo() WorkflowInfo
+		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte)
-		Fail(err error)
+		Fail(reason string, details []byte)
 	}
 
 	// ActivityExecutionContext is context object passed to an activity implementation.
 	// TODO: Should model around GO context (When adding Cancel feature)
 	ActivityExecutionContext interface {
-		GetTaskToken() string
-		RecordActivityHeartbeat(details []byte)
+		TaskToken() []byte
+		RecordActivityHeartbeat(details []byte) error
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
@@ -30,27 +30,29 @@ type (
 		Execute(context WorkflowContext, input []byte)
 	}
 
-	// WorkflowDefinitionFactory that returns a workflow definition for a specific
-	// workflow type.
-	WorkflowDefinitionFactory interface {
-		GetWorkflowDefinition(workflowType m.WorkflowType) (WorkflowDefinition, error)
-	}
-
 	// ActivityImplementation wraps the code to execute an activity
 	ActivityImplementation interface {
 		Execute(context ActivityExecutionContext, input []byte) ([]byte, error)
 	}
 
+	// WorkflowDefinitionFactory that returns a workflow definition for a specific
+	// workflow type.
+	WorkflowDefinitionFactory func(workflowType m.WorkflowType) (WorkflowDefinition, error)
+
+	// ActivityImplementationFactory that returns a activity implementation for a specific
+	// activity type.
+	ActivityImplementationFactory func(activityType m.ActivityType) (ActivityImplementation, error)
+
 	// ExecuteActivityParameters configuration parameters for scheduling an activity
 	ExecuteActivityParameters struct {
-		ActivityID                    string
+		ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
 		ActivityType                  m.ActivityType
 		TaskListName                  string
 		Input                         []byte
-		ScheduleToCloseTimeoutSeconds int
-		ScheduleToStartTimeoutSeconds int
-		StartToCloseTimeoutSeconds    int
-		HeartbeatTimeoutSeconds       int
+		ScheduleToCloseTimeoutSeconds int32
+		ScheduleToStartTimeoutSeconds int32
+		StartToCloseTimeoutSeconds    int32
+		HeartbeatTimeoutSeconds       int32
 	}
 
 	// ActivityClient for dynamically schedule an activity for execution
@@ -64,19 +66,17 @@ type (
 		WorkflowType                           m.WorkflowType
 		TaskListName                           string
 		WorkflowInput                          []byte
-		ExecutionStartToCloseTimeoutSeconds    int
-		DecisionTaskStartToCloseTimeoutSeconds int
+		ExecutionStartToCloseTimeoutSeconds    int32
+		DecisionTaskStartToCloseTimeoutSeconds int32
+		Identity                               string
 	}
 
 	// WorkflowClient is the client facing for starting a workflow.
 	WorkflowClient struct {
 		options           StartWorkflowOptions
 		workflowExecution m.WorkflowExecution
-
-		// struct methods.
-		// WorkflowExecution() m.WorkflowExecution
-		// WorkflowType() m.WorkflowType
-		// StartWorkflowExecution() (m.WorkflowExecution, error)
+		workflowService   m.TChanWorkflowService
+		Identity          string
 	}
 
 	// WorkflowInfo is the information that the decider has access to during workflow execution.
@@ -86,14 +86,3 @@ type (
 		taskListName      string
 	}
 )
-
-// NewWorkflowClient creates an instance of workflow client that users can start a workflow
-func NewWorkflowClient(options StartWorkflowOptions) *WorkflowClient {
-	return &WorkflowClient{options: options}
-}
-
-// StartWorkflowExecution starts a workflow execution
-func (wc *WorkflowClient) StartWorkflowExecution() (m.WorkflowExecution, error) {
-	// TODO:
-	return wc.workflowExecution, nil
-}

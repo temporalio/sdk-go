@@ -18,28 +18,29 @@ type (
 )
 
 // Workflow Context
-type workflowContext struct {
+type testWorkflowContext struct {
 }
 
-func (wc workflowContext) WorkflowInfo() WorkflowInfo {
+func (wc testWorkflowContext) WorkflowInfo() WorkflowInfo {
 	return WorkflowInfo{}
 }
-func (wc workflowContext) Complete(result []byte) {
+func (wc testWorkflowContext) Complete(result []byte) {
 }
-func (wc workflowContext) Fail(err error) {
+func (wc testWorkflowContext) Fail(err error) {
 }
-func (wc workflowContext) ScheduleActivityTask(parameters ExecuteActivityParameters, callback ResultHandler) {
+func (wc testWorkflowContext) ScheduleActivityTask(parameters ExecuteActivityParameters, callback ResultHandler) {
 
 }
 
 // Activity Execution context
-type activityExecutionContext struct {
+type testActivityExecutionContext struct {
 }
 
-func (ac activityExecutionContext) GetTaskToken() string {
-	return ""
+func (ac testActivityExecutionContext) TaskToken() []byte {
+	return []byte("")
 }
-func (ac activityExecutionContext) RecordActivityHeartbeat(details []byte) {
+func (ac testActivityExecutionContext) RecordActivityHeartbeat(details []byte) error {
+	return nil
 }
 
 // Sample Workflow task handler
@@ -70,22 +71,22 @@ func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*ActivityI
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
-func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) interface{} {
+func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) (interface{}, error) {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeeterActivity{}
-	activityContext := &activityExecutionContext{}
+	activityContext := &testActivityExecutionContext{}
 	result, err := activityImplementation.Execute(activityContext, activityTask.task.Input)
 	if err != nil {
 		reason := err.Error()
 		return &m.RespondActivityTaskFailedRequest{
 			TaskToken: activityTask.task.TaskToken,
 			Reason:    &reason,
-		}
+		}, nil
 	}
 	return &m.RespondActivityTaskCompletedRequest{
 		TaskToken: activityTask.task.TaskToken,
 		Result_:   result,
-	}
+	}, nil
 }
 
 // Test suite.
@@ -109,7 +110,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	s.NoError(err)
 
 	// Process task and respond to the service.
-	workflowTaskHandler := newSampleWorkflowTaskHandler(&workflowDefinitionFactory{})
+	workflowTaskHandler := newSampleWorkflowTaskHandler(testWorkflowDefinitionFactory)
 	completionRequest, err := workflowTaskHandler.ProcessWorkflowTask(&WorkflowTask{response})
 	s.NoError(err)
 
@@ -132,7 +133,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	// Execute activity task and respond to the service.
 	activationRegistry := make(map[m.ActivityType]*ActivityImplementation)
 	activityTaskHandler := newSampleActivityTaskHandler(activationRegistry)
-	request := activityTaskHandler.Execute(nil, &ActivityTask{response})
+	request, err := activityTaskHandler.Execute(nil, &ActivityTask{response})
+	s.NoError(err)
 	switch request.(type) {
 	case m.RespondActivityTaskCompletedRequest:
 		err = service.RespondActivityTaskCompleted(ctx, request.(*m.RespondActivityTaskCompletedRequest))

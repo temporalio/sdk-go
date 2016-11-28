@@ -2,6 +2,10 @@ package flow
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	"code.uber.internal/devexp/minions-client-go.git/common"
+	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
+	log "github.com/Sirupsen/logrus"
+	"github.com/uber/tchannel-go/thrift"
 )
 
 type (
@@ -32,6 +36,7 @@ type (
 		poller              TaskPoller // TaskPoller to poll the tasks.
 		worker              *baseWorker
 		identity            string
+		contextLogger       *log.Entry
 	}
 
 	// ActivityRegistry collection of activity implementations
@@ -46,6 +51,7 @@ type (
 		poller              *activityTaskPoller
 		worker              *baseWorker
 		identity            string
+		contextLogger       *log.Entry
 	}
 
 	// Worker overrides.
@@ -56,25 +62,37 @@ type (
 )
 
 // NewWorkflowWorker returns an instance of the workflow worker.
-func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory, service m.TChanWorkflowService) *WorkflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, nil)
+func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
+	service m.TChanWorkflowService, logger *log.Entry) *WorkflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, logger, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, overrides *workerOverrides) *WorkflowWorker {
-	var taskHandler WorkflowTaskHandler // = &WorkflowTaskHandler{}
-	if overrides != nil && overrides.workflowTaskHander != nil {
-		taskHandler = overrides.workflowTaskHander
-	}
+	service m.TChanWorkflowService, logger *log.Entry, overrides *workerOverrides) *WorkflowWorker {
+	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
 		identity = GetWorkerIdentity(params.TaskListName)
 	}
+
+	if logger == nil {
+		logger = log.WithFields(log.Fields{tagTaskListName: params.TaskListName})
+	}
+
+	// Get a workflow task handler.
+	var taskHandler WorkflowTaskHandler
+	if overrides != nil && overrides.workflowTaskHander != nil {
+		taskHandler = overrides.workflowTaskHander
+	} else {
+		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger)
+	}
+
 	poller := newWorkflowTaskPoller(
 		service,
 		params.TaskListName,
 		identity,
-		taskHandler)
+		taskHandler,
+		logger)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
@@ -102,25 +120,37 @@ func (ww *WorkflowWorker) Shutdown() {
 }
 
 // NewActivityWorker returns an instance of the activity worker.
-func NewActivityWorker(executionParameters WorkerExecutionParameters, service m.TChanWorkflowService) *ActivityWorker {
-	return newActivityWorkerInternal(executionParameters, service, nil)
+func NewActivityWorker(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
+	service m.TChanWorkflowService, logger *log.Entry) *ActivityWorker {
+	return newActivityWorkerInternal(executionParameters, factory, service, logger, nil)
 }
 
-func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, service m.TChanWorkflowService,
-	overrides *workerOverrides) *ActivityWorker {
-	var taskHandler ActivityTaskHandler // = &ActivityTaskHandler{}
-	if overrides != nil && overrides.activityTaskHandler != nil {
-		taskHandler = overrides.activityTaskHandler
-	}
+func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
+	service m.TChanWorkflowService, logger *log.Entry, overrides *workerOverrides) *ActivityWorker {
+	// Get an identity.
 	identity := executionParameters.Identity
 	if identity == "" {
 		identity = GetWorkerIdentity(executionParameters.TaskListName)
+	}
+
+	if logger == nil {
+		logger = log.WithFields(log.Fields{tagTaskListName: executionParameters.TaskListName})
+	}
+
+	// Get a activity task handler.
+	var taskHandler ActivityTaskHandler
+	if overrides != nil && overrides.activityTaskHandler != nil {
+		taskHandler = overrides.activityTaskHandler
+	} else {
+		taskHandler = newActivityTaskHandler(executionParameters.TaskListName, executionParameters.Identity,
+			factory, service, logger)
 	}
 	poller := newActivityTaskPoller(
 		service,
 		executionParameters.TaskListName,
 		identity,
-		taskHandler)
+		taskHandler,
+		logger)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    executionParameters.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
@@ -137,18 +167,58 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, se
 	}
 }
 
-// AddActivityImplementationInstance adds an instance for the registry.
-func (aw *ActivityWorker) AddActivityImplementationInstance(activityType m.ActivityType, activity ActivityImplementation) {
-	aw.activityRegistry[activityType.GetName()] = activity
-}
-
 // Start the worker.
 func (aw *ActivityWorker) Start() {
-	// TODO: register all the types with activity event handler
 	aw.worker.Start()
 }
 
 // Shutdown the worker.
 func (aw *ActivityWorker) Shutdown() {
 	aw.worker.Shutdown()
+}
+
+// NewWorkflowClient creates an instance of workflow client that users can start a workflow
+func NewWorkflowClient(options StartWorkflowOptions, service m.TChanWorkflowService) *WorkflowClient {
+	// Get an identity.
+	identity := options.Identity
+	if identity == "" {
+		identity = GetWorkerIdentity(options.TaskListName)
+	}
+	return &WorkflowClient{options: options, workflowService: service, Identity: identity}
+}
+
+// StartWorkflowExecution starts a workflow execution
+func (wc *WorkflowClient) StartWorkflowExecution() (*m.WorkflowExecution, error) {
+
+	startRequest := &m.StartWorkflowExecutionRequest{
+		WorkflowId:   common.StringPtr(wc.options.WorkflowID),
+		WorkflowType: common.WorkflowTypePtr(wc.options.WorkflowType),
+		TaskList:     common.TaskListPtr(m.TaskList{Name: common.StringPtr(wc.options.TaskListName)}),
+		Input:        wc.options.WorkflowInput,
+		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(wc.options.ExecutionStartToCloseTimeoutSeconds),
+		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(wc.options.DecisionTaskStartToCloseTimeoutSeconds),
+		Identity:                            common.StringPtr(wc.Identity)}
+
+	var response *m.StartWorkflowExecutionResponse
+
+	// Start creating workflow request.
+	err := backoff.Retry(
+		func() error {
+			ctx, cancel := thrift.NewContext(serviceTimeOut)
+			defer cancel()
+
+			var err1 error
+			response, err1 = wc.workflowService.StartWorkflowExecution(ctx, startRequest)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+
+	if err != nil {
+		return nil, err
+	}
+
+	executionInfo := &m.WorkflowExecution{
+		// TODO: StartWorkflowExecution should return workflow ID as well along with run Id
+		WorkflowId: common.StringPtr(wc.options.WorkflowID),
+		RunId:      response.RunId}
+	return executionInfo, nil
 }

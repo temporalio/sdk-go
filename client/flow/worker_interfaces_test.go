@@ -39,14 +39,14 @@ func (wf helloWorldWorkflow) WorkflowType() m.WorkflowType {
 func (wf helloWorldWorkflow) Execute(context WorkflowContext, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{
-		ActivityID:   "activity_id",
 		TaskListName: "taskList",
 		ActivityType: m.ActivityType{&activityName},
 		Input:        nil,
 	}
 	context.ScheduleActivityTask(activityParameters, func(err error, result []byte) {
 		if err != nil {
-			context.Fail(err)
+			taskFailure := err.(ActivityTaskFailedError)
+			context.Fail(taskFailure.Reason, taskFailure.Details)
 			return
 		}
 		fmt.Println("Hello " + string(result) + "!")
@@ -63,12 +63,14 @@ func (ga greeeterActivity) Execute(context ActivityExecutionContext, input []byt
 	return []byte("World"), nil
 }
 
-// WorkflowDefinitionFactory
-type workflowDefinitionFactory struct {
+// testWorkflowDefinitionFactory
+func testWorkflowDefinitionFactory(workflowType m.WorkflowType) (WorkflowDefinition, error) {
+	return &helloWorldWorkflow{}, nil
 }
 
-func (wdf workflowDefinitionFactory) GetWorkflowDefinition(workflowType m.WorkflowType) (WorkflowDefinition, error) {
-	return &helloWorldWorkflow{}, nil
+// testActivityImplementationFactory
+func testActivityImplementationFactory(activityType m.ActivityType) (ActivityImplementation, error) {
+	return &greeeterActivity{}, nil
 }
 
 // Test suite.
@@ -93,9 +95,10 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, workflowDefinitionFactory{}, service)
+	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, nil)
 	defer workflowWorker.Shutdown()
 	workflowWorker.Start()
 
@@ -105,9 +108,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker(activityExecutionParameters, service)
-	activity := &greeeterActivity{}
-	activityWorker.AddActivityImplementationInstance(activity.ActivityType(), activity)
+	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, nil)
 	defer activityWorker.Shutdown()
 	activityWorker.Start()
 
@@ -119,7 +120,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := NewWorkflowClient(workflowOptions)
+	workflowClient := NewWorkflowClient(workflowOptions, service)
 	wfExecution, err := workflowClient.StartWorkflowExecution()
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)
