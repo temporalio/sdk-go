@@ -1,10 +1,13 @@
 package coroutine
 
 import (
-	//"fmt"
 	"fmt"
-	"github.com/stretchr/testify/require"
+	"runtime"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDispatcher(t *testing.T) {
@@ -40,7 +43,8 @@ func TestNonbufferedChannel(t *testing.T) {
 		c1 := ctx.NewChannel()
 		ctx.NewCoroutine(func(ctx Context) {
 			history = append(history, "child-start")
-			v := c1.Recv(ctx)
+			v, more := c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("child-end-%v", v))
 		})
 		history = append(history, "root-before-channel-put")
@@ -68,9 +72,11 @@ func TestBufferedChannelPut(t *testing.T) {
 		c1 := ctx.NewBufferedChannel(1)
 		ctx.NewCoroutine(func(ctx Context) {
 			history = append(history, "child-start")
-			v1 := c1.Recv(ctx)
+			v1, more := c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("child-end-%v", v1))
-			v2 := c1.Recv(ctx)
+			v2, more := c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("child-end-%v", v2))
 
 		})
@@ -105,7 +111,8 @@ func TestBufferedChannelGet(t *testing.T) {
 			history = append(history, "child1-start")
 			c2.Send(ctx, "bar1")
 			history = append(history, "child1-get")
-			v1 := c1.Recv(ctx)
+			v1, more := c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("child1-end-%v", v1))
 
 		})
@@ -113,7 +120,8 @@ func TestBufferedChannelGet(t *testing.T) {
 			history = append(history, "child2-start")
 			c2.Send(ctx, "bar2")
 			history = append(history, "child2-get")
-			v1 := c1.Recv(ctx)
+			v1, more := c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("child2-end-%v", v1))
 		})
 		history = append(history, "root-before-channel-get1")
@@ -153,8 +161,14 @@ func TestNotBlockingSelect(t *testing.T) {
 		c2 := ctx.NewBufferedChannel(1)
 		s := ctx.NewSelector()
 		s.
-			AddRecv(c1, func(v interface{}) { history = append(history, fmt.Sprintf("c1-%v", v)) }).
-			AddRecv(c2, func(v interface{}) { history = append(history, fmt.Sprintf("c2-%v", v)) }).
+			AddRecv(c1, func(v interface{}, more bool) {
+				assert.True(t, more)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddRecv(c2, func(v interface{}, more bool) {
+				assert.True(t, more)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			}).
 			AddDefault(func() { history = append(history, "default") })
 		c1.Send(ctx, "one")
 		s.Select(ctx)
@@ -189,8 +203,14 @@ func TestBlockingSelect(t *testing.T) {
 
 		s := ctx.NewSelector()
 		s.
-			AddRecv(c1, func(v interface{}) { history = append(history, fmt.Sprintf("c1-%v", v)) }).
-			AddRecv(c2, func(v interface{}) { history = append(history, fmt.Sprintf("c2-%v", v)) })
+			AddRecv(c1, func(v interface{}, more bool) {
+				assert.True(t, more)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddRecv(c2, func(v interface{}, more bool) {
+				assert.True(t, more)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
 		history = append(history, "select1")
 		s.Select(ctx)
 		history = append(history, "select2")
@@ -219,11 +239,12 @@ func TestSendSelect(t *testing.T) {
 		c2 := ctx.NewChannel()
 		ctx.NewCoroutine(func(ctx Context) {
 			history = append(history, "receiver")
-			v := c2.Recv(ctx)
+			v, more := c2.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("c2-%v", v))
-			v = c1.Recv(ctx)
+			v, more = c1.Recv(ctx)
+			assert.True(t, more)
 			history = append(history, fmt.Sprintf("c1-%v", v))
-
 		})
 		s := ctx.NewSelector()
 		s.AddSend(c1, "one", func() { history = append(history, "send1") }).
@@ -246,6 +267,123 @@ func TestSendSelect(t *testing.T) {
 		"send1",
 		"done",
 		"c1-one",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestChannelClose(t *testing.T) {
+	var history []string
+	d := NewDispatcher(func(ctx Context) {
+		jobs := ctx.NewBufferedChannel(5)
+		done := ctx.NewChannel()
+
+		ctx.NewCoroutine(func(ctx Context) {
+			for {
+				j, more := jobs.Recv(ctx)
+				if more {
+					history = append(history, fmt.Sprintf("received job %v", j))
+				} else {
+					history = append(history, "received all jobs")
+					done.Send(ctx, true)
+					return
+				}
+			}
+		})
+		for j := 1; j <= 3; j++ {
+			jobs.Send(ctx, j)
+			history = append(history, fmt.Sprintf("sent job %v", j))
+		}
+		jobs.Close()
+		history = append(history, "sent all jobs")
+		_, _ = done.Recv(ctx)
+		history = append(history, "done")
+
+	})
+	require.EqualValues(t, 0, len(history))
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"sent job 1",
+		"sent job 2",
+		"sent job 3",
+		"sent all jobs",
+		"received job 1",
+		"received job 2",
+		"received job 3",
+		"received all jobs",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSendClosedChannel(t *testing.T) {
+	d := NewDispatcher(func(ctx Context) {
+		defer func() {
+			assert.NotNil(t, recover(), "panic expected")
+		}()
+		c := ctx.NewChannel()
+		ctx.NewCoroutine(func(ctx Context) {
+			c.Close()
+		})
+		c.Send(ctx, "baz")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone())
+}
+
+func TestBlockedSendClosedChannel(t *testing.T) {
+	d := NewDispatcher(func(ctx Context) {
+		defer func() {
+			assert.NotNil(t, recover(), "panic expected")
+		}()
+		c := ctx.NewBufferedChannel(5)
+		c.Send(ctx, "bar")
+		c.Close()
+		c.Send(ctx, "baz")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone())
+}
+
+func TestAsyncSendClosedChannel(t *testing.T) {
+	d := NewDispatcher(func(ctx Context) {
+		defer func() {
+			assert.NotNil(t, recover(), "panic expected")
+		}()
+		c := ctx.NewBufferedChannel(5)
+		c.Send(ctx, "bar")
+		c.Close()
+		_ = c.SendAsync("baz")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone())
+}
+
+func TestDispatchClose(t *testing.T) {
+	var history []string
+	d := NewDispatcher(func(ctx Context) {
+		c := ctx.NewChannel()
+		for i := 0; i < 10; i++ {
+			ii := i
+			ctx.NewCoroutine(func(ctx Context) {
+				_, _ = c.Recv(ctx) // blocked forever
+				history = append(history, fmt.Sprintf("child-%v", ii))
+			})
+		}
+		history = append(history, "root")
+		_, _ = c.Recv(ctx) // blocked forever
+	})
+	require.EqualValues(t, 0, len(history))
+	d.ExecuteUntilAllBlocked()
+	require.False(t, d.IsDone())
+	beforeClose := runtime.NumGoroutine()
+	d.Close()
+	time.Sleep(100 * time.Millisecond) // Let all goroutines to die
+	closedCount := beforeClose - runtime.NumGoroutine()
+	require.EqualValues(t, 11, closedCount)
+	expected := []string{
+		"root",
 	}
 	require.EqualValues(t, expected, history)
 }

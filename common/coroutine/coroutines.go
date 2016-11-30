@@ -9,15 +9,16 @@ import (
 // Channel must be used instead of native go channel by coroutine code.
 // Use Context.NewChannel method to create an instance.
 type Channel interface {
-	Recv(ctx Context) interface{}
-	RecvAsync(ctx Context) (v interface{}, ok bool)
+	Recv(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
+	RecvAsync() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
 
 	Send(ctx Context, v interface{})
-	SendAsync(ctx Context, v interface{}) (ok bool)
+	SendAsync(v interface{}) (ok bool) // ok when value was sent
+	Close()                            // prohibit sends
 }
 
 // RecvCaseFunc is executed when a value is received from the corresponding channel
-type RecvCaseFunc func(v interface{})
+type RecvCaseFunc func(v interface{}, more bool)
 
 // SendCaseFunc is executed when value was sent to a correspondent channel
 type SendCaseFunc func()
@@ -112,6 +113,8 @@ type Dispatcher interface {
 	ExecuteUntilAllBlocked()
 	// IsDone returns true when all of coroutines are completed
 	IsDone() bool
+	Close() // Destroys all coroutines without waiting for their completion
+	// TODO: Add support for dumping stack traces of all coroutines
 }
 
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.

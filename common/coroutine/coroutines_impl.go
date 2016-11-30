@@ -1,6 +1,8 @@
 package coroutine
 
 import (
+	"runtime"
+
 	"golang.org/x/net/context"
 )
 
@@ -14,6 +16,7 @@ type channelImpl struct {
 	buffer       []interface{}       // buffered messages
 	blockedSends []valueCallbackPair // puts waiting when buffer is full.
 	blockedRecvs []func(interface{}) // receives waiting when no messages are available.
+	closed       bool                // true if channel is closed
 }
 
 // Single case statement of the Select
@@ -34,7 +37,7 @@ type contextImpl struct {
 	context.Context
 	dispatcher   *dispatcherImpl // dispatcher this context belongs to
 	aboutToBlock chan bool       // Used to notify dispatcher that coroutine that owns this context is about to block
-	unblock      chan bool       // Used to notify coroutine that it should continue executing
+	unblock      chan bool       // Used to notify coroutine that it should continue executing. When returned value is false goroutine must call runtime.Goexit.
 	keptBlocked  bool            // true indicates that coroutine didn't make any progress since the last yield unblocking
 	closed       bool            // indicates that owning coroutine has finished execution
 }
@@ -50,27 +53,30 @@ var _ Context = (*contextImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ Dispatcher = (*dispatcherImpl)(nil)
 
-func (c *channelImpl) Recv(ctx Context) interface{} {
+func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
 	ctxImpl := ctx.(*contextImpl)
 	hasResult := false
 	var result interface{}
 	for {
 		if hasResult {
 			ctxImpl.unblocked()
-			return result
+			return result, true
 		}
 		if len(c.buffer) > 0 {
 			r := c.buffer[0]
 			c.buffer = c.buffer[1:]
 			ctxImpl.unblocked()
-			return r
+			return r, true
+		}
+		if c.closed {
+			return nil, false
 		}
 		if len(c.blockedSends) > 0 {
 			b := c.blockedSends[0]
 			c.blockedSends = c.blockedSends[1:]
 			b.callback()
 			ctxImpl.unblocked()
-			return b.value
+			return b.value, true
 		}
 		c.blockedRecvs = append(c.blockedRecvs, func(v interface{}) {
 			result = v
@@ -80,28 +86,32 @@ func (c *channelImpl) Recv(ctx Context) interface{} {
 	}
 }
 
-func (c *channelImpl) RecvAsync(ctx Context) (v interface{}, ok bool) {
-	ctxImpl := ctx.(*contextImpl)
-
+func (c *channelImpl) RecvAsync() (v interface{}, ok bool, more bool) {
 	if len(c.buffer) > 0 {
 		r := c.buffer[0]
 		c.buffer = c.buffer[1:]
-		ctxImpl.unblocked()
-		return r, true
+		return r, true, true
+	}
+	if c.closed {
+		return nil, false, false
 	}
 	if len(c.blockedSends) > 0 {
 		b := c.blockedSends[0]
 		c.blockedSends = c.blockedSends[1:]
 		b.callback()
-		return b.value, true
+		return b.value, true, true
 	}
-	return nil, false
+	return nil, false, true
 }
 
 func (c *channelImpl) Send(ctx Context, v interface{}) {
 	ctxImpl := ctx.(*contextImpl)
 	valueConsumed := false
 	for {
+		// Check for closed in the loop as close can be called when send is blocked
+		if c.closed {
+			panic("Closed channel")
+		}
 		if valueConsumed {
 			ctxImpl.unblocked()
 			return
@@ -124,7 +134,10 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 	}
 }
 
-func (c *channelImpl) SendAsync(ctx Context, v interface{}) (ok bool) {
+func (c *channelImpl) SendAsync(v interface{}) (ok bool) {
+	if c.closed {
+		panic("Closed channel")
+	}
 	if len(c.buffer) < c.size {
 		c.buffer = append(c.buffer, v)
 		return true
@@ -138,16 +151,31 @@ func (c *channelImpl) SendAsync(ctx Context, v interface{}) (ok bool) {
 	return false
 }
 
+func (c *channelImpl) Close() {
+	c.closed = true
+	// All blocked sends are going to panic
+	for i := 0; i < len(c.blockedSends); i++ {
+		b := c.blockedSends[i]
+		b.callback()
+	}
+}
+
 // initialYield called at the beginning of the coroutine execution
 func (ctx *contextImpl) initialYield() {
-	<-ctx.unblock
+	active := <-ctx.unblock
+	if !active {
+		runtime.Goexit()
+	}
 }
 
 // yield indicates that coroutine cannot make progress and should sleep
 // this call blocks
 func (ctx *contextImpl) yield() {
 	ctx.aboutToBlock <- true
-	<-ctx.unblock
+	active := <-ctx.unblock
+	if !active {
+		runtime.Goexit()
+	}
 	ctx.keptBlocked = true
 }
 
@@ -165,6 +193,12 @@ func (ctx *contextImpl) call() {
 func (ctx *contextImpl) close() {
 	ctx.closed = true
 	ctx.aboutToBlock <- true
+}
+
+func (ctx *contextImpl) exit() {
+	if !ctx.closed {
+		ctx.unblock <- false
+	}
 }
 
 func (ctx *contextImpl) NewCoroutine(f Func) {
@@ -214,6 +248,8 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked() {
 		for i := 0; i < len(d.coroutines); i++ {
 			c := d.coroutines[i]
 			if !c.closed {
+				// TODO: Support handling of panic in a coroutine by dispatcher.
+				// TODO: Dump all outstanding coroutines if one of them panics
 				c.call()
 			}
 			// c.call() can close the context so check again
@@ -239,6 +275,15 @@ func (d *dispatcherImpl) IsDone() bool {
 	return len(d.coroutines) == 0
 }
 
+func (d *dispatcherImpl) Close() {
+	for i := 0; i < len(d.coroutines); i++ {
+		c := d.coroutines[i]
+		if !c.closed {
+			c.exit()
+		}
+	}
+}
+
 func (s *selectorImpl) AddRecv(c Channel, f RecvCaseFunc) Selector {
 	s.cases = append(s.cases, selectCase{channel: c, recvFunc: &f})
 	return s
@@ -258,15 +303,15 @@ func (s *selectorImpl) Select(ctx Context) {
 	for {
 		for _, pair := range s.cases {
 			if pair.recvFunc != nil {
-				v, ok := pair.channel.RecvAsync(ctx)
-				if ok {
+				v, ok, more := pair.channel.RecvAsync()
+				if ok || !more {
 					f := *pair.recvFunc
-					f(v)
+					f(v, more)
 					ctxImpl.unblocked()
 					return
 				}
 			} else {
-				ok := pair.channel.SendAsync(ctx, *pair.sendValue)
+				ok := pair.channel.SendAsync(*pair.sendValue)
 				if ok {
 					f := *pair.sendFunc
 					f()
