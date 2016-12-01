@@ -1,14 +1,16 @@
 package flow
 
 import (
-	"context"
 	"testing"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
-	"code.uber.internal/devexp/minions-client-go.git/mocks"
+	"golang.org/x/net/context"
+
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber/tchannel-go/thrift"
+
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	"code.uber.internal/devexp/minions-client-go.git/mocks"
 )
 
 type (
@@ -73,7 +75,7 @@ func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*ActivityI
 
 func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) (interface{}, error) {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
-	activityImplementation := &greeeterActivity{}
+	activityImplementation := &greeterActivity{}
 	activityContext := &testActivityExecutionContext{}
 	result, err := activityImplementation.Execute(activityContext, activityTask.task.Input)
 	if err != nil {

@@ -5,7 +5,8 @@
       "include": "(\\.go$)",
       "exclude": [
         "(^Godeps/)",
-        "(/thrift/)"
+        "(/thrift/)",
+        "(\\mocks.go$)"
       ]
     },
     "gofmt": {

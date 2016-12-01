@@ -22,7 +22,7 @@ type (
 	}
 
 	// Greeter Activity
-	greeeterActivity struct {
+	greeterActivity struct {
 	}
 
 	InterfacesTestSuite struct {
@@ -43,34 +43,33 @@ func (wf helloWorldWorkflow) Execute(context WorkflowContext, input []byte) {
 		ActivityType: m.ActivityType{&activityName},
 		Input:        nil,
 	}
-	context.ScheduleActivityTask(activityParameters, func(err error, result []byte) {
+	context.ExecuteActivity(activityParameters, func(result []byte, err Error) {
 		if err != nil {
-			taskFailure := err.(ActivityTaskFailedError)
-			context.Fail(taskFailure.Reason, taskFailure.Details)
+			context.Complete(nil, err)
 			return
 		}
 		fmt.Println("Hello " + string(result) + "!")
-		context.Complete(nil)
+		context.Complete(result, nil)
 	})
 }
 
 // Greeter activity methods
-func (ga greeeterActivity) ActivityType() m.ActivityType {
+func (ga greeterActivity) ActivityType() m.ActivityType {
 	activityName := "Greeter_Activity"
 	return m.ActivityType{Name: &activityName}
 }
-func (ga greeeterActivity) Execute(context ActivityExecutionContext, input []byte) ([]byte, error) {
+func (ga greeterActivity) Execute(context ActivityExecutionContext, input []byte) ([]byte, Error) {
 	return []byte("World"), nil
 }
 
 // testWorkflowDefinitionFactory
-func testWorkflowDefinitionFactory(workflowType m.WorkflowType) (WorkflowDefinition, error) {
+func testWorkflowDefinitionFactory(workflowType m.WorkflowType) (WorkflowDefinition, Error) {
 	return &helloWorldWorkflow{}, nil
 }
 
 // testActivityImplementationFactory
-func testActivityImplementationFactory(activityType m.ActivityType) (ActivityImplementation, error) {
-	return &greeeterActivity{}, nil
+func testActivityImplementationFactory(activityType m.ActivityType) (ActivityImplementation, Error) {
+	return &greeterActivity{}, nil
 }
 
 // Test suite.

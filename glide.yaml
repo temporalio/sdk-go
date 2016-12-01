@@ -11,6 +11,8 @@ import:
   subpackages:
   - thrift
 testImport:
-- package: github.com/stretchr/testify
-  subpackages:
-  - assert
+#- package: github.com/stretchr/testify
+#  subpackages:
+#  - assert
+- package: github.com/golang/mock/gomock
+

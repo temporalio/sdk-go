@@ -1,8 +1,8 @@
-hash: 6f1c67630479ebe048d72906a8e96c810ca60c075ea43aea44f1b5320d5ec502
-updated: 2016-10-24T15:49:01.162605274-07:00
+hash: d4a79d83e8ec0b0251b2883f6dfc01acd2cced6a26eb21e69d78053d5c6a9e34
+updated: 2016-11-29T21:29:05.730899735-08:00
 imports:
 - name: code.uber.internal/go-common.git
-  version: 552c50b2b812bc727b9d16e81b9aa6bf1cdde4bb
+  version: caf0143802c7e019ac3fc561ef351248dd1b8dba
   subpackages:
   - x/backoff
   - x/config
@@ -30,17 +30,38 @@ imports:
   - statsd
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
+- name: github.com/davecgh/go-spew
+  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
+  subpackages:
+  - spew
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/getsentry/raven-go
   version: e39495fea085e98d1281fac0ff4d6eb8dc56f86d
+- name: github.com/golang/mock
+  version: bd3c8e81be01eef76d4b503f5e687d2d1354d2d9
+  subpackages:
+  - gomock
 - name: github.com/opentracing/opentracing-go
   version: 0c3154a3c2ce79d3271985848659870599dfb77c
   subpackages:
   - ext
   - log
+- name: github.com/pmezard/go-difflib
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
+  subpackages:
+  - difflib
 - name: github.com/Sirupsen/logrus
   version: 08a8a7c27e3d058a8989316a850daad1c10bf4ab
+- name: github.com/stretchr/objx
+  version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
+- name: github.com/stretchr/testify
+  version: 6cb3b85ef5a0efef77caef88363ec4d4b5c0976d
+  subpackages:
+  - assert
+  - mock
+  - require
+  - suite
 - name: github.com/uber-common/bark
   version: d52ffa061726911f47fcd3d9e8b9b55f22794772
 - name: github.com/uber-go/atomic
@@ -87,16 +108,4 @@ imports:
   version: 3e4f037f12a1221a0864cf0dd2e81c452ab22448
 - name: gopkg.in/yaml.v2
   version: a83829b6f1293c91addabc89d0571c246397bbf4
-testImports:
-- name: github.com/davecgh/go-spew
-  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
-  subpackages:
-  - spew
-- name: github.com/pmezard/go-difflib
-  version: 792786c7400a136282c1664665ae0a8db921c6c2
-  subpackages:
-  - difflib
-- name: github.com/stretchr/testify
-  version: 976c720a22c8eb4eb6a0b4348ad85ad12491a506
-  subpackages:
-  - assert
+testImports: []

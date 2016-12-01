@@ -4,6 +4,7 @@ import (
 	"runtime"
 
 	"golang.org/x/net/context"
+	"sync"
 )
 
 type valueCallbackPair struct {
@@ -33,6 +34,15 @@ type selectorImpl struct {
 	defaultFunc *DefaultCaseFunc // default case
 }
 
+// ContextProvider is an interface that a Context implementation passed as a parameter to Channel and Selector
+// methods must implement.
+// The result of GetContext() call must be the context passed to the coroutine function which is contextImpl.
+// It is needed to be able to pass contexts that extend coroutine.Context to these methods.
+// See WorkflowContext implementation for an example.
+type ContextProvider interface {
+	GetContext() Context
+}
+
 type contextImpl struct {
 	context.Context
 	dispatcher   *dispatcherImpl // dispatcher this context belongs to
@@ -45,6 +55,8 @@ type contextImpl struct {
 type dispatcherImpl struct {
 	sequence   int
 	coroutines []*contextImpl
+	executing  bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
+	mutex      sync.Mutex // Used to synchronize executing
 }
 
 // Assert that structs do indeed implement the interfaces
@@ -54,7 +66,7 @@ var _ Selector = (*selectorImpl)(nil)
 var _ Dispatcher = (*dispatcherImpl)(nil)
 
 func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
-	ctxImpl := ctx.(*contextImpl)
+	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
 	hasResult := false
 	var result interface{}
 	for {
@@ -105,7 +117,7 @@ func (c *channelImpl) RecvAsync() (v interface{}, ok bool, more bool) {
 }
 
 func (c *channelImpl) Send(ctx Context, v interface{}) {
-	ctxImpl := ctx.(*contextImpl)
+	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
 	valueConsumed := false
 	for {
 		// Check for closed in the loop as close can be called when send is blocked
@@ -201,6 +213,11 @@ func (ctx *contextImpl) exit() {
 	}
 }
 
+// GetContext from flow.ContextProvider interface
+func (ctx *contextImpl) GetContext() Context {
+	return ctx
+}
+
 func (ctx *contextImpl) NewCoroutine(f Func) {
 	ctx.dispatcher.newCoroutine(f)
 }
@@ -239,6 +256,13 @@ func (d *dispatcherImpl) newContext() *contextImpl {
 }
 
 func (d *dispatcherImpl) ExecuteUntilAllBlocked() {
+	d.mutex.Lock()
+	if d.executing {
+		panic("call to ExecuteUntilAllBlocked (possibly from a coroutine) while it is already running")
+	}
+	d.executing = true
+	d.mutex.Unlock()
+	defer func() { d.executing = false }()
 	allBlocked := false
 	// Keep executing until at least one goroutine made some progress
 	for !allBlocked {
@@ -299,7 +323,7 @@ func (s *selectorImpl) AddDefault(f DefaultCaseFunc) {
 }
 
 func (s *selectorImpl) Select(ctx Context) {
-	ctxImpl := ctx.(*contextImpl)
+	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
 	for {
 		for _, pair := range s.cases {
 			if pair.recvFunc != nil {
