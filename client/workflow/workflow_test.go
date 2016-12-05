@@ -72,7 +72,8 @@ func TestSingleActivityWorkflow(t *testing.T) {
 }
 
 type splitJoinActivityWorkflow struct {
-	t *testing.T
+	t     *testing.T
+	panic bool
 }
 
 func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
@@ -98,6 +99,9 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 			Input:      input,
 		}
 		result2, err2 = ctx.ExecuteActivity(parameters)
+		if w.panic {
+			panic("simulated")
+		}
 		c2.Send(ctx, true)
 	})
 
@@ -131,4 +135,25 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 
 	m2.resultHandler([]byte(" Flow!"), nil)
 	m1.resultHandler([]byte("Hello"), nil)
+}
+
+func TestPanic(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t, panic: true})
+	ctx := flow.NewMockWorkflowContext(mockCtrl)
+	m1 := &resultHandlerMatcher{}
+	ctx.EXPECT().ExecuteActivity(gomock.Any(), m1)
+	m2 := &resultHandlerMatcher{}
+	ctx.EXPECT().ExecuteActivity(gomock.Any(), m2)
+
+	ctx.EXPECT().Complete(nil, gomock.Any()).Do(func(result []byte, err flow.Error) {
+		require.Nil(t, result)
+		require.NotNil(t, err)
+		require.EqualValues(t, "simulated", err.Reason())
+		require.Contains(t, string(err.Details()), "workflow.(*splitJoinActivityWorkflow).Execute")
+	})
+	w.Execute(ctx, []byte("Hello"))
+	m2.resultHandler([]byte(" Flow!"), nil) // causes panic
 }

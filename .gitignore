@@ -10,3 +10,4 @@
 .gen/
 /vendor
 /minions-client-go
+example
