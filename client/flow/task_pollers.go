@@ -95,7 +95,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	}
 
 	// Process the task.
-	completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask)
+	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask, false)
 	if err != nil {
 		return err
 	}

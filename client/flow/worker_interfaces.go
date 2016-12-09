@@ -34,6 +34,7 @@ type (
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
 		Execute(context WorkflowContext, input []byte)
+		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 	}
 
 	// ActivityImplementation wraps the code to execute an activity

@@ -10,7 +10,7 @@ type (
 	// WorkflowTaskHandler represents workflow task handlers.
 	WorkflowTaskHandler interface {
 		// Process the workflow task
-		ProcessWorkflowTask(workflowTask *WorkflowTask) (*m.RespondDecisionTaskCompletedRequest, error)
+		ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (response *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.
@@ -27,7 +27,7 @@ type (
 	WorkflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
 		ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, error)
-
+		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
 	}

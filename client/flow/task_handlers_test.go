@@ -64,7 +64,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	logger := log.WithFields(log.Fields{})
 	workflowTask := createWorkflowTask(testEvents, 0)
 	workflowTaskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
-	response, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask)
+	response, _, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(1, len(response.GetDecisions()))
@@ -83,7 +83,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	}
 	workflowTask := createWorkflowTask(testEvents, 0)
 	workflowTaskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
-	response, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask)
+	response, _, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(2, len(response.GetDecisions()))
@@ -94,7 +94,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
 	workflowTask = createWorkflowTask(testEvents, 2)
-	response, err = workflowTaskHandler.ProcessWorkflowTask(workflowTask)
+	response, _, err = workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(1, len(response.GetDecisions()))

@@ -50,10 +50,10 @@ type sampleWorkflowTaskHandler struct {
 	factory WorkflowDefinitionFactory
 }
 
-func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask) (*m.RespondDecisionTaskCompletedRequest, error) {
+func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
-	}, nil
+	}, "", nil
 }
 
 func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(workflowTask *WorkflowTask) (WorkflowDefinition, error) {
@@ -113,7 +113,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 	// Process task and respond to the service.
 	workflowTaskHandler := newSampleWorkflowTaskHandler(testWorkflowDefinitionFactory)
-	completionRequest, err := workflowTaskHandler.ProcessWorkflowTask(&WorkflowTask{response})
+	completionRequest, _, err := workflowTaskHandler.ProcessWorkflowTask(&WorkflowTask{response}, false)
 	s.NoError(err)
 
 	err = service.RespondDecisionTaskCompleted(ctx, completionRequest)

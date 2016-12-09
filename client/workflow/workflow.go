@@ -3,6 +3,7 @@ package workflow
 import (
 	"code.uber.internal/devexp/minions-client-go.git/client/flow"
 	"code.uber.internal/devexp/minions-client-go.git/common/coroutine"
+	"fmt"
 )
 
 // Error to return from Workflow and Activity implementations.
@@ -46,7 +47,8 @@ func NewWorkflowDefinition(workflow Workflow) flow.WorkflowDefinition {
 }
 
 type workflowDefinition struct {
-	workflow Workflow
+	workflow   Workflow
+	dispatcher coroutine.Dispatcher
 }
 
 type workflowResult struct {
@@ -98,7 +100,12 @@ func (d *workflowDefinition) Execute(wc flow.WorkflowContext, input []byte) {
 		r.workflowResult, r.error = d.workflow.Execute(c, input)
 		*c.result = r
 	})
+	d.dispatcher = c.dispatcher
 	c.executeDispatcher()
+}
+
+func (d *workflowDefinition) StackTrace() string {
+	return d.dispatcher.StackTrace()
 }
 
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
@@ -124,7 +131,8 @@ func (c *contextImpl) executeDispatcher() {
 }
 
 func (c *contextImpl) ExecuteActivity(parameters flow.ExecuteActivityParameters) (result []byte, err Error) {
-	resultChannel := c.NewBufferedChannel(1)
+	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
+	resultChannel := c.NewNamedBufferedChannel(channelName, 1)
 	c.wc.ExecuteActivity(parameters, func(r []byte, e flow.Error) {
 		result = r
 		if e != nil {

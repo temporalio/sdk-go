@@ -16,7 +16,8 @@ type (
 	// workflowExecutionEventHandler handler to handle workflowExecutionEventHandler
 	workflowExecutionEventHandler struct {
 		*workflowContext
-		contextLogger *log.Entry
+		contextLogger      *log.Entry
+		workflowDefinition WorkflowDefinition
 	}
 
 	// workflowContext an implementation of WorkflowContext represents a context for workflow execution.
@@ -43,7 +44,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		executeDecisions:             make([]*m.Decision, 0),
 		completeHandler:              completionHandler,
 		contextLogger:                logger}
-	return &workflowExecutionEventHandler{context, logger}
+	return &workflowExecutionEventHandler{context, logger, nil}
 }
 
 func (wc *workflowContext) WorkflowInfo() *WorkflowInfo {
@@ -142,18 +143,22 @@ func (weh *workflowExecutionEventHandler) ProcessEvent(event *m.HistoryEvent) ([
 	return nil, nil
 }
 
+func (weh *workflowExecutionEventHandler) StackTrace() string {
+	return weh.workflowDefinition.StackTrace()
+}
+
 func (weh *workflowExecutionEventHandler) Close() {
 }
 
 func (weh *workflowExecutionEventHandler) handleWorkflowExecutionStarted(
-	attributes *m.WorkflowExecutionStartedEventAttributes) ([]*m.Decision, error) {
-	workflowDefinition, err := weh.workflowDefinitionFactory(weh.workflowInfo.workflowType)
+	attributes *m.WorkflowExecutionStartedEventAttributes) (decisions []*m.Decision, err error) {
+	weh.workflowDefinition, err = weh.workflowDefinitionFactory(weh.workflowInfo.workflowType)
 	if err != nil {
 		return nil, err
 	}
 
 	// Invoke the workflow.
-	workflowDefinition.Execute(weh, attributes.Input)
+	weh.workflowDefinition.Execute(weh, attributes.Input)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 

@@ -36,6 +36,10 @@ func (wf helloWorldWorkflow) WorkflowType() m.WorkflowType {
 	return m.WorkflowType{Name: &workflowName}
 }
 
+func (wf helloWorldWorkflow) StackTrace() string {
+	return ""
+}
+
 func (wf helloWorldWorkflow) Execute(context WorkflowContext, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{

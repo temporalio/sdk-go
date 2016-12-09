@@ -103,9 +103,9 @@ func newWorkflowTaskHandler(taskListName string, identity string, factory Workfl
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
-func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask) (*m.RespondDecisionTaskCompletedRequest, error) {
+func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (result *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
 	if workflowTask == nil {
-		return nil, fmt.Errorf("nil workflowtask provided")
+		return nil, "", fmt.Errorf("nil workflowtask provided")
 	}
 
 	wth.contextLogger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
@@ -139,7 +139,7 @@ func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask) 
 		wth.contextLogger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
 		eventDecisions, err := eventHandler.ProcessEvent(event)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if event.GetEventId() >= helperEvents.LastNonReplayedID() {
 			if eventDecisions != nil {
@@ -160,7 +160,10 @@ func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask) 
 		Identity:  common.StringPtr(wth.identity),
 		// ExecutionContext:
 	}
-	return taskCompletionRequest, nil
+	if emitStack {
+		stackTrace = eventHandler.StackTrace()
+	}
+	return taskCompletionRequest, stackTrace, nil
 }
 
 func (wth *workflowTaskHandler) completeWorkflow(isWorkflowCompleted bool, completionResult []byte,
