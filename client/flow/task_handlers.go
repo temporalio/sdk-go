@@ -197,7 +197,8 @@ func newActivityTaskHandler(taskListName string, identity string, factory Activi
 
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) (interface{}, error) {
-	ath.contextLogger.Debugf("activityTaskHandler::Execute: %+v", activityTask.task)
+	ath.contextLogger.Debugf("[WorkflowID: %s] Execute Activity: %s",
+		activityTask.task.GetWorkflowExecution().GetWorkflowId(), activityTask.task.GetActivityType().GetName())
 
 	activityExecutionContext := &activityExecutionContext{
 		taskToken: activityTask.task.TaskToken,
@@ -211,11 +212,10 @@ func (ath *activityTaskHandler) Execute(context context.Context, activityTask *A
 
 	output, err := activityImplementation.Execute(activityExecutionContext, activityTask.task.GetInput())
 	if err != nil {
-		failureErr := err.(ActivityTaskFailedError)
 		responseFailure := &m.RespondActivityTaskFailedRequest{
 			TaskToken: activityTask.task.TaskToken,
-			Reason:    common.StringPtr(failureErr.Reason()),
-			Details:   failureErr.Details(),
+			Reason:    common.StringPtr(err.Reason()),
+			Details:   err.Details(),
 			Identity:  common.StringPtr(ath.identity)}
 		return responseFailure, nil
 	}
