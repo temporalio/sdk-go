@@ -49,8 +49,8 @@ func createTestEventActivityTaskCompleted(eventID int64, attr *m.ActivityTaskCom
 		ActivityTaskCompletedEventAttributes: attr}
 }
 
-func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *WorkflowTask {
-	return &WorkflowTask{
+func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *workflowTask {
+	return &workflowTask{
 		task: &m.PollForDecisionTaskResponse{
 			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
 			WorkflowType:           common.WorkflowTypePtr(m.WorkflowType{Name: common.StringPtr("testWorkflow")}),
@@ -62,9 +62,9 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
 	}
 	logger := log.WithFields(log.Fields{})
-	workflowTask := createWorkflowTask(testEvents, 0)
-	workflowTaskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
-	response, _, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
+	task := createWorkflowTask(testEvents, 0)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
+	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(1, len(response.GetDecisions()))
@@ -81,9 +81,10 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventActivityTaskStarted(3, &m.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
-	workflowTask := createWorkflowTask(testEvents, 0)
-	workflowTaskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
-	response, _, err := workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
+	task := createWorkflowTask(testEvents, 0)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
+	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
+
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(2, len(response.GetDecisions()))
@@ -93,8 +94,8 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	s.NotNil(response.GetDecisions()[1].GetCompleteWorkflowExecutionDecisionAttributes())
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
-	workflowTask = createWorkflowTask(testEvents, 2)
-	response, _, err = workflowTaskHandler.ProcessWorkflowTask(workflowTask, false)
+	task = createWorkflowTask(testEvents, 2)
+	response, _, err = taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
 	s.Equal(1, len(response.GetDecisions()))

@@ -7,24 +7,24 @@ import (
 )
 
 type (
-	// WorkflowTaskHandler represents workflow task handlers.
-	WorkflowTaskHandler interface {
+	// workflowTaskHandler represents workflow task handlers.
+	workflowTaskHandler interface {
 		// Process the workflow task
-		ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (response *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
+		ProcessWorkflowTask(task *workflowTask, emitStack bool) (response *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
-	// ActivityTaskHandler represents activity task handlers.
-	ActivityTaskHandler interface {
+	// activityTaskHandler represents activity task handlers.
+	activityTaskHandler interface {
 		// Execute the activity task
 		// The return interface{} can have three requests, use switch to find the type of it.
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCancelRequest
-		Execute(context context.Context, activityTask *ActivityTask) (interface{}, error)
+		Execute(context context.Context, task *activityTask) (interface{}, error)
 	}
 
-	// WorkflowExecutionEventHandler process a single event.
-	WorkflowExecutionEventHandler interface {
+	// workflowExecutionEventHandler process a single event.
+	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
 		ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, error)
 		StackTrace() string
@@ -32,13 +32,13 @@ type (
 		Close()
 	}
 
-	// WorkflowTask wraps a decision task.
-	WorkflowTask struct {
+	// workflowTask wraps a decision task.
+	workflowTask struct {
 		task *m.PollForDecisionTaskResponse
 	}
 
-	// ActivityTask wraps a activity task.
-	ActivityTask struct {
+	// activityTask wraps a activity task.
+	activityTask struct {
 		task *m.PollForActivityTaskResponse
 	}
 )

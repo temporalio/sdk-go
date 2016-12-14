@@ -1,9 +1,9 @@
-package workflow
+package flow
 
 import (
-	"code.uber.internal/devexp/minions-client-go.git/client/flow"
-	"code.uber.internal/devexp/minions-client-go.git/common/coroutine"
 	"fmt"
+
+	"code.uber.internal/devexp/minions-client-go.git/common/coroutine"
 )
 
 // Error to return from Workflow and Activity implementations.
@@ -20,7 +20,7 @@ func NewError(reason string, details []byte) Error {
 
 // ActivityClient is used to invoke activities from a workflow definition
 type ActivityClient interface {
-	ExecuteActivity(parameters flow.ExecuteActivityParameters) (result []byte, err Error)
+	ExecuteActivity(parameters ExecuteActivityParameters) (result []byte, err Error)
 }
 
 // Func is a function used to spawn workflow execution through Context.Go
@@ -30,7 +30,7 @@ type Func func(ctx Context)
 type Context interface {
 	coroutine.Context
 	ActivityClient
-	WorkflowInfo() *flow.WorkflowInfo
+	WorkflowInfo() *WorkflowInfo
 	Go(f Func) // Must be used to create goroutines inside a workflow code
 }
 
@@ -41,8 +41,8 @@ type Workflow interface {
 	Execute(ctx Context, input []byte) (result []byte, err Error)
 }
 
-// NewWorkflowDefinition creates a flow.WorkflowDefinition from a Workflow
-func NewWorkflowDefinition(workflow Workflow) flow.WorkflowDefinition {
+// NewWorkflowDefinition creates a  WorkflowDefinition from a Workflow
+func NewWorkflowDefinition(workflow Workflow) WorkflowDefinition {
 	return &workflowDefinition{workflow: workflow}
 }
 
@@ -58,14 +58,14 @@ type workflowResult struct {
 
 type contextImpl struct {
 	coroutine.Context
-	wc         flow.WorkflowContext
+	wc         workflowContext
 	dispatcher coroutine.Dispatcher
 	result     **workflowResult
 }
 
 type activityClient struct {
 	dispatcher  coroutine.Dispatcher
-	asyncClient flow.AsyncActivityClient
+	asyncClient asyncActivityClient
 }
 
 // errorImpl implements Error
@@ -88,7 +88,7 @@ func (e *errorImpl) Details() []byte {
 	return e.details
 }
 
-func (d *workflowDefinition) Execute(wc flow.WorkflowContext, input []byte) {
+func (d *workflowDefinition) Execute(wc workflowContext, input []byte) {
 	var resultPtr *workflowResult
 	c := &contextImpl{
 		wc:     wc,
@@ -122,18 +122,18 @@ func (c *contextImpl) executeDispatcher() {
 		return
 	}
 	// Cannot cast nil values from interface to interface
-	var err flow.Error
+	var err Error
 	if r.error != nil {
-		err = r.error.(flow.Error)
+		err = r.error.(Error)
 	}
 	c.wc.Complete(r.workflowResult, err)
 	c.dispatcher.Close()
 }
 
-func (c *contextImpl) ExecuteActivity(parameters flow.ExecuteActivityParameters) (result []byte, err Error) {
+func (c *contextImpl) ExecuteActivity(parameters ExecuteActivityParameters) (result []byte, err Error) {
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := c.NewNamedBufferedChannel(channelName, 1)
-	c.wc.ExecuteActivity(parameters, func(r []byte, e flow.Error) {
+	c.wc.ExecuteActivity(parameters, func(r []byte, e Error) {
 		result = r
 		if e != nil {
 			err = e.(Error)
@@ -160,7 +160,7 @@ func (c *contextImpl) Go(f Func) {
 	})
 }
 
-func (c *contextImpl) WorkflowInfo() *flow.WorkflowInfo {
+func (c *contextImpl) WorkflowInfo() *WorkflowInfo {
 	return c.wc.WorkflowInfo()
 }
 

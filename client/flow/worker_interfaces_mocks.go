@@ -36,7 +36,7 @@ func (_mr *_MockWorkflowContextRecorder) Complete(arg0, arg1 interface{}) *gomoc
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "Complete", arg0, arg1)
 }
 
-func (_m *MockWorkflowContext) ExecuteActivity(_param0 ExecuteActivityParameters, _param1 ResultHandler) {
+func (_m *MockWorkflowContext) ExecuteActivity(_param0 ExecuteActivityParameters, _param1 resultHandler) {
 	_m.ctrl.Call(_m, "ExecuteActivity", _param0, _param1)
 }
 

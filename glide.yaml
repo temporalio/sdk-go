@@ -15,4 +15,5 @@ testImport:
 #  subpackages:
 #  - assert
 - package: github.com/golang/mock/gomock
+- package: github.com/uber-go/tally
 

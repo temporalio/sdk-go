@@ -33,20 +33,20 @@ type (
 		executionParameters WorkerExecutionParameters
 		workflowDefFactory  WorkflowDefinitionFactory
 		workflowService     m.TChanWorkflowService
-		poller              TaskPoller // TaskPoller to poll the tasks.
+		poller              taskPoller // taskPoller to poll the tasks.
 		worker              *baseWorker
 		identity            string
 		contextLogger       *log.Entry
 	}
 
-	// ActivityRegistry collection of activity implementations
-	ActivityRegistry map[string]ActivityImplementation
+	// activityRegistry collection of activity implementations
+	activityRegistry map[string]ActivityImplementation
 
 	// ActivityWorker wraps the code for hosting activity types.
 	// TODO: Worker doing heartbeating automatically while activity task is running
 	ActivityWorker struct {
 		executionParameters WorkerExecutionParameters
-		activityRegistry    ActivityRegistry
+		activityRegistry    activityRegistry
 		workflowService     m.TChanWorkflowService
 		poller              *activityTaskPoller
 		worker              *baseWorker
@@ -56,8 +56,8 @@ type (
 
 	// Worker overrides.
 	workerOverrides struct {
-		workflowTaskHander  WorkflowTaskHandler
-		activityTaskHandler ActivityTaskHandler
+		workflowTaskHander  workflowTaskHandler
+		activityTaskHandler activityTaskHandler
 	}
 )
 
@@ -80,7 +80,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory Workflo
 	}
 
 	// Get a workflow task handler.
-	var taskHandler WorkflowTaskHandler
+	var taskHandler workflowTaskHandler
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
@@ -138,7 +138,7 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, fa
 	}
 
 	// Get a activity task handler.
-	var taskHandler ActivityTaskHandler
+	var taskHandler activityTaskHandler
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {

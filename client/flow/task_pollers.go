@@ -25,8 +25,8 @@ var (
 )
 
 type (
-	// TaskPoller interface to poll for a single task
-	TaskPoller interface {
+	// taskPoller interface to poll for a single task
+	taskPoller interface {
 		PollAndProcessSingleTask() error
 	}
 
@@ -35,7 +35,7 @@ type (
 		taskListName  string
 		identity      string
 		service       m.TChanWorkflowService
-		taskHandler   WorkflowTaskHandler
+		taskHandler   workflowTaskHandler
 		contextLogger *log.Entry
 	}
 
@@ -44,7 +44,7 @@ type (
 		taskListName  string
 		identity      string
 		service       m.TChanWorkflowService
-		taskHandler   ActivityTaskHandler
+		taskHandler   activityTaskHandler
 		contextLogger *log.Entry
 	}
 )
@@ -72,7 +72,7 @@ func isServiceTransientError(err error) bool {
 }
 
 func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler WorkflowTaskHandler, logger *log.Entry) *workflowTaskPoller {
+	taskHandler workflowTaskHandler, logger *log.Entry) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:       service,
 		taskListName:  taskListName,
@@ -115,7 +115,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 }
 
 // Poll for a single workflow task from the service
-func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
+func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	wtp.contextLogger.Debug("workflowTaskPoller::Poll")
 	request := &m.PollForDecisionTaskRequest{
 		TaskList: common.TaskListPtr(m.TaskList{Name: common.StringPtr(wtp.taskListName)}),
@@ -130,13 +130,13 @@ func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
 		return nil, err
 	}
 	if response == nil || len(response.GetTaskToken()) == 0 {
-		return &WorkflowTask{}, nil
+		return &workflowTask{}, nil
 	}
-	return &WorkflowTask{task: response}, nil
+	return &workflowTask{task: response}, nil
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler ActivityTaskHandler, logger *log.Entry) *activityTaskPoller {
+	taskHandler activityTaskHandler, logger *log.Entry) *activityTaskPoller {
 	return &activityTaskPoller{
 		service:       service,
 		taskListName:  taskListName,
@@ -146,7 +146,7 @@ func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, 
 }
 
 // Poll for a single activity task from the service
-func (atp *activityTaskPoller) poll() (*ActivityTask, error) {
+func (atp *activityTaskPoller) poll() (*activityTask, error) {
 	request := &m.PollForActivityTaskRequest{
 		TaskList: common.TaskListPtr(m.TaskList{Name: common.StringPtr(atp.taskListName)}),
 		Identity: common.StringPtr(atp.identity),
@@ -160,9 +160,9 @@ func (atp *activityTaskPoller) poll() (*ActivityTask, error) {
 		return nil, err
 	}
 	if response == nil || len(response.GetTaskToken()) == 0 {
-		return &ActivityTask{}, nil
+		return &activityTask{}, nil
 	}
-	return &ActivityTask{task: response}, nil
+	return &activityTask{task: response}, nil
 }
 
 // PollAndProcessSingleTask process one single activity task

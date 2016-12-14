@@ -7,13 +7,14 @@ THRIFT_DIR = idl/code.uber.internal/devexp/minions
 THRIFT_SRCS = $(THRIFT_DIR)/minions.thrift
 
 # list all executables
-PROGS = example
+PROGS = cmd/example/example
 
-example: example.go \
-	$(wildcard *.go) \
+cmd/example/example: cmd/example/*.go \
 	$(wildcard config/*.go) \
+	$(wildcard common/*.go) \
 	$(wildcard common/**/*.go) \
 	$(wildcard client/flow/*.go) \
+	$(wildcard examples/*.go) \
 
 
 -include go-build/rules.mk

@@ -40,7 +40,7 @@ func (wf helloWorldWorkflow) StackTrace() string {
 	return ""
 }
 
-func (wf helloWorldWorkflow) Execute(context WorkflowContext, input []byte) {
+func (wf helloWorldWorkflow) Execute(context workflowContext, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{
 		TaskListName: "taskList",

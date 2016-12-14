@@ -5,21 +5,14 @@ import (
 )
 
 type (
-	// Error to return from Workflow and Activity implementations.
-	Error interface {
-		error
-		Reason() string
-		Details() []byte
-	}
+	// resultHandler that returns result
+	resultHandler func(result []byte, err Error)
 
-	// ResultHandler that returns result
-	ResultHandler func(result []byte, err Error)
-
-	// WorkflowContext Represents the context for workflow/decider.
+	// workflowContext Represents the context for workflow/decider.
 	// Should only be used within the scope of workflow definition
 	// TODO: Should model around GO context (When adding Cancel feature)
-	WorkflowContext interface {
-		AsyncActivityClient
+	workflowContext interface {
+		asyncActivityClient
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err Error)
 	}
@@ -33,7 +26,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
-		Execute(context WorkflowContext, input []byte)
+		Execute(context workflowContext, input []byte)
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 	}
 
@@ -62,9 +55,9 @@ type (
 		HeartbeatTimeoutSeconds       int32
 	}
 
-	// AsyncActivityClient for requesting activity execution
-	AsyncActivityClient interface {
-		ExecuteActivity(parameters ExecuteActivityParameters, callback ResultHandler)
+	// asyncActivityClient for requesting activity execution
+	asyncActivityClient interface {
+		ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler)
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow

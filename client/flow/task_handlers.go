@@ -13,16 +13,16 @@ import (
 )
 
 type (
-	// workflowTaskHandler is the implementation of WorkflowTaskHandler
-	workflowTaskHandler struct {
+	// workflowTaskHandlerImpl is the implementation of workflowTaskHandler
+	workflowTaskHandlerImpl struct {
 		taskListName       string
 		identity           string
 		workflowDefFactory WorkflowDefinitionFactory
 		contextLogger      *log.Entry
 	}
 
-	// activityTaskHandler is the implementation of ActivityTaskHandler
-	activityTaskHandler struct {
+	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
+	activityTaskHandlerImpl struct {
 		taskListName        string
 		identity            string
 		activityImplFactory ActivityImplementationFactory
@@ -32,7 +32,7 @@ type (
 
 	// eventsHelper wrapper method to help information about events.
 	eventsHelper struct {
-		workflowTask *WorkflowTask
+		workflowTask *workflowTask
 	}
 
 	// activityExecutionContext an implementation of ActivityExecutionContext represents a context for workflow execution.
@@ -42,45 +42,45 @@ type (
 		service   m.TChanWorkflowService
 	}
 
-	// ActivityTaskFailedError wraps the details of the failure of activity
-	ActivityTaskFailedError struct {
+	// activityTaskFailedError wraps the details of the failure of activity
+	activityTaskFailedError struct {
 		reason  string
 		details []byte
 	}
 
-	// ActivityTaskTimeoutError wraps the details of the timeout of activity
-	ActivityTaskTimeoutError struct {
+	// activityTaskTimeoutError wraps the details of the timeout of activity
+	activityTaskTimeoutError struct {
 		TimeoutType m.TimeoutType
 	}
 )
 
 // Error from error.Error
-func (e ActivityTaskFailedError) Error() string {
+func (e activityTaskFailedError) Error() string {
 	return fmt.Sprintf("Reason: %s, Details: %s", e.reason, e.details)
 }
 
 // Details of the error
-func (e ActivityTaskFailedError) Details() []byte {
+func (e activityTaskFailedError) Details() []byte {
 	return e.details
 }
 
 // Reason of the error
-func (e ActivityTaskFailedError) Reason() string {
+func (e activityTaskFailedError) Reason() string {
 	return e.reason
 }
 
 // Error from error.Error
-func (e ActivityTaskTimeoutError) Error() string {
+func (e activityTaskTimeoutError) Error() string {
 	return fmt.Sprintf("TimeoutType: %v", e.TimeoutType)
 }
 
 // Details of the error
-func (e ActivityTaskTimeoutError) Details() []byte {
+func (e activityTaskTimeoutError) Details() []byte {
 	return nil
 }
 
 // Reason of the error
-func (e ActivityTaskTimeoutError) Reason() string {
+func (e activityTaskTimeoutError) Reason() string {
 	return e.Error()
 }
 
@@ -94,8 +94,8 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory WorkflowDefinitionFactory,
-	contextLogger *log.Entry) *workflowTaskHandler {
-	return &workflowTaskHandler{
+	contextLogger *log.Entry) workflowTaskHandler {
+	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
@@ -103,7 +103,7 @@ func newWorkflowTaskHandler(taskListName string, identity string, factory Workfl
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
-func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (result *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTask, emitStack bool) (result *m.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
 	if workflowTask == nil {
 		return nil, "", fmt.Errorf("nil workflowtask provided")
 	}
@@ -122,14 +122,14 @@ func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, 
 	var completionResult []byte
 	var failure Error
 
-	completionHandler := func(result []byte, err Error) {
+	completeHandler := func(result []byte, err Error) {
 		completionResult = result
 		failure = err
 		isWorkflowCompleted = true
 	}
 
 	eventHandler := newWorkflowExecutionEventHandler(
-		workflowInfo, wth.workflowDefFactory, completionHandler, wth.contextLogger)
+		workflowInfo, wth.workflowDefFactory, completeHandler, wth.contextLogger)
 	helperEvents := &eventsHelper{workflowTask: workflowTask}
 	history := workflowTask.task.History
 	decisions := []*m.Decision{}
@@ -166,7 +166,7 @@ func (wth *workflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, 
 	return taskCompletionRequest, stackTrace, nil
 }
 
-func (wth *workflowTaskHandler) completeWorkflow(isWorkflowCompleted bool, completionResult []byte,
+func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, completionResult []byte,
 	err Error) []*m.Decision {
 	decisions := []*m.Decision{}
 	if err != nil {
@@ -189,8 +189,8 @@ func (wth *workflowTaskHandler) completeWorkflow(isWorkflowCompleted bool, compl
 }
 
 func newActivityTaskHandler(taskListName string, identity string, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, contextLogger *log.Entry) ActivityTaskHandler {
-	return &activityTaskHandler{
+	service m.TChanWorkflowService, contextLogger *log.Entry) activityTaskHandler {
+	return &activityTaskHandlerImpl{
 		taskListName:        taskListName,
 		identity:            identity,
 		activityImplFactory: factory,
@@ -199,7 +199,7 @@ func newActivityTaskHandler(taskListName string, identity string, factory Activi
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) (interface{}, error) {
+func (ath *activityTaskHandlerImpl) Execute(context context.Context, activityTask *activityTask) (interface{}, error) {
 	ath.contextLogger.Debugf("[WorkflowID: %s] Execute Activity: %s",
 		activityTask.task.GetWorkflowExecution().GetWorkflowId(), activityTask.task.GetActivityType().GetName())
 

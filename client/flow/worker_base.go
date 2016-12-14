@@ -27,7 +27,7 @@ type (
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
 		routineCount    int
-		taskPoller      TaskPoller
+		taskPoller      taskPoller
 		workflowService m.TChanWorkflowService
 		identity        string
 	}

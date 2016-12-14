@@ -30,7 +30,7 @@ func (wc testWorkflowContext) Complete(result []byte) {
 }
 func (wc testWorkflowContext) Fail(err error) {
 }
-func (wc testWorkflowContext) ScheduleActivityTask(parameters ExecuteActivityParameters, callback ResultHandler) {
+func (wc testWorkflowContext) ScheduleActivityTask(parameters ExecuteActivityParameters, callback resultHandler) {
 
 }
 
@@ -50,13 +50,13 @@ type sampleWorkflowTaskHandler struct {
 	factory WorkflowDefinitionFactory
 }
 
-func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
+func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(task *workflowTask, emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
-		TaskToken: workflowTask.task.TaskToken,
+		TaskToken: task.task.TaskToken,
 	}, "", nil
 }
 
-func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(workflowTask *WorkflowTask) (WorkflowDefinition, error) {
+func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(task *workflowTask) (WorkflowDefinition, error) {
 	return &helloWorldWorkflow{}, nil
 }
 
@@ -73,7 +73,7 @@ func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*ActivityI
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
-func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *ActivityTask) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *activityTask) (interface{}, error) {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeterActivity{}
 	activityContext := &testActivityExecutionContext{}
@@ -112,8 +112,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	s.NoError(err)
 
 	// Process task and respond to the service.
-	workflowTaskHandler := newSampleWorkflowTaskHandler(testWorkflowDefinitionFactory)
-	completionRequest, _, err := workflowTaskHandler.ProcessWorkflowTask(&WorkflowTask{response}, false)
+	taskHandler := newSampleWorkflowTaskHandler(testWorkflowDefinitionFactory)
+	completionRequest, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{response}, false)
 	s.NoError(err)
 
 	err = service.RespondDecisionTaskCompleted(ctx, completionRequest)
@@ -134,8 +134,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 
 	// Execute activity task and respond to the service.
 	activationRegistry := make(map[m.ActivityType]*ActivityImplementation)
-	activityTaskHandler := newSampleActivityTaskHandler(activationRegistry)
-	request, err := activityTaskHandler.Execute(nil, &ActivityTask{response})
+	taskHandler := newSampleActivityTaskHandler(activationRegistry)
+	request, err := taskHandler.Execute(nil, &activityTask{response})
 	s.NoError(err)
 	switch request.(type) {
 	case m.RespondActivityTaskCompletedRequest:

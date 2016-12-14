@@ -1,12 +1,10 @@
-package workflow
+package flow
 
 import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-
-	"code.uber.internal/devexp/minions-client-go.git/client/flow"
 )
 
 type testContext struct {
@@ -25,7 +23,7 @@ func TestHelloWorldWorkflow(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	w := NewWorkflowDefinition(&helloWorldWorklfow{t: t})
-	ctx := flow.NewMockWorkflowContext(mockCtrl)
+	ctx := NewMockWorkflowContext(mockCtrl)
 	ctx.EXPECT().Complete([]byte("Hello World!"), nil)
 	w.Execute(ctx, []byte("Hello"))
 }
@@ -36,7 +34,7 @@ type helloWorldActivityWorkflow struct {
 
 func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
 	id := "id1"
-	parameters := flow.ExecuteActivityParameters{
+	parameters := ExecuteActivityParameters{
 		ActivityID: &id,
 		Input:      input,
 	}
@@ -46,11 +44,11 @@ func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result 
 }
 
 type resultHandlerMatcher struct {
-	resultHandler flow.ResultHandler
+	resultHandler resultHandler
 }
 
 func (m *resultHandlerMatcher) Matches(x interface{}) bool {
-	m.resultHandler = x.(flow.ResultHandler)
+	m.resultHandler = x.(resultHandler)
 	return true
 }
 
@@ -63,7 +61,7 @@ func TestSingleActivityWorkflow(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	w := NewWorkflowDefinition(&helloWorldActivityWorkflow{t: t})
-	ctx := flow.NewMockWorkflowContext(mockCtrl)
+	ctx := NewMockWorkflowContext(mockCtrl)
 	ctx.EXPECT().Complete([]byte("Hello Flow!"), nil)
 	m := &resultHandlerMatcher{}
 	ctx.EXPECT().ExecuteActivity(gomock.Any(), m)
@@ -84,7 +82,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c2 := ctx.NewChannel()
 	ctx.Go(func(ctx Context) {
 		id1 := "id1"
-		parameters := flow.ExecuteActivityParameters{
+		parameters := ExecuteActivityParameters{
 			ActivityID: &id1,
 			Input:      input,
 		}
@@ -94,7 +92,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	})
 	ctx.Go(func(ctx Context) {
 		id2 := "id2"
-		parameters := flow.ExecuteActivityParameters{
+		parameters := ExecuteActivityParameters{
 			ActivityID: &id2,
 			Input:      input,
 		}
@@ -124,7 +122,7 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t})
-	ctx := flow.NewMockWorkflowContext(mockCtrl)
+	ctx := NewMockWorkflowContext(mockCtrl)
 	m1 := &resultHandlerMatcher{}
 	ctx.EXPECT().ExecuteActivity(gomock.Any(), m1)
 	m2 := &resultHandlerMatcher{}
@@ -142,17 +140,17 @@ func TestPanic(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t, panic: true})
-	ctx := flow.NewMockWorkflowContext(mockCtrl)
+	ctx := NewMockWorkflowContext(mockCtrl)
 	m1 := &resultHandlerMatcher{}
 	ctx.EXPECT().ExecuteActivity(gomock.Any(), m1)
 	m2 := &resultHandlerMatcher{}
 	ctx.EXPECT().ExecuteActivity(gomock.Any(), m2)
 
-	ctx.EXPECT().Complete(nil, gomock.Any()).Do(func(result []byte, err flow.Error) {
+	ctx.EXPECT().Complete(nil, gomock.Any()).Do(func(result []byte, err Error) {
 		require.Nil(t, result)
 		require.NotNil(t, err)
 		require.EqualValues(t, "simulated", err.Reason())
-		require.Contains(t, string(err.Details()), "workflow.(*splitJoinActivityWorkflow).Execute")
+		require.Contains(t, string(err.Details()), "flow.(*splitJoinActivityWorkflow).Execute")
 	})
 	w.Execute(ctx, []byte("Hello"))
 	m2.resultHandler([]byte(" Flow!"), nil) // causes panic

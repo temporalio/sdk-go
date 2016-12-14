@@ -10,70 +10,70 @@ import (
 )
 
 type (
-	// CompletionHandler Handler to indicate completion result
-	CompletionHandler func(result []byte, err Error)
+	// completionHandler Handler to indicate completion result
+	completionHandler func(result []byte, err Error)
 
-	// workflowExecutionEventHandler handler to handle workflowExecutionEventHandler
-	workflowExecutionEventHandler struct {
-		*workflowContext
+	// workflowExecutionEventHandlerImpl handler to handle workflowExecutionEventHandler
+	workflowExecutionEventHandlerImpl struct {
+		*workflowContextImpl
 		contextLogger      *log.Entry
 		workflowDefinition WorkflowDefinition
 	}
 
-	// workflowContext an implementation of WorkflowContext represents a context for workflow execution.
-	workflowContext struct {
+	// workflowContextImpl an implementation of WorkflowContext represents a context for workflow execution.
+	workflowContextImpl struct {
 		workflowInfo              *WorkflowInfo
 		workflowDefinitionFactory WorkflowDefinitionFactory
 
-		scheduledActivites           map[string]ResultHandler // Map of Activities(activity ID ->) and their response handlers
+		scheduledActivites           map[string]resultHandler // Map of Activities(activity ID ->) and their response handlers
 		scheduledEventIDToActivityID map[int64]string         // Mapping from scheduled event ID to activity ID
 		counterID                    int32                    // To generate activity IDs
 		executeDecisions             []*m.Decision            // Decisions made during the execute of the workflow
-		completeHandler              CompletionHandler        // events completion handler
+		completeHandler              completionHandler        // events completion handler
 		contextLogger                *log.Entry
 	}
 )
 
 func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory WorkflowDefinitionFactory,
-	completionHandler CompletionHandler, logger *log.Entry) *workflowExecutionEventHandler {
-	context := &workflowContext{
+	completeHandler completionHandler, logger *log.Entry) workflowExecutionEventHandler {
+	context := &workflowContextImpl{
 		workflowInfo:                 workflowInfo,
 		workflowDefinitionFactory:    workflowDefinitionFactory,
-		scheduledActivites:           make(map[string]ResultHandler),
+		scheduledActivites:           make(map[string]resultHandler),
 		scheduledEventIDToActivityID: make(map[int64]string),
 		executeDecisions:             make([]*m.Decision, 0),
-		completeHandler:              completionHandler,
+		completeHandler:              completeHandler,
 		contextLogger:                logger}
-	return &workflowExecutionEventHandler{context, logger, nil}
+	return &workflowExecutionEventHandlerImpl{context, logger, nil}
 }
 
-func (wc *workflowContext) WorkflowInfo() *WorkflowInfo {
+func (wc *workflowContextImpl) WorkflowInfo() *WorkflowInfo {
 	return wc.workflowInfo
 }
 
-func (wc *workflowContext) Complete(result []byte, err Error) {
+func (wc *workflowContextImpl) Complete(result []byte, err Error) {
 	wc.completeHandler(result, err)
 }
 
-func (wc *workflowContext) GenerateActivityID() string {
+func (wc *workflowContextImpl) GenerateActivityID() string {
 	activityID := wc.counterID
 	wc.counterID++
 	return fmt.Sprintf("%d", activityID)
 }
 
-func (wc *workflowContext) SwapExecuteDecisions(decisions []*m.Decision) []*m.Decision {
+func (wc *workflowContextImpl) SwapExecuteDecisions(decisions []*m.Decision) []*m.Decision {
 	oldDecisions := wc.executeDecisions
 	wc.executeDecisions = decisions
 	return oldDecisions
 }
 
-func (wc *workflowContext) CreateNewDecision(decisionType m.DecisionType) *m.Decision {
+func (wc *workflowContextImpl) CreateNewDecision(decisionType m.DecisionType) *m.Decision {
 	return &m.Decision{
 		DecisionType: common.DecisionTypePtr(decisionType),
 	}
 }
 
-func (wc *workflowContext) ExecuteActivity(parameters ExecuteActivityParameters, callback ResultHandler) {
+func (wc *workflowContextImpl) ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) {
 	scheduleTaskAttr := &m.ScheduleActivityTaskDecisionAttributes{}
 	if parameters.ActivityID == nil {
 		scheduleTaskAttr.ActivityId = common.StringPtr(wc.GenerateActivityID())
@@ -95,7 +95,7 @@ func (wc *workflowContext) ExecuteActivity(parameters ExecuteActivityParameters,
 	wc.contextLogger.Debugf("ExectueActivity: %s: %+v", scheduleTaskAttr.GetActivityId(), scheduleTaskAttr)
 }
 
-func (weh *workflowExecutionEventHandler) ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, error) {
+func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, error) {
 	if event == nil {
 		return nil, fmt.Errorf("nil event provided")
 	}
@@ -143,14 +143,14 @@ func (weh *workflowExecutionEventHandler) ProcessEvent(event *m.HistoryEvent) ([
 	return nil, nil
 }
 
-func (weh *workflowExecutionEventHandler) StackTrace() string {
+func (weh *workflowExecutionEventHandlerImpl) StackTrace() string {
 	return weh.workflowDefinition.StackTrace()
 }
 
-func (weh *workflowExecutionEventHandler) Close() {
+func (weh *workflowExecutionEventHandlerImpl) Close() {
 }
 
-func (weh *workflowExecutionEventHandler) handleWorkflowExecutionStarted(
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	attributes *m.WorkflowExecutionStartedEventAttributes) (decisions []*m.Decision, err error) {
 	weh.workflowDefinition, err = weh.workflowDefinitionFactory(weh.workflowInfo.workflowType)
 	if err != nil {
@@ -162,7 +162,7 @@ func (weh *workflowExecutionEventHandler) handleWorkflowExecutionStarted(
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
-func (weh *workflowExecutionEventHandler) handleActivityTaskCompleted(
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(
 	attributes *m.ActivityTaskCompletedEventAttributes) ([]*m.Decision, error) {
 
 	activityID, ok := weh.scheduledEventIDToActivityID[attributes.GetScheduledEventId()]
@@ -181,7 +181,7 @@ func (weh *workflowExecutionEventHandler) handleActivityTaskCompleted(
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
-func (weh *workflowExecutionEventHandler) handleActivityTaskFailed(
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 	attributes *m.ActivityTaskFailedEventAttributes) ([]*m.Decision, error) {
 
 	activityID, ok := weh.scheduledEventIDToActivityID[attributes.GetScheduledEventId()]
@@ -194,7 +194,7 @@ func (weh *workflowExecutionEventHandler) handleActivityTaskFailed(
 	}
 
 	if handler != nil {
-		err := &ActivityTaskFailedError{
+		err := &activityTaskFailedError{
 			reason:  *attributes.Reason,
 			details: attributes.Details}
 		// Invoke the callback
@@ -203,7 +203,7 @@ func (weh *workflowExecutionEventHandler) handleActivityTaskFailed(
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
-func (weh *workflowExecutionEventHandler) handleActivityTaskTimedOut(
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 	attributes *m.ActivityTaskTimedOutEventAttributes) ([]*m.Decision, error) {
 
 	activityID, ok := weh.scheduledEventIDToActivityID[attributes.GetScheduledEventId()]
@@ -216,7 +216,7 @@ func (weh *workflowExecutionEventHandler) handleActivityTaskTimedOut(
 	}
 
 	if handler != nil {
-		err := &ActivityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
+		err := &activityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
 		// Invoke the callback
 		handler(nil, err)
 	}
