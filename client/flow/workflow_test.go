@@ -3,6 +3,7 @@ package flow
 import (
 	"testing"
 
+	"code.uber.internal/devexp/minions-client-go.git/common/coroutine"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 )
@@ -78,8 +79,8 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	var result1, result2 []byte
 	var err1, err2 error
 
-	c1 := ctx.NewChannel()
-	c2 := ctx.NewChannel()
+	c1 := coroutine.NewChannel(ctx)
+	c2 := coroutine.NewChannel(ctx)
 	ctx.Go(func(ctx Context) {
 		id1 := "id1"
 		parameters := ExecuteActivityParameters{
@@ -106,7 +107,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c1.Recv(ctx)
 	// Use selector to test it
 	selected := false
-	ctx.NewSelector().AddRecv(c2, func(v interface{}, more bool) {
+	coroutine.NewSelector(ctx).AddRecv(c2, func(v interface{}, more bool) {
 		require.True(w.t, more)
 		selected = true
 	}).Select(ctx)

@@ -1,10 +1,6 @@
 package coroutine
 
-import (
-	"time"
-
-	"golang.org/x/net/context"
-)
+import "fmt"
 
 // Channel must be used instead of native go channel by coroutine code.
 // Use Context.NewChannel method to create an instance.
@@ -38,80 +34,6 @@ type Selector interface {
 // Func is a body of a coroutine
 type Func func(ctx Context)
 
-// Context is coroutine specific context that extends context.Context.
-// Use coroutine.Use... methods to create subcontexts.
-// Provides factory methods to create Channel and Selector.
-// Provides method to create new coroutine.
-type Context interface {
-	context.Context
-
-	NewChannel() Channel
-	NewNamedChannel(name string) Channel
-
-	NewBufferedChannel(size int) Channel
-	NewNamedBufferedChannel(name string, size int) Channel
-
-	NewSelector() Selector
-	NewNamedSelector(name string) Selector
-
-	NewCoroutine(f Func)
-	NewNamedCoroutine(name string, f Func)
-}
-
-// WithCancel returns a copy of parent with a new Done channel. The returned
-// context's Done channel is closed when the returned cancel function is called
-// or when the parent context's Done channel is closed, whichever happens first.
-//
-// Canceling this context releases resources associated with it, so code should
-// call cancel as soon as the operations running in this Context complete.
-func WithCancel(parent Context) (ctx Context, cancel context.CancelFunc) {
-	pImpl := parent.(*contextImpl)
-	pImpl.Context, cancel = context.WithCancel(pImpl.Context)
-	return pImpl, cancel
-}
-
-// WithDeadline returns a copy of the parent context with the deadline adjusted
-// to be no later than d.  If the parent's deadline is already earlier than d,
-// WithDeadline(parent, d) is semantically equivalent to parent.  The returned
-// context's Done channel is closed when the deadline expires, when the returned
-// cancel function is called, or when the parent context's Done channel is
-// closed, whichever happens first.
-//
-// Canceling this context releases resources associated with it, so code should
-// call cancel as soon as the operations running in this Context complete.
-func WithDeadline(parent Context, deadline time.Time) (ctx Context, cancel context.CancelFunc) {
-	pImpl := parent.(*contextImpl)
-	pImpl.Context, cancel = context.WithDeadline(pImpl.Context, deadline)
-	return pImpl, cancel
-}
-
-// WithTimeout returns WithDeadline(parent, time.Now().Add(timeout)).
-//
-// Canceling this context releases resources associated with it, so code should
-// call cancel as soon as the operations running in this Context complete:
-//
-// 	func slowOperationWithTimeout(ctx Context) (Result, error) {
-// 		ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-// 		defer cancel()  // releases resources if slowOperation completes before timeout elapses
-// 		return slowOperation(ctx)
-// 	}
-func WithTimeout(parent Context, timeout time.Duration) (ctx Context, cancel context.CancelFunc) {
-	pImpl := parent.(*contextImpl)
-	pImpl.Context, cancel = context.WithTimeout(pImpl.Context, timeout)
-	return pImpl, cancel
-}
-
-// WithValue returns a copy of parent in which the value associated with key is
-// val.
-//
-// Use context Values only for request-scoped data that transits processes and
-// APIs, not for passing optional parameters to functions.
-func WithValue(parent Context, key interface{}, val interface{}) Context {
-	pImpl := parent.(*contextImpl)
-	pImpl.Context = context.WithValue(pImpl.Context, key, val)
-	return pImpl
-}
-
 // PanicError contains information about panicked coroutine
 type PanicError interface {
 	error
@@ -133,6 +55,61 @@ type Dispatcher interface {
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 func NewDispatcher(root Func) Dispatcher {
 	result := &dispatcherImpl{}
-	result.newCoroutine(root)
+	rootCtx := new(emptyCtx)
+	result.newCoroutine(rootCtx, root)
 	return result
+}
+
+const contextKey = "coroutines"
+
+// NewChannel create new Channel instance
+func NewChannel(ctx Context) Channel {
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	ctxImpl.dispatcher.channelSequence++
+	return NewNamedChannel(ctx, fmt.Sprintf("chan-%v", ctxImpl.dispatcher.channelSequence))
+}
+
+// NewNamedChannel create new Channel instance with a given human readable name.
+// Name appears in stack traces that are blocked on this channel.
+func NewNamedChannel(ctx Context, name string) Channel {
+	return &channelImpl{name: name}
+}
+
+// NewBufferedChannel create new buffered Channel instance
+func NewBufferedChannel(ctx Context, size int) Channel {
+	return &channelImpl{size: size}
+}
+
+// NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
+// Name appears in stack traces that are blocked on this Channel.
+func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
+	return &channelImpl{name: name, size: size}
+}
+
+// NewSelector creates a new Selector instance.
+func NewSelector(ctx Context) Selector {
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	ctxImpl.dispatcher.selectorSequence++
+	return NewNamedSelector(ctx, fmt.Sprintf("selector-%v", ctxImpl.dispatcher.selectorSequence))
+}
+
+// NewNamedSelector creates a new Selector instance with a given human readable name.
+// Name appears in stack traces that are blocked on this Selector.
+func NewNamedSelector(ctx Context, name string) Selector {
+	return &selectorImpl{name: name}
+}
+
+// NewCoroutine creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
+func NewCoroutine(ctx Context, f Func) {
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	ctxImpl.dispatcher.newCoroutine(ctx, f)
+}
+
+// NewNamedCoroutine creates a new coroutine with a given human readable name.
+// It has similar semantic to goroutine in a context of the workflow.
+// Name appears in stack traces that are blocked on this Channel.
+func NewNamedCoroutine(ctx Context, name string, f Func) {
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	ctxImpl.dispatcher.newNamedCoroutine(ctx, name, f)
+
 }

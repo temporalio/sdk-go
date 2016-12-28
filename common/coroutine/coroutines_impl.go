@@ -43,21 +43,12 @@ type selectorImpl struct {
 	defaultFunc *DefaultCaseFunc // default case
 }
 
-// ContextProvider is an interface that a Context implementation passed as a parameter to Channel and Selector
-// methods must implement.
-// The result of GetContext() call must be the context passed to the coroutine function which is contextImpl.
-// It is needed to be able to pass contexts that extend coroutine.Context to these methods.
-// See WorkflowContext implementation for an example.
-type ContextProvider interface {
-	GetContext() Context
-}
-
 // unblockFunc is passed evaluated by a coroutine yield. When it returns false the yield returns to a caller.
 // stackDepth is the depth of stack from the last blocking call relevant to user.
 // Used to truncate internal stack frames from thread stack.
 type unblockFunc func(status string, stackDepth int) (keepBlocked bool)
 
-type contextImpl struct {
+type coroutineState struct {
 	context.Context
 	name         string
 	dispatcher   *dispatcherImpl  // dispatcher this context belongs to
@@ -77,7 +68,7 @@ type dispatcherImpl struct {
 	sequence         int
 	channelSequence  int // used to name channels
 	selectorSequence int // used to name channels
-	coroutines       []*contextImpl
+	coroutines       []*coroutineState
 	executing        bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
 	mutex            sync.Mutex // used to synchronize executing
 	closed           bool
@@ -85,13 +76,12 @@ type dispatcherImpl struct {
 
 // Assert that structs do indeed implement the interfaces
 var _ Channel = (*channelImpl)(nil)
-var _ Context = (*contextImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ Dispatcher = (*dispatcherImpl)(nil)
 var _ PanicError = (*panicError)(nil)
 
 func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
-	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
 	hasResult := false
 	var result interface{}
 	for {
@@ -142,7 +132,7 @@ func (c *channelImpl) RecvAsync() (v interface{}, ok bool, more bool) {
 }
 
 func (c *channelImpl) Send(ctx Context, v interface{}) {
-	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
 	valueConsumed := false
 	for {
 		// Check for closed in the loop as close can be called when send is blocked
@@ -200,20 +190,20 @@ func (c *channelImpl) Close() {
 // initialYield called at the beginning of the coroutine execution
 // stackDepth is the depth of top of the stack to omit when stack trace is generated
 // to hide frames internal to the framework.
-func (ctx *contextImpl) initialYield(stackDepth int, status string) {
+func (s *coroutineState) initialYield(stackDepth int, status string) {
 	keepBlocked := true
 	for keepBlocked {
-		f := <-ctx.unblock
+		f := <-s.unblock
 		keepBlocked = f(status, stackDepth+1)
 	}
 }
 
 // yield indicates that coroutine cannot make progress and should sleep
 // this call blocks
-func (ctx *contextImpl) yield(status string) {
-	ctx.aboutToBlock <- true
-	ctx.initialYield(3, status) // omit three levels of stack. To adjust change to 0 and count the lines to remove.
-	ctx.keptBlocked = true
+func (s *coroutineState) yield(status string) {
+	s.aboutToBlock <- true
+	s.initialYield(3, status) // omit three levels of stack. To adjust change to 0 and count the lines to remove.
+	s.keptBlocked = true
 }
 
 func getStackTrace(coroutineName, status string, stackDepth int) string {
@@ -233,25 +223,25 @@ func getStackTrace(coroutineName, status string, stackDepth int) string {
 
 // unblocked is called by coroutine to indicate that since the last time yield was unblocked channel or select
 // where unblocked versus calling yield again after checking their condition
-func (ctx *contextImpl) unblocked() {
-	ctx.keptBlocked = false
+func (s *coroutineState) unblocked() {
+	s.keptBlocked = false
 }
 
-func (ctx *contextImpl) call() {
-	ctx.unblock <- func(status string, stackDepth int) bool {
+func (s *coroutineState) call() {
+	s.unblock <- func(status string, stackDepth int) bool {
 		return false // unblock
 	}
-	<-ctx.aboutToBlock
+	<-s.aboutToBlock
 }
 
-func (ctx *contextImpl) close() {
-	ctx.closed = true
-	ctx.aboutToBlock <- true
+func (s *coroutineState) close() {
+	s.closed = true
+	s.aboutToBlock <- true
 }
 
-func (ctx *contextImpl) exit() {
-	if !ctx.closed {
-		ctx.unblock <- func(status string, stackDepth int) bool {
+func (s *coroutineState) exit() {
+	if !s.closed {
+		s.unblock <- func(status string, stackDepth int) bool {
 			runtime.Goexit()
 			return true
 		}
@@ -260,54 +250,49 @@ func (ctx *contextImpl) exit() {
 
 var stackBuf [100000]byte
 
-func (ctx *contextImpl) stackTrace() string {
-	if ctx.closed {
+func (s *coroutineState) stackTrace() string {
+	if s.closed {
 		return ""
 	}
 	stackCh := make(chan string, 1)
-	ctx.unblock <- func(status string, stackDepth int) bool {
-		stackCh <- getStackTrace(ctx.name, status, stackDepth+1)
+	s.unblock <- func(status string, stackDepth int) bool {
+		stackCh <- getStackTrace(s.name, status, stackDepth+1)
 		return true
 	}
 	return <-stackCh
 }
 
-// GetContext from flow.ContextProvider interface
-func (ctx *contextImpl) GetContext() Context {
-	return ctx
+func (s *coroutineState) NewCoroutine(ctx Context, f Func) {
+	s.dispatcher.newCoroutine(ctx, f)
 }
 
-func (ctx *contextImpl) NewCoroutine(f Func) {
-	ctx.dispatcher.newCoroutine(f)
+func (s *coroutineState) NewNamedCoroutine(ctx Context, name string, f Func) {
+	s.dispatcher.newNamedCoroutine(ctx, name, f)
 }
 
-func (ctx *contextImpl) NewNamedCoroutine(name string, f Func) {
-	ctx.dispatcher.newNamedCoroutine(name, f)
+func (s *coroutineState) NewSelector() Selector {
+	s.dispatcher.selectorSequence++
+	return s.NewNamedSelector(fmt.Sprintf("selector-%v", s.dispatcher.selectorSequence))
 }
 
-func (ctx *contextImpl) NewSelector() Selector {
-	ctx.dispatcher.selectorSequence++
-	return ctx.NewNamedSelector(fmt.Sprintf("selector-%v", ctx.dispatcher.selectorSequence))
-}
-
-func (ctx *contextImpl) NewNamedSelector(name string) Selector {
+func (s *coroutineState) NewNamedSelector(name string) Selector {
 	return &selectorImpl{name: name}
 }
 
-func (ctx *contextImpl) NewChannel() Channel {
-	ctx.dispatcher.channelSequence++
-	return ctx.NewNamedChannel(fmt.Sprintf("chan-%v", ctx.dispatcher.channelSequence))
+func (s *coroutineState) NewChannel() Channel {
+	s.dispatcher.channelSequence++
+	return s.NewNamedChannel(fmt.Sprintf("chan-%v", s.dispatcher.channelSequence))
 }
 
-func (ctx *contextImpl) NewNamedChannel(name string) Channel {
+func (s *coroutineState) NewNamedChannel(name string) Channel {
 	return &channelImpl{name: name}
 }
 
-func (ctx *contextImpl) NewBufferedChannel(size int) Channel {
+func (s *coroutineState) NewBufferedChannel(size int) Channel {
 	return &channelImpl{size: size}
 }
 
-func (ctx *contextImpl) NewNamedBufferedChannel(name string, size int) Channel {
+func (s *coroutineState) NewNamedBufferedChannel(name string, size int) Channel {
 	return &channelImpl{name: name, size: size}
 }
 
@@ -323,27 +308,28 @@ func (e *panicError) StackTrace() string {
 	return e.stackTrace
 }
 
-func (d *dispatcherImpl) newCoroutine(f Func) {
-	d.newNamedCoroutine(fmt.Sprintf("%v", d.sequence+1), f)
+func (d *dispatcherImpl) newCoroutine(ctx Context, f Func) {
+	d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
 }
 
-func (d *dispatcherImpl) newNamedCoroutine(name string, f Func) {
-	ctx := d.newContext(name)
-	go func(ctx *contextImpl) {
-		defer ctx.close()
+func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f Func) {
+	state := d.newState(name)
+	spawned := WithValue(ctx, contextKey, state)
+	go func(crt *coroutineState) {
+		defer crt.close()
 		defer func() {
 			if r := recover(); r != nil {
 				st := getStackTrace(name, "panic", 3)
-				ctx.panicError = &panicError{value: r, stackTrace: st}
+				crt.panicError = &panicError{value: r, stackTrace: st}
 			}
 		}()
-		ctx.initialYield(1, "")
-		f(ctx)
-	}(ctx)
+		crt.initialYield(1, "")
+		f(spawned)
+	}(state)
 }
 
-func (d *dispatcherImpl) newContext(name string) *contextImpl {
-	c := &contextImpl{
+func (d *dispatcherImpl) newState(name string) *coroutineState {
+	c := &coroutineState{
 		Context:      context.Background(),
 		name:         name,
 		dispatcher:   d,
@@ -448,7 +434,7 @@ func (s *selectorImpl) AddDefault(f DefaultCaseFunc) {
 }
 
 func (s *selectorImpl) Select(ctx Context) {
-	ctxImpl := ctx.(ContextProvider).GetContext().(*contextImpl)
+	ctxImpl := ctx.Value(contextKey).(*coroutineState)
 	for {
 		for _, pair := range s.cases {
 			if pair.recvFunc != nil {

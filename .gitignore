@@ -11,3 +11,4 @@
 /vendor
 /minions-client-go
 cmd/example/example
+/example

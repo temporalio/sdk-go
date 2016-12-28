@@ -132,7 +132,7 @@ func (c *contextImpl) executeDispatcher() {
 
 func (c *contextImpl) ExecuteActivity(parameters ExecuteActivityParameters) (result []byte, err Error) {
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
-	resultChannel := c.NewNamedBufferedChannel(channelName, 1)
+	resultChannel := coroutine.NewNamedBufferedChannel(c.Context, channelName, 1)
 	c.wc.ExecuteActivity(parameters, func(r []byte, e Error) {
 		result = r
 		if e != nil {
@@ -149,7 +149,7 @@ func (c *contextImpl) ExecuteActivity(parameters ExecuteActivityParameters) (res
 }
 
 func (c *contextImpl) Go(f Func) {
-	c.NewCoroutine(func(ctx coroutine.Context) {
+	coroutine.NewCoroutine(c.Context, func(ctx coroutine.Context) {
 		context := &contextImpl{
 			Context:    ctx,
 			wc:         c.wc,
