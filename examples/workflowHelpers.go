@@ -5,7 +5,6 @@ import (
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	"code.uber.internal/devexp/minions-client-go.git/client/flow"
-	"code.uber.internal/devexp/minions-client-go.git/common"
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -18,16 +17,16 @@ type (
 	}
 )
 
-var workflowFactory = func(wt m.WorkflowType) (flow.WorkflowDefinition, flow.Error) {
-	switch wt.GetName() {
+var workflowFactory = func(wt flow.WorkflowType) (flow.WorkflowDefinition, flow.Error) {
+	switch wt.Name {
 	case "greetingsWorkflow":
 		return flow.NewWorkflowDefinition(greetingsWorkflow{}), nil
 	}
 	panic("Invalid workflow type")
 }
 
-var activityFactory = func(at m.ActivityType) (flow.ActivityImplementation, flow.Error) {
-	switch at.GetName() {
+var activityFactory = func(at flow.ActivityType) (flow.ActivityImplementation, flow.Error) {
+	switch at.Name {
 	case "getGreetingActivity":
 		return getGreetingActivity{}, nil
 	case "getNameActivity":
@@ -53,7 +52,7 @@ func activityInfoWithInput(activityName string, request *sayGreetingActivityRequ
 func serializeParams(activityName string, input []byte) flow.ExecuteActivityParameters {
 	return flow.ExecuteActivityParameters{
 		TaskListName: "exampleTaskList",
-		ActivityType: m.ActivityType{Name: common.StringPtr(activityName)},
+		ActivityType: flow.ActivityType{Name: activityName},
 		Input:        input}
 }
 
@@ -102,7 +101,7 @@ func (w *WorkflowHelper) StopWorkers() {
 func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 	workflowOptions := flow.StartWorkflowOptions{
 		WorkflowID:                             "examples-greetingWorkflow",
-		WorkflowType:                           m.WorkflowType{Name: common.StringPtr(workflowName)},
+		WorkflowType:                           flow.WorkflowType{Name: workflowName},
 		TaskListName:                           "exampleTaskList",
 		WorkflowInput:                          nil,
 		ExecutionStartToCloseTimeoutSeconds:    10,
@@ -113,5 +112,5 @@ func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 	if err != nil {
 		log.Panicf("Failed to start workflow: %s, with error: %s.\n", workflowName, err.Error())
 	}
-	log.Infof("Created Workflow - workflow Id: %s, run Id: %s.\n", we.GetWorkflowId(), we.GetRunId())
+	log.Infof("Created Workflow - workflow Id: %s, run Id: %s.\n", we.WorkflowID, we.RunID)
 }

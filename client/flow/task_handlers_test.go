@@ -3,7 +3,7 @@ package flow
 import (
 	"testing"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	log "github.com/Sirupsen/logrus"
 
@@ -53,7 +53,7 @@ func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *w
 	return &workflowTask{
 		task: &m.PollForDecisionTaskResponse{
 			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
-			WorkflowType:           common.WorkflowTypePtr(m.WorkflowType{Name: common.StringPtr("testWorkflow")}),
+			WorkflowType:           WorkflowTypePtr(WorkflowType{"testWorkflow"}),
 			History:                &m.History{Events: events}}}
 }
 

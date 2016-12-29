@@ -5,7 +5,7 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 )
 
@@ -80,7 +80,7 @@ func (wc *workflowContextImpl) ExecuteActivity(parameters ExecuteActivityParamet
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
-	scheduleTaskAttr.ActivityType = common.ActivityTypePtr(parameters.ActivityType)
+	scheduleTaskAttr.ActivityType = ActivityTypePtr(parameters.ActivityType)
 	scheduleTaskAttr.TaskList = common.TaskListPtr(m.TaskList{Name: common.StringPtr(parameters.TaskListName)})
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToCloseTimeoutSeconds)

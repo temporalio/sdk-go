@@ -4,7 +4,8 @@ PROJECT_ROOT = code.uber.internal/devexp/minions-client-go.git
 # (if you have some)
 THRIFT_DIR = idl/code.uber.internal/devexp/minions
 
-THRIFT_SRCS = $(THRIFT_DIR)/minions.thrift
+THRIFT_SRCS = $(THRIFT_DIR)/minions.thrift \
+	$(THRIFT_DIR)/shared.thrift
 
 # list all executables
 PROGS = cmd/example/example

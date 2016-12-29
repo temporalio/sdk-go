@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -44,7 +44,7 @@ func (wf helloWorldWorkflow) Execute(context workflowContext, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{
 		TaskListName: "taskList",
-		ActivityType: m.ActivityType{&activityName},
+		ActivityType: ActivityType{activityName},
 		Input:        nil,
 	}
 	context.ExecuteActivity(activityParameters, func(result []byte, err Error) {
@@ -67,12 +67,12 @@ func (ga greeterActivity) Execute(context ActivityExecutionContext, input []byte
 }
 
 // testWorkflowDefinitionFactory
-func testWorkflowDefinitionFactory(workflowType m.WorkflowType) (WorkflowDefinition, Error) {
+func testWorkflowDefinitionFactory(workflowType WorkflowType) (WorkflowDefinition, Error) {
 	return &helloWorldWorkflow{}, nil
 }
 
 // testActivityImplementationFactory
-func testActivityImplementationFactory(activityType m.ActivityType) (ActivityImplementation, Error) {
+func testActivityImplementationFactory(activityType ActivityType) (ActivityImplementation, Error) {
 	return &greeterActivity{}, nil
 }
 

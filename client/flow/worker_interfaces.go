@@ -5,6 +5,23 @@ import (
 )
 
 type (
+
+	// WorkflowType identifies a workflow type.
+	WorkflowType struct {
+		Name string
+	}
+
+	// ActivityType identifies a activity type.
+	ActivityType struct {
+		Name string
+	}
+
+	// WorkflowExecution Details.
+	WorkflowExecution struct {
+		WorkflowID string
+		RunID      string
+	}
+
 	// resultHandler that returns result
 	resultHandler func(result []byte, err Error)
 
@@ -37,16 +54,16 @@ type (
 
 	// WorkflowDefinitionFactory that returns a workflow definition for a specific
 	// workflow type.
-	WorkflowDefinitionFactory func(workflowType m.WorkflowType) (WorkflowDefinition, Error)
+	WorkflowDefinitionFactory func(workflowType WorkflowType) (WorkflowDefinition, Error)
 
 	// ActivityImplementationFactory that returns a activity implementation for a specific
 	// activity type.
-	ActivityImplementationFactory func(activityType m.ActivityType) (ActivityImplementation, Error)
+	ActivityImplementationFactory func(activityType ActivityType) (ActivityImplementation, Error)
 
 	// ExecuteActivityParameters configuration parameters for scheduling an activity
 	ExecuteActivityParameters struct {
 		ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
-		ActivityType                  m.ActivityType
+		ActivityType                  ActivityType
 		TaskListName                  string
 		Input                         []byte
 		ScheduleToCloseTimeoutSeconds int32
@@ -63,7 +80,7 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow
 	StartWorkflowOptions struct {
 		WorkflowID                             string
-		WorkflowType                           m.WorkflowType
+		WorkflowType                           WorkflowType
 		TaskListName                           string
 		WorkflowInput                          []byte
 		ExecutionStartToCloseTimeoutSeconds    int32
@@ -74,15 +91,15 @@ type (
 	// WorkflowClient is the client facing for starting a workflow.
 	WorkflowClient struct {
 		options           StartWorkflowOptions
-		workflowExecution m.WorkflowExecution
+		workflowExecution WorkflowExecution
 		workflowService   m.TChanWorkflowService
 		Identity          string
 	}
 
 	// WorkflowInfo is the information that the decider has access to during workflow execution.
 	WorkflowInfo struct {
-		workflowExecution m.WorkflowExecution
-		workflowType      m.WorkflowType
+		workflowExecution WorkflowExecution
+		workflowType      WorkflowType
 		taskListName      string
 	}
 )

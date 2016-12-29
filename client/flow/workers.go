@@ -2,6 +2,7 @@ package flow
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	log "github.com/Sirupsen/logrus"
@@ -188,18 +189,18 @@ func NewWorkflowClient(options StartWorkflowOptions, service m.TChanWorkflowServ
 }
 
 // StartWorkflowExecution starts a workflow execution
-func (wc *WorkflowClient) StartWorkflowExecution() (*m.WorkflowExecution, error) {
+func (wc *WorkflowClient) StartWorkflowExecution() (*WorkflowExecution, error) {
 
-	startRequest := &m.StartWorkflowExecutionRequest{
+	startRequest := &s.StartWorkflowExecutionRequest{
 		WorkflowId:   common.StringPtr(wc.options.WorkflowID),
-		WorkflowType: common.WorkflowTypePtr(wc.options.WorkflowType),
-		TaskList:     common.TaskListPtr(m.TaskList{Name: common.StringPtr(wc.options.TaskListName)}),
+		WorkflowType: WorkflowTypePtr(wc.options.WorkflowType),
+		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(wc.options.TaskListName)}),
 		Input:        wc.options.WorkflowInput,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(wc.options.ExecutionStartToCloseTimeoutSeconds),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(wc.options.DecisionTaskStartToCloseTimeoutSeconds),
 		Identity:                            common.StringPtr(wc.Identity)}
 
-	var response *m.StartWorkflowExecutionResponse
+	var response *s.StartWorkflowExecutionResponse
 
 	// Start creating workflow request.
 	err := backoff.Retry(
@@ -216,9 +217,8 @@ func (wc *WorkflowClient) StartWorkflowExecution() (*m.WorkflowExecution, error)
 		return nil, err
 	}
 
-	executionInfo := &m.WorkflowExecution{
-		// TODO: StartWorkflowExecution should return workflow ID as well along with run Id
-		WorkflowId: common.StringPtr(wc.options.WorkflowID),
-		RunId:      response.RunId}
+	executionInfo := &WorkflowExecution{
+		WorkflowID: wc.options.WorkflowID,
+		RunID:      response.GetRunId()}
 	return executionInfo, nil
 }
