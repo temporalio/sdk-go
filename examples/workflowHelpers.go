@@ -71,7 +71,7 @@ func (w *WorkflowHelper) StartWorkers() {
 	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Launch worker.
-	w.workflowWorker = flow.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger)
+	w.workflowWorker = flow.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */)
 	w.workflowWorker.Start()
 	log.Infoln("Started Deciders for workflows.")
 
@@ -81,7 +81,7 @@ func (w *WorkflowHelper) StartWorkers() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	w.activityWorker = flow.NewActivityWorker(activityExecutionParameters, activityFactory, w.service, logger)
+	w.activityWorker = flow.NewActivityWorker(activityExecutionParameters, activityFactory, w.service, logger, nil /* reporter */)
 	w.activityWorker.Start()
 	log.Infoln("Started activities for workflows.")
 }
@@ -107,7 +107,7 @@ func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := flow.NewWorkflowClient(workflowOptions, w.service)
+	workflowClient := flow.NewWorkflowClient(workflowOptions, w.service, nil /* reporter */)
 	we, err := workflowClient.StartWorkflowExecution()
 	if err != nil {
 		log.Panicf("Failed to start workflow: %s, with error: %s.\n", workflowName, err.Error())

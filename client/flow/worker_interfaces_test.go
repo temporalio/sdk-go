@@ -101,7 +101,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, nil)
+	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, nil, nil)
 	defer workflowWorker.Shutdown()
 	workflowWorker.Start()
 
@@ -111,7 +111,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, nil)
+	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, nil, nil)
 	defer activityWorker.Shutdown()
 	activityWorker.Start()
 
@@ -123,7 +123,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := NewWorkflowClient(workflowOptions, service)
+	workflowClient := NewWorkflowClient(workflowOptions, service, nil)
 	wfExecution, err := workflowClient.StartWorkflowExecution()
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)

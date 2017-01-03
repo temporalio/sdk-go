@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/uber/tchannel-go/thrift"
 
@@ -9,6 +10,7 @@ import (
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
+	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	log "github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 )
@@ -20,6 +22,7 @@ type (
 		identity           string
 		workflowDefFactory WorkflowDefinitionFactory
 		contextLogger      *log.Entry
+		reporter           metrics.Reporter
 	}
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
@@ -29,6 +32,7 @@ type (
 		activityImplFactory ActivityImplementationFactory
 		service             m.TChanWorkflowService
 		contextLogger       *log.Entry
+		reporter            metrics.Reporter
 	}
 
 	// eventsHelper wrapper method to help information about events.
@@ -95,12 +99,13 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory WorkflowDefinitionFactory,
-	contextLogger *log.Entry) workflowTaskHandler {
+	contextLogger *log.Entry, reporter metrics.Reporter) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
-		contextLogger:      contextLogger}
+		contextLogger:      contextLogger,
+		reporter:           reporter}
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
@@ -135,6 +140,8 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	history := workflowTask.task.History
 	decisions := []*s.Decision{}
 
+	startTime := time.Now()
+
 	// Process events
 	for _, event := range history.Events {
 		wth.contextLogger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
@@ -152,6 +159,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	eventDecisions := wth.completeWorkflow(isWorkflowCompleted, completionResult, failure)
 	if len(eventDecisions) > 0 {
 		decisions = append(decisions, eventDecisions...)
+
+		if wth.reporter != nil {
+			wth.reporter.IncCounter(metrics.WorkflowsCompletionTotalCounter, nil, 1)
+			elapsed := time.Now().Sub(startTime)
+			wth.reporter.RecordTimer(metrics.WorkflowEndToEndLatency, nil, elapsed)
+		}
 	}
 
 	// Fill the response.
@@ -190,13 +203,14 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, c
 }
 
 func newActivityTaskHandler(taskListName string, identity string, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, contextLogger *log.Entry) activityTaskHandler {
+	service m.TChanWorkflowService, contextLogger *log.Entry, reporter metrics.Reporter) activityTaskHandler {
 	return &activityTaskHandlerImpl{
 		taskListName:        taskListName,
 		identity:            identity,
 		activityImplFactory: factory,
 		service:             service,
-		contextLogger:       contextLogger}
+		contextLogger:       contextLogger,
+		reporter:            reporter}
 }
 
 // Execute executes an implementation of the activity.

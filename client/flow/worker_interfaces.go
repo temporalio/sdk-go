@@ -2,6 +2,7 @@ package flow
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 )
 
 type (
@@ -94,6 +95,7 @@ type (
 		workflowExecution WorkflowExecution
 		workflowService   m.TChanWorkflowService
 		Identity          string
+		reporter          metrics.Reporter
 	}
 
 	// WorkflowInfo is the information that the decider has access to during workflow execution.

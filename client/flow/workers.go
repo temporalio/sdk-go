@@ -5,6 +5,7 @@ import (
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
+	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	log "github.com/Sirupsen/logrus"
 	"github.com/uber/tchannel-go/thrift"
 )
@@ -64,12 +65,12 @@ type (
 
 // NewWorkflowWorker returns an instance of the workflow worker.
 func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger *log.Entry) *WorkflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, logger, nil)
+	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter) *WorkflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger *log.Entry, overrides *workerOverrides) *WorkflowWorker {
+	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter, overrides *workerOverrides) *WorkflowWorker {
 	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
@@ -85,7 +86,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory Workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger)
+		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger, reporter)
 	}
 
 	poller := newWorkflowTaskPoller(
@@ -93,7 +94,8 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory Workflo
 		params.TaskListName,
 		identity,
 		taskHandler,
-		logger)
+		logger,
+		reporter)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
@@ -122,12 +124,12 @@ func (ww *WorkflowWorker) Shutdown() {
 
 // NewActivityWorker returns an instance of the activity worker.
 func NewActivityWorker(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, logger *log.Entry) *ActivityWorker {
-	return newActivityWorkerInternal(executionParameters, factory, service, logger, nil)
+	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter) *ActivityWorker {
+	return newActivityWorkerInternal(executionParameters, factory, service, logger, reporter, nil)
 }
 
 func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, logger *log.Entry, overrides *workerOverrides) *ActivityWorker {
+	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter, overrides *workerOverrides) *ActivityWorker {
 	// Get an identity.
 	identity := executionParameters.Identity
 	if identity == "" {
@@ -144,13 +146,14 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, fa
 		taskHandler = overrides.activityTaskHandler
 	} else {
 		taskHandler = newActivityTaskHandler(executionParameters.TaskListName, executionParameters.Identity,
-			factory, service, logger)
+			factory, service, logger, reporter)
 	}
 	poller := newActivityTaskPoller(
 		service,
 		executionParameters.TaskListName,
 		identity,
 		taskHandler,
+		reporter,
 		logger)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    executionParameters.ConcurrentPollRoutineSize,
@@ -179,13 +182,13 @@ func (aw *ActivityWorker) Shutdown() {
 }
 
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow
-func NewWorkflowClient(options StartWorkflowOptions, service m.TChanWorkflowService) *WorkflowClient {
+func NewWorkflowClient(options StartWorkflowOptions, service m.TChanWorkflowService, reporter metrics.Reporter) *WorkflowClient {
 	// Get an identity.
 	identity := options.Identity
 	if identity == "" {
 		identity = GetWorkerIdentity(options.TaskListName)
 	}
-	return &WorkflowClient{options: options, workflowService: service, Identity: identity}
+	return &WorkflowClient{options: options, workflowService: service, Identity: identity, reporter: reporter}
 }
 
 // StartWorkflowExecution starts a workflow execution
@@ -215,6 +218,10 @@ func (wc *WorkflowClient) StartWorkflowExecution() (*WorkflowExecution, error) {
 
 	if err != nil {
 		return nil, err
+	}
+
+	if wc.reporter != nil {
+		wc.reporter.IncCounter(metrics.WorkflowsStartTotalCounter, nil, 1)
 	}
 
 	executionInfo := &WorkflowExecution{

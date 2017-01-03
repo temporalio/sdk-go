@@ -63,7 +63,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	}
 	logger := log.WithFields(log.Fields{})
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
@@ -82,7 +82,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
