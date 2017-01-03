@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uber-common/bark"
 	"github.com/uber/tchannel-go/thrift"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
@@ -11,7 +12,6 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
-	log "github.com/Sirupsen/logrus"
 	"golang.org/x/net/context"
 )
 
@@ -21,8 +21,8 @@ type (
 		taskListName       string
 		identity           string
 		workflowDefFactory WorkflowDefinitionFactory
-		contextLogger      *log.Entry
 		reporter           metrics.Reporter
+		logger             bark.Logger
 	}
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
@@ -31,8 +31,8 @@ type (
 		identity            string
 		activityImplFactory ActivityImplementationFactory
 		service             m.TChanWorkflowService
-		contextLogger       *log.Entry
 		reporter            metrics.Reporter
+		logger              bark.Logger
 	}
 
 	// eventsHelper wrapper method to help information about events.
@@ -99,12 +99,12 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory WorkflowDefinitionFactory,
-	contextLogger *log.Entry, reporter metrics.Reporter) workflowTaskHandler {
+	logger bark.Logger, reporter metrics.Reporter) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
-		contextLogger:      contextLogger,
+		logger:             logger,
 		reporter:           reporter}
 }
 
@@ -114,7 +114,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 		return nil, "", fmt.Errorf("nil workflowtask provided")
 	}
 
-	wth.contextLogger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
+	wth.logger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
 		workflowTask.task.GetWorkflowType().GetName(), workflowTask.task.GetPreviousStartedEventId())
 
 	// Setup workflow Info
@@ -135,7 +135,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	}
 
 	eventHandler := newWorkflowExecutionEventHandler(
-		workflowInfo, wth.workflowDefFactory, completeHandler, wth.contextLogger)
+		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
 	helperEvents := &eventsHelper{workflowTask: workflowTask}
 	history := workflowTask.task.History
 	decisions := []*s.Decision{}
@@ -144,7 +144,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 
 	// Process events
 	for _, event := range history.Events {
-		wth.contextLogger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
+		wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
 		eventDecisions, err := eventHandler.ProcessEvent(event)
 		if err != nil {
 			return nil, "", err
@@ -203,19 +203,19 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, c
 }
 
 func newActivityTaskHandler(taskListName string, identity string, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, contextLogger *log.Entry, reporter metrics.Reporter) activityTaskHandler {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) activityTaskHandler {
 	return &activityTaskHandlerImpl{
 		taskListName:        taskListName,
 		identity:            identity,
 		activityImplFactory: factory,
 		service:             service,
-		contextLogger:       contextLogger,
+		logger:              logger,
 		reporter:            reporter}
 }
 
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(context context.Context, activityTask *activityTask) (interface{}, error) {
-	ath.contextLogger.Debugf("[WorkflowID: %s] Execute Activity: %s",
+	ath.logger.Debugf("[WorkflowID: %s] Execute Activity: %s",
 		activityTask.task.GetWorkflowExecution().GetWorkflowId(), activityTask.task.GetActivityType().GetName())
 
 	activityExecutionContext := &activityExecutionContext{

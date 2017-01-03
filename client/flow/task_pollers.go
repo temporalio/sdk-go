@@ -9,7 +9,7 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
-	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 	"github.com/uber/tchannel-go/thrift"
 )
 
@@ -34,22 +34,22 @@ type (
 
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
-		taskListName  string
-		identity      string
-		service       m.TChanWorkflowService
-		taskHandler   workflowTaskHandler
-		contextLogger *log.Entry
-		reporter      metrics.Reporter
+		taskListName string
+		identity     string
+		service      m.TChanWorkflowService
+		taskHandler  workflowTaskHandler
+		reporter     metrics.Reporter
+		logger       bark.Logger
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
 	activityTaskPoller struct {
-		taskListName  string
-		identity      string
-		service       m.TChanWorkflowService
-		taskHandler   activityTaskHandler
-		contextLogger *log.Entry
-		reporter      metrics.Reporter
+		taskListName string
+		identity     string
+		service      m.TChanWorkflowService
+		taskHandler  activityTaskHandler
+		reporter     metrics.Reporter
+		logger       bark.Logger
 	}
 )
 
@@ -76,14 +76,15 @@ func isServiceTransientError(err error) bool {
 }
 
 func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler workflowTaskHandler, logger *log.Entry, reporter metrics.Reporter) *workflowTaskPoller {
+	taskHandler workflowTaskHandler, logger bark.Logger, reporter metrics.Reporter) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		service:       service,
-		taskListName:  taskListName,
-		identity:      identity,
-		taskHandler:   taskHandler,
-		contextLogger: logger,
-		reporter:      reporter}
+		service:      service,
+		taskListName: taskListName,
+		identity:     identity,
+		taskHandler:  taskHandler,
+		reporter:     reporter,
+		logger:       logger,
+	}
 }
 
 // PollAndProcessSingleTask process one single task
@@ -104,7 +105,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	}
 	if workflowTask.task == nil {
 		// We didn't have task, poll might have time out.
-		wtp.contextLogger.Debug("Workflow task unavailable")
+		wtp.logger.Debug("Workflow task unavailable")
 		return nil
 	}
 
@@ -130,7 +131,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
-	wtp.contextLogger.Debug("workflowTaskPoller::Poll")
+	wtp.logger.Debug("workflowTaskPoller::Poll")
 	request := &s.PollForDecisionTaskRequest{
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
 		Identity: common.StringPtr(wtp.identity),
@@ -150,14 +151,14 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler activityTaskHandler, reporter metrics.Reporter, logger *log.Entry) *activityTaskPoller {
+	taskHandler activityTaskHandler, reporter metrics.Reporter, logger bark.Logger) *activityTaskPoller {
 	return &activityTaskPoller{
-		service:       service,
-		taskListName:  taskListName,
-		identity:      identity,
-		taskHandler:   taskHandler,
-		contextLogger: logger,
-		reporter:      reporter}
+		service:      service,
+		taskListName: taskListName,
+		identity:     identity,
+		taskHandler:  taskHandler,
+		logger:       logger,
+		reporter:     reporter}
 }
 
 // Poll for a single activity task from the service
@@ -198,7 +199,7 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	}
 	if activityTask.task == nil {
 		// We didn't have task, poll might have time out.
-		atp.contextLogger.Debug("Activity task unavailable")
+		atp.logger.Debug("Activity task unavailable")
 		return nil
 	}
 

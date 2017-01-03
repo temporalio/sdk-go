@@ -3,7 +3,7 @@ package flow
 import (
 	"fmt"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
@@ -16,8 +16,8 @@ type (
 	// workflowExecutionEventHandlerImpl handler to handle workflowExecutionEventHandler
 	workflowExecutionEventHandlerImpl struct {
 		*workflowContextImpl
-		contextLogger      *log.Entry
 		workflowDefinition WorkflowDefinition
+		logger             bark.Logger
 	}
 
 	// workflowContextImpl an implementation of WorkflowContext represents a context for workflow execution.
@@ -30,12 +30,12 @@ type (
 		counterID                    int32                    // To generate activity IDs
 		executeDecisions             []*m.Decision            // Decisions made during the execute of the workflow
 		completeHandler              completionHandler        // events completion handler
-		contextLogger                *log.Entry
+		logger                       bark.Logger
 	}
 )
 
 func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory WorkflowDefinitionFactory,
-	completeHandler completionHandler, logger *log.Entry) workflowExecutionEventHandler {
+	completeHandler completionHandler, logger bark.Logger) workflowExecutionEventHandler {
 	context := &workflowContextImpl{
 		workflowInfo:                 workflowInfo,
 		workflowDefinitionFactory:    workflowDefinitionFactory,
@@ -43,8 +43,8 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		scheduledEventIDToActivityID: make(map[int64]string),
 		executeDecisions:             make([]*m.Decision, 0),
 		completeHandler:              completeHandler,
-		contextLogger:                logger}
-	return &workflowExecutionEventHandlerImpl{context, logger, nil}
+		logger:                       logger}
+	return &workflowExecutionEventHandlerImpl{context, nil, logger}
 }
 
 func (wc *workflowContextImpl) WorkflowInfo() *WorkflowInfo {
@@ -92,7 +92,7 @@ func (wc *workflowContextImpl) ExecuteActivity(parameters ExecuteActivityParamet
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 	wc.scheduledActivites[scheduleTaskAttr.GetActivityId()] = callback
-	wc.contextLogger.Debugf("ExectueActivity: %s: %+v", scheduleTaskAttr.GetActivityId(), scheduleTaskAttr)
+	wc.logger.Debugf("ExectueActivity: %s: %+v", scheduleTaskAttr.GetActivityId(), scheduleTaskAttr)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, error) {

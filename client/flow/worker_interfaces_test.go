@@ -7,8 +7,10 @@ import (
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/mocks"
+	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-common/bark"
 )
 
 var (
@@ -85,6 +87,8 @@ func TestInterfacesTestSuite(t *testing.T) {
 }
 
 func (s *InterfacesTestSuite) TestInterface() {
+	logger := bark.NewLoggerFromLogrus(log.New())
+
 	// Workflow execution parameters.
 	workflowExecutionParameters := WorkerExecutionParameters{}
 	workflowExecutionParameters.TaskListName = "testTaskList"
@@ -101,7 +105,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, nil, nil)
+	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil)
 	defer workflowWorker.Shutdown()
 	workflowWorker.Start()
 
@@ -111,7 +115,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, nil, nil)
+	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, logger, nil)
 	defer activityWorker.Shutdown()
 	activityWorker.Start()
 

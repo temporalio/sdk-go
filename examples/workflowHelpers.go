@@ -6,6 +6,7 @@ import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	"code.uber.internal/devexp/minions-client-go.git/client/flow"
 	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 )
 
 type (
@@ -63,7 +64,7 @@ func NewWorkflowHelper(service m.TChanWorkflowService) *WorkflowHelper {
 
 // StartWorkers starts necessary workers.
 func (w *WorkflowHelper) StartWorkers() {
-	logger := log.WithFields(log.Fields{})
+	logger := bark.NewLoggerFromLogrus(log.New())
 
 	// Workflow execution parameters.
 	workflowExecutionParameters := flow.WorkerExecutionParameters{}

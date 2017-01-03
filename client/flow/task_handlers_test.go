@@ -6,6 +6,7 @@ import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -61,7 +62,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
 	}
-	logger := log.WithFields(log.Fields{})
+	logger := bark.NewLoggerFromLogrus(log.New())
 	task := createWorkflowTask(testEvents, 0)
 	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
@@ -73,7 +74,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 }
 
 func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
-	logger := log.WithFields(log.Fields{})
+	logger := bark.NewLoggerFromLogrus(log.New())
 	// Schedule an activity and see if we complete workflow.
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),

@@ -6,7 +6,8 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
-	log "github.com/Sirupsen/logrus"
+	"code.uber.internal/go-common.git/x/log"
+	"github.com/uber-common/bark"
 	"github.com/uber/tchannel-go/thrift"
 )
 
@@ -38,7 +39,7 @@ type (
 		poller              taskPoller // taskPoller to poll the tasks.
 		worker              *baseWorker
 		identity            string
-		contextLogger       *log.Entry
+		logger              bark.Logger
 	}
 
 	// activityRegistry collection of activity implementations
@@ -53,7 +54,7 @@ type (
 		poller              *activityTaskPoller
 		worker              *baseWorker
 		identity            string
-		contextLogger       *log.Entry
+		logger              bark.Logger
 	}
 
 	// Worker overrides.
@@ -65,20 +66,16 @@ type (
 
 // NewWorkflowWorker returns an instance of the workflow worker.
 func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter) *WorkflowWorker {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) *WorkflowWorker {
 	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter, overrides *workerOverrides) *WorkflowWorker {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter, overrides *workerOverrides) *WorkflowWorker {
 	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
 		identity = GetWorkerIdentity(params.TaskListName)
-	}
-
-	if logger == nil {
-		logger = log.WithFields(log.Fields{tagTaskListName: params.TaskListName})
 	}
 
 	// Get a workflow task handler.
@@ -124,12 +121,12 @@ func (ww *WorkflowWorker) Shutdown() {
 
 // NewActivityWorker returns an instance of the activity worker.
 func NewActivityWorker(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter) *ActivityWorker {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) *ActivityWorker {
 	return newActivityWorkerInternal(executionParameters, factory, service, logger, reporter, nil)
 }
 
 func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, factory ActivityImplementationFactory,
-	service m.TChanWorkflowService, logger *log.Entry, reporter metrics.Reporter, overrides *workerOverrides) *ActivityWorker {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter, overrides *workerOverrides) *ActivityWorker {
 	// Get an identity.
 	identity := executionParameters.Identity
 	if identity == "" {
