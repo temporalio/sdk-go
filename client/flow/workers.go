@@ -11,6 +11,12 @@ import (
 	"github.com/uber/tchannel-go/thrift"
 )
 
+// PressurePoints
+const (
+	PressurePointTypeDecisionTaskStartTimeout = "decision-task-start-timeout"
+	PressurePointConfigProbability            = "probability"
+)
+
 type (
 	// WorkerExecutionParameters defines worker configure/execution options.
 	WorkerExecutionParameters struct {
@@ -66,12 +72,14 @@ type (
 
 // NewWorkflowWorker returns an instance of the workflow worker.
 func NewWorkflowWorker(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) *WorkflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, nil)
+	service m.TChanWorkflowService, logger bark.Logger,
+	reporter metrics.Reporter, pressurePoints map[string]map[string]string) *WorkflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, pressurePoints, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory WorkflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter, overrides *workerOverrides) *WorkflowWorker {
+	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter,
+	pressurePoints map[string]map[string]string, overrides *workerOverrides) *WorkflowWorker {
 	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
@@ -83,7 +91,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory Workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger, reporter)
+		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger, reporter, pressurePoints)
 	}
 
 	poller := newWorkflowTaskPoller(

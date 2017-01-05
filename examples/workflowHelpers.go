@@ -72,7 +72,7 @@ func (w *WorkflowHelper) StartWorkers() {
 	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Launch worker.
-	w.workflowWorker = flow.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */)
+	w.workflowWorker = flow.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */, nil)
 	w.workflowWorker.Start()
 	log.Infoln("Started Deciders for workflows.")
 

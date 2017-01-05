@@ -89,15 +89,6 @@ func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, 
 
 // PollAndProcessSingleTask process one single task
 func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
-	startTime := time.Now()
-	defer func() {
-		deltaTime := time.Now().Sub(startTime)
-		if wtp.reporter != nil {
-			wtp.reporter.IncCounter(metrics.DecisionsTotalCounter, nil, 1)
-			wtp.reporter.RecordTimer(metrics.DecisionsEndToEndLatency, nil, deltaTime)
-		}
-	}()
-
 	// Get the task.
 	workflowTask, err := wtp.poll()
 	if err != nil {
@@ -108,6 +99,15 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 		wtp.logger.Debug("Workflow task unavailable")
 		return nil
 	}
+
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if wtp.reporter != nil {
+			wtp.reporter.IncCounter(metrics.DecisionsTotalCounter, nil, 1)
+			wtp.reporter.RecordTimer(metrics.DecisionsEndToEndLatency, nil, deltaTime)
+		}
+	}()
 
 	// Process the task.
 	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask, false)
@@ -163,15 +163,6 @@ func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, 
 
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll() (*activityTask, error) {
-	startTime := time.Now()
-	defer func() {
-		deltaTime := time.Now().Sub(startTime)
-		if atp.reporter != nil {
-			atp.reporter.IncCounter(metrics.ActivitiesTotalCounter, nil, 1)
-			atp.reporter.RecordTimer(metrics.ActivityEndToEndLatency, nil, deltaTime)
-		}
-	}()
-
 	request := &s.PollForActivityTaskRequest{
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),
 		Identity: common.StringPtr(atp.identity),
@@ -202,6 +193,15 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 		atp.logger.Debug("Activity task unavailable")
 		return nil
 	}
+
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if atp.reporter != nil {
+			atp.reporter.IncCounter(metrics.ActivitiesTotalCounter, nil, 1)
+			atp.reporter.RecordTimer(metrics.ActivityEndToEndLatency, nil, deltaTime)
+		}
+	}()
 
 	// Process the activity task.
 	ctx, cancel := thrift.NewContext(serviceTimeOut)

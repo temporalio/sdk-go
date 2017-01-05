@@ -22,6 +22,7 @@ type (
 		workflowsStartCount       int64
 		activitiesTotalCount      int64
 		decisionsTotalCount       int64
+		decisionsTimeoutCount     int64
 		workflowsCompletionCount  int64
 		workflowsEndToEndLatency  int64
 		activitiesEndToEndLatency int64
@@ -31,6 +32,7 @@ type (
 		previousWorkflowsStartCount       int64
 		previousActivitiesTotalCount      int64
 		previousDecisionsTotalCount       int64
+		previousDecisionsTimeoutCount     int64
 		previousWorkflowsCompletionCount  int64
 		previousWorkflowsEndToEndLatency  int64
 		previousActivitiesEndToEndLatency int64
@@ -50,6 +52,7 @@ const (
 	WorkflowsStartTotalCounter      = "workflows-start-total"
 	ActivitiesTotalCounter          = "activities-total"
 	DecisionsTotalCounter           = "decisions-total"
+	DecisionsTimeoutCounter         = "decisions-timeout"
 	WorkflowsCompletionTotalCounter = "workflows-completion-total"
 	WorkflowEndToEndLatency         = "workflows-endtoend-latency"
 	ActivityEndToEndLatency         = "activities-endtoend-latency"
@@ -72,6 +75,7 @@ func NewSimpleReporter(scope tally.Scope, tags map[string]string, logger bark.Lo
 	reporter.workflowsStartCount = 0
 	reporter.activitiesTotalCount = 0
 	reporter.decisionsTotalCount = 0
+	reporter.decisionsTimeoutCount = 0
 	reporter.workflowsCompletionCount = 0
 	reporter.workflowsEndToEndLatency = 0
 	reporter.activitiesEndToEndLatency = 0
@@ -123,6 +127,8 @@ func (r *SimpleReporter) IncCounter(name string, tags map[string]string, delta i
 		atomic.AddInt64(&r.activitiesEndToEndLatency, delta)
 	case DecisionsEndToEndLatency:
 		atomic.AddInt64(&r.decisionsEndToEndLatency, delta)
+	case DecisionsTimeoutCounter:
+		atomic.AddInt64(&r.decisionsTimeoutCount, delta)
 	default:
 		r.logger.WithField(`name`, name).Error(`Unknown metric`)
 	}
@@ -182,6 +188,8 @@ func (r *SimpleReporter) PrintStressMetric() {
 		decisionsThroughput = (totalDecisionsCount - r.previousDecisionsTotalCount) / int64(elapsed)
 	}
 
+	totalDecisionTimeoutCount := atomic.LoadInt64(&r.decisionsTimeoutCount)
+
 	var decisionsLatency int64
 	decisionsEndToEndLatency := atomic.LoadInt64(&r.decisionsEndToEndLatency)
 	if totalDecisionsCount > 0 && decisionsEndToEndLatency > r.previousDecisionsEndToEndLatency {
@@ -208,12 +216,13 @@ func (r *SimpleReporter) PrintStressMetric() {
 		totalWorkflowsCompleted, completionThroughput, latency)
 	r.logger.Infof("Activites(Count=%v, Throughput=%v, Average Latency: %v)",
 		totalActivitiesCount, activitiesThroughput, activityLatency)
-	r.logger.Infof("Decisions(Count=%v, Throughput=%v, Average Latency: %v)",
-		totalDecisionsCount, decisionsThroughput, decisionsLatency)
+	r.logger.Infof("Decisions(Count=%v, Throughput=%v, Average Latency: %v, TimeoutCount=%v)",
+		totalDecisionsCount, decisionsThroughput, decisionsLatency, totalDecisionTimeoutCount)
 
 	r.previousWorkflowsStartCount = totalWorkflowStarted
 	r.previousActivitiesTotalCount = totalActivitiesCount
 	r.previousDecisionsTotalCount = totalDecisionsCount
+	r.previousDecisionsTimeoutCount = totalDecisionTimeoutCount
 	r.previousWorkflowsCompletionCount = totalWorkflowsCompleted
 	r.previousWorkflowsEndToEndLatency = workflowsLatency
 	r.previousActivitiesEndToEndLatency = activitiesEndToEndLatency
@@ -230,6 +239,7 @@ func (r *SimpleReporter) PrintFinalMetric() {
 	totalActivitiesLatency := atomic.LoadInt64(&r.activitiesEndToEndLatency)
 	decisionsCount := atomic.LoadInt64(&r.decisionsTotalCount)
 	totalDecisionsLatency := atomic.LoadInt64(&r.decisionsEndToEndLatency)
+	decisionsTimeoutCount := atomic.LoadInt64(&r.decisionsTimeoutCount)
 
 	elapsed := time.Since(r.startTime) / time.Second
 
@@ -258,8 +268,8 @@ func (r *SimpleReporter) PrintFinalMetric() {
 		workflowsCount, workflowsCompletedCount, throughput, time.Duration(latency))
 	r.logger.Infof("Total Activites processed:(Count=%v, Throughput=%v, Average Latency=%v)",
 		activitiesCount, activityThroughput, activityLatency)
-	r.logger.Infof("Total Decisions processed:(Count=%v, Throughput=%v, Average Latency=%v)",
-		decisionsCount, decisionsThroughput, decisionLatency)
+	r.logger.Infof("Total Decisions processed:(Count=%v, Throughput=%v, Average Latency=%v, TimeoutCount=%v)",
+		decisionsCount, decisionsThroughput, decisionLatency, decisionsTimeoutCount)
 }
 
 // IsProcessComplete  indicates if we have completed processing.
@@ -277,6 +287,7 @@ func (r *SimpleReporter) ResetMetric() {
 	atomic.StoreInt64(&r.activitiesTotalCount, 0)
 	atomic.StoreInt64(&r.decisionsTotalCount, 0)
 	atomic.StoreInt64(&r.workflowsEndToEndLatency, 0)
+	atomic.StoreInt64(&r.decisionsTimeoutCount, 0)
 }
 
 func newSimpleStopWatch(metricName string, reporter *SimpleReporter) *simpleStopWatch {

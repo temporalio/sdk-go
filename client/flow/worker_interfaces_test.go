@@ -105,7 +105,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil)
+	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil)
 	defer workflowWorker.Shutdown()
 	workflowWorker.Start()
 

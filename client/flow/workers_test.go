@@ -40,7 +40,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	executionParameters := WorkerExecutionParameters{TaskListName: "testTaskList", ConcurrentPollRoutineSize: 5}
 	overides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
-	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, overides)
+	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil, overides)
 	workflowWorker.Start()
 	workflowWorker.Shutdown()
 }
@@ -67,7 +67,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 
 	executionParameters := WorkerExecutionParameters{TaskListName: "testDecisionTaskList", ConcurrentPollRoutineSize: 5}
 	overides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
-	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, overides)
+	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil, overides)
 	workflowWorker.Start()
 	workflowWorker.Shutdown()
 }

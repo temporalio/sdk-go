@@ -2,6 +2,8 @@ package flow
 
 import (
 	"fmt"
+	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/uber-common/bark"
@@ -22,6 +24,7 @@ type (
 		identity           string
 		workflowDefFactory WorkflowDefinitionFactory
 		reporter           metrics.Reporter
+		pressurePoints     map[string]map[string]string
 		logger             bark.Logger
 	}
 
@@ -99,12 +102,13 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory WorkflowDefinitionFactory,
-	logger bark.Logger, reporter metrics.Reporter) workflowTaskHandler {
+	logger bark.Logger, reporter metrics.Reporter, pressurePoints map[string]map[string]string) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
 		logger:             logger,
+		pressurePoints:     pressurePoints,
 		reporter:           reporter}
 }
 
@@ -145,11 +149,42 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	// Process events
 	for _, event := range history.Events {
 		wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
+
+		isInReplay := event.GetEventId() < helperEvents.LastNonReplayedID()
+
+		// Any metrics.
+		if wth.reporter != nil && !isInReplay {
+			switch event.GetEventType() {
+			case s.EventType_DecisionTaskTimedOut:
+				wth.reporter.IncCounter(metrics.DecisionsTimeoutCounter, nil, 1)
+			}
+		}
+
+		// Any pressure points.
+		if wth.pressurePoints != nil && !isInReplay {
+			switch event.GetEventType() {
+			case s.EventType_DecisionTaskStarted:
+				if config, ok := wth.pressurePoints[PressurePointTypeDecisionTaskStartTimeout]; ok {
+					if value, ok2 := config[PressurePointConfigProbability]; ok2 {
+						if probablity, err := strconv.Atoi(value); err == nil {
+							if rand.Int31n(100) < int32(probablity) {
+								// Drop the task.
+								wth.logger.Debugf("ProcessWorkflowTask: Dropping task with probability:%d, Id=%d, Event=%+v",
+									probablity, event.GetEventId(), event)
+								return nil, "", fmt.Errorf("Pressurepoint configured.")
+							}
+						}
+					}
+				}
+			}
+		}
+
 		eventDecisions, err := eventHandler.ProcessEvent(event)
 		if err != nil {
 			return nil, "", err
 		}
-		if event.GetEventId() >= helperEvents.LastNonReplayedID() {
+
+		if !isInReplay {
 			if eventDecisions != nil {
 				decisions = append(decisions, eventDecisions...)
 			}
