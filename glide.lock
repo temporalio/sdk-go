@@ -1,8 +1,8 @@
-hash: d5b623c317fe8a0e8de1ebdea5bfc06e74a2caad52232ce639003f0278569fac
-updated: 2016-12-12T18:29:13.721154015-08:00
+hash: d4a79d83e8ec0b0251b2883f6dfc01acd2cced6a26eb21e69d78053d5c6a9e34
+updated: 2017-01-05T13:55:07.842863889-08:00
 imports:
 - name: code.uber.internal/go-common.git
-  version: 4bce9bd650d188900930945ff3f25072b3bde1bc
+  version: 59ad113acba4483aede205b75a4d7fa902e41997
   subpackages:
   - x/backoff
   - x/config
@@ -21,11 +21,11 @@ imports:
   - x/tchannel/metrics
   - x/time
 - name: github.com/apache/thrift
-  version: 60611917cf309d2a25b9cd8f8b5631784b07323d
+  version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
   subpackages:
   - lib/go/thrift
 - name: github.com/cactus/go-statsd-client
-  version: d8eabe07bc70ff9ba6a56836cde99d1ea3d005f7
+  version: 95cb85a8d6b2d1ccfce95fa58d1ca3445779d8af
   subpackages:
   - statsd
 - name: github.com/codahale/hdrhistogram
@@ -47,8 +47,6 @@ imports:
   subpackages:
   - ext
   - log
-- name: github.com/pborman/uuid
-  version: 3d4f2ba23642d3cfd06bd4b54cf03d99d95c0f1b
 - name: github.com/pmezard/go-difflib
   version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
@@ -58,7 +56,7 @@ imports:
 - name: github.com/stretchr/objx
   version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
 - name: github.com/stretchr/testify
-  version: d77da356e56a7428ad25149ca77381849a6a5232
+  version: 6cb3b85ef5a0efef77caef88363ec4d4b5c0976d
   subpackages:
   - assert
   - mock
@@ -75,6 +73,7 @@ imports:
   subpackages:
   - config
   - internal/spanlog
+  - testutils
   - thrift-gen/agent
   - thrift-gen/sampling
   - thrift-gen/zipkincore
@@ -82,7 +81,7 @@ imports:
   - transport/udp
   - utils
 - name: github.com/uber/tchannel-go
-  version: 4a23f3aae76694b21107f118ece763a61b98ea07
+  version: 2caa315516e1836b7b2eff70d2fcbd23538d1b22
   subpackages:
   - http
   - hyperbahn
@@ -97,9 +96,10 @@ imports:
   - trand
   - typed
 - name: golang.org/x/net
-  version: b1a2d6e8c8b5fc8f601ead62536f02a8e1b6217d
+  version: 3b993948b6f0e651ffb58ba135d8538a68b1cddf
   subpackages:
   - context
+  - context/ctxhttp
 - name: golang.org/x/sys
   version: d4feaf1a7e61e1d9e79e6c4e76c6349e9cab0a03
   subpackages:
@@ -107,5 +107,5 @@ imports:
 - name: gopkg.in/validator.v2
   version: 3e4f037f12a1221a0864cf0dd2e81c452ab22448
 - name: gopkg.in/yaml.v2
-  version: a5b47d31c556af34a302ce5d659e6fea44d90de0
+  version: a83829b6f1293c91addabc89d0571c246397bbf4
 testImports: []
