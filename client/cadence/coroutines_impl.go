@@ -1,4 +1,4 @@
-package coroutine
+package cadence
 
 import (
 	"fmt"
@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-
-	"golang.org/x/net/context"
 )
 
 // For troubleshooting stack pretty printing only.
@@ -49,7 +47,6 @@ type selectorImpl struct {
 type unblockFunc func(status string, stackDepth int) (keepBlocked bool)
 
 type coroutineState struct {
-	context.Context
 	name         string
 	dispatcher   *dispatcherImpl  // dispatcher this context belongs to
 	aboutToBlock chan bool        // used to notify dispatcher that coroutine that owns this context is about to block
@@ -77,22 +74,32 @@ type dispatcherImpl struct {
 // Assert that structs do indeed implement the interfaces
 var _ Channel = (*channelImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
-var _ Dispatcher = (*dispatcherImpl)(nil)
+var _ dispatcher = (*dispatcherImpl)(nil)
 var _ PanicError = (*panicError)(nil)
 
+const coroutinesContextKey = "coroutines"
+
+func getState(ctx Context) *coroutineState {
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		panic("getState: not workflow context")
+	}
+	return s.(*coroutineState)
+}
+
 func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	state := getState(ctx)
 	hasResult := false
 	var result interface{}
 	for {
 		if hasResult {
-			ctxImpl.unblocked()
+			state.unblocked()
 			return result, true
 		}
 		if len(c.buffer) > 0 {
 			r := c.buffer[0]
 			c.buffer = c.buffer[1:]
-			ctxImpl.unblocked()
+			state.unblocked()
 			return r, true
 		}
 		if c.closed {
@@ -102,14 +109,14 @@ func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
 			b := c.blockedSends[0]
 			c.blockedSends = c.blockedSends[1:]
 			b.callback()
-			ctxImpl.unblocked()
+			state.unblocked()
 			return b.value, true
 		}
 		c.blockedRecvs = append(c.blockedRecvs, func(v interface{}) {
 			result = v
 			hasResult = true
 		})
-		ctxImpl.yield(fmt.Sprintf("blocked on %s.Recv", c.name))
+		state.yield(fmt.Sprintf("blocked on %s.Recv", c.name))
 	}
 }
 
@@ -132,7 +139,7 @@ func (c *channelImpl) RecvAsync() (v interface{}, ok bool, more bool) {
 }
 
 func (c *channelImpl) Send(ctx Context, v interface{}) {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	state := getState(ctx)
 	valueConsumed := false
 	for {
 		// Check for closed in the loop as close can be called when send is blocked
@@ -140,24 +147,24 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 			panic("Closed channel")
 		}
 		if valueConsumed {
-			ctxImpl.unblocked()
+			state.unblocked()
 			return
 		}
 		if len(c.buffer) < c.size {
 			c.buffer = append(c.buffer, v)
-			ctxImpl.unblocked()
+			state.unblocked()
 			return
 		}
 		if len(c.blockedRecvs) > 0 {
 			blockedGet := c.blockedRecvs[0]
 			c.blockedRecvs = c.blockedRecvs[1:]
 			blockedGet(v)
-			ctxImpl.unblocked()
+			state.unblocked()
 			return
 		}
 		c.blockedSends = append(c.blockedSends,
 			valueCallbackPair{value: v, callback: func() { valueConsumed = true }})
-		ctxImpl.yield(fmt.Sprintf("blocked on %s.Send", c.name))
+		state.yield(fmt.Sprintf("blocked on %s.Send", c.name))
 	}
 }
 
@@ -314,7 +321,7 @@ func (d *dispatcherImpl) newCoroutine(ctx Context, f Func) {
 
 func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f Func) {
 	state := d.newState(name)
-	spawned := WithValue(ctx, contextKey, state)
+	spawned := WithValue(ctx, coroutinesContextKey, state)
 	go func(crt *coroutineState) {
 		defer crt.close()
 		defer func() {
@@ -330,7 +337,6 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f Func) {
 
 func (d *dispatcherImpl) newState(name string) *coroutineState {
 	c := &coroutineState{
-		Context:      context.Background(),
 		name:         name,
 		dispatcher:   d,
 		aboutToBlock: make(chan bool, 1),
@@ -434,7 +440,7 @@ func (s *selectorImpl) AddDefault(f DefaultCaseFunc) {
 }
 
 func (s *selectorImpl) Select(ctx Context) {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
+	state := getState(ctx)
 	for {
 		for _, pair := range s.cases {
 			if pair.recvFunc != nil {
@@ -442,7 +448,7 @@ func (s *selectorImpl) Select(ctx Context) {
 				if ok || !more {
 					f := *pair.recvFunc
 					f(v, more)
-					ctxImpl.unblocked()
+					state.unblocked()
 					return
 				}
 			} else {
@@ -450,7 +456,7 @@ func (s *selectorImpl) Select(ctx Context) {
 				if ok {
 					f := *pair.sendFunc
 					f()
-					ctxImpl.unblocked()
+					state.unblocked()
 					return
 				}
 			}
@@ -458,9 +464,9 @@ func (s *selectorImpl) Select(ctx Context) {
 		if s.defaultFunc != nil {
 			f := *s.defaultFunc
 			f()
-			ctxImpl.unblocked()
+			state.unblocked()
 			return
 		}
-		ctxImpl.yield(fmt.Sprintf("blocked on %s.Select", s.name))
+		state.yield(fmt.Sprintf("blocked on %s.Select", s.name))
 	}
 }

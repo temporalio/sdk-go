@@ -1,4 +1,4 @@
-package flow
+package cadence
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"

@@ -1,4 +1,4 @@
-package coroutine
+package cadence
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 
 func TestDispatcher(t *testing.T) {
 	value := "foo"
-	d := NewDispatcher(func(ctx Context) { value = "bar" })
+	d := newDispatcher(background, func(ctx Context) { value = "bar" })
 	require.Equal(t, "foo", value)
 	d.ExecuteUntilAllBlocked()
 	require.True(t, d.IsDone())
@@ -22,10 +22,10 @@ func TestDispatcher(t *testing.T) {
 
 func TestNonBlockingChildren(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		for i := 0; i < 10; i++ {
 			ii := i
-			NewCoroutine(ctx, func(ctx Context) {
+			Go(ctx, func(ctx Context) {
 				history = append(history, fmt.Sprintf("child-%v", ii))
 			})
 		}
@@ -40,9 +40,9 @@ func TestNonBlockingChildren(t *testing.T) {
 
 func TestNonbufferedChannel(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
 			v, more := c1.Recv(ctx)
 			assert.True(t, more)
@@ -69,9 +69,9 @@ func TestNonbufferedChannel(t *testing.T) {
 
 func TestBufferedChannelPut(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
 			v1, more := c1.Recv(ctx)
 			assert.True(t, more)
@@ -104,11 +104,11 @@ func TestBufferedChannelPut(t *testing.T) {
 
 func TestBufferedChannelGet(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewBufferedChannel(ctx, 2)
 
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "child1-start")
 			c2.Send(ctx, "bar1")
 			history = append(history, "child1-get")
@@ -117,7 +117,7 @@ func TestBufferedChannelGet(t *testing.T) {
 			history = append(history, fmt.Sprintf("child1-end-%v", v1))
 
 		})
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "child2-start")
 			c2.Send(ctx, "bar2")
 			history = append(history, "child2-get")
@@ -157,7 +157,7 @@ func TestBufferedChannelGet(t *testing.T) {
 
 func TestNotBlockingSelect(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
 		c2 := NewBufferedChannel(ctx, 1)
 		s := NewSelector(ctx)
@@ -190,14 +190,14 @@ func TestNotBlockingSelect(t *testing.T) {
 
 func TestBlockingSelect(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
 			c1.Send(ctx, "one")
 		})
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
 			c2.Send(ctx, "two")
 		})
@@ -235,10 +235,10 @@ func TestBlockingSelect(t *testing.T) {
 
 func TestSendSelect(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			history = append(history, "receiver")
 			v, more := c2.Recv(ctx)
 			assert.True(t, more)
@@ -275,11 +275,11 @@ func TestSendSelect(t *testing.T) {
 
 func TestChannelClose(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		jobs := NewBufferedChannel(ctx, 5)
 		done := NewNamedChannel(ctx, "done")
 
-		NewNamedCoroutine(ctx, "receiver", func(ctx Context) {
+		GoNamed(ctx, "receiver", func(ctx Context) {
 			for {
 				j, more := jobs.Recv(ctx)
 				if more {
@@ -320,12 +320,12 @@ func TestChannelClose(t *testing.T) {
 }
 
 func TestSendClosedChannel(t *testing.T) {
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
 		c := NewChannel(ctx)
-		NewCoroutine(ctx, func(ctx Context) {
+		Go(ctx, func(ctx Context) {
 			c.Close()
 		})
 		c.Send(ctx, "baz")
@@ -335,7 +335,7 @@ func TestSendClosedChannel(t *testing.T) {
 }
 
 func TestBlockedSendClosedChannel(t *testing.T) {
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
@@ -349,7 +349,7 @@ func TestBlockedSendClosedChannel(t *testing.T) {
 }
 
 func TestAsyncSendClosedChannel(t *testing.T) {
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
@@ -364,11 +364,11 @@ func TestAsyncSendClosedChannel(t *testing.T) {
 
 func TestDispatchClose(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
-			NewNamedCoroutine(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
+			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				_, _ = c.Recv(ctx) // blocked forever
 				history = append(history, fmt.Sprintf("child-%v", ii))
 			})
@@ -399,11 +399,11 @@ func TestDispatchClose(t *testing.T) {
 
 func TestPanic(t *testing.T) {
 	var history []string
-	d := NewDispatcher(func(ctx Context) {
+	d := newDispatcher(background, func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
-			NewNamedCoroutine(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
+			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				if ii == 9 {
 					panic("simulated failure")
 				}
@@ -420,5 +420,5 @@ func TestPanic(t *testing.T) {
 	require.EqualValues(t, "simulated failure", err.Value())
 	require.EqualValues(t, "simulated failure", err.Error())
 
-	require.Contains(t, err.StackTrace(), "common/coroutine.TestPanic")
+	require.Contains(t, err.StackTrace(), "client/cadence.TestPanic")
 }

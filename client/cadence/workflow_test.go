@@ -1,9 +1,8 @@
-package flow
+package cadence
 
 import (
 	"testing"
 
-	"code.uber.internal/devexp/minions-client-go.git/common/coroutine"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +38,7 @@ func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result 
 		ActivityID: &id,
 		Input:      input,
 	}
-	result, err = ctx.ExecuteActivity(parameters)
+	result, err = ExecuteActivity(ctx, parameters)
 	require.NoError(w.t, err)
 	return []byte(string(result)), nil
 }
@@ -79,25 +78,25 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	var result1, result2 []byte
 	var err1, err2 error
 
-	c1 := coroutine.NewChannel(ctx)
-	c2 := coroutine.NewChannel(ctx)
-	ctx.Go(func(ctx Context) {
+	c1 := NewChannel(ctx)
+	c2 := NewChannel(ctx)
+	Go(ctx, func(ctx Context) {
 		id1 := "id1"
 		parameters := ExecuteActivityParameters{
 			ActivityID: &id1,
 			Input:      input,
 		}
 
-		result1, err1 = ctx.ExecuteActivity(parameters)
+		result1, err1 = ExecuteActivity(ctx, parameters)
 		c1.Send(ctx, true)
 	})
-	ctx.Go(func(ctx Context) {
+	Go(ctx, func(ctx Context) {
 		id2 := "id2"
 		parameters := ExecuteActivityParameters{
 			ActivityID: &id2,
 			Input:      input,
 		}
-		result2, err2 = ctx.ExecuteActivity(parameters)
+		result2, err2 = ExecuteActivity(ctx, parameters)
 		if w.panic {
 			panic("simulated")
 		}
@@ -107,7 +106,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c1.Recv(ctx)
 	// Use selector to test it
 	selected := false
-	coroutine.NewSelector(ctx).AddRecv(c2, func(v interface{}, more bool) {
+	NewSelector(ctx).AddRecv(c2, func(v interface{}, more bool) {
 		require.True(w.t, more)
 		selected = true
 	}).Select(ctx)
@@ -136,7 +135,7 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 	m1.resultHandler([]byte("Hello"), nil)
 }
 
-func TestPanic(t *testing.T) {
+func TestWorkflowPanic(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -151,7 +150,7 @@ func TestPanic(t *testing.T) {
 		require.Nil(t, result)
 		require.NotNil(t, err)
 		require.EqualValues(t, "simulated", err.Reason())
-		require.Contains(t, string(err.Details()), "flow.(*splitJoinActivityWorkflow).Execute")
+		require.Contains(t, string(err.Details()), "cadence.(*splitJoinActivityWorkflow).Execute")
 	})
 	w.Execute(ctx, []byte("Hello"))
 	m2.resultHandler([]byte(" Flow!"), nil) // causes panic

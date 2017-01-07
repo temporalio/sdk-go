@@ -1,4 +1,4 @@
-package flow
+package cadence
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
@@ -26,10 +26,9 @@ type (
 	// resultHandler that returns result
 	resultHandler func(result []byte, err Error)
 
-	// workflowContext Represents the context for workflow/decider.
+	// workflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition
-	// TODO: Should model around GO context (When adding Cancel feature)
-	workflowContext interface {
+	workflowEnvironment interface {
 		asyncActivityClient
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err Error)
@@ -44,7 +43,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
-		Execute(context workflowContext, input []byte)
+		Execute(env workflowEnvironment, input []byte)
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 	}
 

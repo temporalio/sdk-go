@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"code.uber.internal/devexp/minions-client-go.git/client/flow"
+	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
 )
 
 type (
@@ -21,22 +21,22 @@ type (
 )
 
 // Greetings Workflow Decider.
-func (w greetingsWorkflow) Execute(ctx flow.Context, input []byte) (result []byte, err flow.Error) {
+func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []byte, err cadence.Error) {
 	// Get Greeting.
-	greetResult, err := ctx.ExecuteActivity(activityInfo("getGreetingActivity"))
+	greetResult, err := cadence.ExecuteActivity(ctx, activityInfo("getGreetingActivity"))
 	if err != nil {
 		return nil, err
 	}
 
 	// Get Name.
-	nameResult, err := ctx.ExecuteActivity(activityInfo("getNameActivity"))
+	nameResult, err := cadence.ExecuteActivity(ctx, activityInfo("getNameActivity"))
 	if err != nil {
 		return nil, err
 	}
 
 	// Say Greeting.
 	request := &sayGreetingActivityRequest{Name: string(nameResult), Greeting: string(greetResult)}
-	_, err = ctx.ExecuteActivity(activityInfoWithInput("sayGreetingActivity", request))
+	_, err = cadence.ExecuteActivity(ctx, activityInfoWithInput("sayGreetingActivity", request))
 	if err != nil {
 		return nil, err
 	}
@@ -45,21 +45,21 @@ func (w greetingsWorkflow) Execute(ctx flow.Context, input []byte) (result []byt
 }
 
 // Get Name Activity.
-func (g getNameActivity) Execute(context flow.ActivityExecutionContext, input []byte) ([]byte, flow.Error) {
+func (g getNameActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
 	return []byte("World"), nil
 }
 
 // Get Greeting Activity.
-func (ga getGreetingActivity) Execute(context flow.ActivityExecutionContext, input []byte) ([]byte, flow.Error) {
+func (ga getGreetingActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
 	return []byte("Hello"), nil
 }
 
 // Say Greeting Activity.
-func (ga sayGreetingActivity) Execute(context flow.ActivityExecutionContext, input []byte) ([]byte, flow.Error) {
+func (ga sayGreetingActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
 	greeetingParams := &sayGreetingActivityRequest{}
 	err := json.Unmarshal(input, greeetingParams)
 	if err != nil {
-		return nil, flow.NewError(err.Error(), nil)
+		return nil, cadence.NewError(err.Error(), nil)
 	}
 
 	fmt.Printf("Saying Final Greeting: ")

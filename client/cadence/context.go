@@ -1,4 +1,4 @@
-package coroutine
+package cadence
 
 import (
 	"errors"

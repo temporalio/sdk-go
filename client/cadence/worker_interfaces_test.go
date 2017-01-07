@@ -1,4 +1,4 @@
-package flow
+package cadence
 
 import (
 	"errors"
@@ -42,20 +42,20 @@ func (wf helloWorldWorkflow) StackTrace() string {
 	return ""
 }
 
-func (wf helloWorldWorkflow) Execute(context workflowContext, input []byte) {
+func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{
 		TaskListName: "taskList",
 		ActivityType: ActivityType{activityName},
 		Input:        nil,
 	}
-	context.ExecuteActivity(activityParameters, func(result []byte, err Error) {
+	env.ExecuteActivity(activityParameters, func(result []byte, err Error) {
 		if err != nil {
-			context.Complete(nil, err)
+			env.Complete(nil, err)
 			return
 		}
 		fmt.Println("Hello " + string(result) + "!")
-		context.Complete(result, nil)
+		env.Complete(result, nil)
 	})
 }
 

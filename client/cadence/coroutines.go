@@ -1,4 +1,4 @@
-package coroutine
+package cadence
 
 import "fmt"
 
@@ -42,7 +42,7 @@ type PanicError interface {
 }
 
 // Dispatcher is a container of a set of coroutines.
-type Dispatcher interface {
+type dispatcher interface {
 	// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
 	// until all of them are completed or blocked on Channel or Selector
 	ExecuteUntilAllBlocked() (err PanicError)
@@ -53,20 +53,24 @@ type Dispatcher interface {
 }
 
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
-func NewDispatcher(root Func) Dispatcher {
+// Context passed to the root function is child of the passed rootCtx.
+// This way rootCtx can be used to pass values to the coroutine code.
+func newDispatcher(rootCtx Context, root Func) dispatcher {
 	result := &dispatcherImpl{}
-	rootCtx := new(emptyCtx)
 	result.newCoroutine(rootCtx, root)
 	return result
 }
 
-const contextKey = "coroutines"
+// getDispatcher retrieves current dispatcher from the Context passed to the coroutine function.
+func getDispatcher(ctx Context) dispatcher {
+	return getState(ctx).dispatcher
+}
 
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
-	ctxImpl.dispatcher.channelSequence++
-	return NewNamedChannel(ctx, fmt.Sprintf("chan-%v", ctxImpl.dispatcher.channelSequence))
+	state := getState(ctx)
+	state.dispatcher.channelSequence++
+	return NewNamedChannel(ctx, fmt.Sprintf("chan-%v", state.dispatcher.channelSequence))
 }
 
 // NewNamedChannel create new Channel instance with a given human readable name.
@@ -88,9 +92,9 @@ func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
 
 // NewSelector creates a new Selector instance.
 func NewSelector(ctx Context) Selector {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
-	ctxImpl.dispatcher.selectorSequence++
-	return NewNamedSelector(ctx, fmt.Sprintf("selector-%v", ctxImpl.dispatcher.selectorSequence))
+	state := getState(ctx)
+	state.dispatcher.selectorSequence++
+	return NewNamedSelector(ctx, fmt.Sprintf("selector-%v", state.dispatcher.selectorSequence))
 }
 
 // NewNamedSelector creates a new Selector instance with a given human readable name.
@@ -99,17 +103,16 @@ func NewNamedSelector(ctx Context, name string) Selector {
 	return &selectorImpl{name: name}
 }
 
-// NewCoroutine creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
-func NewCoroutine(ctx Context, f Func) {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
-	ctxImpl.dispatcher.newCoroutine(ctx, f)
+// Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
+func Go(ctx Context, f Func) {
+	state := getState(ctx)
+	state.dispatcher.newCoroutine(ctx, f)
 }
 
-// NewNamedCoroutine creates a new coroutine with a given human readable name.
+// GoNamed creates a new coroutine with a given human readable name.
 // It has similar semantic to goroutine in a context of the workflow.
 // Name appears in stack traces that are blocked on this Channel.
-func NewNamedCoroutine(ctx Context, name string, f Func) {
-	ctxImpl := ctx.Value(contextKey).(*coroutineState)
-	ctxImpl.dispatcher.newNamedCoroutine(ctx, name, f)
-
+func GoNamed(ctx Context, name string, f Func) {
+	state := getState(ctx)
+	state.dispatcher.newNamedCoroutine(ctx, name, f)
 }
