@@ -51,6 +51,74 @@ type errorImpl struct {
 	details []byte
 }
 
+type futureImpl struct {
+	value   interface{}
+	err     error
+	ready   bool
+	channel Channel
+	chained []*futureImpl // Futures that are chained to this one
+}
+
+func (f *futureImpl) Get(ctx Context) (interface{}, error) {
+	_, more := f.channel.Recv(ctx)
+	if more {
+		panic("not closed")
+	}
+	if !f.ready {
+		panic("not ready")
+	}
+	return f.value, f.err
+}
+
+func (f *futureImpl) IsReady() bool {
+	return f.ready
+}
+
+func (f *futureImpl) Set(value interface{}, err error) {
+	if f.ready {
+		panic("already set")
+	}
+	f.value = value
+	f.err = err
+	f.ready = true
+	f.channel.Close()
+	for _, ch := range f.chained {
+		ch.Set(f.value, f.err)
+	}
+}
+
+func (f *futureImpl) SetValue(value interface{}) {
+	if f.ready {
+		panic("already set")
+	}
+	f.Set(value, nil)
+}
+
+func (f *futureImpl) SetError(err error) {
+	if f.ready {
+		panic("already set")
+	}
+	f.Set(nil, err)
+}
+
+func (f *futureImpl) Chain(future Future) {
+	if f.ready {
+		panic("already set")
+	}
+	ch, ok := future.(*futureImpl)
+	if !ok {
+		panic("cannot chain Future that wasn't created with cadence.NewFuture")
+	}
+	if !ch.IsReady() {
+		ch.chained = append(ch.chained, f)
+		return
+	}
+	f.value = ch.value
+	f.err = ch.err
+	f.ready = true
+	return
+}
+
 func (e *errorImpl) Error() string {
 	return e.reason
 }
@@ -152,10 +220,12 @@ type channelImpl struct {
 
 // Single case statement of the Select
 type selectCase struct {
-	channel   Channel       // Channel of this case.
-	recvFunc  *RecvCaseFunc // function to call when channel has a message. nil for send case.
-	sendFunc  *SendCaseFunc // function to call when channel accepted a message. nil for receive case.
-	sendValue *interface{}  // value to send to the channel. Used only for send case.
+	channel    Channel         // Channel of this case.
+	recvFunc   *RecvCaseFunc   // function to call when channel has a message. nil for send case.
+	sendFunc   *SendCaseFunc   // function to call when channel accepted a message. nil for receive case.
+	sendValue  *interface{}    // value to send to the channel. Used only for send case.
+	future     Future          // Used for future case
+	futureFunc *FutureCaseFunc // function to call when Future is ready
 }
 
 // Implements Selector interface
@@ -559,6 +629,11 @@ func (s *selectorImpl) AddSend(c Channel, v interface{}, f SendCaseFunc) Selecto
 	return s
 }
 
+func (s *selectorImpl) AddFuture(future Future, f FutureCaseFunc) Selector {
+	s.cases = append(s.cases, selectCase{future: future, futureFunc: &f})
+	return s
+}
+
 func (s *selectorImpl) AddDefault(f DefaultCaseFunc) {
 	s.defaultFunc = &f
 }
@@ -575,7 +650,7 @@ func (s *selectorImpl) Select(ctx Context) {
 					state.unblocked()
 					return
 				}
-			} else {
+			} else if pair.sendFunc != nil {
 				ok := pair.channel.SendAsync(*pair.sendValue)
 				if ok {
 					f := *pair.sendFunc
@@ -583,6 +658,15 @@ func (s *selectorImpl) Select(ctx Context) {
 					state.unblocked()
 					return
 				}
+			} else if pair.futureFunc != nil {
+				if pair.future.IsReady() {
+					f := *pair.futureFunc
+					f(pair.future.Get(ctx))
+					state.unblocked()
+					return
+				}
+			} else {
+				panic("Invalid case")
 			}
 		}
 		if s.defaultFunc != nil {
@@ -599,4 +683,3 @@ func (s *selectorImpl) Select(ctx Context) {
 func NewWorkflowDefinition(workflow Workflow) workflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
-

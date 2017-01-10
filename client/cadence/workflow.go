@@ -24,13 +24,33 @@ type SendCaseFunc func()
 // DefaultCaseFunc is executed when none of the channel cases executed
 type DefaultCaseFunc func()
 
+// FutureCaseFunc is executed when future becomes ready.
+// Parameters are value and error that future contains.
+type FutureCaseFunc func(v interface{}, err error)
+
 // Selector must be used instead of native go select by workflow code
 // Use Context.NewSelector method to create an instance.
 type Selector interface {
 	AddRecv(c Channel, f RecvCaseFunc) Selector
 	AddSend(c Channel, v interface{}, f SendCaseFunc) Selector
+	AddFuture(future Future, f FutureCaseFunc) Selector
 	AddDefault(f DefaultCaseFunc)
 	Select(ctx Context)
+}
+
+// Future represents the result of an asynchronous computation.
+type Future interface {
+	Get(ctx Context) (interface{}, error)
+	IsReady() bool
+}
+
+// Settable is used to set value or error on a future.
+// See NewFuture function.
+type Settable interface {
+	Set(value interface{}, err error)
+	SetValue(value interface{})
+	SetError(err error)
+	Chain(future Future) // Value (or error) of the future become the same of the chained one.
 }
 
 // Func is a body of a coroutine which should be used instead of goroutines by the workflow code
@@ -104,6 +124,12 @@ type Error interface {
 // NewError creates Error instance
 func NewError(reason string, details []byte) Error {
 	return &errorImpl{reason: reason, details: details}
+}
+
+// NewFuture creates a new future as well as associated Settable that is used to set its value.
+func NewFuture(ctx Context) (Future, Settable) {
+	impl := &futureImpl{channel: NewChannel(ctx)}
+	return impl, impl
 }
 
 // Workflow is an interface that any workflow should implement.
