@@ -1,5 +1,7 @@
 package cadence
 
+// All code in this file is private to the package.
+
 import (
 	"sync"
 	"time"
@@ -24,6 +26,27 @@ var (
 )
 
 type (
+	// resultHandler that returns result
+	resultHandler func(result []byte, err Error)
+
+	// workflowEnvironment Represents the environment for workflow/decider.
+	// Should only be used within the scope of workflow definition
+	workflowEnvironment interface {
+		asyncActivityClient
+		WorkflowInfo() *WorkflowInfo
+		Complete(result []byte, err Error)
+	}
+
+	// WorkflowDefinition wraps the code that can execute a workflow.
+	workflowDefinition interface {
+		Execute(env workflowEnvironment, input []byte)
+		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+	}
+
+	// WorkflowDefinitionFactory that returns a workflow definition for a specific
+	// workflow type.
+	workflowDefinitionFactory func(workflowType WorkflowType) (workflowDefinition, Error)
+
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
 		routineCount    int
@@ -75,7 +98,7 @@ func (bw *baseWorker) Start() {
 }
 
 // Shutdown is a blocking call and cleans up all the resources assosciated with worker.
-func (bw *baseWorker) Shutdown() {
+func (bw *baseWorker) Stop() {
 	if !bw.isWorkerStarted {
 		return
 	}

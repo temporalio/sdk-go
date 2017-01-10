@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
+	"golang.org/x/net/context"
 )
 
 type (
@@ -45,17 +46,25 @@ func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []
 }
 
 // Get Name Activity.
-func (g getNameActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
+func (g getNameActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
 	return []byte("World"), nil
 }
 
+func (g getNameActivity) ActivityType() cadence.ActivityType {
+	return cadence.ActivityType{Name: "getNameActivity"}
+}
+
 // Get Greeting Activity.
-func (ga getGreetingActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
+func (ga getGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
 	return []byte("Hello"), nil
 }
 
+func (ga getGreetingActivity) ActivityType() cadence.ActivityType {
+	return cadence.ActivityType{Name: "getGreetingActivity"}
+}
+
 // Say Greeting Activity.
-func (ga sayGreetingActivity) Execute(context cadence.ActivityExecutionContext, input []byte) ([]byte, cadence.Error) {
+func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
 	greeetingParams := &sayGreetingActivityRequest{}
 	err := json.Unmarshal(input, greeetingParams)
 	if err != nil {
@@ -65,4 +74,8 @@ func (ga sayGreetingActivity) Execute(context cadence.ActivityExecutionContext, 
 	fmt.Printf("Saying Final Greeting: ")
 	fmt.Printf("%s %s!\n", greeetingParams.Greeting, greeetingParams.Name)
 	return nil, nil
+}
+
+func (ga sayGreetingActivity) ActivityType() cadence.ActivityType {
+	return cadence.ActivityType{Name: "sayGreetingActivity"}
 }

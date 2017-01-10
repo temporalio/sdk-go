@@ -14,29 +14,17 @@ type (
 	// WorkflowHelper class for workflow helpers.
 	WorkflowHelper struct {
 		service        m.TChanWorkflowService
-		workflowWorker *cadence.WorkflowWorker
-		activityWorker *cadence.ActivityWorker
+		workflowWorker cadence.Lifecycle
+		activityWorker cadence.Lifecycle
 	}
 )
 
-var workflowFactory = func(wt cadence.WorkflowType) (cadence.WorkflowDefinition, cadence.Error) {
+var workflowFactory = func(wt cadence.WorkflowType) (cadence.Workflow, cadence.Error) {
 	switch wt.Name {
 	case "greetingsWorkflow":
-		return cadence.NewWorkflowDefinition(greetingsWorkflow{}), nil
+		return greetingsWorkflow{}, nil
 	}
-	panic("Invalid workflow type")
-}
-
-var activityFactory = func(at cadence.ActivityType) (cadence.ActivityImplementation, cadence.Error) {
-	switch at.Name {
-	case "getGreetingActivity":
-		return getGreetingActivity{}, nil
-	case "getNameActivity":
-		return getNameActivity{}, nil
-	case "sayGreetingActivity":
-		return sayGreetingActivity{}, nil
-	}
-	panic("Invalid activity type")
+	return nil, cadence.NewError("Invalid workflow type", []byte{})
 }
 
 func activityInfo(activityName string) cadence.ExecuteActivityParameters {
@@ -83,7 +71,8 @@ func (w *WorkflowHelper) StartWorkers() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	w.activityWorker = cadence.NewActivityWorker(activityExecutionParameters, activityFactory, w.service, logger, nil /* reporter */)
+	activities := []cadence.Activity{&getNameActivity{}, &getGreetingActivity{}, &sayGreetingActivity{}}
+	w.activityWorker = cadence.NewActivityWorker(activityExecutionParameters, activities, w.service, logger, nil /* reporter */)
 	w.activityWorker.Start()
 	log.Infoln("Started activities for workflows.")
 }
@@ -91,11 +80,11 @@ func (w *WorkflowHelper) StartWorkers() {
 // StopWorkers stops necessary workers.
 func (w *WorkflowHelper) StopWorkers() {
 	if w.workflowWorker != nil {
-		w.workflowWorker.Shutdown()
+		w.workflowWorker.Stop()
 	}
 
 	if w.activityWorker != nil {
-		w.activityWorker.Shutdown()
+		w.activityWorker.Stop()
 	}
 }
 
@@ -109,8 +98,8 @@ func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := cadence.NewWorkflowClient(workflowOptions, w.service, nil /* reporter */)
-	we, err := workflowClient.StartWorkflowExecution()
+	workflowClient := cadence.NewWorkflowClient(w.service, nil /* reporter */)
+	we, err := workflowClient.StartWorkflowExecution(workflowOptions)
 	if err != nil {
 		log.Panicf("Failed to start workflow: %s, with error: %s.\n", workflowName, err.Error())
 	}

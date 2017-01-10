@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-common/bark"
+	"golang.org/x/net/context"
 )
 
 var (
@@ -60,22 +61,17 @@ func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 }
 
 // Greeter activity methods
-func (ga greeterActivity) ActivityType() m.ActivityType {
+func (ga greeterActivity) ActivityType() ActivityType {
 	activityName := "Greeter_Activity"
-	return m.ActivityType{Name: &activityName}
+	return ActivityType{Name: activityName}
 }
-func (ga greeterActivity) Execute(context ActivityExecutionContext, input []byte) ([]byte, Error) {
+func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, Error) {
 	return []byte("World"), nil
 }
 
 // testWorkflowDefinitionFactory
-func testWorkflowDefinitionFactory(workflowType WorkflowType) (WorkflowDefinition, Error) {
+func testWorkflowDefinitionFactory(workflowType WorkflowType) (workflowDefinition, Error) {
 	return &helloWorldWorkflow{}, nil
-}
-
-// testActivityImplementationFactory
-func testActivityImplementationFactory(activityType ActivityType) (ActivityImplementation, Error) {
-	return &greeterActivity{}, nil
 }
 
 // Test suite.
@@ -105,8 +101,8 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := NewWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil)
-	defer workflowWorker.Shutdown()
+	workflowWorker := newWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil)
+	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
 	// Create activity execution parameters.
@@ -115,8 +111,8 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker(activityExecutionParameters, testActivityImplementationFactory, service, logger, nil)
-	defer activityWorker.Shutdown()
+	activityWorker := NewActivityWorker(activityExecutionParameters, []Activity{&greeterActivity{}}, service, logger, nil)
+	defer activityWorker.Stop()
 	activityWorker.Start()
 
 	// Start a workflow.
@@ -127,8 +123,8 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := NewWorkflowClient(workflowOptions, service, nil)
-	wfExecution, err := workflowClient.StartWorkflowExecution()
+	workflowClient := NewWorkflowClient(service, nil)
+	wfExecution, err := workflowClient.StartWorkflowExecution(workflowOptions)
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)
 }

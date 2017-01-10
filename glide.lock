@@ -1,8 +1,8 @@
-hash: d4a79d83e8ec0b0251b2883f6dfc01acd2cced6a26eb21e69d78053d5c6a9e34
-updated: 2017-01-05T13:55:07.842863889-08:00
+hash: 5664a2f6e5a27ddefa687caf66e277fe918e75b2a93423a2555793d2298c612e
+updated: 2017-01-09T15:04:19.072127885-08:00
 imports:
 - name: code.uber.internal/go-common.git
-  version: 59ad113acba4483aede205b75a4d7fa902e41997
+  version: 1b7467fe853b37e15c8664c99555173a2887b720
   subpackages:
   - x/backoff
   - x/config
@@ -108,4 +108,6 @@ imports:
   version: 3e4f037f12a1221a0864cf0dd2e81c452ab22448
 - name: gopkg.in/yaml.v2
   version: a83829b6f1293c91addabc89d0571c246397bbf4
-testImports: []
+testImports:
+- name: github.com/pborman/uuid
+  version: 3d4f2ba23642d3cfd06bd4b54cf03d99d95c0f1b

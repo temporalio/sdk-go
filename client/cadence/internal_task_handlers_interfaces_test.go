@@ -47,7 +47,7 @@ func (ac testActivityExecutionContext) RecordActivityHeartbeat(details []byte) e
 
 // Sample Workflow task handler
 type sampleWorkflowTaskHandler struct {
-	factory WorkflowDefinitionFactory
+	factory workflowDefinitionFactory
 }
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(task *workflowTask, emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
@@ -56,28 +56,27 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(task *workflowTask, emi
 	}, "", nil
 }
 
-func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(task *workflowTask) (WorkflowDefinition, error) {
+func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(task *workflowTask) (workflowDefinition, error) {
 	return &helloWorldWorkflow{}, nil
 }
 
-func newSampleWorkflowTaskHandler(factory WorkflowDefinitionFactory) *sampleWorkflowTaskHandler {
+func newSampleWorkflowTaskHandler(factory workflowDefinitionFactory) *sampleWorkflowTaskHandler {
 	return &sampleWorkflowTaskHandler{factory: factory}
 }
 
 // Sample ActivityTaskHandler
 type sampleActivityTaskHandler struct {
-	activityRegistry map[m.ActivityType]*ActivityImplementation
+	activityRegistry map[m.ActivityType]*Activity
 }
 
-func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*ActivityImplementation) *sampleActivityTaskHandler {
+func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*Activity) *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
-func (ath sampleActivityTaskHandler) Execute(context context.Context, activityTask *activityTask) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(ctx context.Context, activityTask *activityTask) (interface{}, error) {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeterActivity{}
-	activityContext := &testActivityExecutionContext{}
-	result, err := activityImplementation.Execute(activityContext, activityTask.task.Input)
+	result, err := activityImplementation.Execute(ctx, activityTask.task.Input)
 	if err != nil {
 		reason := err.Error()
 		return &m.RespondActivityTaskFailedRequest{
@@ -133,7 +132,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
-	activationRegistry := make(map[m.ActivityType]*ActivityImplementation)
+	activationRegistry := make(map[m.ActivityType]*Activity)
 	taskHandler := newSampleActivityTaskHandler(activationRegistry)
 	request, err := taskHandler.Execute(nil, &activityTask{response})
 	s.NoError(err)

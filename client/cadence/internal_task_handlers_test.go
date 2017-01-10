@@ -60,7 +60,7 @@ func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *w
 	return &workflowTask{
 		task: &m.PollForDecisionTaskResponse{
 			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
-			WorkflowType:           WorkflowTypePtr(WorkflowType{"testWorkflow"}),
+			WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
 			History:                &m.History{Events: events}}}
 }
 
@@ -121,7 +121,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 	task := createWorkflowTask(testEvents, 0)
 
 	pressurePoints := make(map[string]map[string]string)
-	pressurePoints[PressurePointTypeDecisionTaskStartTimeout] = map[string]string{PressurePointConfigProbability: "100"}
+	pressurePoints[pressurePointTypeDecisionTaskStartTimeout] = map[string]string{pressurePointConfigProbability: "100"}
 
 	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil, pressurePoints)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)

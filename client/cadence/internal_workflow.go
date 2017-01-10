@@ -1,5 +1,7 @@
 package cadence
 
+// All code in this file is private to the package.
+
 import (
 	"fmt"
 	"runtime"
@@ -7,6 +9,128 @@ import (
 	"sync"
 	"unicode"
 )
+
+const workflowEnvironmentContextKey = "workflowEnv"
+const workflowResultContextKey = "workflowResult"
+
+// Pointer to pointer to workflow result
+func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
+	rpp := ctx.Value(workflowResultContextKey)
+	if rpp == nil {
+		panic("getWorkflowResultPointerPointer: Not a workflow context")
+	}
+	return rpp.(**workflowResult)
+}
+
+func getWorkflowEnvironment(ctx Context) workflowEnvironment {
+	wc := ctx.Value(workflowEnvironmentContextKey)
+	if wc == nil {
+		panic("getWorkflowContext: Not a workflow context")
+	}
+	return wc.(workflowEnvironment)
+}
+
+type syncWorkflowDefinition struct {
+	workflow   Workflow
+	dispatcher dispatcher
+}
+
+type workflowResult struct {
+	workflowResult []byte
+	error          Error
+}
+
+type activityClient struct {
+	dispatcher  dispatcher
+	asyncClient asyncActivityClient
+}
+
+// errorImpl implements Error
+type errorImpl struct {
+	reason  string
+	details []byte
+}
+
+func (e *errorImpl) Error() string {
+	return e.reason
+}
+
+// Reason is from Error interface
+func (e *errorImpl) Reason() string {
+	return e.reason
+}
+
+// Details is from Error interface
+func (e *errorImpl) Details() []byte {
+	return e.details
+}
+
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
+	ctx := WithValue(background, workflowEnvironmentContextKey, env)
+	var resultPtr *workflowResult
+	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
+
+	dispatcher := newDispatcher(ctx, func(ctx Context) {
+		r := &workflowResult{}
+		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
+		rpp := getWorkflowResultPointerPointer(ctx)
+		*rpp = r
+
+	})
+	executeDispatcher(ctx, dispatcher)
+}
+
+func (d *syncWorkflowDefinition) StackTrace() string {
+	return d.dispatcher.StackTrace()
+}
+
+// Dispatcher is a container of a set of coroutines.
+type dispatcher interface {
+	// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
+	// until all of them are completed or blocked on Channel or Selector
+	ExecuteUntilAllBlocked() (err PanicError)
+	// IsDone returns true when all of coroutines are completed
+	IsDone() bool
+	Close()             // Destroys all coroutines without waiting for their completion
+	StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+}
+
+// NewDispatcher creates a new Dispatcher instance with a root coroutine function.
+// Context passed to the root function is child of the passed rootCtx.
+// This way rootCtx can be used to pass values to the coroutine code.
+func newDispatcher(rootCtx Context, root Func) dispatcher {
+	result := &dispatcherImpl{}
+	result.newCoroutine(rootCtx, root)
+	return result
+}
+
+// getDispatcher retrieves current dispatcher from the Context passed to the coroutine function.
+func getDispatcher(ctx Context) dispatcher {
+	return getState(ctx).dispatcher
+}
+
+// executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
+// if root workflow function returned
+func executeDispatcher(ctx Context, dispatcher dispatcher) {
+	panicErr := dispatcher.ExecuteUntilAllBlocked()
+	if panicErr != nil {
+		getWorkflowEnvironment(ctx).Complete(nil, NewError(panicErr.Error(), []byte(panicErr.StackTrace())))
+		dispatcher.Close()
+		return
+	}
+	rp := *getWorkflowResultPointerPointer(ctx)
+	if rp == nil {
+		// Result is not set, so workflow is still executing
+		return
+	}
+	// Cannot cast nil values from interface{} to interface
+	var err Error
+	if rp.error != nil {
+		err = rp.error.(Error)
+	}
+	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, err)
+	dispatcher.Close()
+}
 
 // For troubleshooting stack pretty printing only.
 // Set to true to see full stack trace that includes framework methods.
@@ -470,3 +594,9 @@ func (s *selectorImpl) Select(ctx Context) {
 		state.yield(fmt.Sprintf("blocked on %s.Select", s.name))
 	}
 }
+
+// NewWorkflowDefinition creates a  WorkflowDefinition from a Workflow
+func NewWorkflowDefinition(workflow Workflow) workflowDefinition {
+	return &syncWorkflowDefinition{workflow: workflow}
+}
+

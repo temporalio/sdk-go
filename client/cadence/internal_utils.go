@@ -1,5 +1,7 @@
 package cadence
 
+// All code in this file is private to the package.
+
 import (
 	"fmt"
 	"os"
@@ -9,7 +11,7 @@ import (
 )
 
 // GetWorkerIdentity gets a default identity for the worker.
-func GetWorkerIdentity(tasklistName string) string {
+func getWorkerIdentity(tasklistName string) string {
 	hostName, err := os.Hostname()
 	if err != nil {
 		hostName = "UnKnown"
@@ -22,7 +24,7 @@ func flowActivityTypeFrom(v s.ActivityType) ActivityType {
 }
 
 // ActivityTypePtr makes a copy and returns the pointer to a ActivityType.
-func ActivityTypePtr(v ActivityType) *s.ActivityType {
+func activityTypePtr(v ActivityType) *s.ActivityType {
 	return &s.ActivityType{Name: common.StringPtr(v.Name)}
 }
 
@@ -31,6 +33,6 @@ func flowWorkflowTypeFrom(v s.WorkflowType) WorkflowType {
 }
 
 // WorkflowTypePtr makes a copy and returns the pointer to a WorkflowType.
-func WorkflowTypePtr(t WorkflowType) *s.WorkflowType {
+func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
 }

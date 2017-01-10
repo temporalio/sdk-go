@@ -1,5 +1,7 @@
 package cadence
 
+// All code in this file is private to the package.
+
 import (
 	"fmt"
 	"time"

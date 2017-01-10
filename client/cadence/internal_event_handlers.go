@@ -1,5 +1,7 @@
 package cadence
 
+// All code in this file is private to the package.
+
 import (
 	"fmt"
 
@@ -16,14 +18,14 @@ type (
 	// workflowExecutionEventHandlerImpl handler to handle workflowExecutionEventHandler
 	workflowExecutionEventHandlerImpl struct {
 		*workflowContextImpl
-		workflowDefinition WorkflowDefinition
+		workflowDefinition workflowDefinition
 		logger             bark.Logger
 	}
 
 	// workflowContextImpl an implementation of WorkflowContext represents a context for workflow execution.
 	workflowContextImpl struct {
-		workflowInfo              *WorkflowInfo
-		workflowDefinitionFactory WorkflowDefinitionFactory
+		workflowInfo                 *WorkflowInfo
+		workflowDefinitionFactory    workflowDefinitionFactory
 
 		scheduledActivites           map[string]resultHandler // Map of Activities(activity ID ->) and their response handlers
 		scheduledEventIDToActivityID map[int64]string         // Mapping from scheduled event ID to activity ID
@@ -34,7 +36,7 @@ type (
 	}
 )
 
-func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory WorkflowDefinitionFactory,
+func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory workflowDefinitionFactory,
 	completeHandler completionHandler, logger bark.Logger) workflowExecutionEventHandler {
 	context := &workflowContextImpl{
 		workflowInfo:                 workflowInfo,
@@ -80,7 +82,7 @@ func (wc *workflowContextImpl) ExecuteActivity(parameters ExecuteActivityParamet
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
-	scheduleTaskAttr.ActivityType = ActivityTypePtr(parameters.ActivityType)
+	scheduleTaskAttr.ActivityType = activityTypePtr(parameters.ActivityType)
 	scheduleTaskAttr.TaskList = common.TaskListPtr(m.TaskList{Name: common.StringPtr(parameters.TaskListName)})
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToCloseTimeoutSeconds)
@@ -152,7 +154,7 @@ func (weh *workflowExecutionEventHandlerImpl) Close() {
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	attributes *m.WorkflowExecutionStartedEventAttributes) (decisions []*m.Decision, err error) {
-	weh.workflowDefinition, err = weh.workflowDefinitionFactory(weh.workflowInfo.workflowType)
+	weh.workflowDefinition, err = weh.workflowDefinitionFactory(weh.workflowInfo.WorkflowType)
 	if err != nil {
 		return nil, err
 	}

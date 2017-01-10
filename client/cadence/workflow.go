@@ -4,8 +4,95 @@ import (
 	"fmt"
 )
 
-const workflowEnvironmentContextKey = "workflowEnv"
-const workflowResultContextKey = "workflowResult"
+// Channel must be used instead of native go channel by workflow code.
+// Use Context.NewChannel method to create an instance.
+type Channel interface {
+	Recv(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
+	RecvAsync() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
+
+	Send(ctx Context, v interface{})
+	SendAsync(v interface{}) (ok bool) // ok when value was sent
+	Close()                            // prohibit sends
+}
+
+// RecvCaseFunc is executed when a value is received from the corresponding channel
+type RecvCaseFunc func(v interface{}, more bool)
+
+// SendCaseFunc is executed when value was sent to a correspondent channel
+type SendCaseFunc func()
+
+// DefaultCaseFunc is executed when none of the channel cases executed
+type DefaultCaseFunc func()
+
+// Selector must be used instead of native go select by workflow code
+// Use Context.NewSelector method to create an instance.
+type Selector interface {
+	AddRecv(c Channel, f RecvCaseFunc) Selector
+	AddSend(c Channel, v interface{}, f SendCaseFunc) Selector
+	AddDefault(f DefaultCaseFunc)
+	Select(ctx Context)
+}
+
+// Func is a body of a coroutine which should be used instead of goroutines by the workflow code
+type Func func(ctx Context)
+
+// PanicError contains information about panicked workflow
+type PanicError interface {
+	error
+	Value() interface{} // Value passed to panic call
+	StackTrace() string // Stack trace of a panicked coroutine
+}
+
+// NewChannel create new Channel instance
+func NewChannel(ctx Context) Channel {
+	state := getState(ctx)
+	state.dispatcher.channelSequence++
+	return NewNamedChannel(ctx, fmt.Sprintf("chan-%v", state.dispatcher.channelSequence))
+}
+
+// NewNamedChannel create new Channel instance with a given human readable name.
+// Name appears in stack traces that are blocked on this channel.
+func NewNamedChannel(ctx Context, name string) Channel {
+	return &channelImpl{name: name}
+}
+
+// NewBufferedChannel create new buffered Channel instance
+func NewBufferedChannel(ctx Context, size int) Channel {
+	return &channelImpl{size: size}
+}
+
+// NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
+// Name appears in stack traces that are blocked on this Channel.
+func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
+	return &channelImpl{name: name, size: size}
+}
+
+// NewSelector creates a new Selector instance.
+func NewSelector(ctx Context) Selector {
+	state := getState(ctx)
+	state.dispatcher.selectorSequence++
+	return NewNamedSelector(ctx, fmt.Sprintf("selector-%v", state.dispatcher.selectorSequence))
+}
+
+// NewNamedSelector creates a new Selector instance with a given human readable name.
+// Name appears in stack traces that are blocked on this Selector.
+func NewNamedSelector(ctx Context, name string) Selector {
+	return &selectorImpl{name: name}
+}
+
+// Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
+func Go(ctx Context, f Func) {
+	state := getState(ctx)
+	state.dispatcher.newCoroutine(ctx, f)
+}
+
+// GoNamed creates a new coroutine with a given human readable name.
+// It has similar semantic to goroutine in a context of the workflow.
+// Name appears in stack traces that are blocked on this Channel.
+func GoNamed(ctx Context, name string, f Func) {
+	state := getState(ctx)
+	state.dispatcher.newNamedCoroutine(ctx, name, f)
+}
 
 // Error to return from Workflow and Activity implementations.
 type Error interface {
@@ -19,110 +106,25 @@ func NewError(reason string, details []byte) Error {
 	return &errorImpl{reason: reason, details: details}
 }
 
-// Pointer to pointer to workflow result
-func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
-	rpp := ctx.Value(workflowResultContextKey)
-	if rpp == nil {
-		panic("getWorkflowResultPointerPointer: Not a workflow context")
-	}
-	return rpp.(**workflowResult)
-}
-
-func getWorkflowEnvironment(ctx Context) workflowEnvironment {
-	wc := ctx.Value(workflowEnvironmentContextKey)
-	if wc == nil {
-		panic("getWorkflowContext: Not a workflow context")
-	}
-	return wc.(workflowEnvironment)
-}
-
 // Workflow is an interface that any workflow should implement.
-// Code of a workflow must use cadence.Channel, cadence.Selector, and cadence.Go instead of
-// native channels, select and go.
+// Code of a workflow must be deterministic. It must use cadence.Channel, cadence.Selector, and cadence.Go instead of
+// native channels, select and go. It also must not use range operation over map as it is randomized by go runtime.
+// All time manipulation should use current time returned by GetTime(ctx) method.
+// Note that cadence.Context is used instead of context.Context to avoid use of raw channels.
 type Workflow interface {
 	Execute(ctx Context, input []byte) (result []byte, err Error)
 }
 
-// NewWorkflowDefinition creates a  WorkflowDefinition from a Workflow
-func NewWorkflowDefinition(workflow Workflow) WorkflowDefinition {
-	return &workflowDefinition{workflow: workflow}
-}
-
-type workflowDefinition struct {
-	workflow   Workflow
-	dispatcher dispatcher
-}
-
-type workflowResult struct {
-	workflowResult []byte
-	error          Error
-}
-
-type activityClient struct {
-	dispatcher  dispatcher
-	asyncClient asyncActivityClient
-}
-
-// errorImpl implements Error
-type errorImpl struct {
-	reason  string
-	details []byte
-}
-
-func (e *errorImpl) Error() string {
-	return e.reason
-}
-
-// Reason is from Error interface
-func (e *errorImpl) Reason() string {
-	return e.reason
-}
-
-// Details is from Error interface
-func (e *errorImpl) Details() []byte {
-	return e.details
-}
-
-func (d *workflowDefinition) Execute(env workflowEnvironment, input []byte) {
-	ctx := WithValue(background, workflowEnvironmentContextKey, env)
-	var resultPtr *workflowResult
-	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
-
-	dispatcher := newDispatcher(ctx, func(ctx Context) {
-		r := &workflowResult{}
-		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
-		rpp := getWorkflowResultPointerPointer(ctx)
-		*rpp = r
-
-	})
-	executeDispatcher(ctx, dispatcher)
-}
-
-func (d *workflowDefinition) StackTrace() string {
-	return d.dispatcher.StackTrace()
-}
-
-// executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
-// if root workflow function returned
-func executeDispatcher(ctx Context, dispatcher dispatcher) {
-	panicErr := dispatcher.ExecuteUntilAllBlocked()
-	if panicErr != nil {
-		getWorkflowEnvironment(ctx).Complete(nil, NewError(panicErr.Error(), []byte(panicErr.StackTrace())))
-		dispatcher.Close()
-		return
-	}
-	rp := *getWorkflowResultPointerPointer(ctx)
-	if rp == nil {
-		// Result is not set, so workflow is still executing
-		return
-	}
-	// Cannot cast nil values from interface{} to interface
-	var err Error
-	if rp.error != nil {
-		err = rp.error.(Error)
-	}
-	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, err)
-	dispatcher.Close()
+// ExecuteActivityParameters configuration parameters for scheduling an activity
+type ExecuteActivityParameters struct {
+	ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
+	ActivityType                  ActivityType
+	TaskListName                  string
+	Input                         []byte
+	ScheduleToCloseTimeoutSeconds int32
+	ScheduleToStartTimeoutSeconds int32
+	StartToCloseTimeoutSeconds    int32
+	HeartbeatTimeoutSeconds       int32
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.
@@ -144,8 +146,14 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 	return
 }
 
+// WorkflowInfo information about currently executing workflow
+type WorkflowInfo struct {
+	WorkflowExecution WorkflowExecution
+	WorkflowType      WorkflowType
+	TaskListName      string
+}
+
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return getWorkflowEnvironment(ctx).WorkflowInfo()
 }
-
