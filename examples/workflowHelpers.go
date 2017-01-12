@@ -57,7 +57,7 @@ func (w *WorkflowHelper) StartWorkers() {
 
 	// Workflow execution parameters.
 	workflowExecutionParameters := cadence.WorkerExecutionParameters{}
-	workflowExecutionParameters.TaskListName = "exampleTaskList"
+	workflowExecutionParameters.TaskList = "exampleTaskList"
 	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Launch worker.
@@ -67,7 +67,7 @@ func (w *WorkflowHelper) StartWorkers() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := cadence.WorkerExecutionParameters{}
-	activityExecutionParameters.TaskListName = "exampleTaskList"
+	activityExecutionParameters.TaskList = "exampleTaskList"
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
@@ -91,10 +91,10 @@ func (w *WorkflowHelper) StopWorkers() {
 // StartWorkflow starts an workflow instance.
 func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 	workflowOptions := cadence.StartWorkflowOptions{
-		WorkflowID:                             "examples-greetingWorkflow",
-		WorkflowType:                           cadence.WorkflowType{Name: workflowName},
-		TaskListName:                           "exampleTaskList",
-		WorkflowInput:                          nil,
+		ID:       "examples-greetingWorkflow",
+		Type:     cadence.WorkflowType{Name: workflowName},
+		TaskList: "exampleTaskList",
+		Input:    nil,
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
@@ -103,5 +103,5 @@ func (w *WorkflowHelper) StartWorkflow(workflowName string) {
 	if err != nil {
 		log.Panicf("Failed to start workflow: %s, with error: %s.\n", workflowName, err.Error())
 	}
-	log.Infof("Created Workflow - workflow Id: %s, run Id: %s.\n", we.WorkflowID, we.RunID)
+	log.Infof("Created Workflow - workflow Id: %s, run Id: %s.\n", we.ID, we.RunID)
 }

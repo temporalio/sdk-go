@@ -59,7 +59,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
-		identity = getWorkerIdentity(params.TaskListName)
+		identity = getWorkerIdentity(params.TaskList)
 	}
 
 	// Get a workflow task handler.
@@ -67,12 +67,12 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskListName, identity, factory, logger, reporter, pressurePoints)
+		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, reporter, pressurePoints)
 	}
 
 	poller := newWorkflowTaskPoller(
 		service,
-		params.TaskListName,
+		params.TaskList,
 		identity,
 		taskHandler,
 		logger,
@@ -109,11 +109,11 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, ac
 	// Get an identity.
 	identity := executionParameters.Identity
 	if identity == "" {
-		identity = getWorkerIdentity(executionParameters.TaskListName)
+		identity = getWorkerIdentity(executionParameters.TaskList)
 	}
 
 	if logger == nil {
-		logger = log.WithFields(log.Fields{tagTaskListName: executionParameters.TaskListName})
+		logger = log.WithFields(log.Fields{tagTaskListName: executionParameters.TaskList})
 	}
 
 	// Get a activity task handler.
@@ -121,12 +121,12 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, ac
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {
-		taskHandler = newActivityTaskHandler(executionParameters.TaskListName, executionParameters.Identity,
+		taskHandler = newActivityTaskHandler(executionParameters.TaskList, executionParameters.Identity,
 			activities, service, logger, reporter)
 	}
 	poller := newActivityTaskPoller(
 		service,
-		executionParameters.TaskListName,
+		executionParameters.TaskList,
 		identity,
 		taskHandler,
 		reporter,

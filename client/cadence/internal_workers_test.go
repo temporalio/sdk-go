@@ -38,7 +38,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
-	executionParameters := WorkerExecutionParameters{TaskListName: "testTaskList", ConcurrentPollRoutineSize: 5}
+	executionParameters := WorkerExecutionParameters{TaskList: "testTaskList", ConcurrentPollRoutineSize: 5}
 	overides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
 	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil, overides)
 	workflowWorker.Start()
@@ -52,7 +52,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
-	executionParameters := WorkerExecutionParameters{TaskListName: "testTaskList", ConcurrentPollRoutineSize: 5}
+	executionParameters := WorkerExecutionParameters{TaskList: "testTaskList", ConcurrentPollRoutineSize: 5}
 	overides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler(nil)}
 	activityWorker := newActivityWorkerInternal(executionParameters, []Activity{&greeterActivity{}}, service, logger, nil, overides)
 	activityWorker.Start()
@@ -65,7 +65,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
-	executionParameters := WorkerExecutionParameters{TaskListName: "testDecisionTaskList", ConcurrentPollRoutineSize: 5}
+	executionParameters := WorkerExecutionParameters{TaskList: "testDecisionTaskList", ConcurrentPollRoutineSize: 5}
 	overides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
 	workflowWorker := newWorkflowWorkerInternal(executionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil, overides)
 	workflowWorker.Start()

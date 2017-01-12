@@ -22,7 +22,7 @@ type (
 	// WorkerExecutionParameters defines worker configure/execution options.
 	WorkerExecutionParameters struct {
 		// Task list name to poll.
-		TaskListName string
+		TaskList string
 
 		// Defines how many concurrent poll requests for the task list by this worker.
 		ConcurrentPollRoutineSize int
@@ -43,16 +43,16 @@ type (
 
 	// WorkflowExecution Details.
 	WorkflowExecution struct {
-		WorkflowID string
-		RunID      string
+		ID    string
+		RunID string
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow
 	StartWorkflowOptions struct {
-		WorkflowID                             string
-		WorkflowType                           WorkflowType
-		TaskListName                           string
-		WorkflowInput                          []byte
+		ID                                     string
+		Type                                   WorkflowType
+		TaskList                               string
+		Input                                  []byte
 		ExecutionStartToCloseTimeoutSeconds    int32
 		DecisionTaskStartToCloseTimeoutSeconds int32
 		Identity                               string
@@ -110,18 +110,18 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	// Get an identity.
 	identity := options.Identity
 	if identity == "" {
-		identity = getWorkerIdentity(options.TaskListName)
+		identity = getWorkerIdentity(options.TaskList)
 	}
-	workflowID := options.WorkflowID
+	workflowID := options.ID
 	if workflowID == "" {
 		workflowID = uuid.NewRandom().String()
 	}
 
 	startRequest := &s.StartWorkflowExecutionRequest{
 		WorkflowId:   common.StringPtr(workflowID),
-		WorkflowType: workflowTypePtr(options.WorkflowType),
-		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskListName)}),
-		Input:        options.WorkflowInput,
+		WorkflowType: workflowTypePtr(options.Type),
+		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+		Input:        options.Input,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(options.ExecutionStartToCloseTimeoutSeconds),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(options.DecisionTaskStartToCloseTimeoutSeconds),
 		Identity:                            common.StringPtr(identity)}
@@ -148,7 +148,7 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	}
 
 	executionInfo := &WorkflowExecution{
-		WorkflowID: options.WorkflowID,
-		RunID:      response.GetRunId()}
+		ID:    options.ID,
+		RunID: response.GetRunId()}
 	return executionInfo, nil
 }

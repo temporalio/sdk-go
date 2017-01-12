@@ -7,16 +7,16 @@ import (
 // Channel must be used instead of native go channel by workflow code.
 // Use Context.NewChannel method to create an instance.
 type Channel interface {
-	Recv(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
-	RecvAsync() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
+	Receive(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
+	ReceiveAsync() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
 
 	Send(ctx Context, v interface{})
 	SendAsync(v interface{}) (ok bool) // ok when value was sent
 	Close()                            // prohibit sends
 }
 
-// RecvCaseFunc is executed when a value is received from the corresponding channel
-type RecvCaseFunc func(v interface{}, more bool)
+// ReceiveCaseFunc is executed when a value is received from the corresponding channel
+type ReceiveCaseFunc func(v interface{}, more bool)
 
 // SendCaseFunc is executed when value was sent to a correspondent channel
 type SendCaseFunc func()
@@ -31,7 +31,7 @@ type FutureCaseFunc func(v interface{}, err error)
 // Selector must be used instead of native go select by workflow code
 // Use Context.NewSelector method to create an instance.
 type Selector interface {
-	AddRecv(c Channel, f RecvCaseFunc) Selector
+	AddReceive(c Channel, f ReceiveCaseFunc) Selector
 	AddSend(c Channel, v interface{}, f SendCaseFunc) Selector
 	AddFuture(future Future, f FutureCaseFunc) Selector
 	AddDefault(f DefaultCaseFunc)
@@ -168,7 +168,7 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 		}
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
-	_, _ = resultChannel.Recv(ctx)
+	_, _ = resultChannel.Receive(ctx)
 	return
 }
 

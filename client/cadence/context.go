@@ -189,8 +189,8 @@ func propagateCancel(parent Context, child canceler) {
 	} else {
 		go func() {
 			s := NewSelector(parent)
-			s.AddRecv(parent.Done(), func(v interface{}, more bool) { child.cancel(false, parent.Err()) })
-			s.AddRecv(child.Done(), func(v interface{}, more bool) {})
+			s.AddReceive(parent.Done(), func(v interface{}, more bool) { child.cancel(false, parent.Err()) })
+			s.AddReceive(child.Done(), func(v interface{}, more bool) {})
 			s.Select(parent)
 		}()
 	}

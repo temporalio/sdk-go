@@ -87,7 +87,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Workflow execution parameters.
 	workflowExecutionParameters := WorkerExecutionParameters{}
-	workflowExecutionParameters.TaskListName = "testTaskList"
+	workflowExecutionParameters.TaskList = "testTaskList"
 	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Create service endpoint
@@ -107,7 +107,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := WorkerExecutionParameters{}
-	activityExecutionParameters.TaskListName = "testTaskList"
+	activityExecutionParameters.TaskList = "testTaskList"
 	activityExecutionParameters.ConcurrentPollRoutineSize = 10
 
 	// Register activity instances and launch the worker.
@@ -117,9 +117,9 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{
-		WorkflowID:                             "HelloWorld_Workflow",
-		TaskListName:                           "testTaskList",
-		WorkflowInput:                          nil,
+		ID:       "HelloWorld_Workflow",
+		TaskList: "testTaskList",
+		Input:    nil,
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}

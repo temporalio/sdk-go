@@ -60,7 +60,7 @@ type futureImpl struct {
 }
 
 func (f *futureImpl) Get(ctx Context) (interface{}, error) {
-	_, more := f.channel.Recv(ctx)
+	_, more := f.channel.Receive(ctx)
 	if more {
 		panic("not closed")
 	}
@@ -210,22 +210,22 @@ type valueCallbackPair struct {
 }
 
 type channelImpl struct {
-	name         string              // human readable channel name
-	size         int                 // Channel buffer size. 0 for non buffered.
-	buffer       []interface{}       // buffered messages
-	blockedSends []valueCallbackPair // puts waiting when buffer is full.
-	blockedRecvs []func(interface{}) // receives waiting when no messages are available.
-	closed       bool                // true if channel is closed
+	name            string              // human readable channel name
+	size            int                 // Channel buffer size. 0 for non buffered.
+	buffer          []interface{}       // buffered messages
+	blockedSends    []valueCallbackPair // puts waiting when buffer is full.
+	blockedReceives []func(interface{}) // receives waiting when no messages are available.
+	closed          bool                // true if channel is closed
 }
 
 // Single case statement of the Select
 type selectCase struct {
-	channel    Channel         // Channel of this case.
-	recvFunc   *RecvCaseFunc   // function to call when channel has a message. nil for send case.
-	sendFunc   *SendCaseFunc   // function to call when channel accepted a message. nil for receive case.
-	sendValue  *interface{}    // value to send to the channel. Used only for send case.
-	future     Future          // Used for future case
-	futureFunc *FutureCaseFunc // function to call when Future is ready
+	channel     Channel          // Channel of this case.
+	receiveFunc *ReceiveCaseFunc // function to call when channel has a message. nil for send case.
+	sendFunc    *SendCaseFunc    // function to call when channel accepted a message. nil for receive case.
+	sendValue   *interface{}     // value to send to the channel. Used only for send case.
+	future      Future           // Used for future case
+	futureFunc  *FutureCaseFunc  // function to call when Future is ready
 }
 
 // Implements Selector interface
@@ -281,7 +281,7 @@ func getState(ctx Context) *coroutineState {
 	return s.(*coroutineState)
 }
 
-func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
+func (c *channelImpl) Receive(ctx Context) (v interface{}, more bool) {
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
@@ -306,15 +306,15 @@ func (c *channelImpl) Recv(ctx Context) (v interface{}, more bool) {
 			state.unblocked()
 			return b.value, true
 		}
-		c.blockedRecvs = append(c.blockedRecvs, func(v interface{}) {
+		c.blockedReceives = append(c.blockedReceives, func(v interface{}) {
 			result = v
 			hasResult = true
 		})
-		state.yield(fmt.Sprintf("blocked on %s.Recv", c.name))
+		state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
 	}
 }
 
-func (c *channelImpl) RecvAsync() (v interface{}, ok bool, more bool) {
+func (c *channelImpl) ReceiveAsync() (v interface{}, ok bool, more bool) {
 	if len(c.buffer) > 0 {
 		r := c.buffer[0]
 		c.buffer = c.buffer[1:]
@@ -349,9 +349,9 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 			state.unblocked()
 			return
 		}
-		if len(c.blockedRecvs) > 0 {
-			blockedGet := c.blockedRecvs[0]
-			c.blockedRecvs = c.blockedRecvs[1:]
+		if len(c.blockedReceives) > 0 {
+			blockedGet := c.blockedReceives[0]
+			c.blockedReceives = c.blockedReceives[1:]
 			blockedGet(v)
 			state.unblocked()
 			return
@@ -370,9 +370,9 @@ func (c *channelImpl) SendAsync(v interface{}) (ok bool) {
 		c.buffer = append(c.buffer, v)
 		return true
 	}
-	if len(c.blockedRecvs) > 0 {
-		blockedGet := c.blockedRecvs[0]
-		c.blockedRecvs = c.blockedRecvs[1:]
+	if len(c.blockedReceives) > 0 {
+		blockedGet := c.blockedReceives[0]
+		c.blockedReceives = c.blockedReceives[1:]
 		blockedGet(v)
 		return true
 	}
@@ -619,8 +619,8 @@ func (d *dispatcherImpl) StackTrace() string {
 	return result
 }
 
-func (s *selectorImpl) AddRecv(c Channel, f RecvCaseFunc) Selector {
-	s.cases = append(s.cases, selectCase{channel: c, recvFunc: &f})
+func (s *selectorImpl) AddReceive(c Channel, f ReceiveCaseFunc) Selector {
+	s.cases = append(s.cases, selectCase{channel: c, receiveFunc: &f})
 	return s
 }
 
@@ -642,10 +642,10 @@ func (s *selectorImpl) Select(ctx Context) {
 	state := getState(ctx)
 	for {
 		for _, pair := range s.cases {
-			if pair.recvFunc != nil {
-				v, ok, more := pair.channel.RecvAsync()
+			if pair.receiveFunc != nil {
+				v, ok, more := pair.channel.ReceiveAsync()
 				if ok || !more {
-					f := *pair.recvFunc
+					f := *pair.receiveFunc
 					f(v, more)
 					state.unblocked()
 					return

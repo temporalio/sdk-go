@@ -302,8 +302,8 @@ func (ath *activityTaskHandlerImpl) Execute(ctx context.Context, activityTask *a
 		activityType: ActivityType{Name: *t.ActivityType.Name},
 		activityID:   *t.ActivityId,
 		workflowExecution: WorkflowExecution{
-			RunID:      *t.WorkflowExecution.RunId,
-			WorkflowID: *t.WorkflowExecution.WorkflowId},
+			RunID: *t.WorkflowExecution.RunId,
+			ID:    *t.WorkflowExecution.WorkflowId},
 	})
 	activityType := *t.GetActivityType()
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
