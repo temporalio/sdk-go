@@ -49,13 +49,13 @@ type (
 // NewWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(params WorkerExecutionParameters, factory workflowDefinitionFactory,
 	service m.TChanWorkflowService, logger bark.Logger,
-	reporter metrics.Reporter, pressurePoints map[string]map[string]string) *workflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, pressurePoints, nil)
+	reporter metrics.Reporter, ppMgr pressurePointMgr) *workflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, ppMgr, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflowDefinitionFactory,
 	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter,
-	pressurePoints map[string]map[string]string, overrides *workerOverrides) *workflowWorker {
+	ppMgr pressurePointMgr, overrides *workerOverrides) *workflowWorker {
 	// Get an identity.
 	identity := params.Identity
 	if identity == "" {
@@ -67,7 +67,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, reporter, pressurePoints)
+		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, reporter, ppMgr)
 	}
 
 	poller := newWorkflowTaskPoller(

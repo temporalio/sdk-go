@@ -4,8 +4,7 @@ package cadence
 
 import (
 	"fmt"
-	"math/rand"
-	"strconv"
+	"reflect"
 	"time"
 
 	"github.com/uber-common/bark"
@@ -62,7 +61,7 @@ type (
 		identity           string
 		workflowDefFactory workflowDefinitionFactory
 		reporter           metrics.Reporter
-		pressurePoints     map[string]map[string]string
+		ppMgr              pressurePointMgr
 		logger             bark.Logger
 	}
 
@@ -133,13 +132,13 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
-	logger bark.Logger, reporter metrics.Reporter, pressurePoints map[string]map[string]string) workflowTaskHandler {
+	logger bark.Logger, reporter metrics.Reporter, ppMgr pressurePointMgr) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
 		logger:             logger,
-		pressurePoints:     pressurePoints,
+		ppMgr:              ppMgr,
 		reporter:           reporter}
 }
 
@@ -192,22 +191,9 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 		}
 
 		// Any pressure points.
-		if wth.pressurePoints != nil && !isInReplay {
-			switch event.GetEventType() {
-			case s.EventType_DecisionTaskStarted:
-				if config, ok := wth.pressurePoints[PressurePointTypeDecisionTaskStartTimeout]; ok {
-					if value, ok2 := config[PressurePointConfigProbability]; ok2 {
-						if probablity, err := strconv.Atoi(value); err == nil {
-							if rand.Int31n(100) < int32(probablity) {
-								// Drop the task.
-								wth.logger.Debugf("ProcessWorkflowTask: Dropping task with probability:%d, Id=%d, Event=%+v",
-									probablity, event.GetEventId(), event)
-								return nil, "", fmt.Errorf("pressurepoint configured")
-							}
-						}
-					}
-				}
-			}
+		err := wth.executeAnyPressurePoints(event, isInReplay)
+		if err != nil {
+			return nil, "", err
 		}
 
 		eventDecisions, err := eventHandler.ProcessEvent(event)
@@ -266,6 +252,20 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, c
 		decisions = append(decisions, completeDecision)
 	}
 	return decisions
+}
+
+func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEvent, isInReplay bool) error {
+	if wth.ppMgr != nil && !reflect.ValueOf(wth.ppMgr).IsNil() && !isInReplay {
+		switch event.GetEventType() {
+		case s.EventType_DecisionTaskStarted:
+			return wth.ppMgr.Execute(PressurePointTypeDecisionTaskStartTimeout)
+		case s.EventType_ActivityTaskScheduled:
+			return wth.ppMgr.Execute(PressurePointTypeActivityTaskScheduleTimeout)
+		case s.EventType_ActivityTaskStarted:
+			return wth.ppMgr.Execute(PressurePointTypeActivityTaskStartTimeout)
+		}
+	}
+	return nil
 }
 
 func newActivityTaskHandler(taskListName string, identity string, activities []Activity,
