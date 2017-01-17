@@ -121,7 +121,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 	task := createWorkflowTask(testEvents, 0)
 
 	pressurePoints := make(map[string]map[string]string)
-	pressurePoints[pressurePointTypeDecisionTaskStartTimeout] = map[string]string{pressurePointConfigProbability: "100"}
+	pressurePoints[PressurePointTypeDecisionTaskStartTimeout] = map[string]string{PressurePointConfigProbability: "100"}
 
 	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil, pressurePoints)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)

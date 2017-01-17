@@ -61,7 +61,7 @@ func (w *WorkflowHelper) StartWorkers() {
 	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
 
 	// Launch worker.
-	w.workflowWorker = cadence.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */, nil)
+	w.workflowWorker = cadence.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */)
 	w.workflowWorker.Start()
 	log.Infoln("Started Deciders for workflows.")
 

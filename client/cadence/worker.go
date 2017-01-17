@@ -83,8 +83,7 @@ func NewWorkflowWorker(
 	factory WorkflowFactory,
 	service m.TChanWorkflowService,
 	logger bark.Logger,
-	reporter metrics.Reporter,
-	pressurePoints map[string]map[string]string) (worker Lifecycle) {
+	reporter metrics.Reporter) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
 		func(workflowType WorkflowType) (workflowDefinition, Error) {
@@ -97,7 +96,7 @@ func NewWorkflowWorker(
 		service,
 		logger,
 		reporter,
-		pressurePoints)
+		nil)
 }
 
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow

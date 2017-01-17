@@ -17,12 +17,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-// PressurePoints
-const (
-	pressurePointTypeDecisionTaskStartTimeout = "decision-task-start-timeout"
-	pressurePointConfigProbability            = "probability"
-)
-
 // interfaces
 type (
 	// workflowTaskHandler represents workflow task handlers.
@@ -201,8 +195,8 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 		if wth.pressurePoints != nil && !isInReplay {
 			switch event.GetEventType() {
 			case s.EventType_DecisionTaskStarted:
-				if config, ok := wth.pressurePoints[pressurePointTypeDecisionTaskStartTimeout]; ok {
-					if value, ok2 := config[pressurePointConfigProbability]; ok2 {
+				if config, ok := wth.pressurePoints[PressurePointTypeDecisionTaskStartTimeout]; ok {
+					if value, ok2 := config[PressurePointConfigProbability]; ok2 {
 						if probablity, err := strconv.Atoi(value); err == nil {
 							if rand.Int31n(100) < int32(probablity) {
 								// Drop the task.
