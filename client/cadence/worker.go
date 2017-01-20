@@ -8,7 +8,6 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"github.com/pborman/uuid"
 	"github.com/uber-common/bark"
-	"github.com/uber/tchannel-go/thrift"
 )
 
 type (
@@ -130,7 +129,7 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	// Start creating workflow request.
 	err := backoff.Retry(
 		func() error {
-			ctx, cancel := thrift.NewContext(serviceTimeOut)
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 			defer cancel()
 
 			var err1 error

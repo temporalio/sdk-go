@@ -3,8 +3,6 @@ package cadence
 import (
 	"golang.org/x/net/context"
 
-	"github.com/uber/tchannel-go/thrift"
-
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
@@ -55,7 +53,7 @@ func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
 
 	err := backoff.Retry(
 		func() error {
-			ctx, cancel := thrift.NewContext(serviceTimeOut)
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 			defer cancel()
 
 			// TODO: Handle the propagation of Cancel to activity.

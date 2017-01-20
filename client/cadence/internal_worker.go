@@ -81,7 +81,9 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
-		identity:        identity})
+		identity:        identity,
+		workerType:      "DecisionWorker"},
+		logger)
 
 	return &workflowWorker{
 		executionParameters: params,
@@ -135,7 +137,9 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, ac
 		routineCount:    executionParameters.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
-		identity:        identity})
+		identity:        identity,
+		workerType:      "ActivityWorker"},
+		logger)
 
 	return &activityWorker{
 		executionParameters: executionParameters,

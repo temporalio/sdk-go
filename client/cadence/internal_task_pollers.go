@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	serviceTimeOut  = 3 * time.Minute
+	pollTaskServiceTimeOut    = 3 * time.Minute // Server long poll is 2 * Minutes + delta
+	respondTaskServiceTimeOut = 2 * time.Second
+
 	tagTaskListName = "taskListName"
 
 	retryServiceOperationInitialInterval    = time.Millisecond
-	retryServiceOperationMaxInterval        = 10 * time.Second
+	retryServiceOperationMaxInterval        = 4 * time.Second
 	retryServiceOperationExpirationInterval = 60 * time.Second
 )
 
@@ -120,9 +122,13 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	// Respond task completion.
 	err = backoff.Retry(
 		func() error {
-			ctx, cancel := thrift.NewContext(serviceTimeOut)
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 			defer cancel()
-			return wtp.service.RespondDecisionTaskCompleted(ctx, completedRequest)
+			err1 := wtp.service.RespondDecisionTaskCompleted(ctx, completedRequest)
+			if err1 != nil {
+				wtp.logger.Debugf("RespondDecisionTaskCompleted: Failed with error: %+v", err1)
+			}
+			return err1
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 
 	if err != nil {
@@ -139,7 +145,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		Identity: common.StringPtr(wtp.identity),
 	}
 
-	ctx, cancel := thrift.NewContext(serviceTimeOut)
+	ctx, cancel := common.NewTChannelContext(pollTaskServiceTimeOut, common.RetryNeverOptions)
 	defer cancel()
 
 	response, err := wtp.service.PollForDecisionTask(ctx, request)
@@ -170,7 +176,7 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		Identity: common.StringPtr(atp.identity),
 	}
 
-	ctx, cancel := thrift.NewContext(serviceTimeOut)
+	ctx, cancel := common.NewTChannelContext(pollTaskServiceTimeOut, common.RetryNeverOptions)
 	defer cancel()
 
 	response, err := atp.service.PollForActivityTask(ctx, request)
@@ -206,7 +212,8 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	}()
 
 	// Process the activity task.
-	ctx, cancel := thrift.NewContext(serviceTimeOut)
+	// Activity execution timeout: setting it to a longer one.
+	ctx, cancel := thrift.NewContext(7 * 24 * time.Hour)
 	defer cancel()
 	result, err := atp.taskHandler.Execute(ctx, activityTask)
 	if err != nil {
@@ -219,10 +226,14 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	case *s.RespondActivityTaskCompletedRequest:
 		err = backoff.Retry(
 			func() error {
-				ctx, cancel := thrift.NewContext(serviceTimeOut)
+				ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 				defer cancel()
 
-				return atp.service.RespondActivityTaskCompleted(ctx, result.(*s.RespondActivityTaskCompletedRequest))
+				err1 := atp.service.RespondActivityTaskCompleted(ctx, result.(*s.RespondActivityTaskCompletedRequest))
+				if err1 != nil {
+					atp.logger.Debugf("RespondActivityTaskCompleted: Failed with error: %+v", err1)
+				}
+				return err1
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 
 		if err != nil {
@@ -232,10 +243,14 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	case *s.RespondActivityTaskFailedRequest:
 		err = backoff.Retry(
 			func() error {
-				ctx, cancel := thrift.NewContext(serviceTimeOut)
+				ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 				defer cancel()
 
-				return atp.service.RespondActivityTaskFailed(ctx, result.(*s.RespondActivityTaskFailedRequest))
+				err1 := atp.service.RespondActivityTaskFailed(ctx, result.(*s.RespondActivityTaskFailedRequest))
+				if err1 != nil {
+					atp.logger.Debugf("RespondActivityTaskFailed: Failed with error: %+v", err1)
+				}
+				return err1
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 		if err != nil {
 			return err

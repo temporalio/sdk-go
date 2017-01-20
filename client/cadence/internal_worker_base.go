@@ -9,12 +9,14 @@ import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
-	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 )
 
 const (
-	tagWorkerID  = "WorkerID"
-	tagRoutineID = "routineID"
+	tagWorkerID   = "WorkerID"
+	tagWorkerType = "WorkerType"
+	tagRoutineID  = "routineID"
+	tagWorkerErr  = "WorkerErr"
 
 	retryPollOperationInitialInterval    = time.Millisecond
 	retryPollOperationMaxInterval        = 1 * time.Second
@@ -53,6 +55,7 @@ type (
 		taskPoller      taskPoller
 		workflowService m.TChanWorkflowService
 		identity        string
+		workerType      string
 	}
 
 	// baseWorker that wraps worker activities.
@@ -63,6 +66,7 @@ type (
 		shutdownWG      sync.WaitGroup             // The WaitGroup for shutting down existing routines.
 		rateLimiter     common.TokenBucket         // Poll rate limiter
 		retrier         *backoff.ConcurrentRetrier // Service errors back off retrier
+		logger          bark.Logger
 	}
 )
 
@@ -73,12 +77,16 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger bark.Logger) *baseWorker {
 	return &baseWorker{
 		options:     options,
 		shutdownCh:  make(chan struct{}),
 		rateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
-		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy)}
+		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger: logger.WithFields(bark.Fields{
+			tagWorkerID:   options.identity,
+			tagWorkerType: options.workerType}),
+	}
 }
 
 // Start starts a fixed set of routines to do the work.
@@ -122,7 +130,7 @@ func (bw *baseWorker) execute(routineID int) {
 
 		err := bw.options.taskPoller.PollAndProcessSingleTask()
 		if err != nil {
-			log.WithFields(log.Fields{tagWorkerID: bw.options.identity, tagRoutineID: routineID}).Error("Poll failed with error:", err)
+			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID, tagWorkerErr: err}).Errorf("Poll failed with Error: %+v", err)
 			bw.retrier.Failed()
 		} else {
 			bw.retrier.Succeeded()
@@ -131,7 +139,7 @@ func (bw *baseWorker) execute(routineID int) {
 		select {
 		// Shutdown the Routine.
 		case <-bw.shutdownCh:
-			log.WithFields(log.Fields{tagWorkerID: bw.options.identity, tagRoutineID: routineID}).Debug("Shutting Down!")
+			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID}).Debug("Shutting Down!")
 			bw.shutdownWG.Done()
 			return
 
