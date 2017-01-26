@@ -8,6 +8,7 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"github.com/pborman/uuid"
 	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
 )
 
 type (
@@ -61,14 +62,14 @@ type (
 	WorkflowClient struct {
 		workflowExecution WorkflowExecution
 		workflowService   m.TChanWorkflowService
-		reporter          metrics.Reporter
+		metricsScope      tally.Scope
 	}
 )
 
 // NewActivityWorker returns an instance of the activity worker.
 func NewActivityWorker(executionParameters WorkerExecutionParameters, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) (worker Lifecycle) {
-	return newActivityWorkerInternal(executionParameters, activities, service, logger, reporter, nil)
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope) (worker Lifecycle) {
+	return newActivityWorkerInternal(executionParameters, activities, service, logger, metricsScope, nil)
 }
 
 // WorkflowFactory function is used to create a workflow implementation object.
@@ -82,7 +83,7 @@ func NewWorkflowWorker(
 	factory WorkflowFactory,
 	service m.TChanWorkflowService,
 	logger bark.Logger,
-	reporter metrics.Reporter) (worker Lifecycle) {
+	metricsScope tally.Scope) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
 		func(workflowType WorkflowType) (workflowDefinition, Error) {
@@ -94,13 +95,13 @@ func NewWorkflowWorker(
 		},
 		service,
 		logger,
-		reporter,
+		metricsScope,
 		nil)
 }
 
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow
-func NewWorkflowClient(service m.TChanWorkflowService, reporter metrics.Reporter) *WorkflowClient {
-	return &WorkflowClient{workflowService: service, reporter: reporter}
+func NewWorkflowClient(service m.TChanWorkflowService, metricsScope tally.Scope) *WorkflowClient {
+	return &WorkflowClient{workflowService: service, metricsScope: metricsScope}
 }
 
 // StartWorkflowExecution starts a workflow execution
@@ -141,8 +142,8 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 		return nil, err
 	}
 
-	if wc.reporter != nil {
-		wc.reporter.IncCounter(metrics.WorkflowsStartTotalCounter, nil, 1)
+	if wc.metricsScope != nil {
+		wc.metricsScope.Counter(metrics.WorkflowsStartTotalCounter).Inc(1)
 	}
 
 	executionInfo := &WorkflowExecution{

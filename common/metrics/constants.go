@@ -38,6 +38,18 @@ const (
 	GcPauseMsTimer       = "memory.gc-pause-ms"
 )
 
+// Workflow Creation metrics
+const (
+	WorkflowsStartTotalCounter      = "workflows-start-total"
+	ActivitiesTotalCounter          = "activities-total"
+	DecisionsTotalCounter           = "decisions-total"
+	DecisionsTimeoutCounter         = "decisions-timeout"
+	WorkflowsCompletionTotalCounter = "workflows-completion-total"
+	WorkflowEndToEndLatency         = "workflows-endtoend-latency"
+	ActivityEndToEndLatency         = "activities-endtoend-latency"
+	DecisionsEndToEndLatency        = "decisions-endtoend-latency"
+)
+
 // ServiceMetrics are types for common service base metrics
 var ServiceMetrics = map[MetricName]MetricType{
 	RestartCount: Counter,

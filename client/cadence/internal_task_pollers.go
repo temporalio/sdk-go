@@ -12,6 +12,7 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
 )
 
@@ -42,7 +43,7 @@ type (
 		identity     string
 		service      m.TChanWorkflowService
 		taskHandler  workflowTaskHandler
-		reporter     metrics.Reporter
+		metricsScope tally.Scope
 		logger       bark.Logger
 	}
 
@@ -52,7 +53,7 @@ type (
 		identity     string
 		service      m.TChanWorkflowService
 		taskHandler  activityTaskHandler
-		reporter     metrics.Reporter
+		metricsScope tally.Scope
 		logger       bark.Logger
 	}
 )
@@ -80,13 +81,13 @@ func isServiceTransientError(err error) bool {
 }
 
 func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler workflowTaskHandler, logger bark.Logger, reporter metrics.Reporter) *workflowTaskPoller {
+	taskHandler workflowTaskHandler, logger bark.Logger, metricsScope tally.Scope) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      service,
 		taskListName: taskListName,
 		identity:     identity,
 		taskHandler:  taskHandler,
-		reporter:     reporter,
+		metricsScope: metricsScope,
 		logger:       logger,
 	}
 }
@@ -107,9 +108,9 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	startTime := time.Now()
 	defer func() {
 		deltaTime := time.Now().Sub(startTime)
-		if wtp.reporter != nil {
-			wtp.reporter.IncCounter(metrics.DecisionsTotalCounter, nil, 1)
-			wtp.reporter.RecordTimer(metrics.DecisionsEndToEndLatency, nil, deltaTime)
+		if wtp.metricsScope != nil {
+			wtp.metricsScope.Counter(metrics.DecisionsTotalCounter).Inc(1)
+			wtp.metricsScope.Timer(metrics.DecisionsEndToEndLatency).Record(deltaTime)
 		}
 	}()
 
@@ -159,14 +160,14 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler activityTaskHandler, reporter metrics.Reporter, logger bark.Logger) *activityTaskPoller {
+	taskHandler activityTaskHandler, metricsScope tally.Scope, logger bark.Logger) *activityTaskPoller {
 	return &activityTaskPoller{
 		service:      service,
 		taskListName: taskListName,
 		identity:     identity,
 		taskHandler:  taskHandler,
 		logger:       logger,
-		reporter:     reporter}
+		metricsScope: metricsScope}
 }
 
 // Poll for a single activity task from the service
@@ -205,9 +206,9 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	startTime := time.Now()
 	defer func() {
 		deltaTime := time.Now().Sub(startTime)
-		if atp.reporter != nil {
-			atp.reporter.IncCounter(metrics.ActivitiesTotalCounter, nil, 1)
-			atp.reporter.RecordTimer(metrics.ActivityEndToEndLatency, nil, deltaTime)
+		if atp.metricsScope != nil {
+			atp.metricsScope.Counter(metrics.ActivitiesTotalCounter).Inc(1)
+			atp.metricsScope.Timer(metrics.ActivityEndToEndLatency).Record(deltaTime)
 		}
 	}()
 

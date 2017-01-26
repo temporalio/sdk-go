@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
@@ -60,7 +61,7 @@ type (
 		taskListName       string
 		identity           string
 		workflowDefFactory workflowDefinitionFactory
-		reporter           metrics.Reporter
+		metricsScope       tally.Scope
 		ppMgr              pressurePointMgr
 		logger             bark.Logger
 	}
@@ -71,7 +72,7 @@ type (
 		identity        string
 		implementations map[ActivityType]Activity
 		service         m.TChanWorkflowService
-		reporter        metrics.Reporter
+		metricsScope    tally.Scope
 		logger          bark.Logger
 	}
 
@@ -132,14 +133,14 @@ func (eh eventsHelper) LastNonReplayedID() int64 {
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
-	logger bark.Logger, reporter metrics.Reporter, ppMgr pressurePointMgr) workflowTaskHandler {
+	logger bark.Logger, metricsScope tally.Scope, ppMgr pressurePointMgr) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
 		workflowDefFactory: factory,
 		logger:             logger,
 		ppMgr:              ppMgr,
-		reporter:           reporter}
+		metricsScope:       metricsScope}
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
@@ -183,10 +184,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 		isInReplay := event.GetEventId() < helperEvents.LastNonReplayedID()
 
 		// Any metrics.
-		if wth.reporter != nil && !isInReplay {
+		if wth.metricsScope != nil && !isInReplay {
 			switch event.GetEventType() {
 			case s.EventType_DecisionTaskTimedOut:
-				wth.reporter.IncCounter(metrics.DecisionsTimeoutCounter, nil, 1)
+				wth.metricsScope.Counter(metrics.DecisionsTimeoutCounter).Inc(1)
 			}
 		}
 
@@ -212,10 +213,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	if len(eventDecisions) > 0 {
 		decisions = append(decisions, eventDecisions...)
 
-		if wth.reporter != nil {
-			wth.reporter.IncCounter(metrics.WorkflowsCompletionTotalCounter, nil, 1)
+		if wth.metricsScope != nil {
+			wth.metricsScope.Counter(metrics.WorkflowsCompletionTotalCounter).Inc(1)
 			elapsed := time.Now().Sub(startTime)
-			wth.reporter.RecordTimer(metrics.WorkflowEndToEndLatency, nil, elapsed)
+			wth.metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		}
 	}
 
@@ -269,7 +270,7 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEve
 }
 
 func newActivityTaskHandler(taskListName string, identity string, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter) activityTaskHandler {
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope) activityTaskHandler {
 	implementations := make(map[ActivityType]Activity)
 	for _, a := range activities {
 		implementations[a.ActivityType()] = a
@@ -280,7 +281,7 @@ func newActivityTaskHandler(taskListName string, identity string, activities []A
 		implementations: implementations,
 		service:         service,
 		logger:          logger,
-		reporter:        reporter}
+		metricsScope:    metricsScope}
 }
 
 // Execute executes an implementation of the activity.

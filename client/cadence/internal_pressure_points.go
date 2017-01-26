@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
-	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
 )
 
 // ** This is for internal stress testing framework **
@@ -37,7 +37,7 @@ func NewWorkflowWorkerWithPressurePoints(
 	factory WorkflowFactory,
 	service m.TChanWorkflowService,
 	logger bark.Logger,
-	reporter metrics.Reporter,
+	metricsScope tally.Scope,
 	pressurePoints map[string]map[string]string) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
@@ -50,7 +50,7 @@ func NewWorkflowWorkerWithPressurePoints(
 		},
 		service,
 		logger,
-		reporter,
+		metricsScope,
 		&pressurePointMgrImpl{config: pressurePoints, logger: logger})
 }
 

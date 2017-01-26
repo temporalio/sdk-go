@@ -4,9 +4,9 @@ package cadence
 
 import (
 	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
-	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"code.uber.internal/go-common.git/x/log"
 )
 
@@ -49,12 +49,12 @@ type (
 // NewWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(params WorkerExecutionParameters, factory workflowDefinitionFactory,
 	service m.TChanWorkflowService, logger bark.Logger,
-	reporter metrics.Reporter, ppMgr pressurePointMgr) *workflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, logger, reporter, ppMgr, nil)
+	metricsScope tally.Scope, ppMgr pressurePointMgr) *workflowWorker {
+	return newWorkflowWorkerInternal(params, factory, service, logger, metricsScope, ppMgr, nil)
 }
 
 func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter,
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope,
 	ppMgr pressurePointMgr, overrides *workerOverrides) *workflowWorker {
 	// Get an identity.
 	identity := params.Identity
@@ -67,7 +67,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, reporter, ppMgr)
+		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, metricsScope, ppMgr)
 	}
 
 	poller := newWorkflowTaskPoller(
@@ -76,7 +76,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 		identity,
 		taskHandler,
 		logger,
-		reporter)
+		metricsScope)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
@@ -107,7 +107,7 @@ func (ww *workflowWorker) Stop() {
 }
 
 func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, reporter metrics.Reporter, overrides *workerOverrides) *activityWorker {
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope, overrides *workerOverrides) *activityWorker {
 	// Get an identity.
 	identity := executionParameters.Identity
 	if identity == "" {
@@ -124,14 +124,14 @@ func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, ac
 		taskHandler = overrides.activityTaskHandler
 	} else {
 		taskHandler = newActivityTaskHandler(executionParameters.TaskList, executionParameters.Identity,
-			activities, service, logger, reporter)
+			activities, service, logger, metricsScope)
 	}
 	poller := newActivityTaskPoller(
 		service,
 		executionParameters.TaskList,
 		identity,
 		taskHandler,
-		reporter,
+		metricsScope,
 		logger)
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    executionParameters.ConcurrentPollRoutineSize,
