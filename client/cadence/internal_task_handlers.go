@@ -174,76 +174,80 @@ func (eh *history) NextEvents() []*s.HistoryEvent {
 }
 
 func (eh *history) getNextEvents() []*s.HistoryEvent {
+
+	if eh.currentIndex == eh.historyEventsSize {
+		return []*s.HistoryEvent{}
+	}
+
 	// Process events
 	reorderedEvents := []*s.HistoryEvent{}
 	history := eh.workflowTask.task.History
 
+	// We need to re-order the events so the decider always sees in the same order.
+	// For Ex: (pseudo code)
+	//   ResultA := Schedule_Activity_A
+	//   ResultB := Schedule_Activity_B
+	//   if ResultB.IsReady() { panic error }
+	//   ResultC := Schedule_Activity_C(ResultA)
+	// If both A and B activities complete then we could have two different paths, Either Scheduling C (or) Panic'ing.
+	// Workflow events:
+	// 	Workflow_Start, DecisionStart1, DecisionComplete1, A_Schedule, B_Schedule, A_Complete,
+	//      DecisionStart2, B_Complete, DecisionComplete2, C_Schedule.
+	// B_Complete happened concurrent to execution of the decision(2), where C_Schedule is a result made by execution of decision(2).
+	// One way to address is: Move all concurrent decisions to one after the decisions made by current decision.
+
+	decisionStartToCompletionEvents := []*s.HistoryEvent{}
+	decisionCompletionToStartEvents := []*s.HistoryEvent{}
+	concurrentToDecision := true
+	lastDecisionIndex := -1
+
+OrderEvents:
 	for ; eh.currentIndex < eh.historyEventsSize; eh.currentIndex++ {
+		event := history.Events[eh.currentIndex]
+		switch event.GetEventType() {
+		case s.EventType_DecisionTaskStarted:
+			if !eh.IsNextDecisionTimedOut(eh.currentIndex) {
+				// Set replay clock.
+				ts := time.Unix(0, event.GetTimestamp())
+				eh.eventsHandler.workflowEnvironmentImpl.SetCurrentReplayTime(ts)
+				eh.currentIndex++ // Sine we already processed the current event
+				break OrderEvents
+			}
 
-		// We need to re-order the events so the decider always sees in the same order.
-		// For Ex: (pseudo code)
-		//   ResultA := Schedule_Activity_A
-		//   ResultB := Schedule_Activity_B
-		//   if ResultB.IsReady() { panic error }
-		//   ResultC := Schedule_Activity_C(ResultA)
-		// If both A and B activities complete then we could have two different paths, Either Scheduling C (or) Panic'ing.
-		// Workflow events:
-		// 	Workflow_Start, DecisionStart1, DecisionComplete1, A_Schedule, B_Schedule, A_Complete,
-		//      DecisionStart2, B_Complete, DecisionComplete2, C_Schedule.
-		// B_Complete happened concurrent to execution of the decision(2), where C_Schedule is a result made by execution of decision(2).
-		// One way to address is: Move all concurrent decisions to one after the decisions made by current decision.
+		case s.EventType_DecisionTaskCompleted:
+			concurrentToDecision = false
 
-		decisionStartToCompletionEvents := []*s.HistoryEvent{}
-		decisionCompletionToStartEvents := []*s.HistoryEvent{}
-		concurrentToDecision := true
-		lastDecisionIndex := -1
+		case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut:
+		// Skip
 
-	OrderEvents:
-		for ; eh.currentIndex < eh.historyEventsSize; eh.currentIndex++ {
-			event := history.Events[eh.currentIndex]
-			switch event.GetEventType() {
-			case s.EventType_DecisionTaskStarted:
-				if !eh.IsNextDecisionTimedOut(eh.currentIndex) {
-					// Set replay clock.
-					ts := time.Unix(0, event.GetTimestamp())
-					eh.eventsHandler.workflowEnvironmentImpl.SetCurrentReplayTime(ts)
-					break OrderEvents
+		default:
+			if concurrentToDecision {
+				decisionStartToCompletionEvents = append(decisionStartToCompletionEvents, event)
+			} else {
+				if eh.IsDecisionEvent(event.GetEventType()) {
+					lastDecisionIndex = len(decisionCompletionToStartEvents)
 				}
-
-			case s.EventType_DecisionTaskCompleted:
-				concurrentToDecision = false
-
-			case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut:
-			// Skip
-
-			default:
-				if concurrentToDecision {
-					decisionStartToCompletionEvents = append(decisionStartToCompletionEvents, event)
-				} else {
-					if eh.IsDecisionEvent(event.GetEventType()) {
-						lastDecisionIndex = len(decisionCompletionToStartEvents)
-					}
-					decisionCompletionToStartEvents = append(decisionCompletionToStartEvents, event)
-				}
+				decisionCompletionToStartEvents = append(decisionCompletionToStartEvents, event)
 			}
 		}
-
-		// Reorder events to correspond to the order that decider sees them.
-		// The main difference is that events that were added during decision task execution
-		// should be processed after events that correspond to the decisions.
-		// Otherwise the replay is going to break.
-
-		// First are events that correspond to the previous task decisions
-		if lastDecisionIndex >= 0 {
-			reorderedEvents = decisionCompletionToStartEvents[:lastDecisionIndex+1]
-		}
-		// Second are events that were added during previous task execution
-		reorderedEvents = append(reorderedEvents, decisionStartToCompletionEvents...)
-		// The last are events that were added after previous task completion
-		if lastDecisionIndex+1 < len(decisionCompletionToStartEvents) {
-			reorderedEvents = append(reorderedEvents, decisionCompletionToStartEvents[lastDecisionIndex+1:]...)
-		}
 	}
+
+	// Reorder events to correspond to the order that decider sees them.
+	// The main difference is that events that were added during decision task execution
+	// should be processed after events that correspond to the decisions.
+	// Otherwise the replay is going to break.
+
+	// First are events that correspond to the previous task decisions
+	if lastDecisionIndex >= 0 {
+		reorderedEvents = decisionCompletionToStartEvents[:lastDecisionIndex+1]
+	}
+	// Second are events that were added during previous task execution
+	reorderedEvents = append(reorderedEvents, decisionStartToCompletionEvents...)
+	// The last are events that were added after previous task completion
+	if lastDecisionIndex+1 < len(decisionCompletionToStartEvents) {
+		reorderedEvents = append(reorderedEvents, decisionCompletionToStartEvents[lastDecisionIndex+1:]...)
+	}
+
 	return reorderedEvents
 }
 
@@ -302,7 +306,7 @@ ProcessEvents:
 		}
 
 		for _, event := range reorderedEvents {
-			//wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
+			wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
 
 			isInReplay := event.GetEventId() < history.LastNonReplayedID()
 

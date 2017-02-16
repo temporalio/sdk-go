@@ -102,7 +102,8 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 	wc.scheduledActivites[scheduleTaskAttr.GetActivityId()] = callback
-	wc.logger.Debugf("ExectueActivity: %s: %+v", scheduleTaskAttr.GetActivityId(), scheduleTaskAttr)
+	wc.logger.Debugf("ExectueActivity: %s: Type: %v, on TaskList: %v.", scheduleTaskAttr.GetActivityId(),
+		scheduleTaskAttr.GetActivityType().GetName(), scheduleTaskAttr.GetTaskList().GetName())
 }
 
 func (wc *workflowEnvironmentImpl) SetCurrentReplayTime(replayTime time.Time) {
