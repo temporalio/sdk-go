@@ -22,11 +22,11 @@ type (
 
 	// ActivityInfo contains information about currently executing activity.
 	ActivityInfo struct {
-		taskToken         []byte
-		workflowExecution WorkflowExecution
-		activityID        string
-		activityType      ActivityType
-		identity          string
+		TaskToken         []byte
+		WorkflowExecution WorkflowExecution
+		ActivityID        string
+		ActivityType      ActivityType
+		Identity          string
 	}
 )
 
@@ -34,11 +34,11 @@ type (
 func GetActivityInfo(ctx context.Context) ActivityInfo {
 	env := getActivityEnv(ctx)
 	return ActivityInfo{
-		activityID:        env.activityID,
-		activityType:      env.activityType,
-		identity:          env.identity,
-		taskToken:         env.taskToken,
-		workflowExecution: env.workflowExecution,
+		ActivityID:        env.activityID,
+		ActivityType:      env.activityType,
+		Identity:          env.identity,
+		TaskToken:         env.taskToken,
+		WorkflowExecution: env.workflowExecution,
 	}
 }
 

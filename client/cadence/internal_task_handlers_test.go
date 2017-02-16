@@ -14,11 +14,18 @@ import (
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
+		logger bark.Logger
 	}
 )
 
 // Test suite.
 func (s *TaskHandlersTestSuite) SetupTest() {
+}
+
+func (s *TaskHandlersTestSuite) SetupSuite() {
+	log2 := log.New()
+	//log2.Level = log.DebugLevel
+	s.logger = bark.NewLoggerFromLogrus(log2)
 }
 
 func TestTaskHandlersTestSuite(t *testing.T) {
@@ -68,9 +75,8 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
 	}
-	logger := bark.NewLoggerFromLogrus(log.New())
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil, nil)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
@@ -80,7 +86,6 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 }
 
 func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
-	logger := bark.NewLoggerFromLogrus(log.New())
 	// Schedule an activity and see if we complete workflow.
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
@@ -89,7 +94,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil, nil)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -111,20 +116,18 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 }
 
 func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
-	logger := bark.NewLoggerFromLogrus(log.New())
-
 	// Schedule a decision activity and see if we complete workflow.
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
-		createTestEventDecisionTaskStarted(2),
+		createTestEventActivityTaskScheduled(2, &m.ActivityTaskScheduledEventAttributes{ActivityId: common.StringPtr("0")}),
 	}
 	task := createWorkflowTask(testEvents, 0)
 
 	pressurePoints := make(map[string]map[string]string)
-	pressurePoints[PressurePointTypeDecisionTaskStartTimeout] = map[string]string{PressurePointConfigProbability: "100"}
-	ppMgr := &pressurePointMgrImpl{config: pressurePoints, logger: logger}
+	pressurePoints[PressurePointTypeActivityTaskScheduleTimeout] = map[string]string{PressurePointConfigProbability: "100"}
+	ppMgr := &pressurePointMgrImpl{config: pressurePoints, logger: s.logger}
 
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, logger, nil, ppMgr)
+	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, ppMgr)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.Error(err)

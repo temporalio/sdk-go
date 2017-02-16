@@ -35,6 +35,7 @@ type (
 	// Should only be used within the scope of workflow definition
 	workflowEnvironment interface {
 		asyncActivityClient
+		workflowTimerClient
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err Error)
 	}

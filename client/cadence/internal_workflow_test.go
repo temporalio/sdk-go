@@ -3,7 +3,9 @@ package cadence
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
+	"time"
+
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,17 +16,55 @@ type helloWorldWorklfow struct {
 	t *testing.T
 }
 
+type callbackHandlerWrapTest struct {
+	handler resultHandler
+	result  []byte
+	err     Error
+}
+
+type asyncTestCallbackProcessor struct {
+	callbackCh         chan callbackHandlerWrapTest
+	waitProcCompleteCh chan struct{}
+}
+
+func newAsyncTestCallbackProcessor() *asyncTestCallbackProcessor {
+	return &asyncTestCallbackProcessor{
+		callbackCh:         make(chan callbackHandlerWrapTest, 10),
+		waitProcCompleteCh: make(chan struct{}),
+	}
+}
+
+func (ac *asyncTestCallbackProcessor) Process() {
+	go func() {
+		for {
+			c, more := <-ac.callbackCh
+			if !more {
+				break
+			}
+			time.Sleep(time.Millisecond)
+			c.handler(c.result, c.err)
+		}
+		ac.waitProcCompleteCh <- struct{}{}
+	}()
+}
+
+func (ac *asyncTestCallbackProcessor) Add(cb resultHandler, result []byte, err Error) {
+	ac.callbackCh <- callbackHandlerWrapTest{handler: cb, result: result, err: err}
+}
+
+func (ac *asyncTestCallbackProcessor) Close() {
+	close(ac.callbackCh)
+	<-ac.waitProcCompleteCh
+}
+
 func (w *helloWorldWorklfow) Execute(ctx Context, input []byte) (result []byte, err Error) {
 	return []byte(string(input) + " World!"), nil
 }
 
 func TestHelloWorldWorkflow(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	w := NewWorkflowDefinition(&helloWorldWorklfow{t: t})
-	ctx := NewMockWorkflowContext(mockCtrl)
-	ctx.EXPECT().Complete([]byte("Hello World!"), nil)
+	ctx := &MockWorkflowEnvironment{}
+	ctx.On("Complete", []byte("Hello World!"), nil).Return().Once()
 	w.Execute(ctx, []byte("Hello"))
 }
 
@@ -57,16 +97,24 @@ func (m *resultHandlerMatcher) String() string {
 }
 
 func TestSingleActivityWorkflow(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	w := NewWorkflowDefinition(&helloWorldActivityWorkflow{t: t})
-	ctx := NewMockWorkflowContext(mockCtrl)
-	ctx.EXPECT().Complete([]byte("Hello Flow!"), nil)
-	m := &resultHandlerMatcher{}
-	ctx.EXPECT().ExecuteActivity(gomock.Any(), m)
+	ctx := &MockWorkflowEnvironment{}
+
+	// Process timer callbacks.
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
+
+	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
+	ctx.On("Complete", []byte("Hello World!"), nil).Return().Once()
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+		parameters := args.Get(0).(ExecuteActivityParameters)
+		callback := args.Get(1).(resultHandler)
+		result := string(parameters.Input) + " World!"
+		cbProcessor.Add(callback, []byte(result), nil)
+	})
 	w.Execute(ctx, []byte("Hello"))
-	m.resultHandler([]byte("Hello Flow!"), nil)
+	cbProcessor.Close()
+	ctx.AssertExpectations(t)
 }
 
 type splitJoinActivityWorkflow struct {
@@ -118,40 +166,112 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 }
 
 func TestSplitJoinActivityWorkflow(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t})
-	ctx := NewMockWorkflowContext(mockCtrl)
-	m1 := &resultHandlerMatcher{}
-	ctx.EXPECT().ExecuteActivity(gomock.Any(), m1)
-	m2 := &resultHandlerMatcher{}
-	ctx.EXPECT().ExecuteActivity(gomock.Any(), m2)
-	ctx.EXPECT().Complete([]byte("Hello Flow!"), nil)
+	ctx := &MockWorkflowEnvironment{}
 
-	w.Execute(ctx, []byte("Hello"))
+	// Process timer callbacks.
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
 
-	m2.resultHandler([]byte(" Flow!"), nil)
-	m1.resultHandler([]byte("Hello"), nil)
+	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+		parameters := args.Get(0).(ExecuteActivityParameters)
+		callback := args.Get(1).(resultHandler)
+		switch *parameters.ActivityID {
+		case "id1":
+			cbProcessor.Add(callback, []byte("Hello"), nil)
+		case "id2":
+			cbProcessor.Add(callback, []byte(" Flow!"), nil)
+		}
+	}).Twice()
+
+	ctx.On("Complete", []byte("Hello Flow!"), nil).Return().Once()
+
+	w.Execute(ctx, []byte(""))
+
+	cbProcessor.Close()
+	ctx.AssertExpectations(t)
 }
 
 func TestWorkflowPanic(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t, panic: true})
-	ctx := NewMockWorkflowContext(mockCtrl)
-	m1 := &resultHandlerMatcher{}
-	ctx.EXPECT().ExecuteActivity(gomock.Any(), m1)
-	m2 := &resultHandlerMatcher{}
-	ctx.EXPECT().ExecuteActivity(gomock.Any(), m2)
+	ctx := &MockWorkflowEnvironment{}
 
-	ctx.EXPECT().Complete(nil, gomock.Any()).Do(func(result []byte, err Error) {
-		require.Nil(t, result)
-		require.NotNil(t, err)
-		require.EqualValues(t, "simulated", err.Reason())
-		require.Contains(t, string(err.Details()), "cadence.(*splitJoinActivityWorkflow).Execute")
-	})
+	// Process timer callbacks.
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
+
+	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+		callback := args.Get(1).(resultHandler)
+		cbProcessor.Add(callback, []byte("test"), nil)
+	}).Twice()
+	ctx.On("Complete", []byte(nil), mock.Anything).Return().Run(func(args mock.Arguments) {
+		resultErr := args.Get(1).(Error)
+		require.EqualValues(t, "simulated", resultErr.Reason())
+		require.Contains(t, string(resultErr.Details()), "cadence.(*splitJoinActivityWorkflow).Execute")
+	}).Once()
+
 	w.Execute(ctx, []byte("Hello"))
-	m2.resultHandler([]byte(" Flow!"), nil) // causes panic
+
+	cbProcessor.Close()
+	ctx.AssertExpectations(t)
+}
+
+type testClockWorkflow struct {
+	t *testing.T
+}
+
+func (w *testClockWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+	c := Now(ctx)
+	require.False(w.t, c.IsZero(), c)
+	return []byte("workflow-completed"), nil
+}
+
+func TestClockWorkflow(t *testing.T) {
+	w := NewWorkflowDefinition(&testClockWorkflow{t: t})
+	ctx := &MockWorkflowEnvironment{}
+
+	ctx.On("Now").Return(time.Now()).Once()
+	ctx.On("Complete", []byte("workflow-completed"), nil).Return().Once()
+	w.Execute(ctx, []byte("Hello"))
+	ctx.AssertExpectations(t)
+}
+
+type testTimerWorkflow struct {
+	t *testing.T
+}
+
+func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+	t, err := NewTimer(ctx, 1)
+	require.NoError(w.t, err)
+	require.NotNil(w.t, t)
+
+	isWokeByTimer := false
+
+	NewSelector(ctx).AddReceive(t.C, func(v interface{}, more bool) {
+		isWokeByTimer = true
+	}).Select(ctx)
+
+	require.True(w.t, isWokeByTimer)
+	return []byte("workflow-completed"), nil
+}
+
+func TestTimerWorkflow(t *testing.T) {
+	w := NewWorkflowDefinition(&testTimerWorkflow{t: t})
+	ctx := &MockWorkflowEnvironment{}
+
+	// Process timer callbacks.
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
+
+	ctx.On("NewTimer", mock.Anything, mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+		callback := args.Get(1).(resultHandler)
+		cbProcessor.Add(callback, nil, nil)
+	})
+	ctx.On("Complete", []byte("workflow-completed"), nil).Return().Once()
+
+	w.Execute(ctx, []byte("Hello"))
+	cbProcessor.Close()
+	ctx.AssertExpectations(t)
 }

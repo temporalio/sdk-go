@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"strconv"
 
+	"time"
+
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
@@ -15,9 +17,11 @@ import (
 // PressurePoints
 const (
 	PressurePointTypeDecisionTaskStartTimeout    = "decision-task-start-timeout"
+	PressurePointTypeDecisionTaskCompleted       = "decision-task-complete"
 	PressurePointTypeActivityTaskScheduleTimeout = "activity-task-schedule-timeout"
 	PressurePointTypeActivityTaskStartTimeout    = "activity-task-start-timeout"
 	PressurePointConfigProbability               = "probability"
+	PressurePointConfigSleep                     = "sleep"
 )
 
 type (
@@ -55,7 +59,7 @@ func NewWorkflowWorkerWithPressurePoints(
 }
 
 func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
-	if config, ok := p.config[PressurePointTypeDecisionTaskStartTimeout]; ok {
+	if config, ok := p.config[pressurePointName]; ok {
 		// If probability is configured.
 		if value, ok2 := config[PressurePointConfigProbability]; ok2 {
 			if probablity, err := strconv.Atoi(value); err == nil {
@@ -64,6 +68,16 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 					p.logger.Debugf("Execute: PressurePointName: %s, Configured with probability: %d is getting dropped.",
 						pressurePointName, probablity)
 					return fmt.Errorf("pressurepoint configured")
+				}
+			}
+		} else if value, ok3 := config[PressurePointConfigSleep]; ok3 {
+			if timeout, err := strconv.Atoi(value); err == nil {
+				if timeout > 0 {
+					p.logger.Debugf("Execute: PressurePointName: %s, Sleep for: %d.",
+						pressurePointName, timeout)
+					d := time.Duration(timeout) * time.Second
+					time.Sleep(d)
+					return nil
 				}
 			}
 		}

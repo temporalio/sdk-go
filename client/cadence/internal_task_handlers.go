@@ -38,7 +38,8 @@ type (
 	// workflowExecutionEventHandler process a single event.
 	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
-		ProcessEvent(event *s.HistoryEvent) ([]*s.Decision, error)
+		// Return List of decisions made, whether a decision is unhandled, any error.
+		ProcessEvent(event *s.HistoryEvent) ([]*s.Decision, bool, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -76,9 +77,12 @@ type (
 		logger          bark.Logger
 	}
 
-	// eventsHelper wrapper method to help information about events.
-	eventsHelper struct {
-		workflowTask *workflowTask
+	// history wrapper method to help information about events.
+	history struct {
+		workflowTask      *workflowTask
+		eventsHandler     *workflowExecutionEventHandlerImpl
+		currentIndex      int
+		historyEventsSize int
 	}
 
 	// activityTaskFailedError wraps the details of the failure of activity
@@ -123,12 +127,124 @@ func (e activityTaskTimeoutError) Reason() string {
 	return e.Error()
 }
 
+func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
+	return &history{
+		workflowTask:      task,
+		eventsHandler:     eventsHandler,
+		currentIndex:      0,
+		historyEventsSize: len(task.task.History.Events),
+	}
+}
+
 // Get last non replayed event ID.
-func (eh eventsHelper) LastNonReplayedID() int64 {
+func (eh *history) LastNonReplayedID() int64 {
 	if eh.workflowTask.task.PreviousStartedEventId == nil {
 		return 0
 	}
 	return *eh.workflowTask.task.PreviousStartedEventId
+}
+
+func (eh *history) IsNextDecisionTimedOut(startIndex int) bool {
+	events := eh.workflowTask.task.History.Events
+	eventsSize := len(events)
+	for i := startIndex; i < eventsSize; i++ {
+		switch events[i].GetEventType() {
+		case s.EventType_DecisionTaskCompleted:
+			return false
+		case s.EventType_DecisionTaskTimedOut:
+			return true
+		}
+	}
+	return false
+}
+
+func (eh *history) IsDecisionEvent(eventType s.EventType) bool {
+	switch eventType {
+	case s.EventType_WorkflowExecutionCompleted, s.EventType_WorkflowExecutionFailed, s.EventType_WorkflowExecutionTimedOut:
+		return true
+	case s.EventType_ActivityTaskScheduled, s.EventType_TimerStarted:
+		return true
+	default:
+		return false
+	}
+}
+
+func (eh *history) NextEvents() []*s.HistoryEvent {
+	return eh.getNextEvents()
+}
+
+func (eh *history) getNextEvents() []*s.HistoryEvent {
+	// Process events
+	reorderedEvents := []*s.HistoryEvent{}
+	history := eh.workflowTask.task.History
+
+	for ; eh.currentIndex < eh.historyEventsSize; eh.currentIndex++ {
+
+		// We need to re-order the events so the decider always sees in the same order.
+		// For Ex: (pseudo code)
+		//   ResultA := Schedule_Activity_A
+		//   ResultB := Schedule_Activity_B
+		//   if ResultB.IsReady() { panic error }
+		//   ResultC := Schedule_Activity_C(ResultA)
+		// If both A and B activities complete then we could have two different paths, Either Scheduling C (or) Panic'ing.
+		// Workflow events:
+		// 	Workflow_Start, DecisionStart1, DecisionComplete1, A_Schedule, B_Schedule, A_Complete,
+		//      DecisionStart2, B_Complete, DecisionComplete2, C_Schedule.
+		// B_Complete happened concurrent to execution of the decision(2), where C_Schedule is a result made by execution of decision(2).
+		// One way to address is: Move all concurrent decisions to one after the decisions made by current decision.
+
+		decisionStartToCompletionEvents := []*s.HistoryEvent{}
+		decisionCompletionToStartEvents := []*s.HistoryEvent{}
+		concurrentToDecision := true
+		lastDecisionIndex := -1
+
+	OrderEvents:
+		for ; eh.currentIndex < eh.historyEventsSize; eh.currentIndex++ {
+			event := history.Events[eh.currentIndex]
+			switch event.GetEventType() {
+			case s.EventType_DecisionTaskStarted:
+				if !eh.IsNextDecisionTimedOut(eh.currentIndex) {
+					// Set replay clock.
+					ts := time.Unix(0, event.GetTimestamp())
+					eh.eventsHandler.workflowEnvironmentImpl.SetCurrentReplayTime(ts)
+					break OrderEvents
+				}
+
+			case s.EventType_DecisionTaskCompleted:
+				concurrentToDecision = false
+
+			case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut:
+			// Skip
+
+			default:
+				if concurrentToDecision {
+					decisionStartToCompletionEvents = append(decisionStartToCompletionEvents, event)
+				} else {
+					if eh.IsDecisionEvent(event.GetEventType()) {
+						lastDecisionIndex = len(decisionCompletionToStartEvents)
+					}
+					decisionCompletionToStartEvents = append(decisionCompletionToStartEvents, event)
+				}
+			}
+		}
+
+		// Reorder events to correspond to the order that decider sees them.
+		// The main difference is that events that were added during decision task execution
+		// should be processed after events that correspond to the decisions.
+		// Otherwise the replay is going to break.
+
+		// First are events that correspond to the previous task decisions
+		if lastDecisionIndex >= 0 {
+			reorderedEvents = decisionCompletionToStartEvents[:lastDecisionIndex+1]
+		}
+		// Second are events that were added during previous task execution
+		reorderedEvents = append(reorderedEvents, decisionStartToCompletionEvents...)
+		// The last are events that were added after previous task completion
+		if lastDecisionIndex+1 < len(decisionCompletionToStartEvents) {
+			reorderedEvents = append(reorderedEvents, decisionCompletionToStartEvents[lastDecisionIndex+1:]...)
+		}
+	}
+	return reorderedEvents
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -171,45 +287,51 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 
 	eventHandler := newWorkflowExecutionEventHandler(
 		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
-	helperEvents := &eventsHelper{workflowTask: workflowTask}
-	history := workflowTask.task.History
+	history := newHistory(workflowTask, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
+	unhandledDecision := false
 
 	startTime := time.Now()
 
 	// Process events
-	for _, event := range history.Events {
-		wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
+ProcessEvents:
+	for {
+		reorderedEvents := history.NextEvents()
+		if len(reorderedEvents) == 0 {
+			break ProcessEvents
+		}
 
-		isInReplay := event.GetEventId() < helperEvents.LastNonReplayedID()
+		for _, event := range reorderedEvents {
+			//wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
 
-		// Any metrics.
-		if wth.metricsScope != nil && !isInReplay {
-			switch event.GetEventType() {
-			case s.EventType_DecisionTaskTimedOut:
-				wth.metricsScope.Counter(metrics.DecisionsTimeoutCounter).Inc(1)
+			isInReplay := event.GetEventId() < history.LastNonReplayedID()
+
+			// Any metrics.
+			wth.reportAnyMetrics(event, isInReplay)
+
+			// Any pressure points.
+			err := wth.executeAnyPressurePoints(event, isInReplay)
+			if err != nil {
+				return nil, "", err
 			}
-		}
 
-		// Any pressure points.
-		err := wth.executeAnyPressurePoints(event, isInReplay)
-		if err != nil {
-			return nil, "", err
-		}
+			eventDecisions, unhandled, err := eventHandler.ProcessEvent(event)
+			if err != nil {
+				return nil, "", err
+			}
+			if unhandled {
+				unhandledDecision = unhandled
+			}
 
-		eventDecisions, err := eventHandler.ProcessEvent(event)
-		if err != nil {
-			return nil, "", err
-		}
-
-		if !isInReplay {
-			if eventDecisions != nil {
-				decisions = append(decisions, eventDecisions...)
+			if !isInReplay {
+				if eventDecisions != nil {
+					decisions = append(decisions, eventDecisions...)
+				}
 			}
 		}
 	}
 
-	eventDecisions := wth.completeWorkflow(isWorkflowCompleted, completionResult, failure)
+	eventDecisions := wth.completeWorkflow(isWorkflowCompleted, unhandledDecision, completionResult, failure)
 	if len(eventDecisions) > 0 {
 		decisions = append(decisions, eventDecisions...)
 
@@ -233,24 +355,26 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 	return taskCompletionRequest, stackTrace, nil
 }
 
-func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, completionResult []byte,
+func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, unhandledDecision bool, completionResult []byte,
 	err Error) []*s.Decision {
 	decisions := []*s.Decision{}
-	if err != nil {
-		// Workflow failures
-		failDecision := createNewDecision(s.DecisionType_FailWorkflowExecution)
-		failDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
-			Reason:  common.StringPtr(err.Reason()),
-			Details: err.Details(),
+	if !unhandledDecision {
+		if err != nil {
+			// Workflow failures
+			failDecision := createNewDecision(s.DecisionType_FailWorkflowExecution)
+			failDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
+				Reason:  common.StringPtr(err.Reason()),
+				Details: err.Details(),
+			}
+			decisions = append(decisions, failDecision)
+		} else if isWorkflowCompleted {
+			// Workflow completion
+			completeDecision := createNewDecision(s.DecisionType_CompleteWorkflowExecution)
+			completeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
+				Result_: completionResult,
+			}
+			decisions = append(decisions, completeDecision)
 		}
-		decisions = append(decisions, failDecision)
-	} else if isWorkflowCompleted {
-		// Workflow completion
-		completeDecision := createNewDecision(s.DecisionType_CompleteWorkflowExecution)
-		completeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
-			Result_: completionResult,
-		}
-		decisions = append(decisions, completeDecision)
 	}
 	return decisions
 }
@@ -264,9 +388,20 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEve
 			return wth.ppMgr.Execute(PressurePointTypeActivityTaskScheduleTimeout)
 		case s.EventType_ActivityTaskStarted:
 			return wth.ppMgr.Execute(PressurePointTypeActivityTaskStartTimeout)
+		case s.EventType_DecisionTaskCompleted:
+			return wth.ppMgr.Execute(PressurePointTypeDecisionTaskCompleted)
 		}
 	}
 	return nil
+}
+
+func (wth *workflowTaskHandlerImpl) reportAnyMetrics(event *s.HistoryEvent, isInReplay bool) {
+	if wth.metricsScope != nil && !isInReplay {
+		switch event.GetEventType() {
+		case s.EventType_DecisionTaskTimedOut:
+			wth.metricsScope.Counter(metrics.DecisionsTimeoutCounter).Inc(1)
+		}
+	}
 }
 
 func newActivityTaskHandler(taskListName string, identity string, activities []Activity,

@@ -2,6 +2,10 @@ package cadence
 
 import (
 	"fmt"
+
+	"time"
+
+	"github.com/pborman/uuid"
 )
 
 // Channel must be used instead of native go channel by workflow code.
@@ -182,4 +186,60 @@ type WorkflowInfo struct {
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return getWorkflowEnvironment(ctx).WorkflowInfo()
+}
+
+// Now returns the current time when the decision is started or replayed.
+// The workflow needs to use this Now() to get the wall clock time instead of the Go lang library one.
+func Now(ctx Context) time.Time {
+	return getWorkflowEnvironment(ctx).Now()
+}
+
+// Timer - represents a timer for workflows.
+// https://golang.org/pkg/time/#Timer
+// The Timer type represents a single event.
+// When the Timer expires, the signal will be sent on C.
+// A Timer must be created with NewTimer.
+type Timer struct {
+	C Channel
+}
+
+// NewTimer returns after the specified delay expires.
+// The current timer resolution implementation is in seconds but is subjected to change.
+// The workflow needs to use this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer())
+func NewTimer(ctx Context, d time.Duration) (t *Timer, err Error) {
+	if d <= 0 {
+		ch := &channelImpl{size: 1}
+		ch.SendAsync(true)
+		return &Timer{C: ch}, nil
+	}
+
+	channelName := fmt.Sprintf("\"timer %v\"", uuid.New())
+	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
+	getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e Error) {
+		err = e
+		ok := resultChannel.SendAsync(true)
+		if !ok {
+			panic("unexpected")
+		}
+		executeDispatcher(ctx, getDispatcher(ctx))
+	})
+	return &Timer{C: resultChannel}, err
+}
+
+// Stop prevents the Timer from firing.
+// https://golang.org/pkg/time/#Timer.Stop
+// It returns true if the call stops the timer, false if the timer has already
+// expired or been stopped.
+// Stop does not close the channel, to prevent a read from the channel succeeding
+// incorrectly.
+//
+// To prevent the timer firing after a call to Stop,
+// check the return value and drain the channel. For example:
+// 	if !t.Stop() {
+// 		<-t.C
+// 	}
+// This cannot be done concurrent to other receives from the Timer's
+// channel.
+func (wt *Timer) Stop() bool {
+	panic("TODO: Stop to be implemented")
 }
