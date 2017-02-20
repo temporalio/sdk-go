@@ -47,7 +47,7 @@ type (
 
 	// WorkflowTask wraps a decision task.
 	WorkflowTask struct {
-		task *s.PollForDecisionTaskResponse
+		Task *s.PollForDecisionTaskResponse
 	}
 
 	// activityTask wraps a activity task.
@@ -132,20 +132,20 @@ func newHistory(task *WorkflowTask, eventsHandler *workflowExecutionEventHandler
 		workflowTask:      task,
 		eventsHandler:     eventsHandler,
 		currentIndex:      0,
-		historyEventsSize: len(task.task.History.Events),
+		historyEventsSize: len(task.Task.History.Events),
 	}
 }
 
 // Get last non replayed event ID.
 func (eh *history) LastNonReplayedID() int64 {
-	if eh.workflowTask.task.PreviousStartedEventId == nil {
+	if eh.workflowTask.Task.PreviousStartedEventId == nil {
 		return 0
 	}
-	return *eh.workflowTask.task.PreviousStartedEventId
+	return *eh.workflowTask.Task.PreviousStartedEventId
 }
 
 func (eh *history) IsNextDecisionTimedOut(startIndex int) bool {
-	events := eh.workflowTask.task.History.Events
+	events := eh.workflowTask.Task.History.Events
 	eventsSize := len(events)
 	for i := startIndex; i < eventsSize; i++ {
 		switch events[i].GetEventType() {
@@ -181,7 +181,7 @@ func (eh *history) getNextEvents() []*s.HistoryEvent {
 
 	// Process events
 	reorderedEvents := []*s.HistoryEvent{}
-	history := eh.workflowTask.task.History
+	history := eh.workflowTask.Task.History
 
 	// We need to re-order the events so the decider always sees in the same order.
 	// For Ex: (pseudo code)
@@ -270,11 +270,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *WorkflowTa
 	}
 
 	wth.logger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
-		workflowTask.task.GetWorkflowType().GetName(), workflowTask.task.GetPreviousStartedEventId())
+		workflowTask.Task.GetWorkflowType().GetName(), workflowTask.Task.GetPreviousStartedEventId())
 
 	// Setup workflow Info
 	workflowInfo := &WorkflowInfo{
-		WorkflowType: flowWorkflowTypeFrom(*workflowTask.task.WorkflowType),
+		WorkflowType: flowWorkflowTypeFrom(*workflowTask.Task.WorkflowType),
 		TaskListName: wth.taskListName,
 		// workflowExecution
 	}
@@ -348,7 +348,7 @@ ProcessEvents:
 
 	// Fill the response.
 	taskCompletionRequest := &s.RespondDecisionTaskCompletedRequest{
-		TaskToken: workflowTask.task.TaskToken,
+		TaskToken: workflowTask.Task.TaskToken,
 		Decisions: decisions,
 		Identity:  common.StringPtr(wth.identity),
 		// ExecutionContext:

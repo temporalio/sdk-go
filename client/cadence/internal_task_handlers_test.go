@@ -65,7 +65,7 @@ func createTestEventDecisionTaskStarted(eventID int64) *m.HistoryEvent {
 
 func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *WorkflowTask {
 	return &WorkflowTask{
-		task: &m.PollForDecisionTaskResponse{
+		Task: &m.PollForDecisionTaskResponse{
 			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
 			WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
 			History:                &m.History{Events: events}}}

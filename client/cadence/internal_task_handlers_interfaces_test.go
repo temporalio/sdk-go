@@ -52,7 +52,7 @@ type sampleWorkflowTaskHandler struct {
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(task *WorkflowTask, emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
-		TaskToken: task.task.TaskToken,
+		TaskToken: task.Task.TaskToken,
 	}, "", nil
 }
 
