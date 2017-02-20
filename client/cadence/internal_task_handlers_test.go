@@ -63,8 +63,8 @@ func createTestEventDecisionTaskStarted(eventID int64) *m.HistoryEvent {
 		EventType: common.EventTypePtr(m.EventType_DecisionTaskStarted)}
 }
 
-func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *workflowTask {
-	return &workflowTask{
+func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *WorkflowTask {
+	return &WorkflowTask{
 		task: &m.PollForDecisionTaskResponse{
 			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
 			WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
@@ -76,7 +76,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
+	taskHandler := NewWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
@@ -94,7 +94,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
+	taskHandler := NewWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -127,7 +127,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 	pressurePoints[PressurePointTypeActivityTaskScheduleTimeout] = map[string]string{PressurePointConfigProbability: "100"}
 	ppMgr := &pressurePointMgrImpl{config: pressurePoints, logger: s.logger}
 
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, ppMgr)
+	taskHandler := NewWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, ppMgr)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.Error(err)

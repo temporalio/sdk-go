@@ -22,7 +22,7 @@ type (
 	// workflowTaskHandler represents workflow task handlers.
 	workflowTaskHandler interface {
 		// Process the workflow task
-		ProcessWorkflowTask(task *workflowTask, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
+		ProcessWorkflowTask(task *WorkflowTask, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
 	// activityTaskHandler represents activity task handlers.
@@ -45,8 +45,8 @@ type (
 		Close()
 	}
 
-	// workflowTask wraps a decision task.
-	workflowTask struct {
+	// WorkflowTask wraps a decision task.
+	WorkflowTask struct {
 		task *s.PollForDecisionTaskResponse
 	}
 
@@ -79,7 +79,7 @@ type (
 
 	// history wrapper method to help information about events.
 	history struct {
-		workflowTask      *workflowTask
+		workflowTask      *WorkflowTask
 		eventsHandler     *workflowExecutionEventHandlerImpl
 		currentIndex      int
 		historyEventsSize int
@@ -127,7 +127,7 @@ func (e activityTaskTimeoutError) Reason() string {
 	return e.Error()
 }
 
-func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
+func newHistory(task *WorkflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
 	return &history{
 		workflowTask:      task,
 		eventsHandler:     eventsHandler,
@@ -251,8 +251,8 @@ OrderEvents:
 	return reorderedEvents
 }
 
-// newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
+// NewWorkflowTaskHandler returns an implementation of workflow task handler.
+func NewWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
 	logger bark.Logger, metricsScope tally.Scope, ppMgr pressurePointMgr) workflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
@@ -264,7 +264,7 @@ func newWorkflowTaskHandler(taskListName string, identity string, factory workfl
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
-func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTask, emitStack bool) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *WorkflowTask, emitStack bool) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
 	if workflowTask == nil {
 		return nil, "", fmt.Errorf("nil workflowtask provided")
 	}

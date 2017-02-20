@@ -139,7 +139,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 }
 
 // Poll for a single workflow task from the service
-func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
+func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
 	wtp.logger.Debug("workflowTaskPoller::Poll")
 	request := &s.PollForDecisionTaskRequest{
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
@@ -154,9 +154,9 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		return nil, err
 	}
 	if response == nil || len(response.GetTaskToken()) == 0 {
-		return &workflowTask{}, nil
+		return &WorkflowTask{}, nil
 	}
-	return &workflowTask{task: response}, nil
+	return &WorkflowTask{task: response}, nil
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
