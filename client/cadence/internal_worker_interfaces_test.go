@@ -1,6 +1,7 @@
 package cadence
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-common/bark"
-	"golang.org/x/net/context"
 )
 
 var (

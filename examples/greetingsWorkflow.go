@@ -1,11 +1,11 @@
 package examples
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
-	"golang.org/x/net/context"
 )
 
 type (

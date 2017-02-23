@@ -1,7 +1,7 @@
 package cadence
 
 import (
-	"golang.org/x/net/context"
+	"context"
 
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
