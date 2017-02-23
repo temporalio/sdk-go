@@ -102,6 +102,20 @@ func (_m *TChanWorkflowService) RecordActivityTaskHeartbeat(ctx thrift.Context, 
 	return r0, r1
 }
 
+// RespondActivityTaskCanceled provides a mock function with given fields: ctx, canceledRequest
+func (_m *TChanWorkflowService) RespondActivityTaskCanceled(ctx thrift.Context, canceledRequest *shared.RespondActivityTaskCanceledRequest) error {
+	ret := _m.Called(ctx, canceledRequest)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.RespondActivityTaskCanceledRequest) error); ok {
+		r0 = rf(ctx, canceledRequest)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // RespondActivityTaskCompleted provides a mock function with given fields: ctx, completeRequest
 func (_m *TChanWorkflowService) RespondActivityTaskCompleted(ctx thrift.Context, completeRequest *shared.RespondActivityTaskCompletedRequest) error {
 	ret := _m.Called(ctx, completeRequest)
