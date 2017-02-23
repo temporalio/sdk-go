@@ -6,7 +6,7 @@ import (
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"code.uber.internal/go-common.git/x/log"
 )
 

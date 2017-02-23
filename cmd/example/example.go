@@ -1,7 +1,7 @@
 package main
 
 import (
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"code.uber.internal/devexp/minions-client-go.git/examples"
 	"code.uber.internal/go-common.git/x/config"
 	"code.uber.internal/go-common.git/x/jaeger"

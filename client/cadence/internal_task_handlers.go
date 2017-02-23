@@ -10,7 +10,7 @@ import (
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"

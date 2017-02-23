@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"github.com/uber-common/bark"

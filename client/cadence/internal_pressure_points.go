@@ -7,7 +7,7 @@ import (
 
 	"time"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
 )

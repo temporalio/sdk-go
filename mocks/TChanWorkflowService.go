@@ -1,6 +1,6 @@
 package mocks
 
-import minions "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+import cadence "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 import mock "github.com/stretchr/testify/mock"
 import shared "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 import thrift "github.com/uber/tchannel-go/thrift"
@@ -181,4 +181,4 @@ func (_m *TChanWorkflowService) StartWorkflowExecution(ctx thrift.Context, start
 	return r0, r1
 }
 
-var _ minions.TChanWorkflowService = (*TChanWorkflowService)(nil)
+var _ cadence.TChanWorkflowService = (*TChanWorkflowService)(nil)

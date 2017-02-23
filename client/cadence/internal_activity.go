@@ -5,7 +5,7 @@ package cadence
 import (
 	"golang.org/x/net/context"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/minions"
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 )
 
 type (

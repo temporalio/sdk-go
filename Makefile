@@ -2,9 +2,9 @@ PROJECT_ROOT = code.uber.internal/devexp/minions-client-go.git
 
 # define the list of thrift files the service depends on
 # (if you have some)
-THRIFT_DIR = idl/code.uber.internal/devexp/minions
+THRIFT_DIR = idl/github.com/uber/cadence
 
-THRIFT_SRCS = $(THRIFT_DIR)/minions.thrift \
+THRIFT_SRCS = $(THRIFT_DIR)/cadence.thrift \
 	$(THRIFT_DIR)/shared.thrift
 
 # list all executables
