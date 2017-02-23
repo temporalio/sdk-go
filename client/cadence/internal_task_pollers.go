@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	pollTaskServiceTimeOut    = 3 * time.Minute // Server long poll is 2 * Minutes + delta
-	respondTaskServiceTimeOut = 2 * time.Second
+	pollTaskServiceTimeOut    = 3 * time.Minute // Server long poll is 1 * Minutes + delta
+	respondTaskServiceTimeOut = 10 * time.Second
 
 	tagTaskListName = "taskListName"
 
