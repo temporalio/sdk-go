@@ -202,6 +202,9 @@ func (c *tchanWorkflowServiceClient) RespondDecisionTaskCompleted(ctx thrift.Con
 		if e := resp.InternalServiceError; e != nil {
 			err = e
 		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
+		}
 	}
 
 	return err
@@ -560,6 +563,11 @@ func (s *tchanWorkflowServiceServer) handleRespondDecisionTaskCompleted(ctx thri
 				return false, nil, fmt.Errorf("Handler for internalServiceError returned non-nil error type *shared.InternalServiceError but nil value")
 			}
 			res.InternalServiceError = v
+		case *shared.EntityNotExistsError:
+			if v == nil {
+				return false, nil, fmt.Errorf("Handler for entityNotExistError returned non-nil error type *shared.EntityNotExistsError but nil value")
+			}
+			res.EntityNotExistError = v
 		default:
 			return false, nil, err
 		}

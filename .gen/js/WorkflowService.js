@@ -553,6 +553,7 @@ WorkflowService_RespondDecisionTaskCompleted_args.prototype.write = function(out
 var WorkflowService_RespondDecisionTaskCompleted_result = function(args) {
   this.badRequestError = null;
   this.internalServiceError = null;
+  this.entityNotExistError = null;
   if (args instanceof shared_ttypes.BadRequestError) {
     this.badRequestError = args;
     return;
@@ -561,12 +562,19 @@ var WorkflowService_RespondDecisionTaskCompleted_result = function(args) {
     this.internalServiceError = args;
     return;
   }
+  if (args instanceof shared_ttypes.EntityNotExistsError) {
+    this.entityNotExistError = args;
+    return;
+  }
   if (args) {
     if (args.badRequestError !== undefined && args.badRequestError !== null) {
       this.badRequestError = args.badRequestError;
     }
     if (args.internalServiceError !== undefined && args.internalServiceError !== null) {
       this.internalServiceError = args.internalServiceError;
+    }
+    if (args.entityNotExistError !== undefined && args.entityNotExistError !== null) {
+      this.entityNotExistError = args.entityNotExistError;
     }
   }
 };
@@ -600,6 +608,14 @@ WorkflowService_RespondDecisionTaskCompleted_result.prototype.read = function(in
         input.skip(ftype);
       }
       break;
+      case 3:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.entityNotExistError = new shared_ttypes.EntityNotExistsError();
+        this.entityNotExistError.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -619,6 +635,11 @@ WorkflowService_RespondDecisionTaskCompleted_result.prototype.write = function(o
   if (this.internalServiceError !== null && this.internalServiceError !== undefined) {
     output.writeFieldBegin('internalServiceError', Thrift.Type.STRUCT, 2);
     this.internalServiceError.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.entityNotExistError !== null && this.entityNotExistError !== undefined) {
+    output.writeFieldBegin('entityNotExistError', Thrift.Type.STRUCT, 3);
+    this.entityNotExistError.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -1616,6 +1637,9 @@ WorkflowServiceClient.prototype.recv_RespondDecisionTaskCompleted = function(inp
   if (null !== result.internalServiceError) {
     return callback(result.internalServiceError);
   }
+  if (null !== result.entityNotExistError) {
+    return callback(result.entityNotExistError);
+  }
   callback(null)
 };
 WorkflowServiceClient.prototype.PollForActivityTask = function(pollRequest, callback) {
@@ -2037,7 +2061,7 @@ WorkflowServiceProcessor.prototype.process_RespondDecisionTaskCompleted = functi
         output.writeMessageEnd();
         output.flush();
       }, function (err) {
-        if (err instanceof shared_ttypes.BadRequestError || err instanceof shared_ttypes.InternalServiceError) {
+        if (err instanceof shared_ttypes.BadRequestError || err instanceof shared_ttypes.InternalServiceError || err instanceof shared_ttypes.EntityNotExistsError) {
           var result = new WorkflowService_RespondDecisionTaskCompleted_result(err);
           output.writeMessageBegin("RespondDecisionTaskCompleted", Thrift.MessageType.REPLY, seqid);
         } else {
@@ -2050,7 +2074,7 @@ WorkflowServiceProcessor.prototype.process_RespondDecisionTaskCompleted = functi
       });
   } else {
     this._handler.RespondDecisionTaskCompleted(args.completeRequest, function (err, result) {
-      if (err == null || err instanceof shared_ttypes.BadRequestError || err instanceof shared_ttypes.InternalServiceError) {
+      if (err == null || err instanceof shared_ttypes.BadRequestError || err instanceof shared_ttypes.InternalServiceError || err instanceof shared_ttypes.EntityNotExistsError) {
         var result = new WorkflowService_RespondDecisionTaskCompleted_result((err != null ? err : {success: result}));
         output.writeMessageBegin("RespondDecisionTaskCompleted", Thrift.MessageType.REPLY, seqid);
       } else {

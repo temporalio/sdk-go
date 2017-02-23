@@ -332,6 +332,8 @@ class Client(Iface):
       raise result.badRequestError
     if result.internalServiceError is not None:
       raise result.internalServiceError
+    if result.entityNotExistError is not None:
+      raise result.entityNotExistError
     return
 
   def PollForActivityTask(self, pollRequest):
@@ -641,6 +643,8 @@ class Processor(Iface, TProcessor):
       result.badRequestError = badRequestError
     except shared.ttypes.InternalServiceError, internalServiceError:
       result.internalServiceError = internalServiceError
+    except shared.ttypes.EntityNotExistsError, entityNotExistError:
+      result.entityNotExistError = entityNotExistError
     oprot.writeMessageBegin("RespondDecisionTaskCompleted", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
@@ -1313,17 +1317,20 @@ class RespondDecisionTaskCompleted_result:
   Attributes:
    - badRequestError
    - internalServiceError
+   - entityNotExistError
   """
 
   thrift_spec = (
     None, # 0
     (1, TType.STRUCT, 'badRequestError', (shared.ttypes.BadRequestError, shared.ttypes.BadRequestError.thrift_spec), None, ), # 1
     (2, TType.STRUCT, 'internalServiceError', (shared.ttypes.InternalServiceError, shared.ttypes.InternalServiceError.thrift_spec), None, ), # 2
+    (3, TType.STRUCT, 'entityNotExistError', (shared.ttypes.EntityNotExistsError, shared.ttypes.EntityNotExistsError.thrift_spec), None, ), # 3
   )
 
-  def __init__(self, badRequestError=None, internalServiceError=None,):
+  def __init__(self, badRequestError=None, internalServiceError=None, entityNotExistError=None,):
     self.badRequestError = badRequestError
     self.internalServiceError = internalServiceError
+    self.entityNotExistError = entityNotExistError
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -1346,6 +1353,12 @@ class RespondDecisionTaskCompleted_result:
           self.internalServiceError.read(iprot)
         else:
           iprot.skip(ftype)
+      elif fid == 3:
+        if ftype == TType.STRUCT:
+          self.entityNotExistError = shared.ttypes.EntityNotExistsError()
+          self.entityNotExistError.read(iprot)
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -1364,6 +1377,10 @@ class RespondDecisionTaskCompleted_result:
       oprot.writeFieldBegin('internalServiceError', TType.STRUCT, 2)
       self.internalServiceError.write(oprot)
       oprot.writeFieldEnd()
+    if self.entityNotExistError is not None:
+      oprot.writeFieldBegin('entityNotExistError', TType.STRUCT, 3)
+      self.entityNotExistError.write(oprot)
+      oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
 
@@ -1375,6 +1392,7 @@ class RespondDecisionTaskCompleted_result:
     value = 17
     value = (value * 31) ^ hash(self.badRequestError)
     value = (value * 31) ^ hash(self.internalServiceError)
+    value = (value * 31) ^ hash(self.entityNotExistError)
     return value
 
   def __repr__(self):
