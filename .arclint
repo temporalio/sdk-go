@@ -6,7 +6,8 @@
       "exclude": [
         "(^Godeps/)",
         "(/thrift/)",
-        "(\\mocks.go$)"
+        "(\\mocks.go$)",
+        "(\\.gen/)"
       ]
     },
     "gofmt": {
@@ -14,7 +15,8 @@
       "include": "(\\.go$)",
       "exclude": [
         "(^Godeps/)",
-        "(/thrift/)"
+        "(/thrift/)",
+        "(\\.gen/)"
        ]
     },
     "govet": {

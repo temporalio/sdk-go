@@ -37,7 +37,7 @@ type (
 		asyncActivityClient
 		workflowTimerClient
 		WorkflowInfo() *WorkflowInfo
-		Complete(result []byte, err Error)
+		Complete(result []byte, err error)
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
@@ -48,7 +48,7 @@ type (
 
 	// WorkflowDefinitionFactory that returns a workflow definition for a specific
 	// workflow type.
-	workflowDefinitionFactory func(workflowType WorkflowType) (workflowDefinition, Error)
+	workflowDefinitionFactory func(workflowType WorkflowType) (workflowDefinition, error)
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {

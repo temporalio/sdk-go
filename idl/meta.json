@@ -1,13 +1,15 @@
 {
-    "time": "2016-12-15T20:06:22.049Z",
-    "version": 1481832382049,
+    "time": "2017-02-20T20:10:02.380Z",
+    "version": 1487621402380,
     "remotes": {
         "code.uber.internal/devexp/minions": {
-            "time": 1481832382049,
-            "version": 1481832382049,
+            "time": 1487621402380,
+            "version": 1487621402380,
             "shasums": {
-                "minions.thrift": "a08475152e392712e08a62c36e32169af141501c",
-                "shared.thrift": "a372cc5bf6a027d85555021857d85b50fe14905b"
+                "history.thrift": "6fe7e89b9f8e76c0c96b8c180d1446037b52c602",
+                "matching.thrift": "ccf43818f8eca19f45c05208b33da55be39e3abf",
+                "minions.thrift": "5a56e3ff81bf281c0d6dd16ab42579656925b96c",
+                "shared.thrift": "d27e47ccaca60a6da5dcce30b738b1c4f098992b"
             }
         }
     }

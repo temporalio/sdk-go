@@ -19,7 +19,7 @@ type (
 	}
 )
 
-var workflowFactory = func(wt cadence.WorkflowType) (cadence.Workflow, cadence.Error) {
+var workflowFactory = func(wt cadence.WorkflowType) (cadence.Workflow, error) {
 	switch wt.Name {
 	case "greetingsWorkflow":
 		return greetingsWorkflow{}, nil

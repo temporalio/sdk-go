@@ -16,7 +16,7 @@ type (
 
 	// Activity is an interface of an activity implementation.
 	Activity interface {
-		Execute(ctx context.Context, input []byte) ([]byte, Error)
+		Execute(ctx context.Context, input []byte) ([]byte, error)
 		ActivityType() ActivityType
 	}
 

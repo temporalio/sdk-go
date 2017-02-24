@@ -5,6 +5,7 @@ import (
 
 	"time"
 
+	"code.uber.internal/devexp/minions-client-go.git/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -57,7 +58,7 @@ func (ac *asyncTestCallbackProcessor) Close() {
 	<-ac.waitProcCompleteCh
 }
 
-func (w *helloWorldWorklfow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+func (w *helloWorldWorklfow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	return []byte(string(input) + " World!"), nil
 }
 
@@ -72,7 +73,7 @@ type helloWorldActivityWorkflow struct {
 	t *testing.T
 }
 
-func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	id := "id1"
 	parameters := ExecuteActivityParameters{
 		ActivityID: &id,
@@ -106,7 +107,7 @@ func TestSingleActivityWorkflow(t *testing.T) {
 
 	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
 	ctx.On("Complete", []byte("Hello World!"), nil).Return().Once()
-	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		parameters := args.Get(0).(ExecuteActivityParameters)
 		callback := args.Get(1).(resultHandler)
 		result := string(parameters.Input) + " World!"
@@ -122,7 +123,7 @@ type splitJoinActivityWorkflow struct {
 	panic bool
 }
 
-func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	var result1, result2 []byte
 	var err1, err2 error
 
@@ -174,7 +175,7 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 	cbProcessor.Process()
 
 	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
-	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		parameters := args.Get(0).(ExecuteActivityParameters)
 		callback := args.Get(1).(resultHandler)
 		switch *parameters.ActivityID {
@@ -202,7 +203,7 @@ func TestWorkflowPanic(t *testing.T) {
 	cbProcessor.Process()
 
 	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
-	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		callback := args.Get(1).(resultHandler)
 		cbProcessor.Add(callback, []byte("test"), nil)
 	}).Twice()
@@ -222,7 +223,7 @@ type testClockWorkflow struct {
 	t *testing.T
 }
 
-func (w *testClockWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+func (w *testClockWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	c := Now(ctx)
 	require.False(w.t, c.IsZero(), c)
 	return []byte("workflow-completed"), nil
@@ -242,7 +243,7 @@ type testTimerWorkflow struct {
 	t *testing.T
 }
 
-func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, err Error) {
+func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	t, err := NewTimer(ctx, 1)
 	require.NoError(w.t, err)
 	require.NotNil(w.t, t)
@@ -272,6 +273,82 @@ func TestTimerWorkflow(t *testing.T) {
 	ctx.On("Complete", []byte("workflow-completed"), nil).Return().Once()
 
 	w.Execute(ctx, []byte("Hello"))
+	cbProcessor.Close()
+	ctx.AssertExpectations(t)
+}
+
+type testActivityCancelWorkflow struct {
+	t *testing.T
+}
+
+func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+	// Sync cancellation
+	ctx1, c1 := WithCancel(ctx)
+	defer c1()
+	id1 := "id1"
+	res1, err1 := ExecuteActivity(ctx1, ExecuteActivityParameters{ActivityID: common.StringPtr(id1)})
+	require.Equal(w.t, string(res1), "test")
+	require.NoError(w.t, err1)
+
+	// Async Cancellation (Callback completes before cancel)
+	ctx2, c2 := WithCancel(ctx)
+	id2 := "id2"
+	f := ExecuteActivityAsync(ctx2, ExecuteActivityParameters{ActivityID: common.StringPtr(id2)})
+	c2()
+	res2, err2 := f.Get(ctx)
+	require.NotNil(w.t, res2)
+	require.NoError(w.t, err2)
+
+	// Async Cancellation (Callback doesn't complete)
+	ctx3, c3 := WithCancel(ctx)
+	id3 := "id3"
+	f3 := ExecuteActivityAsync(ctx3, ExecuteActivityParameters{ActivityID: common.StringPtr(id3)})
+	c3()
+	res3, err3 := f3.Get(ctx)
+	require.Nil(w.t, res3)
+	require.Equal(w.t, "testCancelDetails", string(err3.(Error).Details()))
+
+	return []byte("workflow-completed"), nil
+}
+
+func TestActivityCancelWorkflow(t *testing.T) {
+	w := NewWorkflowDefinition(&testActivityCancelWorkflow{t: t})
+	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{})
+
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
+
+	executeCount := 0
+	var callbackHandler3 resultHandler
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(&activityInfo{activityID: "testAct"}).Run(func(args mock.Arguments) {
+		executeCount++
+		callback := args.Get(1).(resultHandler)
+		if executeCount < 3 {
+			cbProcessor.Add(callback, []byte("test"), nil)
+		} else {
+			callbackHandler3 = callback
+		}
+	}).Times(3)
+
+	cancelCount := 0
+	ctx.On("RequestCancelActivity", "testAct").Return().Run(func(args mock.Arguments) {
+		cancelCount++
+		if cancelCount == 2 { // Because of defer.
+			cbProcessor.Add(callbackHandler3, nil, &activityTaskCanceledError{details: []byte("testCancelDetails")})
+		}
+	}).Times(3)
+
+	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
+		result := args.Get(0).([]byte)
+		require.Equal(t, "workflow-completed", string(result))
+		workflowComplete <- struct{}{}
+	}).Once()
+
+	w.Execute(ctx, []byte("Hello"))
+
+	<-workflowComplete
+
 	cbProcessor.Close()
 	ctx.AssertExpectations(t)
 }

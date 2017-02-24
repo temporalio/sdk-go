@@ -99,7 +99,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	if err != nil {
 		return err
 	}
-	if workflowTask.Task == nil {
+	if workflowTask.task == nil {
 		// We didn't have task, poll might have time out.
 		wtp.logger.Debug("Workflow task unavailable")
 		return nil
@@ -139,7 +139,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 }
 
 // Poll for a single workflow task from the service
-func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
+func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	wtp.logger.Debug("workflowTaskPoller::Poll")
 	request := &s.PollForDecisionTaskRequest{
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
@@ -154,9 +154,9 @@ func (wtp *workflowTaskPoller) poll() (*WorkflowTask, error) {
 		return nil, err
 	}
 	if response == nil || len(response.GetTaskToken()) == 0 {
-		return &WorkflowTask{}, nil
+		return &workflowTask{}, nil
 	}
-	return &WorkflowTask{Task: response}, nil
+	return &workflowTask{task: response}, nil
 }
 
 func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,

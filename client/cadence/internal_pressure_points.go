@@ -45,7 +45,7 @@ func NewWorkflowWorkerWithPressurePoints(
 	pressurePoints map[string]map[string]string) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
-		func(workflowType WorkflowType) (workflowDefinition, Error) {
+		func(workflowType WorkflowType) (workflowDefinition, error) {
 			wd, err := factory(workflowType)
 			if err != nil {
 				return nil, err

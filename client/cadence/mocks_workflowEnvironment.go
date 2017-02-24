@@ -11,14 +11,30 @@ type MockWorkflowEnvironment struct {
 	mock.Mock
 }
 
+// RequestCancelActivity provides a mock function with given fields: activityID
+func (_m *MockWorkflowEnvironment) RequestCancelActivity(activityID string) {
+	_m.Called(activityID)
+}
+
 // Complete provides a mock function with given fields: result, err
-func (_m *MockWorkflowEnvironment) Complete(result []byte, err Error) {
+func (_m *MockWorkflowEnvironment) Complete(result []byte, err error) {
 	_m.Called(result, err)
 }
 
 // ExecuteActivity provides a mock function with given fields: parameters, callback
-func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) {
-	_m.Called(parameters, callback)
+func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) *activityInfo {
+	ret := _m.Called(parameters, callback)
+
+	var r0 *activityInfo
+	if rf, ok := ret.Get(0).(func(ExecuteActivityParameters, resultHandler) *activityInfo); ok {
+		r0 = rf(parameters, callback)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*activityInfo)
+		}
+	}
+
+	return r0
 }
 
 // NewTimer provides a mock function with given fields: timerID, delayInSeconds, callback

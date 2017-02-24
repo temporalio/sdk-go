@@ -75,7 +75,7 @@ func NewActivityWorker(executionParameters WorkerExecutionParameters, activities
 // WorkflowFactory function is used to create a workflow implementation object.
 // It is needed as a workflow objbect is created on every decision.
 // To start a workflow instance use NewWorkflowClient(...).StartWorkflowExecution(...)
-type WorkflowFactory func(workflowType WorkflowType) (Workflow, Error)
+type WorkflowFactory func(workflowType WorkflowType) (Workflow, error)
 
 // NewWorkflowWorker returns an instance of a workflow worker.
 func NewWorkflowWorker(
@@ -86,7 +86,7 @@ func NewWorkflowWorker(
 	metricsScope tally.Scope) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
-		func(workflowType WorkflowType) (workflowDefinition, Error) {
+		func(workflowType WorkflowType) (workflowDefinition, error) {
 			wd, err := factory(workflowType)
 			if err != nil {
 				return nil, err

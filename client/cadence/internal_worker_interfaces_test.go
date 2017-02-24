@@ -22,6 +22,7 @@ var (
 type (
 	// Workflow decider
 	helloWorldWorkflow struct {
+		cancelActivity bool
 	}
 
 	// Greeter Activity
@@ -50,14 +51,19 @@ func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 		ActivityType: ActivityType{activityName},
 		Input:        nil,
 	}
-	env.ExecuteActivity(activityParameters, func(result []byte, err Error) {
+	a := env.ExecuteActivity(activityParameters, func(result []byte, err Error) {
 		if err != nil {
-			env.Complete(nil, err)
-			return
+			if _, ok := err.(*activityTaskCanceledError); !ok {
+				env.Complete(nil, err)
+				return
+			}
 		}
 		fmt.Println("Hello " + string(result) + "!")
 		env.Complete(result, nil)
 	})
+	if wf.cancelActivity {
+		env.RequestCancelActivity(a.activityID)
+	}
 }
 
 // Greeter activity methods
@@ -65,12 +71,12 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	activityName := "Greeter_Activity"
 	return ActivityType{Name: activityName}
 }
-func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, Error) {
+func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	return []byte("World"), nil
 }
 
 // testWorkflowDefinitionFactory
-func testWorkflowDefinitionFactory(workflowType WorkflowType) (workflowDefinition, Error) {
+func testWorkflowDefinitionFactory(workflowType WorkflowType) (workflowDefinition, error) {
 	return &helloWorldWorkflow{}, nil
 }
 

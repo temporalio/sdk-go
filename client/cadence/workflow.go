@@ -142,7 +142,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 // All time manipulation should use current time returned by GetTime(ctx) method.
 // Note that cadence.Context is used instead of context.Context to avoid use of raw channels.
 type Workflow interface {
-	Execute(ctx Context, input []byte) (result []byte, err Error)
+	Execute(ctx Context, input []byte) (result []byte, err error)
 }
 
 // ExecuteActivityParameters configuration parameters for scheduling an activity
@@ -155,13 +155,14 @@ type ExecuteActivityParameters struct {
 	ScheduleToStartTimeoutSeconds int32
 	StartToCloseTimeoutSeconds    int32
 	HeartbeatTimeoutSeconds       int32
+	WaitForCancellation           bool
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.
-func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result []byte, err Error) {
+func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result []byte, err error) {
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
-	getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
 		result = r
 		if e != nil {
 			err = e.(Error)
@@ -172,8 +173,38 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 		}
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
+	Go(ctx, func(ctx Context) {
+		if ctx.Done() == nil {
+			return // not cancellable.
+		}
+		if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
+			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+		}
+	})
 	_, _ = resultChannel.Receive(ctx)
 	return
+}
+
+// ExecuteActivityAsync requests activity execution in the context of a workflow.
+func ExecuteActivityAsync(ctx Context, parameters ExecuteActivityParameters) Future {
+	future, settable := NewFuture(ctx)
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
+		var err Error
+		if e != nil {
+			err = e.(Error)
+		}
+		settable.Set(r, err)
+		executeDispatcher(ctx, getDispatcher(ctx))
+	})
+	Go(ctx, func(ctx Context) {
+		if ctx.Done() == nil {
+			return // not cancellable.
+		}
+		if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
+			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+		}
+	})
+	return future
 }
 
 // WorkflowInfo information about currently executing workflow
@@ -206,7 +237,7 @@ type Timer struct {
 // NewTimer returns after the specified delay expires.
 // The current timer resolution implementation is in seconds but is subjected to change.
 // The workflow needs to use this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer())
-func NewTimer(ctx Context, d time.Duration) (t *Timer, err Error) {
+func NewTimer(ctx Context, d time.Duration) (t *Timer, err error) {
 	if d <= 0 {
 		ch := &channelImpl{size: 1}
 		ch.SendAsync(true)

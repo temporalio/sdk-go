@@ -37,7 +37,7 @@ type syncWorkflowDefinition struct {
 
 type workflowResult struct {
 	workflowResult []byte
-	error          Error
+	error          error
 }
 
 type activityClient struct {

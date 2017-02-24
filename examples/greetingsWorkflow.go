@@ -22,7 +22,7 @@ type (
 )
 
 // Greetings Workflow Decider.
-func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []byte, err cadence.Error) {
+func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []byte, err error) {
 	// Get Greeting.
 	greetResult, err := cadence.ExecuteActivity(ctx, activityInfo("getGreetingActivity"))
 	if err != nil {
@@ -46,7 +46,7 @@ func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []
 }
 
 // Get Name Activity.
-func (g getNameActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
+func (g getNameActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	return []byte("World"), nil
 }
 
@@ -55,7 +55,7 @@ func (g getNameActivity) ActivityType() cadence.ActivityType {
 }
 
 // Get Greeting Activity.
-func (ga getGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
+func (ga getGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	return []byte("Hello"), nil
 }
 
@@ -64,7 +64,7 @@ func (ga getGreetingActivity) ActivityType() cadence.ActivityType {
 }
 
 // Say Greeting Activity.
-func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, cadence.Error) {
+func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	greeetingParams := &sayGreetingActivityRequest{}
 	err := json.Unmarshal(input, greeetingParams)
 	if err != nil {

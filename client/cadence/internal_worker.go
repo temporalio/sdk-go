@@ -67,7 +67,7 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = NewWorkflowTaskHandler(params.TaskList, identity, factory, logger, metricsScope, ppMgr)
+		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, metricsScope, ppMgr)
 	}
 
 	poller := newWorkflowTaskPoller(

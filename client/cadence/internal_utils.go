@@ -36,3 +36,11 @@ func flowWorkflowTypeFrom(v s.WorkflowType) WorkflowType {
 func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
 }
+
+// getErrorDetails gets reason and details.
+func getErrorDetails(err error) (string, []byte) {
+	if wErr, ok := err.(Error); ok {
+		return wErr.Reason(), wErr.Details()
+	}
+	return err.Error(), []byte("")
+}
