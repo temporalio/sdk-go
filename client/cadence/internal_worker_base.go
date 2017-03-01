@@ -104,6 +104,7 @@ func (bw *baseWorker) Start() {
 	}
 
 	bw.isWorkerStarted = true
+	bw.logger.Infof("Started Worker with %v routines.", bw.options.routineCount)
 }
 
 // Shutdown is a blocking call and cleans up all the resources assosciated with worker.
@@ -112,9 +113,13 @@ func (bw *baseWorker) Stop() {
 		return
 	}
 	close(bw.shutdownCh)
-	// TODO: This needs to have a time out that worker routines in-definitely doesn't block us,
-	// also need a way to preempt the go routines so we don't hold on the resources after this.
-	bw.shutdownWG.Wait()
+
+	// TODO: The poll is longer than the 10 seconds, we probably need some way to hard terminate the
+	// poll routines as well.
+
+	if success := AwaitWaitGroup(&bw.shutdownWG, 10*time.Second); !success {
+		bw.logger.Info("Worker timed out on waiting for shutdown.")
+	}
 }
 
 // execute handler wraps call to process a task.
@@ -140,7 +145,7 @@ func (bw *baseWorker) execute(routineID int) {
 		select {
 		// Shutdown the Routine.
 		case <-bw.shutdownCh:
-			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID}).Debug("Shutting Down!")
+			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID}).Info("Shutting Down!")
 			bw.shutdownWG.Done()
 			return
 

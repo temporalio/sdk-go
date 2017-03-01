@@ -5,9 +5,8 @@ package cadence
 
 import (
 	"bytes"
-	"fmt"
-
 	"code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
+	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 )
 

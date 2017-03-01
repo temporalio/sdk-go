@@ -20,7 +20,8 @@ ttypes.DecisionType = {
   'RequestCancelActivityTask' : 1,
   'StartTimer' : 2,
   'CompleteWorkflowExecution' : 3,
-  'FailWorkflowExecution' : 4
+  'FailWorkflowExecution' : 4,
+  'CancelTimer' : 5
 };
 ttypes.EventType = {
   'WorkflowExecutionStarted' : 0,
@@ -41,7 +42,9 @@ ttypes.EventType = {
   'ActivityTaskCanceled' : 15,
   'TimerStarted' : 16,
   'TimerFired' : 17,
-  'CompleteWorkflowExecutionFailed' : 18
+  'CompleteWorkflowExecutionFailed' : 18,
+  'CancelTimerFailed' : 19,
+  'TimerCanceled' : 20
 };
 ttypes.WorkflowCompleteFailedCause = {
   'UNHANDLED_DECISION' : 0
@@ -905,6 +908,59 @@ FailWorkflowExecutionDecisionAttributes.prototype.write = function(output) {
   return;
 };
 
+var CancelTimerDecisionAttributes = module.exports.CancelTimerDecisionAttributes = function(args) {
+  this.timerId = null;
+  if (args) {
+    if (args.timerId !== undefined && args.timerId !== null) {
+      this.timerId = args.timerId;
+    }
+  }
+};
+CancelTimerDecisionAttributes.prototype = {};
+CancelTimerDecisionAttributes.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true)
+  {
+    var ret = input.readFieldBegin();
+    var fname = ret.fname;
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 10:
+      if (ftype == Thrift.Type.STRING) {
+        this.timerId = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+CancelTimerDecisionAttributes.prototype.write = function(output) {
+  output.writeStructBegin('CancelTimerDecisionAttributes');
+  if (this.timerId !== null && this.timerId !== undefined) {
+    output.writeFieldBegin('timerId', Thrift.Type.STRING, 10);
+    output.writeString(this.timerId);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var Decision = module.exports.Decision = function(args) {
   this.decisionType = null;
   this.scheduleActivityTaskDecisionAttributes = null;
@@ -912,6 +968,7 @@ var Decision = module.exports.Decision = function(args) {
   this.completeWorkflowExecutionDecisionAttributes = null;
   this.failWorkflowExecutionDecisionAttributes = null;
   this.requestCancelActivityTaskDecisionAttributes = null;
+  this.cancelTimerDecisionAttributes = null;
   if (args) {
     if (args.decisionType !== undefined && args.decisionType !== null) {
       this.decisionType = args.decisionType;
@@ -930,6 +987,9 @@ var Decision = module.exports.Decision = function(args) {
     }
     if (args.requestCancelActivityTaskDecisionAttributes !== undefined && args.requestCancelActivityTaskDecisionAttributes !== null) {
       this.requestCancelActivityTaskDecisionAttributes = new ttypes.RequestCancelActivityTaskDecisionAttributes(args.requestCancelActivityTaskDecisionAttributes);
+    }
+    if (args.cancelTimerDecisionAttributes !== undefined && args.cancelTimerDecisionAttributes !== null) {
+      this.cancelTimerDecisionAttributes = new ttypes.CancelTimerDecisionAttributes(args.cancelTimerDecisionAttributes);
     }
   }
 };
@@ -994,6 +1054,14 @@ Decision.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 50:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.cancelTimerDecisionAttributes = new ttypes.CancelTimerDecisionAttributes();
+        this.cancelTimerDecisionAttributes.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -1033,6 +1101,11 @@ Decision.prototype.write = function(output) {
   if (this.requestCancelActivityTaskDecisionAttributes !== null && this.requestCancelActivityTaskDecisionAttributes !== undefined) {
     output.writeFieldBegin('requestCancelActivityTaskDecisionAttributes', Thrift.Type.STRUCT, 40);
     this.requestCancelActivityTaskDecisionAttributes.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.cancelTimerDecisionAttributes !== null && this.cancelTimerDecisionAttributes !== undefined) {
+    output.writeFieldBegin('cancelTimerDecisionAttributes', Thrift.Type.STRUCT, 50);
+    this.cancelTimerDecisionAttributes.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -2750,6 +2823,202 @@ TimerFiredEventAttributes.prototype.write = function(output) {
   return;
 };
 
+var TimerCanceledEventAttributes = module.exports.TimerCanceledEventAttributes = function(args) {
+  this.timerId = null;
+  this.startedEventId = null;
+  this.decisionTaskCompletedEventId = null;
+  this.identity = null;
+  if (args) {
+    if (args.timerId !== undefined && args.timerId !== null) {
+      this.timerId = args.timerId;
+    }
+    if (args.startedEventId !== undefined && args.startedEventId !== null) {
+      this.startedEventId = args.startedEventId;
+    }
+    if (args.decisionTaskCompletedEventId !== undefined && args.decisionTaskCompletedEventId !== null) {
+      this.decisionTaskCompletedEventId = args.decisionTaskCompletedEventId;
+    }
+    if (args.identity !== undefined && args.identity !== null) {
+      this.identity = args.identity;
+    }
+  }
+};
+TimerCanceledEventAttributes.prototype = {};
+TimerCanceledEventAttributes.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true)
+  {
+    var ret = input.readFieldBegin();
+    var fname = ret.fname;
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 10:
+      if (ftype == Thrift.Type.STRING) {
+        this.timerId = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 20:
+      if (ftype == Thrift.Type.I64) {
+        this.startedEventId = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 30:
+      if (ftype == Thrift.Type.I64) {
+        this.decisionTaskCompletedEventId = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 40:
+      if (ftype == Thrift.Type.STRING) {
+        this.identity = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TimerCanceledEventAttributes.prototype.write = function(output) {
+  output.writeStructBegin('TimerCanceledEventAttributes');
+  if (this.timerId !== null && this.timerId !== undefined) {
+    output.writeFieldBegin('timerId', Thrift.Type.STRING, 10);
+    output.writeString(this.timerId);
+    output.writeFieldEnd();
+  }
+  if (this.startedEventId !== null && this.startedEventId !== undefined) {
+    output.writeFieldBegin('startedEventId', Thrift.Type.I64, 20);
+    output.writeI64(this.startedEventId);
+    output.writeFieldEnd();
+  }
+  if (this.decisionTaskCompletedEventId !== null && this.decisionTaskCompletedEventId !== undefined) {
+    output.writeFieldBegin('decisionTaskCompletedEventId', Thrift.Type.I64, 30);
+    output.writeI64(this.decisionTaskCompletedEventId);
+    output.writeFieldEnd();
+  }
+  if (this.identity !== null && this.identity !== undefined) {
+    output.writeFieldBegin('identity', Thrift.Type.STRING, 40);
+    output.writeString(this.identity);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var CancelTimerFailedEventAttributes = module.exports.CancelTimerFailedEventAttributes = function(args) {
+  this.timerId = null;
+  this.cause = null;
+  this.decisionTaskCompletedEventId = null;
+  this.identity = null;
+  if (args) {
+    if (args.timerId !== undefined && args.timerId !== null) {
+      this.timerId = args.timerId;
+    }
+    if (args.cause !== undefined && args.cause !== null) {
+      this.cause = args.cause;
+    }
+    if (args.decisionTaskCompletedEventId !== undefined && args.decisionTaskCompletedEventId !== null) {
+      this.decisionTaskCompletedEventId = args.decisionTaskCompletedEventId;
+    }
+    if (args.identity !== undefined && args.identity !== null) {
+      this.identity = args.identity;
+    }
+  }
+};
+CancelTimerFailedEventAttributes.prototype = {};
+CancelTimerFailedEventAttributes.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true)
+  {
+    var ret = input.readFieldBegin();
+    var fname = ret.fname;
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 10:
+      if (ftype == Thrift.Type.STRING) {
+        this.timerId = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 20:
+      if (ftype == Thrift.Type.STRING) {
+        this.cause = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 30:
+      if (ftype == Thrift.Type.I64) {
+        this.decisionTaskCompletedEventId = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 40:
+      if (ftype == Thrift.Type.STRING) {
+        this.identity = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+CancelTimerFailedEventAttributes.prototype.write = function(output) {
+  output.writeStructBegin('CancelTimerFailedEventAttributes');
+  if (this.timerId !== null && this.timerId !== undefined) {
+    output.writeFieldBegin('timerId', Thrift.Type.STRING, 10);
+    output.writeString(this.timerId);
+    output.writeFieldEnd();
+  }
+  if (this.cause !== null && this.cause !== undefined) {
+    output.writeFieldBegin('cause', Thrift.Type.STRING, 20);
+    output.writeString(this.cause);
+    output.writeFieldEnd();
+  }
+  if (this.decisionTaskCompletedEventId !== null && this.decisionTaskCompletedEventId !== undefined) {
+    output.writeFieldBegin('decisionTaskCompletedEventId', Thrift.Type.I64, 30);
+    output.writeI64(this.decisionTaskCompletedEventId);
+    output.writeFieldEnd();
+  }
+  if (this.identity !== null && this.identity !== undefined) {
+    output.writeFieldBegin('identity', Thrift.Type.STRING, 40);
+    output.writeString(this.identity);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var HistoryEvent = module.exports.HistoryEvent = function(args) {
   this.eventId = null;
   this.timestamp = null;
@@ -2773,6 +3042,8 @@ var HistoryEvent = module.exports.HistoryEvent = function(args) {
   this.activityTaskCancelRequestedEventAttributes = null;
   this.requestCancelActivityTaskFailedEventAttributes = null;
   this.activityTaskCanceledEventAttributes = null;
+  this.timerCanceledEventAttributes = null;
+  this.cancelTimerFailedEventAttributes = null;
   if (args) {
     if (args.eventId !== undefined && args.eventId !== null) {
       this.eventId = args.eventId;
@@ -2839,6 +3110,12 @@ var HistoryEvent = module.exports.HistoryEvent = function(args) {
     }
     if (args.activityTaskCanceledEventAttributes !== undefined && args.activityTaskCanceledEventAttributes !== null) {
       this.activityTaskCanceledEventAttributes = new ttypes.ActivityTaskCanceledEventAttributes(args.activityTaskCanceledEventAttributes);
+    }
+    if (args.timerCanceledEventAttributes !== undefined && args.timerCanceledEventAttributes !== null) {
+      this.timerCanceledEventAttributes = new ttypes.TimerCanceledEventAttributes(args.timerCanceledEventAttributes);
+    }
+    if (args.cancelTimerFailedEventAttributes !== undefined && args.cancelTimerFailedEventAttributes !== null) {
+      this.cancelTimerFailedEventAttributes = new ttypes.CancelTimerFailedEventAttributes(args.cancelTimerFailedEventAttributes);
     }
   }
 };
@@ -3029,6 +3306,22 @@ HistoryEvent.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 140:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.timerCanceledEventAttributes = new ttypes.TimerCanceledEventAttributes();
+        this.timerCanceledEventAttributes.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 150:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.cancelTimerFailedEventAttributes = new ttypes.CancelTimerFailedEventAttributes();
+        this.cancelTimerFailedEventAttributes.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3148,6 +3441,16 @@ HistoryEvent.prototype.write = function(output) {
   if (this.activityTaskCanceledEventAttributes !== null && this.activityTaskCanceledEventAttributes !== undefined) {
     output.writeFieldBegin('activityTaskCanceledEventAttributes', Thrift.Type.STRUCT, 130);
     this.activityTaskCanceledEventAttributes.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.timerCanceledEventAttributes !== null && this.timerCanceledEventAttributes !== undefined) {
+    output.writeFieldBegin('timerCanceledEventAttributes', Thrift.Type.STRUCT, 140);
+    this.timerCanceledEventAttributes.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.cancelTimerFailedEventAttributes !== null && this.cancelTimerFailedEventAttributes !== undefined) {
+    output.writeFieldBegin('cancelTimerFailedEventAttributes', Thrift.Type.STRUCT, 150);
+    this.cancelTimerFailedEventAttributes.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();

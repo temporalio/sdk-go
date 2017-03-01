@@ -84,68 +84,7 @@ type (
 		currentIndex      int
 		historyEventsSize int
 	}
-
-	// activityTaskFailedError wraps the details of the failure of activity
-	activityTaskFailedError struct {
-		reason  string
-		details []byte
-	}
-
-	// activityTaskTimeoutError wraps the details of the timeout of activity
-	activityTaskTimeoutError struct {
-		TimeoutType s.TimeoutType
-	}
-
-	// activityTaskCanceledError wraps the details of the failure of activity
-	activityTaskCanceledError struct {
-		details []byte
-	}
 )
-
-// Error from error.Error
-func (e activityTaskFailedError) Error() string {
-	return fmt.Sprintf("Reason: %s, Details: %s", e.reason, e.details)
-}
-
-// Details of the error
-func (e activityTaskFailedError) Details() []byte {
-	return e.details
-}
-
-// Reason of the error
-func (e activityTaskFailedError) Reason() string {
-	return e.reason
-}
-
-// Error from error.Error
-func (e activityTaskTimeoutError) Error() string {
-	return fmt.Sprintf("TimeoutType: %v", e.TimeoutType)
-}
-
-// Details of the error
-func (e activityTaskTimeoutError) Details() []byte {
-	return nil
-}
-
-// Reason of the error
-func (e activityTaskTimeoutError) Reason() string {
-	return e.Error()
-}
-
-// Error from error.Error
-func (e activityTaskCanceledError) Error() string {
-	return fmt.Sprintf("Details: %s", e.details)
-}
-
-// Details of the error
-func (e activityTaskCanceledError) Details() []byte {
-	return e.details
-}
-
-// Reason of the error
-func (e activityTaskCanceledError) Reason() string {
-	return e.Error()
-}
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
 	return &history{
@@ -464,7 +403,7 @@ func (ath *activityTaskHandlerImpl) Execute(ctx context.Context, activityTask *a
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
 	if !ok {
 		// Couldn't find the activity implementation.
-		return nil, fmt.Errorf("No implementation for activityType=%v", activityType)
+		return nil, fmt.Errorf("No implementation for activityType=%v", activityType.GetName())
 	}
 
 	output, err := activityImplementation.Execute(ctx, t.GetInput())

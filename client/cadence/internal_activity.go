@@ -17,11 +17,11 @@ type (
 	asyncActivityClient interface {
 		// The ExecuteActivity schedules an activity with a callback handler.
 		// If the activity failed to complete the callback error would indicate the failure
-		// and it can be one of activityTaskFailedError, activityTaskTimeoutError, activityTaskCanceledError
+		// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError
 		ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) *activityInfo
 
 		// This only initiates cancel request for activity. if the activity is configured to not waitForCancellation then
-		// it would invoke the callback handler immediately with error code activityTaskCanceledError.
+		// it would invoke the callback handler immediately with error code ActivityTaskCanceledError.
 		// If the activity is not running(either scheduled or started) then it is a no-operation.
 		RequestCancelActivity(activityID string)
 	}

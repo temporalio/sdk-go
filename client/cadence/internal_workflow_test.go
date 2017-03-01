@@ -244,35 +244,84 @@ type testTimerWorkflow struct {
 }
 
 func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	t, err := NewTimer(ctx, 1)
-	require.NoError(w.t, err)
-	require.NotNil(w.t, t)
+
+	// Start a timer.
+	t := NewTimer(ctx, 1)
 
 	isWokeByTimer := false
 
-	NewSelector(ctx).AddReceive(t.C, func(v interface{}, more bool) {
+	NewSelector(ctx).AddFuture(t, func(v interface{}, err error) {
+		require.NoError(w.t, err)
 		isWokeByTimer = true
 	}).Select(ctx)
 
 	require.True(w.t, isWokeByTimer)
+
+	// Start a timer and cancel it.
+	ctx2, c2 := WithCancel(ctx)
+	t2 := NewTimer(ctx2, 1)
+	c2()
+	r2, err2 := t2.Get(ctx2)
+
+	require.Nil(w.t, r2)
+	require.Error(w.t, err2)
+	_, isCancelErr := err2.(*TimerCanceledError)
+	require.True(w.t, isCancelErr)
+
+	// Sleep 1 sec
+	ctx3, _ := WithCancel(ctx)
+	err3 := Sleep(ctx3, 1)
+	require.NoError(w.t, err3)
+
+	// Sleep and cancel.
+	ctx4, c4 := WithCancel(ctx)
+	c4()
+	err4 := Sleep(ctx4, 1)
+
+	require.Error(w.t, err4)
+	_, isCancelErr = err4.(*TimerCanceledError)
+	require.True(w.t, isCancelErr)
+
 	return []byte("workflow-completed"), nil
 }
 
 func TestTimerWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&testTimerWorkflow{t: t})
 	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{})
 
 	// Process timer callbacks.
 	cbProcessor := newAsyncTestCallbackProcessor()
 	cbProcessor.Process()
 
-	ctx.On("NewTimer", mock.Anything, mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+	newTimerCount := 0
+	var callbackHandler2 resultHandler
+	ctx.On("NewTimer", mock.Anything, mock.Anything, mock.Anything).Return(&timerInfo{timerID: "testTimer"}).Run(func(args mock.Arguments) {
+		newTimerCount++
 		callback := args.Get(1).(resultHandler)
-		cbProcessor.Add(callback, nil, nil)
-	})
-	ctx.On("Complete", []byte("workflow-completed"), nil).Return().Once()
+		if newTimerCount == 1 || newTimerCount == 3 {
+			cbProcessor.Add(callback, nil, nil)
+		} else {
+			callbackHandler2 = callback
+		}
+	}).Times(4)
+
+	cancelTimerCount := 0
+	ctx.On("RequestCancelTimer", mock.Anything).Return().Run(func(args mock.Arguments) {
+		cancelTimerCount++
+		cbProcessor.Add(callbackHandler2, nil, &TimerCanceledError{})
+	}).Twice()
+
+	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
+		result := args.Get(0).([]byte)
+		require.Equal(t, "workflow-completed", string(result))
+		workflowComplete <- struct{}{}
+	}).Once()
 
 	w.Execute(ctx, []byte("Hello"))
+
+	<-workflowComplete
+
 	cbProcessor.Close()
 	ctx.AssertExpectations(t)
 }
@@ -335,7 +384,7 @@ func TestActivityCancelWorkflow(t *testing.T) {
 	ctx.On("RequestCancelActivity", "testAct").Return().Run(func(args mock.Arguments) {
 		cancelCount++
 		if cancelCount == 2 { // Because of defer.
-			cbProcessor.Add(callbackHandler3, nil, &activityTaskCanceledError{details: []byte("testCancelDetails")})
+			cbProcessor.Add(callbackHandler3, nil, &ActivityTaskCanceledError{details: []byte("testCancelDetails")})
 		}
 	}).Times(3)
 

@@ -35,7 +35,7 @@ type (
 		scheduledActivites             map[string]resultHandler // Map of Activities(activity ID ->) and their response handlers
 		waitForCancelRequestActivities map[string]bool          // Map of activity ID to whether to wait for cancelation.
 		scheduledEventIDToActivityID   map[int64]string         // Mapping from scheduled event ID to activity ID
-		timers                         map[string]resultHandler // Map of timers(timer ID ->) and their response handlers
+		scheduledTimers                map[string]resultHandler // Map of scheduledTimers(timer ID ->) and their response handlers
 		counterID                      int32                    // To generate activity IDs
 		executeDecisions               []*m.Decision            // Decisions made during the execute of the workflow
 		completeHandler                completionHandler        // events completion handler
@@ -52,10 +52,10 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		scheduledActivites:             make(map[string]resultHandler),
 		waitForCancelRequestActivities: make(map[string]bool),
 		scheduledEventIDToActivityID:   make(map[int64]string),
-		timers:           make(map[string]resultHandler),
-		executeDecisions: make([]*m.Decision, 0),
-		completeHandler:  completeHandler,
-		logger:           logger}
+		scheduledTimers:                make(map[string]resultHandler),
+		executeDecisions:               make([]*m.Decision, 0),
+		completeHandler:                completeHandler,
+		logger:                         logger}
 	return &workflowExecutionEventHandlerImpl{context, nil, logger}
 }
 
@@ -99,6 +99,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToCloseTimeoutSeconds)
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = common.Int32Ptr(parameters.StartToCloseTimeoutSeconds)
 	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToStartTimeoutSeconds)
+	scheduleTaskAttr.HeartbeatTimeoutSeconds = common.Int32Ptr(parameters.HeartbeatTimeoutSeconds)
 
 	decision := wc.CreateNewDecision(m.DecisionType_ScheduleActivityTask)
 	decision.ScheduleActivityTaskDecisionAttributes = scheduleTaskAttr
@@ -125,7 +126,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 
 	if wait, ok := wc.waitForCancelRequestActivities[activityID]; ok && !wait {
-		handler(nil, &activityTaskCanceledError{details: []byte("Not waiting for cancellation to complete")})
+		handler(nil, &ActivityTaskCanceledError{details: []byte("Not waiting for cancellation to complete")})
 	}
 	wc.logger.Debugf("RequestCancelActivity: %v.", requestCancelAttr.GetActivityId())
 }
@@ -138,14 +139,14 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 	return wc.currentReplayTime
 }
 
-func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) {
+func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
 	if d < 0 {
 		callback(nil, NewError("Invalid delayInSeconds provided", nil))
-		return
+		return nil
 	}
 	if d == 0 {
 		callback(nil, nil)
-		return
+		return nil
 	}
 
 	timerID := wc.GenerateSequenceID()
@@ -156,8 +157,27 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 	decision.StartTimerDecisionAttributes = startTimerAttr
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
-	wc.timers[startTimerAttr.GetTimerId()] = callback
+	wc.scheduledTimers[startTimerAttr.GetTimerId()] = callback
 	wc.logger.Debugf("NewTimer: %s Created with a delay: %v", startTimerAttr.GetTimerId(), d)
+
+	return &timerInfo{timerID: timerID}
+}
+
+func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
+	handler, ok := wc.scheduledTimers[timerID]
+	if !ok {
+		return
+	}
+	cancelTimerAttr := &m.CancelTimerDecisionAttributes{TimerId: common.StringPtr(timerID)}
+	decision := wc.CreateNewDecision(m.DecisionType_CancelTimer)
+	decision.CancelTimerDecisionAttributes = cancelTimerAttr
+
+	wc.executeDecisions = append(wc.executeDecisions, decision)
+
+	handler(nil, &TimerCanceledError{})
+	delete(wc.scheduledTimers, timerID)
+
+	wc.logger.Debugf("RequestCancelTimer: %v.", timerID)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, bool, error) {
@@ -217,10 +237,16 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent
 		return d, unhandledDecision, err
 
 	case m.EventType_TimerStarted:
-	// No Operation
+		// No Operation
 	case m.EventType_TimerFired:
 		d, err := weh.handleTimerFired(event.TimerFiredEventAttributes)
 		return d, unhandledDecision, err
+
+	case m.EventType_TimerCanceled:
+		// No Operation:
+		// As we always cancel the timer immediately if asked, we don't wait for it.
+	case m.EventType_CancelTimerFailed:
+		// No Operation.
 
 	default:
 		return nil, unhandledDecision, fmt.Errorf("missing event handler for event type: %v", event)
@@ -285,7 +311,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 			attributes, activityID, ok)
 	}
 
-	err := &activityTaskFailedError{
+	err := &ActivityTaskFailedError{
 		reason:  *attributes.Reason,
 		details: attributes.Details}
 	// Invoke the callback
@@ -310,7 +336,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 			attributes, activityID, ok)
 	}
 
-	err := &activityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
+	err := &ActivityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
 	// Invoke the callback
 	handler(nil, err)
 	delete(weh.scheduledActivites, activityID)
@@ -332,7 +358,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 		return nil, fmt.Errorf("unable to find callback handler for the event: %v, ok: %v", attributes, ok)
 	}
 
-	err := &activityTaskCanceledError{details: attributes.GetDetails()}
+	err := &ActivityTaskCanceledError{details: attributes.GetDetails()}
 	// Invoke the callback
 	handler(nil, err)
 	delete(weh.scheduledActivites, activityID)
@@ -341,12 +367,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 
 func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(
 	attributes *m.TimerFiredEventAttributes) ([]*m.Decision, error) {
-	handler, ok := weh.timers[attributes.GetTimerId()]
+	handler, ok := weh.scheduledTimers[attributes.GetTimerId()]
 	if !ok {
-		return nil, fmt.Errorf("unable to find callback handler for the timer: %v, ok: %v", *attributes, ok)
+		weh.logger.Debugf("Unable to find the timer callback when it is fired: %v", attributes.GetTimerId())
+		return []*m.Decision{}, nil
 	}
 
 	// Invoke the callback
 	handler(nil, nil)
+	delete(weh.scheduledTimers, attributes.GetTimerId())
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }

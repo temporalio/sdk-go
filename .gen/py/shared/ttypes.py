@@ -42,6 +42,7 @@ class DecisionType:
   StartTimer = 2
   CompleteWorkflowExecution = 3
   FailWorkflowExecution = 4
+  CancelTimer = 5
 
   _VALUES_TO_NAMES = {
     0: "ScheduleActivityTask",
@@ -49,6 +50,7 @@ class DecisionType:
     2: "StartTimer",
     3: "CompleteWorkflowExecution",
     4: "FailWorkflowExecution",
+    5: "CancelTimer",
   }
 
   _NAMES_TO_VALUES = {
@@ -57,6 +59,7 @@ class DecisionType:
     "StartTimer": 2,
     "CompleteWorkflowExecution": 3,
     "FailWorkflowExecution": 4,
+    "CancelTimer": 5,
   }
 
 class EventType:
@@ -79,6 +82,8 @@ class EventType:
   TimerStarted = 16
   TimerFired = 17
   CompleteWorkflowExecutionFailed = 18
+  CancelTimerFailed = 19
+  TimerCanceled = 20
 
   _VALUES_TO_NAMES = {
     0: "WorkflowExecutionStarted",
@@ -100,6 +105,8 @@ class EventType:
     16: "TimerStarted",
     17: "TimerFired",
     18: "CompleteWorkflowExecutionFailed",
+    19: "CancelTimerFailed",
+    20: "TimerCanceled",
   }
 
   _NAMES_TO_VALUES = {
@@ -122,6 +129,8 @@ class EventType:
     "TimerStarted": 16,
     "TimerFired": 17,
     "CompleteWorkflowExecutionFailed": 18,
+    "CancelTimerFailed": 19,
+    "TimerCanceled": 20,
   }
 
 class WorkflowCompleteFailedCause:
@@ -1284,6 +1293,80 @@ class FailWorkflowExecutionDecisionAttributes:
   def __ne__(self, other):
     return not (self == other)
 
+class CancelTimerDecisionAttributes:
+  """
+  Attributes:
+   - timerId
+  """
+
+  thrift_spec = (
+    None, # 0
+    None, # 1
+    None, # 2
+    None, # 3
+    None, # 4
+    None, # 5
+    None, # 6
+    None, # 7
+    None, # 8
+    None, # 9
+    (10, TType.STRING, 'timerId', unicode, None, ), # 10
+  )
+
+  def __init__(self, timerId=None,):
+    self.timerId = timerId
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 10:
+        if ftype == TType.STRING:
+          self.timerId = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('CancelTimerDecisionAttributes')
+    if self.timerId is not None:
+      oprot.writeFieldBegin('timerId', TType.STRING, 10)
+      oprot.writeString(self.timerId.encode('utf-8'))
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __hash__(self):
+    value = 17
+    value = (value * 31) ^ hash(self.timerId)
+    return value
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
 class Decision:
   """
   Attributes:
@@ -1293,6 +1376,7 @@ class Decision:
    - completeWorkflowExecutionDecisionAttributes
    - failWorkflowExecutionDecisionAttributes
    - requestCancelActivityTaskDecisionAttributes
+   - cancelTimerDecisionAttributes
   """
 
   thrift_spec = (
@@ -1337,15 +1421,26 @@ class Decision:
     None, # 38
     None, # 39
     (40, TType.STRUCT, 'requestCancelActivityTaskDecisionAttributes', (RequestCancelActivityTaskDecisionAttributes, RequestCancelActivityTaskDecisionAttributes.thrift_spec), None, ), # 40
+    None, # 41
+    None, # 42
+    None, # 43
+    None, # 44
+    None, # 45
+    None, # 46
+    None, # 47
+    None, # 48
+    None, # 49
+    (50, TType.STRUCT, 'cancelTimerDecisionAttributes', (CancelTimerDecisionAttributes, CancelTimerDecisionAttributes.thrift_spec), None, ), # 50
   )
 
-  def __init__(self, decisionType=None, scheduleActivityTaskDecisionAttributes=None, startTimerDecisionAttributes=None, completeWorkflowExecutionDecisionAttributes=None, failWorkflowExecutionDecisionAttributes=None, requestCancelActivityTaskDecisionAttributes=None,):
+  def __init__(self, decisionType=None, scheduleActivityTaskDecisionAttributes=None, startTimerDecisionAttributes=None, completeWorkflowExecutionDecisionAttributes=None, failWorkflowExecutionDecisionAttributes=None, requestCancelActivityTaskDecisionAttributes=None, cancelTimerDecisionAttributes=None,):
     self.decisionType = decisionType
     self.scheduleActivityTaskDecisionAttributes = scheduleActivityTaskDecisionAttributes
     self.startTimerDecisionAttributes = startTimerDecisionAttributes
     self.completeWorkflowExecutionDecisionAttributes = completeWorkflowExecutionDecisionAttributes
     self.failWorkflowExecutionDecisionAttributes = failWorkflowExecutionDecisionAttributes
     self.requestCancelActivityTaskDecisionAttributes = requestCancelActivityTaskDecisionAttributes
+    self.cancelTimerDecisionAttributes = cancelTimerDecisionAttributes
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -1391,6 +1486,12 @@ class Decision:
           self.requestCancelActivityTaskDecisionAttributes.read(iprot)
         else:
           iprot.skip(ftype)
+      elif fid == 50:
+        if ftype == TType.STRUCT:
+          self.cancelTimerDecisionAttributes = CancelTimerDecisionAttributes()
+          self.cancelTimerDecisionAttributes.read(iprot)
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -1425,6 +1526,10 @@ class Decision:
       oprot.writeFieldBegin('requestCancelActivityTaskDecisionAttributes', TType.STRUCT, 40)
       self.requestCancelActivityTaskDecisionAttributes.write(oprot)
       oprot.writeFieldEnd()
+    if self.cancelTimerDecisionAttributes is not None:
+      oprot.writeFieldBegin('cancelTimerDecisionAttributes', TType.STRUCT, 50)
+      self.cancelTimerDecisionAttributes.write(oprot)
+      oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
 
@@ -1440,6 +1545,7 @@ class Decision:
     value = (value * 31) ^ hash(self.completeWorkflowExecutionDecisionAttributes)
     value = (value * 31) ^ hash(self.failWorkflowExecutionDecisionAttributes)
     value = (value * 31) ^ hash(self.requestCancelActivityTaskDecisionAttributes)
+    value = (value * 31) ^ hash(self.cancelTimerDecisionAttributes)
     return value
 
   def __repr__(self):
@@ -3888,6 +3994,286 @@ class TimerFiredEventAttributes:
   def __ne__(self, other):
     return not (self == other)
 
+class TimerCanceledEventAttributes:
+  """
+  Attributes:
+   - timerId
+   - startedEventId
+   - decisionTaskCompletedEventId
+   - identity
+  """
+
+  thrift_spec = (
+    None, # 0
+    None, # 1
+    None, # 2
+    None, # 3
+    None, # 4
+    None, # 5
+    None, # 6
+    None, # 7
+    None, # 8
+    None, # 9
+    (10, TType.STRING, 'timerId', unicode, None, ), # 10
+    None, # 11
+    None, # 12
+    None, # 13
+    None, # 14
+    None, # 15
+    None, # 16
+    None, # 17
+    None, # 18
+    None, # 19
+    (20, TType.I64, 'startedEventId', None, None, ), # 20
+    None, # 21
+    None, # 22
+    None, # 23
+    None, # 24
+    None, # 25
+    None, # 26
+    None, # 27
+    None, # 28
+    None, # 29
+    (30, TType.I64, 'decisionTaskCompletedEventId', None, None, ), # 30
+    None, # 31
+    None, # 32
+    None, # 33
+    None, # 34
+    None, # 35
+    None, # 36
+    None, # 37
+    None, # 38
+    None, # 39
+    (40, TType.STRING, 'identity', unicode, None, ), # 40
+  )
+
+  def __init__(self, timerId=None, startedEventId=None, decisionTaskCompletedEventId=None, identity=None,):
+    self.timerId = timerId
+    self.startedEventId = startedEventId
+    self.decisionTaskCompletedEventId = decisionTaskCompletedEventId
+    self.identity = identity
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 10:
+        if ftype == TType.STRING:
+          self.timerId = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      elif fid == 20:
+        if ftype == TType.I64:
+          self.startedEventId = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      elif fid == 30:
+        if ftype == TType.I64:
+          self.decisionTaskCompletedEventId = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      elif fid == 40:
+        if ftype == TType.STRING:
+          self.identity = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('TimerCanceledEventAttributes')
+    if self.timerId is not None:
+      oprot.writeFieldBegin('timerId', TType.STRING, 10)
+      oprot.writeString(self.timerId.encode('utf-8'))
+      oprot.writeFieldEnd()
+    if self.startedEventId is not None:
+      oprot.writeFieldBegin('startedEventId', TType.I64, 20)
+      oprot.writeI64(self.startedEventId)
+      oprot.writeFieldEnd()
+    if self.decisionTaskCompletedEventId is not None:
+      oprot.writeFieldBegin('decisionTaskCompletedEventId', TType.I64, 30)
+      oprot.writeI64(self.decisionTaskCompletedEventId)
+      oprot.writeFieldEnd()
+    if self.identity is not None:
+      oprot.writeFieldBegin('identity', TType.STRING, 40)
+      oprot.writeString(self.identity.encode('utf-8'))
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __hash__(self):
+    value = 17
+    value = (value * 31) ^ hash(self.timerId)
+    value = (value * 31) ^ hash(self.startedEventId)
+    value = (value * 31) ^ hash(self.decisionTaskCompletedEventId)
+    value = (value * 31) ^ hash(self.identity)
+    return value
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class CancelTimerFailedEventAttributes:
+  """
+  Attributes:
+   - timerId
+   - cause
+   - decisionTaskCompletedEventId
+   - identity
+  """
+
+  thrift_spec = (
+    None, # 0
+    None, # 1
+    None, # 2
+    None, # 3
+    None, # 4
+    None, # 5
+    None, # 6
+    None, # 7
+    None, # 8
+    None, # 9
+    (10, TType.STRING, 'timerId', unicode, None, ), # 10
+    None, # 11
+    None, # 12
+    None, # 13
+    None, # 14
+    None, # 15
+    None, # 16
+    None, # 17
+    None, # 18
+    None, # 19
+    (20, TType.STRING, 'cause', unicode, None, ), # 20
+    None, # 21
+    None, # 22
+    None, # 23
+    None, # 24
+    None, # 25
+    None, # 26
+    None, # 27
+    None, # 28
+    None, # 29
+    (30, TType.I64, 'decisionTaskCompletedEventId', None, None, ), # 30
+    None, # 31
+    None, # 32
+    None, # 33
+    None, # 34
+    None, # 35
+    None, # 36
+    None, # 37
+    None, # 38
+    None, # 39
+    (40, TType.STRING, 'identity', unicode, None, ), # 40
+  )
+
+  def __init__(self, timerId=None, cause=None, decisionTaskCompletedEventId=None, identity=None,):
+    self.timerId = timerId
+    self.cause = cause
+    self.decisionTaskCompletedEventId = decisionTaskCompletedEventId
+    self.identity = identity
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 10:
+        if ftype == TType.STRING:
+          self.timerId = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      elif fid == 20:
+        if ftype == TType.STRING:
+          self.cause = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      elif fid == 30:
+        if ftype == TType.I64:
+          self.decisionTaskCompletedEventId = iprot.readI64();
+        else:
+          iprot.skip(ftype)
+      elif fid == 40:
+        if ftype == TType.STRING:
+          self.identity = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('CancelTimerFailedEventAttributes')
+    if self.timerId is not None:
+      oprot.writeFieldBegin('timerId', TType.STRING, 10)
+      oprot.writeString(self.timerId.encode('utf-8'))
+      oprot.writeFieldEnd()
+    if self.cause is not None:
+      oprot.writeFieldBegin('cause', TType.STRING, 20)
+      oprot.writeString(self.cause.encode('utf-8'))
+      oprot.writeFieldEnd()
+    if self.decisionTaskCompletedEventId is not None:
+      oprot.writeFieldBegin('decisionTaskCompletedEventId', TType.I64, 30)
+      oprot.writeI64(self.decisionTaskCompletedEventId)
+      oprot.writeFieldEnd()
+    if self.identity is not None:
+      oprot.writeFieldBegin('identity', TType.STRING, 40)
+      oprot.writeString(self.identity.encode('utf-8'))
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __hash__(self):
+    value = 17
+    value = (value * 31) ^ hash(self.timerId)
+    value = (value * 31) ^ hash(self.cause)
+    value = (value * 31) ^ hash(self.decisionTaskCompletedEventId)
+    value = (value * 31) ^ hash(self.identity)
+    return value
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
 class HistoryEvent:
   """
   Attributes:
@@ -3913,6 +4299,8 @@ class HistoryEvent:
    - activityTaskCancelRequestedEventAttributes
    - requestCancelActivityTaskFailedEventAttributes
    - activityTaskCanceledEventAttributes
+   - timerCanceledEventAttributes
+   - cancelTimerFailedEventAttributes
   """
 
   thrift_spec = (
@@ -4047,9 +4435,29 @@ class HistoryEvent:
     None, # 128
     None, # 129
     (130, TType.STRUCT, 'activityTaskCanceledEventAttributes', (ActivityTaskCanceledEventAttributes, ActivityTaskCanceledEventAttributes.thrift_spec), None, ), # 130
+    None, # 131
+    None, # 132
+    None, # 133
+    None, # 134
+    None, # 135
+    None, # 136
+    None, # 137
+    None, # 138
+    None, # 139
+    (140, TType.STRUCT, 'timerCanceledEventAttributes', (TimerCanceledEventAttributes, TimerCanceledEventAttributes.thrift_spec), None, ), # 140
+    None, # 141
+    None, # 142
+    None, # 143
+    None, # 144
+    None, # 145
+    None, # 146
+    None, # 147
+    None, # 148
+    None, # 149
+    (150, TType.STRUCT, 'cancelTimerFailedEventAttributes', (CancelTimerFailedEventAttributes, CancelTimerFailedEventAttributes.thrift_spec), None, ), # 150
   )
 
-  def __init__(self, eventId=None, timestamp=None, eventType=None, workflowExecutionStartedEventAttributes=None, workflowExecutionCompletedEventAttributes=None, workflowExecutionFailedEventAttributes=None, workflowExecutionTimedOutEventAttributes=None, decisionTaskScheduledEventAttributes=None, decisionTaskStartedEventAttributes=None, decisionTaskTimedOutEventAttributes=None, decisionTaskCompletedEventAttributes=None, activityTaskScheduledEventAttributes=None, activityTaskStartedEventAttributes=None, activityTaskCompletedEventAttributes=None, activityTaskFailedEventAttributes=None, activityTaskTimedOutEventAttributes=None, timerStartedEventAttributes=None, timerFiredEventAttributes=None, completeWorkflowExecutionFailedEventAttributes=None, activityTaskCancelRequestedEventAttributes=None, requestCancelActivityTaskFailedEventAttributes=None, activityTaskCanceledEventAttributes=None,):
+  def __init__(self, eventId=None, timestamp=None, eventType=None, workflowExecutionStartedEventAttributes=None, workflowExecutionCompletedEventAttributes=None, workflowExecutionFailedEventAttributes=None, workflowExecutionTimedOutEventAttributes=None, decisionTaskScheduledEventAttributes=None, decisionTaskStartedEventAttributes=None, decisionTaskTimedOutEventAttributes=None, decisionTaskCompletedEventAttributes=None, activityTaskScheduledEventAttributes=None, activityTaskStartedEventAttributes=None, activityTaskCompletedEventAttributes=None, activityTaskFailedEventAttributes=None, activityTaskTimedOutEventAttributes=None, timerStartedEventAttributes=None, timerFiredEventAttributes=None, completeWorkflowExecutionFailedEventAttributes=None, activityTaskCancelRequestedEventAttributes=None, requestCancelActivityTaskFailedEventAttributes=None, activityTaskCanceledEventAttributes=None, timerCanceledEventAttributes=None, cancelTimerFailedEventAttributes=None,):
     self.eventId = eventId
     self.timestamp = timestamp
     self.eventType = eventType
@@ -4072,6 +4480,8 @@ class HistoryEvent:
     self.activityTaskCancelRequestedEventAttributes = activityTaskCancelRequestedEventAttributes
     self.requestCancelActivityTaskFailedEventAttributes = requestCancelActivityTaskFailedEventAttributes
     self.activityTaskCanceledEventAttributes = activityTaskCanceledEventAttributes
+    self.timerCanceledEventAttributes = timerCanceledEventAttributes
+    self.cancelTimerFailedEventAttributes = cancelTimerFailedEventAttributes
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -4211,6 +4621,18 @@ class HistoryEvent:
           self.activityTaskCanceledEventAttributes.read(iprot)
         else:
           iprot.skip(ftype)
+      elif fid == 140:
+        if ftype == TType.STRUCT:
+          self.timerCanceledEventAttributes = TimerCanceledEventAttributes()
+          self.timerCanceledEventAttributes.read(iprot)
+        else:
+          iprot.skip(ftype)
+      elif fid == 150:
+        if ftype == TType.STRUCT:
+          self.cancelTimerFailedEventAttributes = CancelTimerFailedEventAttributes()
+          self.cancelTimerFailedEventAttributes.read(iprot)
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -4309,6 +4731,14 @@ class HistoryEvent:
       oprot.writeFieldBegin('activityTaskCanceledEventAttributes', TType.STRUCT, 130)
       self.activityTaskCanceledEventAttributes.write(oprot)
       oprot.writeFieldEnd()
+    if self.timerCanceledEventAttributes is not None:
+      oprot.writeFieldBegin('timerCanceledEventAttributes', TType.STRUCT, 140)
+      self.timerCanceledEventAttributes.write(oprot)
+      oprot.writeFieldEnd()
+    if self.cancelTimerFailedEventAttributes is not None:
+      oprot.writeFieldBegin('cancelTimerFailedEventAttributes', TType.STRUCT, 150)
+      self.cancelTimerFailedEventAttributes.write(oprot)
+      oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
 
@@ -4340,6 +4770,8 @@ class HistoryEvent:
     value = (value * 31) ^ hash(self.activityTaskCancelRequestedEventAttributes)
     value = (value * 31) ^ hash(self.requestCancelActivityTaskFailedEventAttributes)
     value = (value * 31) ^ hash(self.activityTaskCanceledEventAttributes)
+    value = (value * 31) ^ hash(self.timerCanceledEventAttributes)
+    value = (value * 31) ^ hash(self.cancelTimerFailedEventAttributes)
     return value
 
   def __repr__(self):

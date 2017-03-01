@@ -16,6 +16,11 @@ func (_m *MockWorkflowEnvironment) RequestCancelActivity(activityID string) {
 	_m.Called(activityID)
 }
 
+// RequestCancelTimer provides a mock function with given fields: timerID
+func (_m *MockWorkflowEnvironment) RequestCancelTimer(timerID string) {
+	_m.Called(timerID)
+}
+
 // Complete provides a mock function with given fields: result, err
 func (_m *MockWorkflowEnvironment) Complete(result []byte, err error) {
 	_m.Called(result, err)
@@ -37,9 +42,20 @@ func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters ExecuteActivityPar
 	return r0
 }
 
-// NewTimer provides a mock function with given fields: timerID, delayInSeconds, callback
-func (_m *MockWorkflowEnvironment) NewTimer(delayInSeconds time.Duration, callback resultHandler) {
-	_m.Called(delayInSeconds, callback)
+// NewTimer provides a mock function with given fields: d, callback
+func (_m *MockWorkflowEnvironment) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
+	ret := _m.Called(d, callback)
+
+	var r0 *timerInfo
+	if rf, ok := ret.Get(0).(func(time.Duration, resultHandler) *timerInfo); ok {
+		r0 = rf(d, callback)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*timerInfo)
+		}
+	}
+
+	return r0
 }
 
 // Now provides a mock function with given fields:

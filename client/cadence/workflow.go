@@ -2,10 +2,7 @@ package cadence
 
 import (
 	"fmt"
-
 	"time"
-
-	"github.com/pborman/uuid"
 )
 
 // Channel must be used instead of native go channel by workflow code.
@@ -159,6 +156,10 @@ type ExecuteActivityParameters struct {
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.
+//  - If the activity failed to complete then the error would indicate the failure
+// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
+//  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
+// error ActivityTaskCanceledError.
 func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result []byte, err error) {
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
@@ -186,6 +187,10 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 }
 
 // ExecuteActivityAsync requests activity execution in the context of a workflow.
+//  - If the activity failed to complete then the future get error would indicate the failure
+// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
+//  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
+// error ActivityTaskCanceledError.
 func ExecuteActivityAsync(ctx Context, parameters ExecuteActivityParameters) Future {
 	future, settable := NewFuture(ctx)
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
@@ -225,52 +230,44 @@ func Now(ctx Context) time.Time {
 	return getWorkflowEnvironment(ctx).Now()
 }
 
-// Timer - represents a timer for workflows.
-// https://golang.org/pkg/time/#Timer
-// The Timer type represents a single event.
-// When the Timer expires, the signal will be sent on C.
-// A Timer must be created with NewTimer.
-type Timer struct {
-	C Channel
-}
-
-// NewTimer returns after the specified delay expires.
-// The current timer resolution implementation is in seconds but is subjected to change.
-// The workflow needs to use this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer())
-func NewTimer(ctx Context, d time.Duration) (t *Timer, err error) {
+// NewTimer returns immediately and the future becomes ready after the specified timeout.
+//  - The current timer resolution implementation is in seconds but is subjected to change.
+//  - The workflow needs to use this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer())
+//  - You can also cancel the pending timer using context(WithCancel(ctx)) and that will cancel the timer with
+// error TimerCanceledError.
+func NewTimer(ctx Context, d time.Duration) Future {
+	future, settable := NewFuture(ctx)
 	if d <= 0 {
-		ch := &channelImpl{size: 1}
-		ch.SendAsync(true)
-		return &Timer{C: ch}, nil
+		settable.Set(true, nil)
+		return future
 	}
 
-	channelName := fmt.Sprintf("\"timer %v\"", uuid.New())
-	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
-	getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e Error) {
-		err = e
-		ok := resultChannel.SendAsync(true)
-		if !ok {
-			panic("unexpected")
-		}
+	t := getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e Error) {
+		settable.Set(nil, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
-	return &Timer{C: resultChannel}, err
+	if t != nil {
+		Go(ctx, func(ctx Context) {
+			if ctx.Done() == nil {
+				return // not cancellable.
+			}
+			// We will cancel the timer either it is explicit cancellation
+			// (or) we are closed.
+			ctx.Done().Receive(ctx)
+			getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
+		})
+	}
+	return future
 }
 
-// Stop prevents the Timer from firing.
-// https://golang.org/pkg/time/#Timer.Stop
-// It returns true if the call stops the timer, false if the timer has already
-// expired or been stopped.
-// Stop does not close the channel, to prevent a read from the channel succeeding
-// incorrectly.
-//
-// To prevent the timer firing after a call to Stop,
-// check the return value and drain the channel. For example:
-// 	if !t.Stop() {
-// 		<-t.C
-// 	}
-// This cannot be done concurrent to other receives from the Timer's
-// channel.
-func (wt *Timer) Stop() bool {
-	panic("TODO: Stop to be implemented")
+// Sleep pauses the current goroutine for at least the duration d.
+// A negative or zero duration causes Sleep to return immediately.
+//  - The current timer resolution implementation is in seconds but is subjected to change.
+//  - The workflow needs to use this Sleep() to sleep instead of the Go lang library one(timer.Sleep())
+//  - You can also cancel the pending sleep using context(WithCancel(ctx)) and that will cancel the sleep with
+//    error TimerCanceledError.
+func Sleep(ctx Context, d time.Duration) (err error) {
+	t := NewTimer(ctx, d)
+	_, err = t.Get(ctx)
+	return
 }
