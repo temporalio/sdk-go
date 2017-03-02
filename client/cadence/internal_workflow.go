@@ -138,14 +138,13 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 	var resultPtr *workflowResult
 	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
 
-	dispatcher := newDispatcher(ctx, func(ctx Context) {
+	d.dispatcher = newDispatcher(ctx, func(ctx Context) {
 		r := &workflowResult{}
 		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
 		rpp := getWorkflowResultPointerPointer(ctx)
 		*rpp = r
-
 	})
-	executeDispatcher(ctx, dispatcher)
+	executeDispatcher(ctx, d.dispatcher)
 }
 
 func (d *syncWorkflowDefinition) StackTrace() string {

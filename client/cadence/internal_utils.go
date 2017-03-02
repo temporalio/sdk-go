@@ -39,6 +39,14 @@ func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
 }
 
+// workflowExecutionPtr makes a copy and returns the pointer to a WorkflowExecution.
+func workflowExecutionPtr(t WorkflowExecution) *s.WorkflowExecution {
+	return &s.WorkflowExecution{
+		WorkflowId: common.StringPtr(t.ID),
+		RunId:      common.StringPtr(t.RunID),
+	}
+}
+
 // getErrorDetails gets reason and details.
 func getErrorDetails(err error) (string, []byte) {
 	if wErr, ok := err.(Error); ok {

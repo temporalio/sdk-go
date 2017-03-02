@@ -86,13 +86,7 @@ func NewWorkflowWorker(
 	metricsScope tally.Scope) (worker Lifecycle) {
 	return newWorkflowWorker(
 		params,
-		func(workflowType WorkflowType) (workflowDefinition, error) {
-			wd, err := factory(workflowType)
-			if err != nil {
-				return nil, err
-			}
-			return NewWorkflowDefinition(wd), nil
-		},
+		getWorkflowDefinitionFactory(factory),
 		service,
 		logger,
 		metricsScope,
@@ -150,4 +144,58 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 		ID:    options.ID,
 		RunID: response.GetRunId()}
 	return executionInfo, nil
+}
+
+// WorkflowReplayerOptions represents options for workflow replayer.
+type WorkflowReplayerOptions struct {
+	Execution WorkflowExecution
+	Type      WorkflowType
+	Factory   WorkflowFactory
+	History   *s.History
+}
+
+// WorkflowReplayer replays a given state of workflow execution.
+type WorkflowReplayer struct {
+	workflowExecution  WorkflowExecution
+	workflowDefFactory workflowDefinitionFactory
+	workflowType       WorkflowType
+	history            *s.History
+	logger             bark.Logger
+}
+
+// NewWorkflowReplayer creates an isntance of WorkflowReplayer
+func NewWorkflowReplayer(wfOptions WorkflowReplayerOptions, logger bark.Logger) *WorkflowReplayer {
+	return &WorkflowReplayer{
+		workflowExecution:  wfOptions.Execution,
+		history:            wfOptions.History,
+		workflowType:       wfOptions.Type,
+		workflowDefFactory: getWorkflowDefinitionFactory(wfOptions.Factory),
+		logger:             logger,
+	}
+}
+
+// Process replays the history.
+func (wr *WorkflowReplayer) Process() (string, error) {
+	workflowTask := &workflowTask{
+		task: &s.PollForDecisionTaskResponse{
+			TaskToken:         []byte("replayer-token"),
+			History:           wr.history,
+			WorkflowExecution: workflowExecutionPtr(wr.workflowExecution),
+			WorkflowType:      workflowTypePtr(wr.workflowType),
+		}}
+
+	taskListName := "replayerTaskList"
+	taskHandler := newWorkflowTaskHandler(taskListName, getWorkerIdentity(taskListName), wr.workflowDefFactory, wr.logger, nil, nil)
+	_, stack, err := taskHandler.ProcessWorkflowTask(workflowTask, true /* emitStack */)
+	return stack, err
+}
+
+func getWorkflowDefinitionFactory(factory WorkflowFactory) workflowDefinitionFactory {
+	return func(workflowType WorkflowType) (workflowDefinition, error) {
+		wd, err := factory(workflowType)
+		if err != nil {
+			return nil, err
+		}
+		return NewWorkflowDefinition(wd), nil
+	}
 }
