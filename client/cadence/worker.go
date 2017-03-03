@@ -146,6 +146,27 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	return executionInfo, nil
 }
 
+// GetHistory gets history of a particular workflow.
+func (wc *WorkflowClient) GetHistory(workflowID string, runID string) (*s.History, error) {
+	request := &s.GetWorkflowExecutionHistoryRequest{
+		Execution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      common.StringPtr(runID),
+		},
+	}
+
+	var response *s.GetWorkflowExecutionHistoryResponse
+	err := backoff.Retry(
+		func() error {
+			var err1 error
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			response, err1 = wc.workflowService.GetWorkflowExecutionHistory(ctx, request)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	return response.GetHistory(), err
+}
+
 // WorkflowReplayerOptions represents options for workflow replayer.
 type WorkflowReplayerOptions struct {
 	Execution WorkflowExecution

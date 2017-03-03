@@ -52,7 +52,6 @@ func TestWorkflowReplayer(t *testing.T) {
 		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{ActivityId: common.StringPtr("0")}),
 		createTestEventActivityTaskStarted(3, &s.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(4, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
 
 	options := WorkflowReplayerOptions{
@@ -61,8 +60,9 @@ func TestWorkflowReplayer(t *testing.T) {
 		Factory:   func(workflowType WorkflowType) (Workflow, error) { return testReplayWorkflow{}, nil },
 		History:   &s.History{Events: testEvents},
 	}
+
 	r := NewWorkflowReplayer(options, logger)
 	s, err := r.Process()
 	require.NoError(t, err)
-	require.NotEmpty(t, s)
+	require.Contains(t, s, "cadence.ExecuteActivity")
 }
