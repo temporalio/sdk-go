@@ -62,7 +62,7 @@ func TestWorkflowReplayer(t *testing.T) {
 	}
 
 	r := NewWorkflowReplayer(options, logger)
-	s, err := r.Process()
+	err := r.Replay()
 	require.NoError(t, err)
-	require.Contains(t, s, "cadence.ExecuteActivity")
+	require.Contains(t, r.StackTrace(), "cadence.ExecuteActivity")
 }

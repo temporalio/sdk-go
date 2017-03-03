@@ -182,6 +182,7 @@ type WorkflowReplayer struct {
 	workflowType       WorkflowType
 	history            *s.History
 	logger             bark.Logger
+	stackTrace         string
 }
 
 // NewWorkflowReplayer creates an isntance of WorkflowReplayer
@@ -195,8 +196,8 @@ func NewWorkflowReplayer(wfOptions WorkflowReplayerOptions, logger bark.Logger) 
 	}
 }
 
-// Process replays the history.
-func (wr *WorkflowReplayer) Process() (string, error) {
+// Replay replays the history.
+func (wr *WorkflowReplayer) Replay() (err error) {
 	workflowTask := &workflowTask{
 		task: &s.PollForDecisionTaskResponse{
 			TaskToken:         []byte("replayer-token"),
@@ -207,8 +208,13 @@ func (wr *WorkflowReplayer) Process() (string, error) {
 
 	taskListName := "replayerTaskList"
 	taskHandler := newWorkflowTaskHandler(taskListName, getWorkerIdentity(taskListName), wr.workflowDefFactory, wr.logger, nil, nil)
-	_, stack, err := taskHandler.ProcessWorkflowTask(workflowTask, true /* emitStack */)
-	return stack, err
+	_, wr.stackTrace, err = taskHandler.ProcessWorkflowTask(workflowTask, true /* emitStack */)
+	return err
+}
+
+// StackTrace returns the current stack trace.
+func (wr *WorkflowReplayer) StackTrace() string {
+	return wr.stackTrace
 }
 
 func getWorkflowDefinitionFactory(factory WorkflowFactory) workflowDefinitionFactory {
