@@ -289,9 +289,12 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(
 			attributes, activityID, ok)
 	}
 
+	// Clear this so we don't have a recursive call that while executing might call the cancel one.
+	delete(weh.scheduledActivites, activityID)
+
 	// Invoke the callback
 	handler(attributes.GetResult_(), nil)
-	delete(weh.scheduledActivites, activityID)
+
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
@@ -311,12 +314,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 			attributes, activityID, ok)
 	}
 
+	// Clear this so we don't have a recursive call that while executing might call the cancel one.
+	delete(weh.scheduledActivites, activityID)
+
 	err := &ActivityTaskFailedError{
 		reason:  *attributes.Reason,
 		details: attributes.Details}
 	// Invoke the callback
 	handler(nil, err)
-	delete(weh.scheduledActivites, activityID)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
@@ -336,10 +341,12 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 			attributes, activityID, ok)
 	}
 
+	// Clear this so we don't have a recursive call that while executing might call the cancel one.
+	delete(weh.scheduledActivites, activityID)
+
 	err := &ActivityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
 	// Invoke the callback
 	handler(nil, err)
-	delete(weh.scheduledActivites, activityID)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
@@ -358,10 +365,12 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 		return nil, fmt.Errorf("unable to find callback handler for the event: %v, ok: %v", attributes, ok)
 	}
 
+	// Clear this so we don't have a recursive call that while executing might call the cancel one.
+	delete(weh.scheduledActivites, activityID)
+
 	err := &ActivityTaskCanceledError{details: attributes.GetDetails()}
 	// Invoke the callback
 	handler(nil, err)
-	delete(weh.scheduledActivites, activityID)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }
 
@@ -373,8 +382,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(
 		return []*m.Decision{}, nil
 	}
 
+	// Clear this so we don't have a recursive call that while invoking might call the cancel one.
+	delete(weh.scheduledTimers, attributes.GetTimerId())
+
 	// Invoke the callback
 	handler(nil, nil)
-	delete(weh.scheduledTimers, attributes.GetTimerId())
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
 }

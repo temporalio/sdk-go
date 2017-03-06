@@ -291,6 +291,12 @@ ProcessEvents:
 					decisions = append(decisions, eventDecisions...)
 				}
 			}
+
+			if isWorkflowCompleted {
+				// If workflow is already completed then we can break from processing
+				// further decisions.
+				break ProcessEvents
+			}
 		}
 	}
 
