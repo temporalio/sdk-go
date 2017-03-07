@@ -9,10 +9,15 @@ exception InternalServiceError {
 }
 
 exception WorkflowExecutionAlreadyStartedError {
-  1: required string message
+  10: optional string message
+  20: optional string startRequestId
 }
 
 exception EntityNotExistsError {
+  1: required string message
+}
+
+exception ServiceBusyError {
   1: required string message
 }
 
@@ -296,6 +301,7 @@ struct StartWorkflowExecutionRequest {
   50: optional i32 executionStartToCloseTimeoutSeconds
   60: optional i32 taskStartToCloseTimeoutSeconds
   70: optional string identity
+  80: optional string requestId
 }
 
 struct StartWorkflowExecutionResponse {

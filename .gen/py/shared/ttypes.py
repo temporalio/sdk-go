@@ -289,15 +289,36 @@ class WorkflowExecutionAlreadyStartedError(TException):
   """
   Attributes:
    - message
+   - startRequestId
   """
 
   thrift_spec = (
     None, # 0
-    (1, TType.STRING, 'message', unicode, None, ), # 1
+    None, # 1
+    None, # 2
+    None, # 3
+    None, # 4
+    None, # 5
+    None, # 6
+    None, # 7
+    None, # 8
+    None, # 9
+    (10, TType.STRING, 'message', unicode, None, ), # 10
+    None, # 11
+    None, # 12
+    None, # 13
+    None, # 14
+    None, # 15
+    None, # 16
+    None, # 17
+    None, # 18
+    None, # 19
+    (20, TType.STRING, 'startRequestId', unicode, None, ), # 20
   )
 
-  def __init__(self, message=None,):
+  def __init__(self, message=None, startRequestId=None,):
     self.message = message
+    self.startRequestId = startRequestId
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -308,9 +329,14 @@ class WorkflowExecutionAlreadyStartedError(TException):
       (fname, ftype, fid) = iprot.readFieldBegin()
       if ftype == TType.STOP:
         break
-      if fid == 1:
+      if fid == 10:
         if ftype == TType.STRING:
           self.message = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      elif fid == 20:
+        if ftype == TType.STRING:
+          self.startRequestId = iprot.readString().decode('utf-8')
         else:
           iprot.skip(ftype)
       else:
@@ -324,15 +350,17 @@ class WorkflowExecutionAlreadyStartedError(TException):
       return
     oprot.writeStructBegin('WorkflowExecutionAlreadyStartedError')
     if self.message is not None:
-      oprot.writeFieldBegin('message', TType.STRING, 1)
+      oprot.writeFieldBegin('message', TType.STRING, 10)
       oprot.writeString(self.message.encode('utf-8'))
+      oprot.writeFieldEnd()
+    if self.startRequestId is not None:
+      oprot.writeFieldBegin('startRequestId', TType.STRING, 20)
+      oprot.writeString(self.startRequestId.encode('utf-8'))
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
 
   def validate(self):
-    if self.message is None:
-      raise TProtocol.TProtocolException(message='Required field message is unset!')
     return
 
 
@@ -342,6 +370,7 @@ class WorkflowExecutionAlreadyStartedError(TException):
   def __hash__(self):
     value = 17
     value = (value * 31) ^ hash(self.message)
+    value = (value * 31) ^ hash(self.startRequestId)
     return value
 
   def __repr__(self):
@@ -393,6 +422,76 @@ class EntityNotExistsError(TException):
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('EntityNotExistsError')
+    if self.message is not None:
+      oprot.writeFieldBegin('message', TType.STRING, 1)
+      oprot.writeString(self.message.encode('utf-8'))
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    if self.message is None:
+      raise TProtocol.TProtocolException(message='Required field message is unset!')
+    return
+
+
+  def __str__(self):
+    return repr(self)
+
+  def __hash__(self):
+    value = 17
+    value = (value * 31) ^ hash(self.message)
+    return value
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class ServiceBusyError(TException):
+  """
+  Attributes:
+   - message
+  """
+
+  thrift_spec = (
+    None, # 0
+    (1, TType.STRING, 'message', unicode, None, ), # 1
+  )
+
+  def __init__(self, message=None,):
+    self.message = message
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 1:
+        if ftype == TType.STRING:
+          self.message = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('ServiceBusyError')
     if self.message is not None:
       oprot.writeFieldBegin('message', TType.STRING, 1)
       oprot.writeString(self.message.encode('utf-8'))
@@ -4878,6 +4977,7 @@ class StartWorkflowExecutionRequest:
    - executionStartToCloseTimeoutSeconds
    - taskStartToCloseTimeoutSeconds
    - identity
+   - requestId
   """
 
   thrift_spec = (
@@ -4952,9 +5052,19 @@ class StartWorkflowExecutionRequest:
     None, # 68
     None, # 69
     (70, TType.STRING, 'identity', unicode, None, ), # 70
+    None, # 71
+    None, # 72
+    None, # 73
+    None, # 74
+    None, # 75
+    None, # 76
+    None, # 77
+    None, # 78
+    None, # 79
+    (80, TType.STRING, 'requestId', unicode, None, ), # 80
   )
 
-  def __init__(self, workflowId=None, workflowType=None, taskList=None, input=None, executionStartToCloseTimeoutSeconds=None, taskStartToCloseTimeoutSeconds=None, identity=None,):
+  def __init__(self, workflowId=None, workflowType=None, taskList=None, input=None, executionStartToCloseTimeoutSeconds=None, taskStartToCloseTimeoutSeconds=None, identity=None, requestId=None,):
     self.workflowId = workflowId
     self.workflowType = workflowType
     self.taskList = taskList
@@ -4962,6 +5072,7 @@ class StartWorkflowExecutionRequest:
     self.executionStartToCloseTimeoutSeconds = executionStartToCloseTimeoutSeconds
     self.taskStartToCloseTimeoutSeconds = taskStartToCloseTimeoutSeconds
     self.identity = identity
+    self.requestId = requestId
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -5009,6 +5120,11 @@ class StartWorkflowExecutionRequest:
           self.identity = iprot.readString().decode('utf-8')
         else:
           iprot.skip(ftype)
+      elif fid == 80:
+        if ftype == TType.STRING:
+          self.requestId = iprot.readString().decode('utf-8')
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -5047,6 +5163,10 @@ class StartWorkflowExecutionRequest:
       oprot.writeFieldBegin('identity', TType.STRING, 70)
       oprot.writeString(self.identity.encode('utf-8'))
       oprot.writeFieldEnd()
+    if self.requestId is not None:
+      oprot.writeFieldBegin('requestId', TType.STRING, 80)
+      oprot.writeString(self.requestId.encode('utf-8'))
+      oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()
 
@@ -5063,6 +5183,7 @@ class StartWorkflowExecutionRequest:
     value = (value * 31) ^ hash(self.executionStartToCloseTimeoutSeconds)
     value = (value * 31) ^ hash(self.taskStartToCloseTimeoutSeconds)
     value = (value * 31) ^ hash(self.identity)
+    value = (value * 31) ^ hash(self.requestId)
     return value
 
   def __repr__(self):

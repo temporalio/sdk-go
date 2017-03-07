@@ -169,11 +169,13 @@ var WorkflowExecutionAlreadyStartedError = module.exports.WorkflowExecutionAlrea
   Thrift.TException.call(this, "WorkflowExecutionAlreadyStartedError")
   this.name = "WorkflowExecutionAlreadyStartedError"
   this.message = null;
+  this.startRequestId = null;
   if (args) {
     if (args.message !== undefined && args.message !== null) {
       this.message = args.message;
-    } else {
-      throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field message is unset!');
+    }
+    if (args.startRequestId !== undefined && args.startRequestId !== null) {
+      this.startRequestId = args.startRequestId;
     }
   }
 };
@@ -192,16 +194,20 @@ WorkflowExecutionAlreadyStartedError.prototype.read = function(input) {
     }
     switch (fid)
     {
-      case 1:
+      case 10:
       if (ftype == Thrift.Type.STRING) {
         this.message = input.readString();
       } else {
         input.skip(ftype);
       }
       break;
-      case 0:
+      case 20:
+      if (ftype == Thrift.Type.STRING) {
+        this.startRequestId = input.readString();
+      } else {
         input.skip(ftype);
-        break;
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -214,8 +220,13 @@ WorkflowExecutionAlreadyStartedError.prototype.read = function(input) {
 WorkflowExecutionAlreadyStartedError.prototype.write = function(output) {
   output.writeStructBegin('WorkflowExecutionAlreadyStartedError');
   if (this.message !== null && this.message !== undefined) {
-    output.writeFieldBegin('message', Thrift.Type.STRING, 1);
+    output.writeFieldBegin('message', Thrift.Type.STRING, 10);
     output.writeString(this.message);
+    output.writeFieldEnd();
+  }
+  if (this.startRequestId !== null && this.startRequestId !== undefined) {
+    output.writeFieldBegin('startRequestId', Thrift.Type.STRING, 20);
+    output.writeString(this.startRequestId);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -271,6 +282,64 @@ EntityNotExistsError.prototype.read = function(input) {
 
 EntityNotExistsError.prototype.write = function(output) {
   output.writeStructBegin('EntityNotExistsError');
+  if (this.message !== null && this.message !== undefined) {
+    output.writeFieldBegin('message', Thrift.Type.STRING, 1);
+    output.writeString(this.message);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var ServiceBusyError = module.exports.ServiceBusyError = function(args) {
+  Thrift.TException.call(this, "ServiceBusyError")
+  this.name = "ServiceBusyError"
+  this.message = null;
+  if (args) {
+    if (args.message !== undefined && args.message !== null) {
+      this.message = args.message;
+    } else {
+      throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field message is unset!');
+    }
+  }
+};
+Thrift.inherits(ServiceBusyError, Thrift.TException);
+ServiceBusyError.prototype.name = 'ServiceBusyError';
+ServiceBusyError.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true)
+  {
+    var ret = input.readFieldBegin();
+    var fname = ret.fname;
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.message = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+ServiceBusyError.prototype.write = function(output) {
+  output.writeStructBegin('ServiceBusyError');
   if (this.message !== null && this.message !== undefined) {
     output.writeFieldBegin('message', Thrift.Type.STRING, 1);
     output.writeString(this.message);
@@ -3542,6 +3611,7 @@ var StartWorkflowExecutionRequest = module.exports.StartWorkflowExecutionRequest
   this.executionStartToCloseTimeoutSeconds = null;
   this.taskStartToCloseTimeoutSeconds = null;
   this.identity = null;
+  this.requestId = null;
   if (args) {
     if (args.workflowId !== undefined && args.workflowId !== null) {
       this.workflowId = args.workflowId;
@@ -3563,6 +3633,9 @@ var StartWorkflowExecutionRequest = module.exports.StartWorkflowExecutionRequest
     }
     if (args.identity !== undefined && args.identity !== null) {
       this.identity = args.identity;
+    }
+    if (args.requestId !== undefined && args.requestId !== null) {
+      this.requestId = args.requestId;
     }
   }
 };
@@ -3631,6 +3704,13 @@ StartWorkflowExecutionRequest.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 80:
+      if (ftype == Thrift.Type.STRING) {
+        this.requestId = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3675,6 +3755,11 @@ StartWorkflowExecutionRequest.prototype.write = function(output) {
   if (this.identity !== null && this.identity !== undefined) {
     output.writeFieldBegin('identity', Thrift.Type.STRING, 70);
     output.writeString(this.identity);
+    output.writeFieldEnd();
+  }
+  if (this.requestId !== null && this.requestId !== undefined) {
+    output.writeFieldBegin('requestId', Thrift.Type.STRING, 80);
+    output.writeString(this.requestId);
     output.writeFieldEnd();
   }
   output.writeFieldStop();

@@ -111,6 +111,7 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	}
 
 	startRequest := &s.StartWorkflowExecutionRequest{
+		RequestId:    common.StringPtr(uuid.New()),
 		WorkflowId:   common.StringPtr(workflowID),
 		WorkflowType: workflowTypePtr(options.Type),
 		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
