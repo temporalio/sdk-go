@@ -44,9 +44,11 @@ func (t testActivity) Execute(ctx Context, input []byte) ([]byte, error) {
 
 func TestWorkflowReplayer(t *testing.T) {
 	logger := getLogger()
-
+	taskList := "taskList1"
 	testEvents := []*s.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{}),
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
+			TaskList: &s.TaskList{Name: common.StringPtr(taskList)},
+		}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{}),
@@ -62,7 +64,8 @@ func TestWorkflowReplayer(t *testing.T) {
 	}
 
 	r := NewWorkflowReplayer(options, logger)
-	err := r.Replay()
+	err := r.Process(true)
 	require.NoError(t, err)
+	require.NotEmpty(t, r.StackTrace())
 	require.Contains(t, r.StackTrace(), "cadence.ExecuteActivity")
 }

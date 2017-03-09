@@ -13,16 +13,17 @@ import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
+	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
 	"golang.org/x/net/context"
 )
 
 // interfaces
 type (
-	// workflowTaskHandler represents workflow task handlers.
-	workflowTaskHandler interface {
+	// WorkflowTaskHandler represents workflow task handlers.
+	WorkflowTaskHandler interface {
 		// Process the workflow task
-		ProcessWorkflowTask(task *workflowTask, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
+		ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
 	// activityTaskHandler represents activity task handlers.
@@ -212,7 +213,7 @@ OrderEvents:
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
-	logger bark.Logger, metricsScope tally.Scope, ppMgr pressurePointMgr) workflowTaskHandler {
+	logger bark.Logger, metricsScope tally.Scope, ppMgr pressurePointMgr) WorkflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		taskListName:       taskListName,
 		identity:           identity,
@@ -223,17 +224,17 @@ func newWorkflowTaskHandler(taskListName string, identity string, factory workfl
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
-func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTask, emitStack bool) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
-	if workflowTask == nil {
+func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+	if task == nil {
 		return nil, "", fmt.Errorf("nil workflowtask provided")
 	}
 
 	wth.logger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
-		workflowTask.task.GetWorkflowType().GetName(), workflowTask.task.GetPreviousStartedEventId())
+		task.GetWorkflowType().GetName(), task.GetPreviousStartedEventId())
 
 	// Setup workflow Info
 	workflowInfo := &WorkflowInfo{
-		WorkflowType: flowWorkflowTypeFrom(*workflowTask.task.WorkflowType),
+		WorkflowType: flowWorkflowTypeFrom(*task.WorkflowType),
 		TaskListName: wth.taskListName,
 		// workflowExecution
 	}
@@ -250,7 +251,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(workflowTask *workflowTa
 
 	eventHandler := newWorkflowExecutionEventHandler(
 		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
-	history := newHistory(workflowTask, eventHandler.(*workflowExecutionEventHandlerImpl))
+	history := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
 	unhandledDecision := false
 
@@ -313,7 +314,7 @@ ProcessEvents:
 
 	// Fill the response.
 	taskCompletionRequest := &s.RespondDecisionTaskCompletedRequest{
-		TaskToken: workflowTask.task.TaskToken,
+		TaskToken: task.TaskToken,
 		Decisions: decisions,
 		Identity:  common.StringPtr(wth.identity),
 		// ExecutionContext:
@@ -389,22 +390,49 @@ func newActivityTaskHandler(taskListName string, identity string, activities []A
 		metricsScope:    metricsScope}
 }
 
+type cadenceInvoker struct {
+	identity  string
+	service   m.TChanWorkflowService
+	taskToken []byte
+}
+
+func (i *cadenceInvoker) Heartbeat(details []byte) error {
+	request := &s.RecordActivityTaskHeartbeatRequest{
+		TaskToken: i.taskToken,
+		Details:   details,
+		Identity:  common.StringPtr(i.identity)}
+
+	err := backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+
+			// TODO: Handle the propagation of Cancel to activity.
+			r, err2 := i.service.RecordActivityTaskHeartbeat(ctx, request)
+			if r.GetCancelRequested() {
+				return &ActivityTaskCanceledError{}
+			}
+			return err2
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	return err
+}
+
+func newServiceInvoker(taskToken []byte, identity string, service m.TChanWorkflowService) ServiceInvoker {
+	return &cadenceInvoker{
+		taskToken: taskToken,
+		identity:  identity,
+		service:   service,
+	}
+}
+
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(ctx context.Context, activityTask *activityTask) (interface{}, error) {
 	t := activityTask.task
 	ath.logger.Debugf("[WorkflowID: %s] Execute Activity: %s",
 		t.GetWorkflowExecution().GetWorkflowId(), t.GetActivityType().GetName())
 
-	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
-		taskToken:    t.TaskToken,
-		identity:     ath.identity,
-		service:      ath.service,
-		activityType: ActivityType{Name: *t.ActivityType.Name},
-		activityID:   *t.ActivityId,
-		workflowExecution: WorkflowExecution{
-			RunID: *t.WorkflowExecution.RunId,
-			ID:    *t.WorkflowExecution.WorkflowId},
-	})
+	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service)
+	ctx = WithActivityTask(ctx, activityTask.task, invoker)
 	activityType := *t.GetActivityType()
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
 	if !ok {

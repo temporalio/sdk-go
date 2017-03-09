@@ -6,6 +6,7 @@ import (
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
+	"errors"
 	"github.com/pborman/uuid"
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
@@ -93,6 +94,18 @@ func NewWorkflowWorker(
 		nil)
 }
 
+// NewWorkflowTaskHandlerWorker returns instance of a task handler worker.
+// To be used by framework level code that requires access to the original workflow task.
+func NewWorkflowTaskHandlerWorker(
+	params WorkerExecutionParameters,
+	taskHandler WorkflowTaskHandler,
+	service m.TChanWorkflowService,
+	logger bark.Logger,
+	metricsScope tally.Scope) (worker Lifecycle) {
+	identity := getWorkerIdentityForParams(params)
+	return newTaskWorkerInternal(params, taskHandler, service, logger, metricsScope, identity)
+}
+
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow
 func NewWorkflowClient(service m.TChanWorkflowService, metricsScope tally.Scope) *WorkflowClient {
 	return &WorkflowClient{workflowService: service, metricsScope: metricsScope}
@@ -178,44 +191,74 @@ type WorkflowReplayerOptions struct {
 
 // WorkflowReplayer replays a given state of workflow execution.
 type WorkflowReplayer struct {
-	workflowExecution  WorkflowExecution
 	workflowDefFactory workflowDefinitionFactory
-	workflowType       WorkflowType
-	history            *s.History
 	logger             bark.Logger
+	task               *s.PollForDecisionTaskResponse
+	decisions          *s.RespondDecisionTaskCompletedRequest
 	stackTrace         string
 }
 
-// NewWorkflowReplayer creates an isntance of WorkflowReplayer
-func NewWorkflowReplayer(wfOptions WorkflowReplayerOptions, logger bark.Logger) *WorkflowReplayer {
+// NewWorkflowReplayer creates an instance of WorkflowReplayer
+func NewWorkflowReplayer(o WorkflowReplayerOptions, logger bark.Logger) *WorkflowReplayer {
+	workflowTask := &s.PollForDecisionTaskResponse{
+		TaskToken: []byte("replayer-token"),
+		History:   o.History,
+		WorkflowExecution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(o.Execution.ID),
+			RunId:      common.StringPtr(o.Execution.RunID),
+		},
+		WorkflowType: &s.WorkflowType{Name: common.StringPtr(o.Type.Name)},
+	}
+	return NewWorkflowReplayerForPoll(workflowTask, o.Factory, logger)
+}
+
+// NewWorkflowReplayerForPoll creates an instance of WorkflowReplayer from decision poll response
+func NewWorkflowReplayerForPoll(task *s.PollForDecisionTaskResponse, factory WorkflowFactory, logger bark.Logger) *WorkflowReplayer {
 	return &WorkflowReplayer{
-		workflowExecution:  wfOptions.Execution,
-		history:            wfOptions.History,
-		workflowType:       wfOptions.Type,
-		workflowDefFactory: getWorkflowDefinitionFactory(wfOptions.Factory),
+		workflowDefFactory: getWorkflowDefinitionFactory(factory),
 		logger:             logger,
+		task:               task,
 	}
 }
 
-// Replay replays the history.
-func (wr *WorkflowReplayer) Replay() (err error) {
-	workflowTask := &workflowTask{
-		task: &s.PollForDecisionTaskResponse{
-			TaskToken:         []byte("replayer-token"),
-			History:           wr.history,
-			WorkflowExecution: workflowExecutionPtr(wr.workflowExecution),
-			WorkflowType:      workflowTypePtr(wr.workflowType),
-		}}
-
-	taskListName := "replayerTaskList"
-	taskHandler := newWorkflowTaskHandler(taskListName, getWorkerIdentity(taskListName), wr.workflowDefFactory, wr.logger, nil, nil)
-	_, wr.stackTrace, err = taskHandler.ProcessWorkflowTask(workflowTask, true /* emitStack */)
+// Process replays the history.
+func (wr *WorkflowReplayer) Process(emitStack bool) (err error) {
+	history := wr.task.GetHistory()
+	if history == nil {
+		return errors.New("nil history")
+	}
+	event := history.Events[0]
+	if history == nil {
+		return errors.New("nil first history event")
+	}
+	attributes := event.GetWorkflowExecutionStartedEventAttributes()
+	if attributes == nil {
+		return errors.New("first history event is not WorkflowExecutionStarted")
+	}
+	taskList := attributes.GetTaskList()
+	if taskList == nil {
+		return errors.New("nil taskList in WorkflowExecutionStarted event")
+	}
+	taskListName := taskList.GetName()
+	taskHandler := newWorkflowTaskHandler(
+		taskListName,
+		getWorkerIdentity(taskListName),
+		wr.workflowDefFactory,
+		wr.logger,
+		nil,
+		nil)
+	wr.decisions, wr.stackTrace, err = taskHandler.ProcessWorkflowTask(wr.task, emitStack)
 	return err
 }
 
-// StackTrace returns the current stack trace.
+// StackTrace returns the stack trace dump of all current workflow goroutines
 func (wr *WorkflowReplayer) StackTrace() string {
 	return wr.stackTrace
+}
+
+// Decisions that are result of a decision task.
+func (wr *WorkflowReplayer) Decisions() *s.RespondDecisionTaskCompletedRequest {
+	return wr.decisions
 }
 
 func getWorkflowDefinitionFactory(factory WorkflowFactory) workflowDefinitionFactory {

@@ -77,12 +77,12 @@ func createTestEventDecisionTaskCompleted(eventID int64, attr *m.DecisionTaskCom
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
-func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *workflowTask {
-	return &workflowTask{
-		task: &m.PollForDecisionTaskResponse{
-			PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
-			WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
-			History:                &m.History{Events: events}}}
+func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *m.PollForDecisionTaskResponse {
+	return &m.PollForDecisionTaskResponse{
+		PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
+		WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
+		History:                &m.History{Events: events},
+	}
 }
 
 func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {

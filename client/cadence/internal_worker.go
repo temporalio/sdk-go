@@ -16,7 +16,6 @@ type (
 	// task list names they might have to manage 'n' workers for 'n' task lists.
 	workflowWorker struct {
 		executionParameters WorkerExecutionParameters
-		workflowDefFactory  workflowDefinitionFactory
 		workflowService     m.TChanWorkflowService
 		poller              taskPoller // taskPoller to poll the tasks.
 		worker              *baseWorker
@@ -41,7 +40,7 @@ type (
 
 	// Worker overrides.
 	workerOverrides struct {
-		workflowTaskHander  workflowTaskHandler
+		workflowTaskHander  WorkflowTaskHandler
 		activityTaskHandler activityTaskHandler
 	}
 )
@@ -53,23 +52,31 @@ func newWorkflowWorker(params WorkerExecutionParameters, factory workflowDefinit
 	return newWorkflowWorkerInternal(params, factory, service, logger, metricsScope, ppMgr, nil)
 }
 
-func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope,
-	ppMgr pressurePointMgr, overrides *workerOverrides) *workflowWorker {
-	// Get an identity.
+func getWorkerIdentityForParams(params WorkerExecutionParameters) string {
 	identity := params.Identity
 	if identity == "" {
 		identity = getWorkerIdentity(params.TaskList)
 	}
+	return identity
+}
 
+func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflowDefinitionFactory,
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope,
+	ppMgr pressurePointMgr, overrides *workerOverrides) *workflowWorker {
+	// Get an identity.
+	identity := getWorkerIdentityForParams(params)
 	// Get a workflow task handler.
-	var taskHandler workflowTaskHandler
+	var taskHandler WorkflowTaskHandler
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
 		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, metricsScope, ppMgr)
 	}
+	return newTaskWorkerInternal(params, taskHandler, service, logger, metricsScope, identity)
+}
 
+func newTaskWorkerInternal(params WorkerExecutionParameters, taskHandler WorkflowTaskHandler,
+	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope, identity string) *workflowWorker {
 	poller := newWorkflowTaskPoller(
 		service,
 		params.TaskList,
@@ -87,7 +94,6 @@ func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflo
 
 	return &workflowWorker{
 		executionParameters: params,
-		workflowDefFactory:  factory,
 		workflowService:     service,
 		poller:              poller,
 		worker:              worker,

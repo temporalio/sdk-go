@@ -2,12 +2,9 @@ package cadence
 
 import (
 	"context"
-
 	"fmt"
 
-	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/minions-client-go.git/common"
-	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
+	"code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 )
 
 type (
@@ -28,7 +25,6 @@ type (
 		WorkflowExecution WorkflowExecution
 		ActivityID        string
 		ActivityType      ActivityType
-		Identity          string
 	}
 
 	// ActivityTaskFailedError wraps the details of the failure of activity
@@ -39,7 +35,7 @@ type (
 
 	// ActivityTaskTimeoutError wraps the details of the timeout of activity
 	ActivityTaskTimeoutError struct {
-		TimeoutType s.TimeoutType
+		TimeoutType shared.TimeoutType
 	}
 
 	// ActivityTaskCanceledError wraps the details of the activity cancellation
@@ -54,7 +50,6 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 	return ActivityInfo{
 		ActivityID:        env.activityID,
 		ActivityType:      env.activityType,
-		Identity:          env.identity,
 		TaskToken:         env.taskToken,
 		WorkflowExecution: env.workflowExecution,
 	}
@@ -64,21 +59,7 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 // TODO: Implement automatic heartbeating with cancellation through ctx.
 func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
 	env := getActivityEnv(ctx)
-	request := &s.RecordActivityTaskHeartbeatRequest{
-		TaskToken: env.taskToken,
-		Details:   details,
-		Identity:  common.StringPtr(env.identity)}
-
-	err := backoff.Retry(
-		func() error {
-			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
-			defer cancel()
-
-			// TODO: Handle the propagation of Cancel to activity.
-			_, err2 := env.service.RecordActivityTaskHeartbeat(ctx, request)
-			return err2
-		}, serviceOperationRetryPolicy, isServiceTransientError)
-	return err
+	return env.serviceInvoker.Heartbeat(details)
 }
 
 // Error from error.Error
@@ -124,4 +105,29 @@ func (e ActivityTaskCanceledError) Details() []byte {
 // Reason of the error
 func (e ActivityTaskCanceledError) Reason() string {
 	return e.Error()
+}
+
+// ServiceInvoker abstracts calls to the Cadence service from an Activity implementation.
+// Implement to unit test activities.
+type ServiceInvoker interface {
+	// Returns ActivityTaskCanceledError if activity is cancelled
+	Heartbeat(details []byte) error
+}
+
+// WithActivityTask adds activity specific information into context.
+// Use this method to unit test activity implementations that use context extractor methodshared.
+func WithActivityTask(
+	ctx context.Context,
+	task *shared.PollForActivityTaskResponse,
+	invoker ServiceInvoker,
+) context.Context {
+	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		taskToken:      task.TaskToken,
+		serviceInvoker: invoker,
+		activityType:   ActivityType{Name: *task.ActivityType.Name},
+		activityID:     *task.ActivityId,
+		workflowExecution: WorkflowExecution{
+			RunID: *task.WorkflowExecution.RunId,
+			ID:    *task.WorkflowExecution.WorkflowId},
+	})
 }

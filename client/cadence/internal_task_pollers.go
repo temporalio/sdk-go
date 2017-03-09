@@ -42,7 +42,7 @@ type (
 		taskListName string
 		identity     string
 		service      m.TChanWorkflowService
-		taskHandler  workflowTaskHandler
+		taskHandler  WorkflowTaskHandler
 		metricsScope tally.Scope
 		logger       bark.Logger
 	}
@@ -81,7 +81,7 @@ func isServiceTransientError(err error) bool {
 }
 
 func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler workflowTaskHandler, logger bark.Logger, metricsScope tally.Scope) *workflowTaskPoller {
+	taskHandler WorkflowTaskHandler, logger bark.Logger, metricsScope tally.Scope) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      service,
 		taskListName: taskListName,
@@ -115,7 +115,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	}()
 
 	// Process the task.
-	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask, false)
+	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, false)
 	if err != nil {
 		return err
 	}

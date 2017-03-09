@@ -4,8 +4,6 @@ package cadence
 
 import (
 	"golang.org/x/net/context"
-
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 )
 
 type (
@@ -31,8 +29,7 @@ type (
 		workflowExecution WorkflowExecution
 		activityID        string
 		activityType      ActivityType
-		identity          string
-		service           m.TChanWorkflowService
+		serviceInvoker    ServiceInvoker
 	}
 )
 
