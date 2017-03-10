@@ -260,6 +260,9 @@ func (weh *workflowExecutionEventHandlerImpl) StackTrace() string {
 }
 
 func (weh *workflowExecutionEventHandlerImpl) Close() {
+	if weh.workflowDefinition != nil {
+		weh.workflowDefinition.Close()
+	}
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(

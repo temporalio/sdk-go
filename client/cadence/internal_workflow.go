@@ -131,6 +131,12 @@ func (d *syncWorkflowDefinition) StackTrace() string {
 	return d.dispatcher.StackTrace()
 }
 
+func (d *syncWorkflowDefinition) Close() {
+	if d.dispatcher != nil {
+		d.dispatcher.Close()
+	}
+}
+
 // Dispatcher is a container of a set of coroutines.
 type dispatcher interface {
 	// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order

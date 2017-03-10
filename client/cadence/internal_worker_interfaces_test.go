@@ -44,6 +44,10 @@ func (wf helloWorldWorkflow) StackTrace() string {
 	return ""
 }
 
+func (wf helloWorldWorkflow) Close() {
+
+}
+
 func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := ExecuteActivityParameters{

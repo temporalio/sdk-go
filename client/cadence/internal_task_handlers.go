@@ -251,6 +251,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionT
 
 	eventHandler := newWorkflowExecutionEventHandler(
 		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
+	defer eventHandler.Close()
 	history := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
 	unhandledDecision := false

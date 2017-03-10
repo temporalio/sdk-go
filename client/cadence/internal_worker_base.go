@@ -44,6 +44,7 @@ type (
 	workflowDefinition interface {
 		Execute(env workflowEnvironment, input []byte)
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+		Close()
 	}
 
 	// WorkflowDefinitionFactory that returns a workflow definition for a specific
