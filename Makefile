@@ -8,15 +8,14 @@ THRIFT_SRCS = $(THRIFT_DIR)/cadence.thrift \
 	$(THRIFT_DIR)/shared.thrift
 
 # list all executables
-PROGS = cmd/example/example \
-        cmd/samples/helloworld/sample
+PROGS = cmd/samples/greetings/sample \
+        cmd/samples/helloworld/sample \
 
-cmd/example/example: cmd/example/*.go \
+cmd/samples/greetings/sample: cmd/samples/greetings/*.go \
 	$(wildcard config/*.go) \
 	$(wildcard common/*.go) \
 	$(wildcard common/**/*.go) \
 	$(wildcard client/cadence/*.go) \
-	$(wildcard examples/*.go) \
 
 cmd/samples/helloworld/sample: cmd/samples/helloworld/sample.go \
 

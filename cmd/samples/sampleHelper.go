@@ -72,12 +72,12 @@ func (h *SampleHelper) StartActivityWorker(taskListName string, pollSize int, ac
 }
 
 // StartWorkflow starts a new workflow
-func (h *SampleHelper) StartWorkflow(workflowName, tasklistName string, input []byte, timeoutSeconds int32) {
+func (h *SampleHelper) StartWorkflow(workflowName, workflowTasklistName string, input []byte, timeoutSeconds int32) {
 	workflowID := uuid.New()
 	workflowOptions := cadence.StartWorkflowOptions{
 		ID:       workflowID,
 		Type:     cadence.WorkflowType{Name: workflowName},
-		TaskList: tasklistName,
+		TaskList: workflowTasklistName,
 		Input:    input,
 		ExecutionStartToCloseTimeoutSeconds:    timeoutSeconds,
 		DecisionTaskStartToCloseTimeoutSeconds: timeoutSeconds,
