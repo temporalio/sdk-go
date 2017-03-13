@@ -20,7 +20,7 @@ type helloWorldWorklfow struct {
 type callbackHandlerWrapTest struct {
 	handler resultHandler
 	result  []byte
-	err     Error
+	err     error
 }
 
 type asyncTestCallbackProcessor struct {
@@ -49,7 +49,7 @@ func (ac *asyncTestCallbackProcessor) Process() {
 	}()
 }
 
-func (ac *asyncTestCallbackProcessor) Add(cb resultHandler, result []byte, err Error) {
+func (ac *asyncTestCallbackProcessor) Add(cb resultHandler, result []byte, err error) {
 	ac.callbackCh <- callbackHandlerWrapTest{handler: cb, result: result, err: err}
 }
 
@@ -265,7 +265,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 
 	require.Nil(w.t, r2)
 	require.Error(w.t, err2)
-	_, isCancelErr := err2.(*TimerCanceledError)
+	_, isCancelErr := err2.(CanceledError)
 	require.True(w.t, isCancelErr)
 
 	// Sleep 1 sec
@@ -279,7 +279,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 	err4 := Sleep(ctx4, 1)
 
 	require.Error(w.t, err4)
-	_, isCancelErr = err4.(*TimerCanceledError)
+	_, isCancelErr = err4.(CanceledError)
 	require.True(w.t, isCancelErr)
 
 	return []byte("workflow-completed"), nil
@@ -309,7 +309,7 @@ func TestTimerWorkflow(t *testing.T) {
 	cancelTimerCount := 0
 	ctx.On("RequestCancelTimer", mock.Anything).Return().Run(func(args mock.Arguments) {
 		cancelTimerCount++
-		cbProcessor.Add(callbackHandler2, nil, &TimerCanceledError{})
+		cbProcessor.Add(callbackHandler2, nil, NewCanceledError())
 	}).Twice()
 
 	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
@@ -355,7 +355,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 	c3()
 	res3, err3 := f3.Get(ctx)
 	require.Nil(w.t, res3)
-	require.Equal(w.t, "testCancelDetails", string(err3.(Error).Details()))
+	require.Equal(w.t, "testCancelDetails", string(err3.(CanceledError).Details()))
 
 	return []byte("workflow-completed"), nil
 }
@@ -384,7 +384,11 @@ func TestActivityCancelWorkflow(t *testing.T) {
 	ctx.On("RequestCancelActivity", "testAct").Return().Run(func(args mock.Arguments) {
 		cancelCount++
 		if cancelCount == 2 { // Because of defer.
-			cbProcessor.Add(callbackHandler3, nil, &ActivityTaskCanceledError{details: []byte("testCancelDetails")})
+			cbProcessor.Add(
+				callbackHandler3,
+				nil,
+				NewCanceledErrorWithDetails([]byte("testCancelDetails")),
+			)
 		}
 	}).Times(3)
 

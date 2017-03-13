@@ -45,12 +45,6 @@ type activityClient struct {
 	asyncClient asyncActivityClient
 }
 
-// errorImpl implements Error
-type errorImpl struct {
-	reason  string
-	details []byte
-}
-
 type futureImpl struct {
 	value   interface{}
 	err     error
@@ -119,20 +113,6 @@ func (f *futureImpl) Chain(future Future) {
 	return
 }
 
-func (e *errorImpl) Error() string {
-	return e.reason
-}
-
-// Reason is from Error interface
-func (e *errorImpl) Reason() string {
-	return e.reason
-}
-
-// Details is from Error interface
-func (e *errorImpl) Details() []byte {
-	return e.details
-}
-
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
 	ctx := WithValue(background, workflowEnvironmentContextKey, env)
 	var resultPtr *workflowResult
@@ -181,7 +161,10 @@ func getDispatcher(ctx Context) dispatcher {
 func executeDispatcher(ctx Context, dispatcher dispatcher) {
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
-		getWorkflowEnvironment(ctx).Complete(nil, NewError(panicErr.Error(), []byte(panicErr.StackTrace())))
+		getWorkflowEnvironment(ctx).Complete(
+			nil,
+			NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())),
+		)
 		dispatcher.Close()
 		return
 	}
@@ -191,11 +174,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 		return
 	}
 	// Cannot cast nil values from interface{} to interface
-	var err Error
-	if rp.error != nil {
-		err = rp.error.(Error)
-	}
-	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, err)
+	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, rp.error)
 	dispatcher.Close()
 }
 
@@ -268,7 +247,6 @@ type dispatcherImpl struct {
 var _ Channel = (*channelImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
-var _ PanicError = (*panicError)(nil)
 
 const coroutinesContextKey = "coroutines"
 

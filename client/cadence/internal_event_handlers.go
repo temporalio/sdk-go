@@ -10,6 +10,7 @@ import (
 
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
+	"errors"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -126,7 +127,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 
 	if wait, ok := wc.waitForCancelRequestActivities[activityID]; ok && !wait {
-		handler(nil, &ActivityTaskCanceledError{details: []byte("Not waiting for cancellation to complete")})
+		handler(nil, NewCanceledError())
 	}
 	wc.logger.Debugf("RequestCancelActivity: %v.", requestCancelAttr.GetActivityId())
 }
@@ -141,7 +142,7 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 
 func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
 	if d < 0 {
-		callback(nil, NewError("Invalid delayInSeconds provided", nil))
+		callback(nil, errors.New("Invalid delayInSeconds provided"))
 		return nil
 	}
 	if d == 0 {
@@ -174,7 +175,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 
-	handler(nil, &TimerCanceledError{})
+	handler(nil, NewCanceledError())
 	delete(wc.scheduledTimers, timerID)
 
 	wc.logger.Debugf("RequestCancelTimer: %v.", timerID)
@@ -317,9 +318,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
 	delete(weh.scheduledActivites, activityID)
 
-	err := &ActivityTaskFailedError{
-		reason:  *attributes.Reason,
-		details: attributes.Details}
+	err := NewErrorWithDetails(*attributes.Reason, attributes.Details)
 	// Invoke the callback
 	handler(nil, err)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
@@ -344,7 +343,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
 	delete(weh.scheduledActivites, activityID)
 
-	err := &ActivityTaskTimeoutError{TimeoutType: attributes.GetTimeoutType()}
+	err := NewTimeoutError(attributes.GetTimeoutType())
 	// Invoke the callback
 	handler(nil, err)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil
@@ -368,7 +367,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
 	delete(weh.scheduledActivites, activityID)
 
-	err := &ActivityTaskCanceledError{details: attributes.GetDetails()}
+	err := NewCanceledErrorWithDetails(attributes.GetDetails())
 	// Invoke the callback
 	handler(nil, err)
 	return weh.SwapExecuteDecisions([]*m.Decision{}), nil

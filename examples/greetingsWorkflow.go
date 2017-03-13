@@ -68,7 +68,7 @@ func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte
 	greeetingParams := &sayGreetingActivityRequest{}
 	err := json.Unmarshal(input, greeetingParams)
 	if err != nil {
-		return nil, cadence.NewError(err.Error(), nil)
+		return nil, err
 	}
 
 	fmt.Printf("Saying Final Greeting: ")

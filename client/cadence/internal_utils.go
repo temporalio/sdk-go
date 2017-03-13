@@ -52,6 +52,9 @@ func getErrorDetails(err error) (string, []byte) {
 	if wErr, ok := err.(Error); ok {
 		return wErr.Reason(), wErr.Details()
 	}
+	if wErr, ok := err.(CanceledError); ok {
+		return "canceled", wErr.Details()
+	}
 	return err.Error(), []byte("")
 }
 

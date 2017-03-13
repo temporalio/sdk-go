@@ -57,13 +57,6 @@ type Settable interface {
 // Func is a body of a coroutine which should be used instead of goroutines by the workflow code
 type Func func(ctx Context)
 
-// PanicError contains information about panicked workflow
-type PanicError interface {
-	error
-	Value() interface{} // Value passed to panic call
-	StackTrace() string // Stack trace of a panicked coroutine
-}
-
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
 	state := getState(ctx)
@@ -115,18 +108,6 @@ func GoNamed(ctx Context, name string, f Func) {
 	state.dispatcher.newNamedCoroutine(ctx, name, f)
 }
 
-// Error to return from Workflow and Activity implementations.
-type Error interface {
-	error
-	Reason() string
-	Details() []byte
-}
-
-// NewError creates Error instance
-func NewError(reason string, details []byte) Error {
-	return &errorImpl{reason: reason, details: details}
-}
-
 // NewFuture creates a new future as well as associated Settable that is used to set its value.
 func NewFuture(ctx Context) (Future, Settable) {
 	impl := &futureImpl{channel: NewChannel(ctx)}
@@ -163,11 +144,9 @@ type ExecuteActivityParameters struct {
 func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result []byte, err error) {
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e error) {
 		result = r
-		if e != nil {
-			err = e.(Error)
-		}
+		err = e
 		ok := resultChannel.SendAsync(true)
 		if !ok {
 			panic("unexpected")
@@ -193,12 +172,8 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 // error ActivityTaskCanceledError.
 func ExecuteActivityAsync(ctx Context, parameters ExecuteActivityParameters) Future {
 	future, settable := NewFuture(ctx)
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e Error) {
-		var err Error
-		if e != nil {
-			err = e.(Error)
-		}
-		settable.Set(r, err)
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e error) {
+		settable.Set(r, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
 	Go(ctx, func(ctx Context) {
@@ -242,7 +217,7 @@ func NewTimer(ctx Context, d time.Duration) Future {
 		return future
 	}
 
-	t := getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e Error) {
+	t := getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e error) {
 		settable.Set(nil, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})

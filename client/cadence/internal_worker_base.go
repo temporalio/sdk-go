@@ -31,7 +31,7 @@ var (
 
 type (
 	// resultHandler that returns result
-	resultHandler func(result []byte, err Error)
+	resultHandler func(result []byte, err error)
 
 	// workflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition

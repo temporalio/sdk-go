@@ -2,7 +2,6 @@ package cadence
 
 import (
 	"context"
-	"fmt"
 
 	"code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 )
@@ -26,22 +25,6 @@ type (
 		ActivityID        string
 		ActivityType      ActivityType
 	}
-
-	// ActivityTaskFailedError wraps the details of the failure of activity
-	ActivityTaskFailedError struct {
-		reason  string
-		details []byte
-	}
-
-	// ActivityTaskTimeoutError wraps the details of the timeout of activity
-	ActivityTaskTimeoutError struct {
-		TimeoutType shared.TimeoutType
-	}
-
-	// ActivityTaskCanceledError wraps the details of the activity cancellation
-	ActivityTaskCanceledError struct {
-		details []byte
-	}
 )
 
 // GetActivityInfo returns information about currently executing activity.
@@ -60,51 +43,6 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
 	env := getActivityEnv(ctx)
 	return env.serviceInvoker.Heartbeat(details)
-}
-
-// Error from error.Error
-func (e ActivityTaskFailedError) Error() string {
-	return fmt.Sprintf("Reason: %s, Details: %s", e.reason, e.details)
-}
-
-// Details of the error
-func (e ActivityTaskFailedError) Details() []byte {
-	return e.details
-}
-
-// Reason of the error
-func (e ActivityTaskFailedError) Reason() string {
-	return e.reason
-}
-
-// Error from error.Error
-func (e ActivityTaskTimeoutError) Error() string {
-	return fmt.Sprintf("TimeoutType: %v", e.TimeoutType)
-}
-
-// Details of the error
-func (e ActivityTaskTimeoutError) Details() []byte {
-	return nil
-}
-
-// Reason of the error
-func (e ActivityTaskTimeoutError) Reason() string {
-	return e.Error()
-}
-
-// Error from error.Error
-func (e ActivityTaskCanceledError) Error() string {
-	return fmt.Sprintf("Details: %s", e.details)
-}
-
-// Details of the error
-func (e ActivityTaskCanceledError) Details() []byte {
-	return e.details
-}
-
-// Reason of the error
-func (e ActivityTaskCanceledError) Reason() string {
-	return e.Error()
 }
 
 // ServiceInvoker abstracts calls to the Cadence service from an Activity implementation.

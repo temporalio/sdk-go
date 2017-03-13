@@ -1,7 +1,6 @@
 package cadence
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -28,24 +27,4 @@ type (
 		// If the timer is not started then it is a no-operation.
 		RequestCancelTimer(timerID string)
 	}
-
-	// TimerCanceledError wraps the details of the failure of timer cancellation
-	TimerCanceledError struct {
-		details []byte
-	}
 )
-
-// Error from error.Error
-func (e TimerCanceledError) Error() string {
-	return fmt.Sprintf("Details: %s", e.details)
-}
-
-// Details of the error
-func (e TimerCanceledError) Details() []byte {
-	return e.details
-}
-
-// Reason of the error
-func (e TimerCanceledError) Reason() string {
-	return e.Error()
-}

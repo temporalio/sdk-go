@@ -410,7 +410,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 			// TODO: Handle the propagation of Cancel to activity.
 			r, err2 := i.service.RecordActivityTaskHeartbeat(ctx, request)
 			if r.GetCancelRequested() {
-				return &ActivityTaskCanceledError{}
+				return NewCanceledError()
 			}
 			return err2
 		}, serviceOperationRetryPolicy, isServiceTransientError)

@@ -2,6 +2,7 @@ package examples
 
 import (
 	"encoding/json"
+	"errors"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/uber-common/bark"
@@ -24,7 +25,7 @@ var workflowFactory = func(wt cadence.WorkflowType) (cadence.Workflow, error) {
 	case "greetingsWorkflow":
 		return greetingsWorkflow{}, nil
 	}
-	return nil, cadence.NewError("Invalid workflow type", []byte{})
+	return nil, errors.New("Invalid workflow type")
 }
 
 func activityInfo(activityName string) cadence.ExecuteActivityParameters {
