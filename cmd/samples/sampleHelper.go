@@ -51,7 +51,7 @@ func (h *SampleHelper) StartWorkflowWorker(taskListName string, pollSize int, wo
 	workflowExecutionParameters.ConcurrentPollRoutineSize = pollSize
 
 	// Launch worker.
-	h.workflowWorker = cadence.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, h.service, h.logger, h.scope)
+	h.workflowWorker = cadence.NewWorkflowWorker(workflowFactory, h.service, workflowExecutionParameters)
 	h.workflowWorker.Start()
 	logrus.Infoln("Started Deciders for workflows.")
 }
@@ -64,7 +64,7 @@ func (h *SampleHelper) StartActivityWorker(taskListName string, pollSize int, ac
 	activityExecutionParameters.ConcurrentPollRoutineSize = pollSize
 
 	// Register activity instances and launch the worker.
-	h.activityWorker = cadence.NewActivityWorker(activityExecutionParameters, activities, h.service, h.logger, h.scope)
+	h.activityWorker = cadence.NewActivityWorker(activities, h.service, activityExecutionParameters)
 	h.activityWorker.Start()
 	logrus.Infoln("Started activities for workflows.")
 }

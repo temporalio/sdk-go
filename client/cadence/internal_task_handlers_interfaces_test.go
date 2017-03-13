@@ -73,19 +73,19 @@ func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*Activity)
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
-func (ath sampleActivityTaskHandler) Execute(ctx context.Context, activityTask *activityTask) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(task *m.PollForActivityTaskResponse) (interface{}, error) {
 	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeterActivity{}
-	result, err := activityImplementation.Execute(ctx, activityTask.task.Input)
+	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
 		reason := err.Error()
 		return &m.RespondActivityTaskFailedRequest{
-			TaskToken: activityTask.task.TaskToken,
+			TaskToken: task.TaskToken,
 			Reason:    &reason,
 		}, nil
 	}
 	return &m.RespondActivityTaskCompletedRequest{
-		TaskToken: activityTask.task.TaskToken,
+		TaskToken: task.TaskToken,
 		Result_:   result,
 	}, nil
 }
@@ -134,7 +134,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	// Execute activity task and respond to the service.
 	activationRegistry := make(map[m.ActivityType]*Activity)
 	taskHandler := newSampleActivityTaskHandler(activationRegistry)
-	request, err := taskHandler.Execute(nil, &activityTask{response})
+	request, err := taskHandler.Execute(response)
 	s.NoError(err)
 	switch request.(type) {
 	case m.RespondActivityTaskCompletedRequest:

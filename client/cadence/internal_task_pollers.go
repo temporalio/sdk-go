@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uber-common/bark"
+	"github.com/uber-go/tally"
+
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
 	"code.uber.internal/devexp/minions-client-go.git/common/metrics"
-	"github.com/uber-common/bark"
-	"github.com/uber-go/tally"
-	"github.com/uber/tchannel-go/thrift"
 )
 
 const (
@@ -52,7 +52,7 @@ type (
 		taskListName string
 		identity     string
 		service      m.TChanWorkflowService
-		taskHandler  activityTaskHandler
+		taskHandler  ActivityTaskHandler
 		metricsScope tally.Scope
 		logger       bark.Logger
 	}
@@ -80,15 +80,14 @@ func isServiceTransientError(err error) bool {
 	return true
 }
 
-func newWorkflowTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler WorkflowTaskHandler, logger bark.Logger, metricsScope tally.Scope) *workflowTaskPoller {
+func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService, params WorkerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      service,
-		taskListName: taskListName,
-		identity:     identity,
+		taskListName: params.TaskList,
+		identity:     params.Identity,
 		taskHandler:  taskHandler,
-		metricsScope: metricsScope,
-		logger:       logger,
+		metricsScope: params.MetricsScope,
+		logger:       params.Logger,
 	}
 }
 
@@ -159,15 +158,15 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	return &workflowTask{task: response}, nil
 }
 
-func newActivityTaskPoller(service m.TChanWorkflowService, taskListName string, identity string,
-	taskHandler activityTaskHandler, metricsScope tally.Scope, logger bark.Logger) *activityTaskPoller {
+func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkflowService,
+	params WorkerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		service:      service,
-		taskListName: taskListName,
-		identity:     identity,
 		taskHandler:  taskHandler,
-		logger:       logger,
-		metricsScope: metricsScope}
+		service:      service,
+		taskListName: params.TaskList,
+		identity:     params.Identity,
+		logger:       params.Logger,
+		metricsScope: params.MetricsScope}
 }
 
 // Poll for a single activity task from the service
@@ -213,10 +212,7 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	}()
 
 	// Process the activity task.
-	// Activity execution timeout: setting it to a longer one.
-	ctx, cancel := thrift.NewContext(7 * 24 * time.Hour)
-	defer cancel()
-	result, err := atp.taskHandler.Execute(ctx, activityTask)
+	result, err := atp.taskHandler.Execute(activityTask.task)
 	if err != nil {
 		return err
 	}

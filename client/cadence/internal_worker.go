@@ -3,11 +3,7 @@ package cadence
 // All code in this file is private to the package.
 
 import (
-	"github.com/uber-common/bark"
-	"github.com/uber-go/tally"
-
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
-	"code.uber.internal/go-common.git/x/log"
 )
 
 type (
@@ -20,7 +16,6 @@ type (
 		poller              taskPoller // taskPoller to poll the tasks.
 		worker              *baseWorker
 		identity            string
-		logger              bark.Logger
 	}
 
 	// activityRegistry collection of activity implementations
@@ -35,21 +30,33 @@ type (
 		poller              *activityTaskPoller
 		worker              *baseWorker
 		identity            string
-		logger              bark.Logger
 	}
 
 	// Worker overrides.
 	workerOverrides struct {
 		workflowTaskHander  WorkflowTaskHandler
-		activityTaskHandler activityTaskHandler
+		activityTaskHandler ActivityTaskHandler
 	}
 )
 
-// NewWorkflowWorker returns an instance of the workflow worker.
-func newWorkflowWorker(params WorkerExecutionParameters, factory workflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger,
-	metricsScope tally.Scope, ppMgr pressurePointMgr) *workflowWorker {
-	return newWorkflowWorkerInternal(params, factory, service, logger, metricsScope, ppMgr, nil)
+// NewWorkflowTaskWorker returns an instance of a workflow task handler worker.
+// To be used by framework level code that requires access to the original workflow task.
+func NewWorkflowTaskWorker(
+	taskHandler WorkflowTaskHandler,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+) (worker Lifecycle) {
+	return newWorkflowTaskWorkerInternal(taskHandler, service, params)
+}
+
+// newWorkflowWorker returns an instance of the workflow worker.
+func newWorkflowWorker(
+	factory workflowDefinitionFactory,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+	ppMgr pressurePointMgr,
+) Lifecycle {
+	return newWorkflowWorkerInternal(factory, service, params, ppMgr, nil)
 }
 
 func getWorkerIdentityForParams(params WorkerExecutionParameters) string {
@@ -60,37 +67,42 @@ func getWorkerIdentityForParams(params WorkerExecutionParameters) string {
 	return identity
 }
 
-func newWorkflowWorkerInternal(params WorkerExecutionParameters, factory workflowDefinitionFactory,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope,
-	ppMgr pressurePointMgr, overrides *workerOverrides) *workflowWorker {
-	// Get an identity.
-	identity := getWorkerIdentityForParams(params)
+func newWorkflowWorkerInternal(
+	factory workflowDefinitionFactory,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+	ppMgr pressurePointMgr,
+	overrides *workerOverrides,
+) Lifecycle {
 	// Get a workflow task handler.
 	var taskHandler WorkflowTaskHandler
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
 	} else {
-		taskHandler = newWorkflowTaskHandler(params.TaskList, identity, factory, logger, metricsScope, ppMgr)
+		taskHandler = newWorkflowTaskHandler(factory, params, ppMgr)
 	}
-	return newTaskWorkerInternal(params, taskHandler, service, logger, metricsScope, identity)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, params)
 }
 
-func newTaskWorkerInternal(params WorkerExecutionParameters, taskHandler WorkflowTaskHandler,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope, identity string) *workflowWorker {
+func newWorkflowTaskWorkerInternal(
+	taskHandler WorkflowTaskHandler,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+) Lifecycle {
 	poller := newWorkflowTaskPoller(
-		service,
-		params.TaskList,
-		identity,
 		taskHandler,
-		logger,
-		metricsScope)
+		service,
+		params,
+	)
+	identity := getWorkerIdentityForParams(params)
+
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
 		identity:        identity,
 		workerType:      "DecisionWorker"},
-		logger)
+		params.Logger)
 
 	return &workflowWorker{
 		executionParameters: params,
@@ -112,43 +124,47 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newActivityWorkerInternal(executionParameters WorkerExecutionParameters, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope, overrides *workerOverrides) *activityWorker {
-	// Get an identity.
-	identity := executionParameters.Identity
-	if identity == "" {
-		identity = getWorkerIdentity(executionParameters.TaskList)
-	}
-
-	if logger == nil {
-		logger = log.WithFields(log.Fields{tagTaskListName: executionParameters.TaskList})
-	}
+func newActivityWorkerInternal(
+	activities []Activity,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+	overrides *workerOverrides,
+) Lifecycle {
 
 	// Get a activity task handler.
-	var taskHandler activityTaskHandler
+	var taskHandler ActivityTaskHandler
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {
-		taskHandler = newActivityTaskHandler(executionParameters.TaskList, executionParameters.Identity,
-			activities, service, logger, metricsScope)
+		taskHandler = newActivityTaskHandler(activities, service, params)
 	}
+	return NewActivityTaskWorker(taskHandler, service, params)
+}
+
+// NewActivityTaskWorker returns instance of an activity task handler worker.
+// To be used by framework level code that requires access to the original workflow task.
+func NewActivityTaskWorker(
+	taskHandler ActivityTaskHandler,
+	service m.TChanWorkflowService,
+	params WorkerExecutionParameters,
+) Lifecycle {
+	identity := getWorkerIdentityForParams(params)
+
 	poller := newActivityTaskPoller(
-		service,
-		executionParameters.TaskList,
-		identity,
 		taskHandler,
-		metricsScope,
-		logger)
+		service,
+		params,
+	)
 	worker := newBaseWorker(baseWorkerOptions{
-		routineCount:    executionParameters.ConcurrentPollRoutineSize,
+		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
 		identity:        identity,
 		workerType:      "ActivityWorker"},
-		logger)
+		params.Logger)
 
 	return &activityWorker{
-		executionParameters: executionParameters,
+		executionParameters: params,
 		activityRegistry:    make(map[string]Activity),
 		workflowService:     service,
 		worker:              worker,

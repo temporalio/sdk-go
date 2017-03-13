@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
-
 	"time"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"github.com/uber-common/bark"
-	"github.com/uber-go/tally"
+
+	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 )
 
 // ** This is for internal stress testing framework **
@@ -37,14 +36,11 @@ type (
 
 // NewWorkflowWorkerWithPressurePoints returns an instance of a workflow worker.
 func NewWorkflowWorkerWithPressurePoints(
-	params WorkerExecutionParameters,
 	factory WorkflowFactory,
 	service m.TChanWorkflowService,
-	logger bark.Logger,
-	metricsScope tally.Scope,
+	params WorkerExecutionParameters,
 	pressurePoints map[string]map[string]string) (worker Lifecycle) {
 	return newWorkflowWorker(
-		params,
 		func(workflowType WorkflowType) (workflowDefinition, error) {
 			wd, err := factory(workflowType)
 			if err != nil {
@@ -53,9 +49,8 @@ func NewWorkflowWorkerWithPressurePoints(
 			return NewWorkflowDefinition(wd), nil
 		},
 		service,
-		logger,
-		metricsScope,
-		&pressurePointMgrImpl{config: pressurePoints, logger: logger})
+		params,
+		&pressurePointMgrImpl{config: pressurePoints, logger: params.Logger})
 }
 
 func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {

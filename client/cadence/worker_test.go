@@ -52,7 +52,9 @@ func TestWorkflowReplayer(t *testing.T) {
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{}),
-		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{ActivityId: common.StringPtr("0")}),
+		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{
+			ActivityId: common.StringPtr("0"),
+		}),
 		createTestEventActivityTaskStarted(3, &s.ActivityTaskStartedEventAttributes{}),
 	}
 

@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
+
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
 	"code.uber.internal/devexp/minions-client-go.git/common"
 	"code.uber.internal/devexp/minions-client-go.git/common/backoff"
-	"github.com/uber-common/bark"
 )
 
 const (
@@ -79,6 +81,11 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 }
 
 func newBaseWorker(options baseWorkerOptions, logger bark.Logger) *baseWorker {
+	if logger == nil {
+		log := log.New()
+		logger = bark.NewLoggerFromLogrus(log)
+		logger.Info("No logger configured for cadence worker. Created default one.")
+	}
 	return &baseWorker{
 		options:     options,
 		shutdownCh:  make(chan struct{}),
@@ -117,7 +124,7 @@ func (bw *baseWorker) Stop() {
 	// TODO: The poll is longer than the 10 seconds, we probably need some way to hard terminate the
 	// poll routines as well.
 
-	if success := AwaitWaitGroup(&bw.shutdownWG, 10*time.Second); !success {
+	if success := awaitWaitGroup(&bw.shutdownWG, 10*time.Second); !success {
 		bw.logger.Info("Worker timed out on waiting for shutdown.")
 	}
 }

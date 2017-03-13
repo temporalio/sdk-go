@@ -121,6 +121,7 @@ func WithActivityTask(
 	task *shared.PollForActivityTaskResponse,
 	invoker ServiceInvoker,
 ) context.Context {
+	// TODO: Add activity start to close timeout to activity task and use it as the deadline
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,

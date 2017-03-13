@@ -90,7 +90,12 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
+	params := WorkerExecutionParameters{
+		TaskList: "taskListName",
+		Identity: "test-id-1",
+		Logger:   s.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
@@ -108,7 +113,12 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
 	task := createWorkflowTask(testEvents, 0)
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, nil)
+	params := WorkerExecutionParameters{
+		TaskList: "taskListName",
+		Identity: "test-id-1",
+		Logger:   s.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -142,7 +152,12 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityTask() {
 		return &helloWorldWorkflow{cancelActivity: true}, nil
 	}
 
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", twdFactory, s.logger, nil, nil)
+	params := WorkerExecutionParameters{
+		TaskList: "taskListName",
+		Identity: "test-id-1",
+		Logger:   s.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(twdFactory, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -169,7 +184,12 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 	pressurePoints[PressurePointTypeActivityTaskScheduleTimeout] = map[string]string{PressurePointConfigProbability: "100"}
 	ppMgr := &pressurePointMgrImpl{config: pressurePoints, logger: s.logger}
 
-	taskHandler := newWorkflowTaskHandler("taskListName", "test-id-1", testWorkflowDefinitionFactory, s.logger, nil, ppMgr)
+	params := WorkerExecutionParameters{
+		TaskList: "taskListName",
+		Identity: "test-id-1",
+		Logger:   s.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, ppMgr)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.Error(err)

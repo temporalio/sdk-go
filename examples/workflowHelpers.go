@@ -56,23 +56,27 @@ func (w *WorkflowHelper) StartWorkers() {
 	logger := bark.NewLoggerFromLogrus(log.New())
 
 	// Workflow execution parameters.
-	workflowExecutionParameters := cadence.WorkerExecutionParameters{}
-	workflowExecutionParameters.TaskList = "exampleTaskList"
-	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
+	workflowExecutionParameters := cadence.WorkerExecutionParameters{
+		TaskList:                  "exampleTaskList",
+		ConcurrentPollRoutineSize: 4,
+		Logger: logger,
+	}
 
 	// Launch worker.
-	w.workflowWorker = cadence.NewWorkflowWorker(workflowExecutionParameters, workflowFactory, w.service, logger, nil /* reporter */)
+	w.workflowWorker = cadence.NewWorkflowWorker(workflowFactory, w.service, workflowExecutionParameters)
 	w.workflowWorker.Start()
 	log.Infoln("Started Deciders for workflows.")
 
 	// Create activity execution parameters.
-	activityExecutionParameters := cadence.WorkerExecutionParameters{}
-	activityExecutionParameters.TaskList = "exampleTaskList"
-	activityExecutionParameters.ConcurrentPollRoutineSize = 10
+	activityExecutionParameters := cadence.WorkerExecutionParameters{
+		TaskList:                  "exampleTaskList",
+		ConcurrentPollRoutineSize: 10,
+		Logger: logger,
+	}
 
 	// Register activity instances and launch the worker.
 	activities := []cadence.Activity{&getNameActivity{}, &getGreetingActivity{}, &sayGreetingActivity{}}
-	w.activityWorker = cadence.NewActivityWorker(activityExecutionParameters, activities, w.service, logger, nil /* reporter */)
+	w.activityWorker = cadence.NewActivityWorker(activities, w.service, activityExecutionParameters)
 	w.activityWorker.Start()
 	log.Infoln("Started activities for workflows.")
 }

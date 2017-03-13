@@ -92,9 +92,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 	logger := bark.NewLoggerFromLogrus(log.New())
 
 	// Workflow execution parameters.
-	workflowExecutionParameters := WorkerExecutionParameters{}
-	workflowExecutionParameters.TaskList = "testTaskList"
-	workflowExecutionParameters.ConcurrentPollRoutineSize = 4
+	workflowExecutionParameters := WorkerExecutionParameters{
+		TaskList:                  "testTaskList",
+		ConcurrentPollRoutineSize: 4,
+		Logger: logger,
+	}
 
 	// Create service endpoint
 	service := new(mocks.TChanWorkflowService)
@@ -107,17 +109,19 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(workflowExecutionParameters, testWorkflowDefinitionFactory, service, logger, nil, nil)
+	workflowWorker := newWorkflowWorker(testWorkflowDefinitionFactory, service, workflowExecutionParameters, nil)
 	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
 	// Create activity execution parameters.
-	activityExecutionParameters := WorkerExecutionParameters{}
-	activityExecutionParameters.TaskList = "testTaskList"
-	activityExecutionParameters.ConcurrentPollRoutineSize = 10
+	activityExecutionParameters := WorkerExecutionParameters{
+		TaskList:                  "testTaskList",
+		ConcurrentPollRoutineSize: 10,
+		Logger: logger,
+	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker(activityExecutionParameters, []Activity{&greeterActivity{}}, service, logger, nil)
+	activityWorker := NewActivityWorker([]Activity{&greeterActivity{}}, service, activityExecutionParameters)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 

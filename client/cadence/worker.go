@@ -35,6 +35,10 @@ type (
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
 		Identity string
+
+		MetricsScope tally.Scope
+
+		Logger bark.Logger
 	}
 
 	// WorkflowType identifies a workflow type.
@@ -68,9 +72,12 @@ type (
 )
 
 // NewActivityWorker returns an instance of the activity worker.
-func NewActivityWorker(executionParameters WorkerExecutionParameters, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope) (worker Lifecycle) {
-	return newActivityWorkerInternal(executionParameters, activities, service, logger, metricsScope, nil)
+func NewActivityWorker(
+	activities []Activity,
+	service m.TChanWorkflowService,
+	executionParameters WorkerExecutionParameters,
+) (worker Lifecycle) {
+	return newActivityWorkerInternal(activities, service, executionParameters, nil)
 }
 
 // WorkflowFactory function is used to create a workflow implementation object.
@@ -80,30 +87,15 @@ type WorkflowFactory func(workflowType WorkflowType) (Workflow, error)
 
 // NewWorkflowWorker returns an instance of a workflow worker.
 func NewWorkflowWorker(
-	params WorkerExecutionParameters,
 	factory WorkflowFactory,
 	service m.TChanWorkflowService,
-	logger bark.Logger,
-	metricsScope tally.Scope) (worker Lifecycle) {
+	params WorkerExecutionParameters,
+) (worker Lifecycle) {
 	return newWorkflowWorker(
-		params,
 		getWorkflowDefinitionFactory(factory),
 		service,
-		logger,
-		metricsScope,
+		params,
 		nil)
-}
-
-// NewWorkflowTaskHandlerWorker returns instance of a task handler worker.
-// To be used by framework level code that requires access to the original workflow task.
-func NewWorkflowTaskHandlerWorker(
-	params WorkerExecutionParameters,
-	taskHandler WorkflowTaskHandler,
-	service m.TChanWorkflowService,
-	logger bark.Logger,
-	metricsScope tally.Scope) (worker Lifecycle) {
-	identity := getWorkerIdentityForParams(params)
-	return newTaskWorkerInternal(params, taskHandler, service, logger, metricsScope, identity)
 }
 
 // NewWorkflowClient creates an instance of workflow client that users can start a workflow
@@ -239,13 +231,14 @@ func (wr *WorkflowReplayer) Process(emitStack bool) (err error) {
 	if taskList == nil {
 		return errors.New("nil taskList in WorkflowExecutionStarted event")
 	}
-	taskListName := taskList.GetName()
+	params := WorkerExecutionParameters{
+		TaskList: taskList.GetName(),
+		Identity: getWorkerIdentity(taskList.GetName()),
+		Logger:   wr.logger,
+	}
 	taskHandler := newWorkflowTaskHandler(
-		taskListName,
-		getWorkerIdentity(taskListName),
 		wr.workflowDefFactory,
-		wr.logger,
-		nil,
+		params,
 		nil)
 	wr.decisions, wr.stackTrace, err = taskHandler.ProcessWorkflowTask(wr.task, emitStack)
 	return err

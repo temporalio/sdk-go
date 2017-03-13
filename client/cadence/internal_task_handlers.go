@@ -26,14 +26,14 @@ type (
 		ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
-	// activityTaskHandler represents activity task handlers.
-	activityTaskHandler interface {
+	// ActivityTaskHandler represents activity task handlers.
+	ActivityTaskHandler interface {
 		// Execute the activity task
 		// The return interface{} can have three requests, use switch to find the type of it.
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCancelRequest
-		Execute(context context.Context, task *activityTask) (interface{}, error)
+		Execute(task *s.PollForActivityTaskResponse) (interface{}, error)
 	}
 
 	// workflowExecutionEventHandler process a single event.
@@ -58,7 +58,7 @@ type (
 )
 
 type (
-	// workflowTaskHandlerImpl is the implementation of workflowTaskHandler
+	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
 		taskListName       string
 		identity           string
@@ -212,15 +212,15 @@ OrderEvents:
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(taskListName string, identity string, factory workflowDefinitionFactory,
-	logger bark.Logger, metricsScope tally.Scope, ppMgr pressurePointMgr) WorkflowTaskHandler {
+func newWorkflowTaskHandler(factory workflowDefinitionFactory,
+	params WorkerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
 	return &workflowTaskHandlerImpl{
-		taskListName:       taskListName,
-		identity:           identity,
+		taskListName:       params.TaskList,
+		identity:           params.Identity,
 		workflowDefFactory: factory,
-		logger:             logger,
+		logger:             params.Logger,
 		ppMgr:              ppMgr,
-		metricsScope:       metricsScope}
+		metricsScope:       params.MetricsScope}
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
@@ -375,19 +375,19 @@ func (wth *workflowTaskHandlerImpl) reportAnyMetrics(event *s.HistoryEvent, isIn
 	}
 }
 
-func newActivityTaskHandler(taskListName string, identity string, activities []Activity,
-	service m.TChanWorkflowService, logger bark.Logger, metricsScope tally.Scope) activityTaskHandler {
+func newActivityTaskHandler(activities []Activity,
+	service m.TChanWorkflowService, params WorkerExecutionParameters) ActivityTaskHandler {
 	implementations := make(map[ActivityType]Activity)
 	for _, a := range activities {
 		implementations[a.ActivityType()] = a
 	}
 	return &activityTaskHandlerImpl{
-		taskListName:    taskListName,
-		identity:        identity,
+		taskListName:    params.TaskList,
+		identity:        params.Identity,
 		implementations: implementations,
 		service:         service,
-		logger:          logger,
-		metricsScope:    metricsScope}
+		logger:          params.Logger,
+		metricsScope:    params.MetricsScope}
 }
 
 type cadenceInvoker struct {
@@ -426,13 +426,12 @@ func newServiceInvoker(taskToken []byte, identity string, service m.TChanWorkflo
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(ctx context.Context, activityTask *activityTask) (interface{}, error) {
-	t := activityTask.task
+func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (interface{}, error) {
 	ath.logger.Debugf("[WorkflowID: %s] Execute Activity: %s",
 		t.GetWorkflowExecution().GetWorkflowId(), t.GetActivityType().GetName())
 
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service)
-	ctx = WithActivityTask(ctx, activityTask.task, invoker)
+	ctx := WithActivityTask(context.Background(), t, invoker)
 	activityType := *t.GetActivityType()
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
 	if !ok {
