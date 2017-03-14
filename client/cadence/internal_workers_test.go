@@ -69,14 +69,12 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	// mocks
-	logger := bark.NewLoggerFromLogrus(log.New())
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
 	executionParameters := WorkerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
-		Logger: logger,
 	}
 	overrides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
 	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, executionParameters, nil, overrides)

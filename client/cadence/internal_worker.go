@@ -4,6 +4,8 @@ package cadence
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
+	"github.com/Sirupsen/logrus"
+	"github.com/uber-common/bark"
 )
 
 type (
@@ -59,12 +61,15 @@ func newWorkflowWorker(
 	return newWorkflowWorkerInternal(factory, service, params, ppMgr, nil)
 }
 
-func getWorkerIdentityForParams(params WorkerExecutionParameters) string {
-	identity := params.Identity
-	if identity == "" {
-		identity = getWorkerIdentity(params.TaskList)
+func ensureRequiredParams(params *WorkerExecutionParameters) {
+	if params.Identity == "" {
+		params.Identity = getWorkerIdentity(params.TaskList)
 	}
-	return identity
+	if params.Logger == nil {
+		log := logrus.New()
+		params.Logger = bark.NewLoggerFromLogrus(log)
+		params.Logger.Info("No logger configured for cadence worker. Created default one.")
+	}
 }
 
 func newWorkflowWorkerInternal(
@@ -75,6 +80,7 @@ func newWorkflowWorkerInternal(
 	overrides *workerOverrides,
 ) Lifecycle {
 	// Get a workflow task handler.
+	ensureRequiredParams(&params)
 	var taskHandler WorkflowTaskHandler
 	if overrides != nil && overrides.workflowTaskHander != nil {
 		taskHandler = overrides.workflowTaskHander
@@ -89,18 +95,17 @@ func newWorkflowTaskWorkerInternal(
 	service m.TChanWorkflowService,
 	params WorkerExecutionParameters,
 ) Lifecycle {
+	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(
 		taskHandler,
 		service,
 		params,
 	)
-	identity := getWorkerIdentityForParams(params)
-
 	worker := newBaseWorker(baseWorkerOptions{
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
-		identity:        identity,
+		identity:        params.Identity,
 		workerType:      "DecisionWorker"},
 		params.Logger)
 
@@ -109,7 +114,7 @@ func newWorkflowTaskWorkerInternal(
 		workflowService:     service,
 		poller:              poller,
 		worker:              worker,
-		identity:            identity,
+		identity:            params.Identity,
 	}
 }
 
@@ -148,7 +153,7 @@ func NewActivityTaskWorker(
 	service m.TChanWorkflowService,
 	params WorkerExecutionParameters,
 ) Lifecycle {
-	identity := getWorkerIdentityForParams(params)
+	ensureRequiredParams(&params)
 
 	poller := newActivityTaskPoller(
 		taskHandler,
@@ -159,7 +164,7 @@ func NewActivityTaskWorker(
 		routineCount:    params.ConcurrentPollRoutineSize,
 		taskPoller:      poller,
 		workflowService: service,
-		identity:        identity,
+		identity:        params.Identity,
 		workerType:      "ActivityWorker"},
 		params.Logger)
 
@@ -169,7 +174,7 @@ func NewActivityTaskWorker(
 		workflowService:     service,
 		worker:              worker,
 		poller:              poller,
-		identity:            identity,
+		identity:            params.Identity,
 	}
 }
 

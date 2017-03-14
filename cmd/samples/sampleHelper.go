@@ -49,6 +49,7 @@ func (h *SampleHelper) StartWorkflowWorker(taskListName string, pollSize int, wo
 	workflowExecutionParameters := cadence.WorkerExecutionParameters{}
 	workflowExecutionParameters.TaskList = taskListName
 	workflowExecutionParameters.ConcurrentPollRoutineSize = pollSize
+	workflowExecutionParameters.Logger = h.logger
 
 	// Launch worker.
 	h.workflowWorker = cadence.NewWorkflowWorker(workflowFactory, h.service, workflowExecutionParameters)
@@ -62,6 +63,7 @@ func (h *SampleHelper) StartActivityWorker(taskListName string, pollSize int, ac
 	activityExecutionParameters := cadence.WorkerExecutionParameters{}
 	activityExecutionParameters.TaskList = taskListName
 	activityExecutionParameters.ConcurrentPollRoutineSize = pollSize
+	activityExecutionParameters.Logger = h.logger
 
 	// Register activity instances and launch the worker.
 	h.activityWorker = cadence.NewActivityWorker(activities, h.service, activityExecutionParameters)
