@@ -1,4 +1,4 @@
-package main
+package cron
 
 import (
 	"context"
@@ -6,25 +6,42 @@ import (
 	"time"
 
 	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples"
+	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
 	"github.com/Sirupsen/logrus"
+)
+
+const (
+	sampleWorkflowName = "sample_cron_workflow"
+	sampleTaskList     = "sample_cron_tasklist"
+	sampleActivityName = "sample_cron_activity"
 )
 
 type (
 	sampleActivity struct{}
 	sampleWorkflow struct{}
 
-	cronJobParam struct {
+	jobParam struct {
 		SequenceID  int
 		TotalJobNum int
 	}
 )
 
+// WorkflowConfig specify configuration for sample workflow
+var WorkflowConfig = common.SampleWorkflowConfig{
+	WorkflowName: sampleWorkflowName,
+	TaskList:     sampleTaskList,
+	WorkflowFactory: func(wt cadence.WorkflowType) (cadence.Workflow, error) {
+		return sampleWorkflow{}, nil
+	},
+	Activities:    []cadence.Activity{&sampleActivity{}},
+	WorkflowInput: nil,
+}
+
 /**
 * Workflow activities need to implement interface cadence.Activity.
  */
 func (a sampleActivity) Execute(context context.Context, input []byte) ([]byte, error) {
-	jobParam := &cronJobParam{}
+	jobParam := &jobParam{}
 	err := json.Unmarshal(input, jobParam)
 	if err != nil {
 		logrus.Panicf("Marshalling failed with error: %+v", err)
@@ -47,14 +64,16 @@ func (w sampleWorkflow) Execute(ctx cadence.Context, input []byte) (result []byt
 		cadence.NewSelector(ctx).AddFuture(
 			future,
 			func(v interface{}, err error) {
-				input, err := json.Marshal(&cronJobParam{i, totalJobNum})
+				input, err := json.Marshal(&jobParam{i, totalJobNum})
 				if err != nil {
 					logrus.Panicf("Marshalling failed with error: %+v", err)
 					return
 				}
-				cadence.ExecuteActivity(ctx, samples.ActivityParameters(sampleActivityTaskList, sampleActivityName, input))
+				cadence.ExecuteActivity(ctx, common.ActivityParameters(sampleTaskList, sampleActivityName, input))
 			}).Select(ctx)
 	}
+
+	logrus.Info("Workflow completed.")
 
 	return nil, nil
 }

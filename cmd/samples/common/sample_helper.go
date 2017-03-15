@@ -1,4 +1,4 @@
-package samples
+package common
 
 import (
 	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
@@ -12,6 +12,14 @@ import (
 )
 
 type (
+	SampleWorkflowConfig struct {
+		WorkflowName    string
+		TaskList        string
+		WorkflowFactory cadence.WorkflowFactory
+		Activities      []cadence.Activity
+		WorkflowInput   []byte
+	}
+
 	// SampleHelper class for workflow sample helper.
 	SampleHelper struct {
 		service        m.TChanWorkflowService
@@ -21,12 +29,11 @@ type (
 		serviceName    string
 		scope          tally.Scope
 		logger         bark.Logger
-		ResultCh       chan []byte
 	}
 )
 
-// SetupConfig setup the config for the sample code run
-func (h *SampleHelper) SetupConfig() {
+// SetupServiceConfig setup the config for the sample code run
+func (h *SampleHelper) SetupServiceConfig() {
 	h.hostPort = "127.0.0.1:7933" // pointing to cadence server:port
 	h.serviceName = "cadence-frontend"
 
@@ -40,7 +47,6 @@ func (h *SampleHelper) SetupConfig() {
 	h.service = m.NewTChanWorkflowServiceClient(tclient)
 	h.logger = bark.NewLoggerFromLogrus(logrus.New())
 	h.scope = tally.NewTestScope("sample", map[string]string{})
-	h.ResultCh = make(chan []byte)
 }
 
 // StartWorkflowWorker starts workflow worker
@@ -72,15 +78,15 @@ func (h *SampleHelper) StartActivityWorker(taskListName string, pollSize int, ac
 }
 
 // StartWorkflow starts a new workflow
-func (h *SampleHelper) StartWorkflow(workflowName, workflowTasklistName string, input []byte, timeoutSeconds int32) {
+func (h *SampleHelper) StartWorkflow(workflowName, workflowTasklistName string, input []byte) {
 	workflowID := uuid.New()
 	workflowOptions := cadence.StartWorkflowOptions{
 		ID:       workflowID,
 		Type:     cadence.WorkflowType{Name: workflowName},
 		TaskList: workflowTasklistName,
 		Input:    input,
-		ExecutionStartToCloseTimeoutSeconds:    timeoutSeconds,
-		DecisionTaskStartToCloseTimeoutSeconds: timeoutSeconds,
+		ExecutionStartToCloseTimeoutSeconds:    60,
+		DecisionTaskStartToCloseTimeoutSeconds: 60,
 	}
 	workflowClient := cadence.NewWorkflowClient(h.service, h.scope)
 	we, err := workflowClient.StartWorkflowExecution(workflowOptions)

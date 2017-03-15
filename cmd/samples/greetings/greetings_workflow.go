@@ -1,4 +1,4 @@
-package main
+package greetings
 
 import (
 	"context"
@@ -6,19 +6,21 @@ import (
 	"fmt"
 
 	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples"
+	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
 	"github.com/Sirupsen/logrus"
 )
 
 const (
-	getGreetingActivityName = "getGreetingActivity"
-	getNameActivityName     = "getNameActivity"
-	sayGreetingActivityName = "sayGreetingActivity"
+	sampleWorkflowName      = "sample_greetings_workflow"
+	sampleTaskList          = "sample_greetings_tasklist"
+	getGreetingActivityName = "sample_getGreetingActivity"
+	getNameActivityName     = "sample_getNameActivity"
+	sayGreetingActivityName = "sample_sayGreetingActivity"
 )
 
 type (
 	// Workflow Deciders and Activities.
-	greetingsWorkflow   struct{}
+	sampleWorkflow      struct{}
 	getNameActivity     struct{}
 	getGreetingActivity struct{}
 	sayGreetingActivity struct{}
@@ -29,17 +31,28 @@ type (
 	}
 )
 
+// WorkflowConfig specify configuration for sample workflow
+var WorkflowConfig = common.SampleWorkflowConfig{
+	WorkflowName: sampleWorkflowName,
+	TaskList:     sampleTaskList,
+	WorkflowFactory: func(wt cadence.WorkflowType) (cadence.Workflow, error) {
+		return sampleWorkflow{}, nil
+	},
+	Activities:    []cadence.Activity{&getNameActivity{}, &getGreetingActivity{}, &sayGreetingActivity{}},
+	WorkflowInput: nil,
+}
+
 // Greetings Workflow Decider.
-func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []byte, err error) {
+func (w sampleWorkflow) Execute(ctx cadence.Context, input []byte) (result []byte, err error) {
 	// Get Greeting.
-	greetResult, err := cadence.ExecuteActivity(ctx, samples.ActivityParameters(sampleActivityTaskList, getGreetingActivityName, nil))
+	greetResult, err := cadence.ExecuteActivity(ctx, common.ActivityParameters(sampleTaskList, getGreetingActivityName, nil))
 	if err != nil {
 		logrus.Panicf("Marshalling failed with error: %+v", err)
 		return nil, err
 	}
 
 	// Get Name.
-	nameResult, err := cadence.ExecuteActivity(ctx, samples.ActivityParameters(sampleActivityTaskList, getNameActivityName, nil))
+	nameResult, err := cadence.ExecuteActivity(ctx, common.ActivityParameters(sampleTaskList, getNameActivityName, nil))
 	if err != nil {
 		logrus.Panicf("Marshalling failed with error: %+v", err)
 		return nil, err
@@ -52,7 +65,7 @@ func (w greetingsWorkflow) Execute(ctx cadence.Context, input []byte) (result []
 		logrus.Panicf("Marshalling failed with error: %+v", err)
 		return nil, err
 	}
-	workflowResult, err := cadence.ExecuteActivity(ctx, samples.ActivityParameters(sampleActivityTaskList, sayGreetingActivityName, sayGreetInput))
+	workflowResult, err := cadence.ExecuteActivity(ctx, common.ActivityParameters(sampleTaskList, sayGreetingActivityName, sayGreetInput))
 	if err != nil {
 		logrus.Panicf("Marshalling failed with error: %+v", err)
 		return nil, err

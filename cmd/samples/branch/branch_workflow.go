@@ -1,20 +1,23 @@
-package main
+package branch
 
 import (
 	"context"
-
 	"encoding/json"
 
 	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples"
+	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
 	"github.com/Sirupsen/logrus"
+)
+
+const (
+	sampleWorkflowName = "sample_branch_workflow"
+	sampleTaskList     = "sample_branch_tasklist"
+	sampleActivityName = "sample_branch_activity"
 )
 
 type (
 	sampleActivity struct{}
-	sampleWorkflow struct {
-		helper *samples.SampleHelper
-	}
+	sampleWorkflow struct{}
 
 	sampleWorkflowParam struct {
 		TotalBranches int
@@ -25,6 +28,19 @@ type (
 		TotalBranches   int
 	}
 )
+
+var _input, _ = json.Marshal(&sampleWorkflowParam{3})
+
+// WorkflowConfig specify configuration for sample workflow
+var WorkflowConfig = common.SampleWorkflowConfig{
+	WorkflowName: sampleWorkflowName,
+	TaskList:     sampleTaskList,
+	WorkflowFactory: func(wt cadence.WorkflowType) (cadence.Workflow, error) {
+		return sampleWorkflow{}, nil
+	},
+	Activities:    []cadence.Activity{&sampleActivity{}},
+	WorkflowInput: _input,
+}
 
 /**
 * Activities need to implement interface cadence.Activity.
@@ -56,7 +72,7 @@ func (w sampleWorkflow) Execute(ctx cadence.Context, input []byte) (result []byt
 	// starts activities in parallel
 	for i := 1; i <= param.TotalBranches; i++ {
 		activityInput, _ := json.Marshal(&sampleActivityParam{i, param.TotalBranches})
-		future := cadence.ExecuteActivityAsync(ctx, samples.ActivityParameters(sampleActivityTaskList, sampleActivityName, activityInput))
+		future := cadence.ExecuteActivityAsync(ctx, common.ActivityParameters(sampleTaskList, sampleActivityName, activityInput))
 		futures = append(futures, future)
 	}
 
@@ -64,6 +80,8 @@ func (w sampleWorkflow) Execute(ctx cadence.Context, input []byte) (result []byt
 	for _, future := range futures {
 		future.Get(ctx)
 	}
+
+	logrus.Info("Workflow completed.")
 
 	return nil, nil
 }
