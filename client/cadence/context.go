@@ -13,7 +13,6 @@ import (
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
-// TODO: Update Done code sample to use workflow specific Channel.
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled.  Deadline returns ok==false when no deadline is
@@ -33,18 +32,20 @@ type Context interface {
 	//
 	//  // Stream generates values with DoSomething and sends them to out
 	//  // until DoSomething returns an error or ctx.Done is closed.
-	//  func Stream(ctx context.Context, out chan<- Value) error {
-	//  	for {
-	//  		v, err := DoSomething(ctx)
-	//  		if err != nil {
-	//  			return err
-	//  		}
-	//  		select {
-	//  		case <-ctx.Done():
-	//  			return ctx.Err()
-	//  		case out <- v:
-	//  		}
-	//  	}
+	//  func Stream(ctx Context, out Channel) (err error) {
+	//	for {
+	//		v, err := DoSomething(ctx)
+	//		if err != nil {
+	//			return err
+	//		}
+	//		s := NewSelector(ctx)
+	//		s.AddReceive(ctx.Done(),  func(v interface{}) { err = ctx.Err() })
+	//		s.AddReceive(v, func(v interface{}, more bool) { out.Send(ctx, v) })
+	//		s.Select(ctx)
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
 	//  }
 	//
 	// See http://blog.golang.org/pipelines for more examples of how to use
@@ -190,8 +191,10 @@ func propagateCancel(parent Context, child canceler) {
 	} else {
 		go func() {
 			s := NewSelector(parent)
-			s.AddReceive(parent.Done(), func(v interface{}, more bool) { child.cancel(false, parent.Err()) })
-			s.AddReceive(child.Done(), func(v interface{}, more bool) {})
+			s.AddReceive(parent.Done(), func(v interface{}) {
+				child.cancel(false, parent.Err())
+			})
+			s.AddReceive(child.Done(), func(v interface{}) {})
 			s.Select(parent)
 		}()
 	}

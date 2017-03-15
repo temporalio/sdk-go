@@ -8,34 +8,23 @@ import (
 // Channel must be used instead of native go channel by workflow code.
 // Use Context.NewChannel method to create an instance.
 type Channel interface {
-	Receive(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
-	ReceiveAsync() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
-
+	Receive(ctx Context) (v interface{})
+	ReceiveWithMoreFlag(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
+	ReceiveAsync() (v interface{}, ok bool)                        // ok is true when value was returned
+	ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
 	Send(ctx Context, v interface{})
 	SendAsync(v interface{}) (ok bool) // ok when value was sent
 	Close()                            // prohibit sends
 }
 
-// ReceiveCaseFunc is executed when a value is received from the corresponding channel
-type ReceiveCaseFunc func(v interface{}, more bool)
-
-// SendCaseFunc is executed when value was sent to a correspondent channel
-type SendCaseFunc func()
-
-// DefaultCaseFunc is executed when none of the channel cases executed
-type DefaultCaseFunc func()
-
-// FutureCaseFunc is executed when future becomes ready.
-// Parameters are value and error that future contains.
-type FutureCaseFunc func(v interface{}, err error)
-
 // Selector must be used instead of native go select by workflow code
 // Use Context.NewSelector method to create an instance.
 type Selector interface {
-	AddReceive(c Channel, f ReceiveCaseFunc) Selector
-	AddSend(c Channel, v interface{}, f SendCaseFunc) Selector
-	AddFuture(future Future, f FutureCaseFunc) Selector
-	AddDefault(f DefaultCaseFunc)
+	AddReceive(c Channel, f func(v interface{})) Selector
+	AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector
+	AddSend(c Channel, v interface{}, f func()) Selector
+	AddFuture(future Future, f func(v interface{}, err error)) Selector
+	AddDefault(f func())
 	Select(ctx Context)
 }
 
@@ -161,7 +150,7 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
 		}
 	})
-	_, _ = resultChannel.Receive(ctx)
+	_ = resultChannel.Receive(ctx)
 	return
 }
 

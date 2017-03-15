@@ -155,7 +155,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c1.Receive(ctx)
 	// Use selector to test it
 	selected := false
-	NewSelector(ctx).AddReceive(c2, func(v interface{}, more bool) {
+	NewSelector(ctx).AddReceiveWithMoreFlag(c2, func(v interface{}, more bool) {
 		require.True(w.t, more)
 		selected = true
 	}).Select(ctx)

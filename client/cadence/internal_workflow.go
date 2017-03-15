@@ -54,7 +54,7 @@ type futureImpl struct {
 }
 
 func (f *futureImpl) Get(ctx Context) (interface{}, error) {
-	_, more := f.channel.Receive(ctx)
+	_, more := f.channel.ReceiveWithMoreFlag(ctx)
 	if more {
 		panic("not closed")
 	}
@@ -198,19 +198,21 @@ type channelImpl struct {
 
 // Single case statement of the Select
 type selectCase struct {
-	channel     Channel          // Channel of this case.
-	receiveFunc *ReceiveCaseFunc // function to call when channel has a message. nil for send case.
-	sendFunc    *SendCaseFunc    // function to call when channel accepted a message. nil for receive case.
-	sendValue   *interface{}     // value to send to the channel. Used only for send case.
-	future      Future           // Used for future case
-	futureFunc  *FutureCaseFunc  // function to call when Future is ready
+	channel                 Channel                         // Channel of this case.
+	receiveFunc             *func(v interface{})            // function to call when channel has a message. nil for send case.
+	receiveWithMoreFlagFunc *func(v interface{}, more bool) // function to call when channel has a message. nil for send case.
+
+	sendFunc   *func()                         // function to call when channel accepted a message. nil for receive case.
+	sendValue  *interface{}                    // value to send to the channel. Used only for send case.
+	future     Future                          // Used for future case
+	futureFunc *func(v interface{}, err error) // function to call when Future is ready
 }
 
 // Implements Selector interface
 type selectorImpl struct {
 	name        string
-	cases       []selectCase     // cases that this select is comprised from
-	defaultFunc *DefaultCaseFunc // default case
+	cases       []selectCase // cases that this select is comprised from
+	defaultFunc *func()      // default case
 }
 
 // unblockFunc is passed evaluated by a coroutine yield. When it returns false the yield returns to a caller.
@@ -258,7 +260,12 @@ func getState(ctx Context) *coroutineState {
 	return s.(*coroutineState)
 }
 
-func (c *channelImpl) Receive(ctx Context) (v interface{}, more bool) {
+func (c *channelImpl) Receive(ctx Context) (v interface{}) {
+	v, _ = c.ReceiveWithMoreFlag(ctx)
+	return v
+}
+
+func (c *channelImpl) ReceiveWithMoreFlag(ctx Context) (v interface{}, more bool) {
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
@@ -291,7 +298,12 @@ func (c *channelImpl) Receive(ctx Context) (v interface{}, more bool) {
 	}
 }
 
-func (c *channelImpl) ReceiveAsync() (v interface{}, ok bool, more bool) {
+func (c *channelImpl) ReceiveAsync() (v interface{}, ok bool) {
+	v, ok, _ = c.ReceiveAsyncWithMoreFlag()
+	return v, ok
+}
+
+func (c *channelImpl) ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) {
 	if len(c.buffer) > 0 {
 		r := c.buffer[0]
 		c.buffer = c.buffer[1:]
@@ -596,22 +608,27 @@ func (d *dispatcherImpl) StackTrace() string {
 	return result
 }
 
-func (s *selectorImpl) AddReceive(c Channel, f ReceiveCaseFunc) Selector {
+func (s *selectorImpl) AddReceive(c Channel, f func(v interface{})) Selector {
 	s.cases = append(s.cases, selectCase{channel: c, receiveFunc: &f})
 	return s
 }
 
-func (s *selectorImpl) AddSend(c Channel, v interface{}, f SendCaseFunc) Selector {
+func (s *selectorImpl) AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector {
+	s.cases = append(s.cases, selectCase{channel: c, receiveWithMoreFlagFunc: &f})
+	return s
+}
+
+func (s *selectorImpl) AddSend(c Channel, v interface{}, f func()) Selector {
 	s.cases = append(s.cases, selectCase{channel: c, sendFunc: &f, sendValue: &v})
 	return s
 }
 
-func (s *selectorImpl) AddFuture(future Future, f FutureCaseFunc) Selector {
+func (s *selectorImpl) AddFuture(future Future, f func(v interface{}, err error)) Selector {
 	s.cases = append(s.cases, selectCase{future: future, futureFunc: &f})
 	return s
 }
 
-func (s *selectorImpl) AddDefault(f DefaultCaseFunc) {
+func (s *selectorImpl) AddDefault(f func()) {
 	s.defaultFunc = &f
 }
 
@@ -620,9 +637,17 @@ func (s *selectorImpl) Select(ctx Context) {
 	for {
 		for _, pair := range s.cases {
 			if pair.receiveFunc != nil {
-				v, ok, more := pair.channel.ReceiveAsync()
+				v, ok, more := pair.channel.ReceiveAsyncWithMoreFlag()
 				if ok || !more {
 					f := *pair.receiveFunc
+					f(v)
+					state.unblocked()
+					return
+				}
+			} else if pair.receiveWithMoreFlagFunc != nil {
+				v, ok, more := pair.channel.ReceiveAsyncWithMoreFlag()
+				if ok || !more {
+					f := *pair.receiveWithMoreFlagFunc
 					f(v, more)
 					state.unblocked()
 					return
