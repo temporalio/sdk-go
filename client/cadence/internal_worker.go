@@ -135,7 +135,7 @@ func newActivityWorkerInternal(
 	params WorkerExecutionParameters,
 	overrides *workerOverrides,
 ) Lifecycle {
-
+	ensureRequiredParams(&params)
 	// Get a activity task handler.
 	var taskHandler ActivityTaskHandler
 	if overrides != nil && overrides.activityTaskHandler != nil {
