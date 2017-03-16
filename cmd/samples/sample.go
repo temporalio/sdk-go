@@ -2,21 +2,25 @@ package main
 
 import (
 	"flag"
+	"math/rand"
+	"time"
 
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/branch"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/cron"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/greetings"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/helloworld"
+	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/pickfirst"
 )
 
 func main() {
+	rand.Seed(time.Now().UTC().UnixNano())
 	workflowConfig := getSampleWorkflowConfig()
 
 	var h common.SampleHelper
 	h.SetupServiceConfig()
 	h.StartWorkflowWorker(workflowConfig.TaskList, 1, workflowConfig.WorkflowFactory)
-	h.StartActivityWorker(workflowConfig.TaskList, 1, workflowConfig.Activities)
+	h.StartActivityWorker(workflowConfig.TaskList, 2, workflowConfig.Activities)
 	h.StartWorkflow(workflowConfig.WorkflowName, workflowConfig.TaskList, workflowConfig.WorkflowInput)
 
 	// We don't have visibility API yet, so there is no easy way for client to know when the submitted workflow is done.
@@ -41,6 +45,8 @@ func getSampleWorkflowConfig() common.SampleWorkflowConfig {
 		return cron.WorkflowConfig
 	case "branch":
 		return branch.WorkflowConfig
+	case "pickfirst":
+		return pickfirst.WorkflowConfig
 	default:
 		return helloworld.WorkflowConfig
 	}
