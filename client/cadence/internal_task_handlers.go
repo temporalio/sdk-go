@@ -403,19 +403,22 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 		Details:   details,
 		Identity:  common.StringPtr(i.identity)}
 
-	err := backoff.Retry(
+	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
+	heartbeatErr := backoff.Retry(
 		func() error {
 			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 			defer cancel()
 
-			// TODO: Handle the propagation of Cancel to activity.
-			r, err2 := i.service.RecordActivityTaskHeartbeat(ctx, request)
-			if r.GetCancelRequested() {
-				return NewCanceledError()
-			}
-			return err2
+			var err error
+			heartbeatResponse, err = i.service.RecordActivityTaskHeartbeat(ctx, request)
+			return err
 		}, serviceOperationRetryPolicy, isServiceTransientError)
-	return err
+
+	if heartbeatErr == nil && heartbeatResponse.GetCancelRequested() {
+		return NewCanceledError()
+	}
+
+	return heartbeatErr
 }
 
 func newServiceInvoker(taskToken []byte, identity string, service m.TChanWorkflowService) ServiceInvoker {
