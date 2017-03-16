@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/branch"
+	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/choice"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/cron"
 	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/greetings"
@@ -47,6 +48,10 @@ func getSampleWorkflowConfig() common.SampleWorkflowConfig {
 		return branch.WorkflowConfig
 	case "pickfirst":
 		return pickfirst.WorkflowConfig
+	case "choice":
+		return choice.WorkflowConfig
+	case "multichoice":
+		return choice.MultiChoiceWorkflowConfig
 	default:
 		return helloworld.WorkflowConfig
 	}
