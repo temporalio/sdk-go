@@ -5,7 +5,7 @@ import (
 
 	"time"
 
-	"code.uber.internal/devexp/minions-client-go.git/common"
+	"code.uber.internal/devexp/cadence-client-go.git/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

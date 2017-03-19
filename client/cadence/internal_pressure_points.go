@@ -8,7 +8,7 @@ import (
 
 	"github.com/uber-common/bark"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
+	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/cadence"
 )
 
 // ** This is for internal stress testing framework **

@@ -9,7 +9,7 @@ import (
 	athrift "github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber/tchannel-go/thrift"
 
-	"code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
+	"code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
 )
 
 var _ = shared.GoUnusedProtection__

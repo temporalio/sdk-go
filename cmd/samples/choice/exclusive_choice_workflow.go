@@ -4,8 +4,8 @@ import (
 	"context"
 	"math/rand"
 
-	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
+	"code.uber.internal/devexp/cadence-client-go.git/client/cadence"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/common"
 	"github.com/Sirupsen/logrus"
 )
 

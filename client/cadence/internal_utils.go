@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/minions-client-go.git/common"
+	s "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"code.uber.internal/devexp/cadence-client-go.git/common"
 )
 
 // GetWorkerIdentity gets a default identity for the worker.

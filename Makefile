@@ -1,4 +1,4 @@
-PROJECT_ROOT = code.uber.internal/devexp/minions-client-go.git
+PROJECT_ROOT = code.uber.internal/devexp/cadence-client-go.git
 
 # define the list of thrift files the service depends on
 # (if you have some)

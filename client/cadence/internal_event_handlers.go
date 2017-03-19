@@ -8,8 +8,8 @@ import (
 
 	"github.com/uber-common/bark"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/minions-client-go.git/common"
+	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"code.uber.internal/devexp/cadence-client-go.git/common"
 	"errors"
 )
 

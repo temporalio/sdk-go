@@ -5,13 +5,13 @@ import (
 	"math/rand"
 	"time"
 
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/branch"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/choice"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/common"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/cron"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/greetings"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/helloworld"
-	"code.uber.internal/devexp/minions-client-go.git/cmd/samples/pickfirst"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/branch"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/choice"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/common"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/cron"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/greetings"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/helloworld"
+	"code.uber.internal/devexp/cadence-client-go.git/cmd/samples/pickfirst"
 )
 
 func main() {

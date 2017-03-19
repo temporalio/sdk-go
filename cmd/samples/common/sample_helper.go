@@ -1,8 +1,8 @@
 package common
 
 import (
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/cadence"
-	"code.uber.internal/devexp/minions-client-go.git/client/cadence"
+	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/cadence"
+	"code.uber.internal/devexp/cadence-client-go.git/client/cadence"
 	"github.com/Sirupsen/logrus"
 	"github.com/pborman/uuid"
 	"github.com/uber-common/bark"

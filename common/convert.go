@@ -1,7 +1,7 @@
 package common
 
 import (
-	s "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
+	s "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
 )
 
 // Int32Ptr makes a copy and returns the pointer to an int32.

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	m "code.uber.internal/devexp/minions-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/minions-client-go.git/mocks"
+	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"code.uber.internal/devexp/cadence-client-go.git/mocks"
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
