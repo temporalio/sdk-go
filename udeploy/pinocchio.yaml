@@ -1,3 +1,3 @@
-service_name: minions-client-go
+service_name: cadence-client-go
 network_protocol: tchannel
 service_type: go

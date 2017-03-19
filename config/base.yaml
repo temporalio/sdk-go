@@ -1,4 +1,4 @@
-serviceName: minions-client-go
+serviceName: cadence-client-go
 
 logging:
   level: info
