@@ -10,11 +10,11 @@ import (
 	"github.com/uber-common/bark"
 	"github.com/uber-go/tally"
 
-	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/cadence"
-	s "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/cadence-client-go.git/common"
-	"code.uber.internal/devexp/cadence-client-go.git/common/backoff"
-	"code.uber.internal/devexp/cadence-client-go.git/common/metrics"
+	m "github.com/uber-go/cadence-client/.gen/go/cadence"
+	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	"github.com/uber-go/cadence-client/common"
+	"github.com/uber-go/cadence-client/common/backoff"
+	"github.com/uber-go/cadence-client/common/metrics"
 	"golang.org/x/net/context"
 )
 

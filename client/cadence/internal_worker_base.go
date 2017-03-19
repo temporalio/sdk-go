@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/cadence"
-	"code.uber.internal/devexp/cadence-client-go.git/common"
-	"code.uber.internal/devexp/cadence-client-go.git/common/backoff"
+	m "github.com/uber-go/cadence-client/.gen/go/cadence"
+	"github.com/uber-go/cadence-client/common"
+	"github.com/uber-go/cadence-client/common/backoff"
 	"github.com/uber-common/bark"
 )
 

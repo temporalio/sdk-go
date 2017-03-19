@@ -1,4 +1,4 @@
-package: code.uber.internal/devexp/minions-client-go
+package: github.com/uber-go/cadence-client
 import:
 - package: github.com/uber/tchannel-go
   subpackages:

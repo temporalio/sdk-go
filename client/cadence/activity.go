@@ -3,7 +3,7 @@ package cadence
 import (
 	"context"
 
-	"code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"github.com/uber-go/cadence-client/.gen/go/shared"
 )
 
 type (

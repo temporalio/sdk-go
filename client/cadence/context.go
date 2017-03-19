@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"github.com/uber-go/cadence-client/.gen/go/shared"
 )
 
 // Context is a clone of context.Context with Done() returning Channel instead

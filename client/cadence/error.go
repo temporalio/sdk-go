@@ -1,7 +1,7 @@
 package cadence
 
 import (
-	"code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
+	"github.com/uber-go/cadence-client/.gen/go/shared"
 	"fmt"
 )
 

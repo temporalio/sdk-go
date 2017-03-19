@@ -3,7 +3,7 @@ package cadence
 // All code in this file is private to the package.
 
 import (
-	m "code.uber.internal/devexp/cadence-client-go.git/.gen/go/cadence"
+	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/Sirupsen/logrus"
 	"github.com/uber-common/bark"
 )

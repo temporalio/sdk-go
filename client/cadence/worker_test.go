@@ -3,8 +3,8 @@ package cadence
 import (
 	"testing"
 
-	s "code.uber.internal/devexp/cadence-client-go.git/.gen/go/shared"
-	"code.uber.internal/devexp/cadence-client-go.git/common"
+	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	"github.com/uber-go/cadence-client/common"
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-common/bark"
