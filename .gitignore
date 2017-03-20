@@ -8,5 +8,7 @@
 *.html
 .tmp/
 /vendor
-/minions-client-go
+/cadence-client
+test
+test.log
 sample
