@@ -3,12 +3,13 @@ package cadence
 import (
 	"testing"
 
+	log "github.com/Sirupsen/logrus"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
+	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
-	log "github.com/Sirupsen/logrus"
-	"github.com/uber-common/bark"
-
-	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/cadence-client/mocks"
 )
 
 type (
@@ -194,6 +195,58 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 
 	s.Error(err)
 	s.Nil(response)
+}
+
+func (s *TaskHandlersTestSuite) TestHeartBeat_NoError() {
+	mockService := mocks.TChanWorkflowService{}
+	cancelRequested := false
+	heartbeatResponse := m.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(&heartbeatResponse, nil)
+
+	cadenceInvoker := &cadenceInvoker{
+		identity:  "Test_Cadence_Invoker",
+		service:   &mockService,
+		taskToken: nil,
+	}
+
+	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+
+	s.Nil(heartbeatErr)
+}
+
+func (s *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
+	mockService := mocks.TChanWorkflowService{}
+	entityNotExistsError := &m.EntityNotExistsError{}
+	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(nil, entityNotExistsError)
+
+	cadenceInvoker := &cadenceInvoker{
+		identity:  "Test_Cadence_Invoker",
+		service:   &mockService,
+		taskToken: nil,
+	}
+
+	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+	s.NotNil(heartbeatErr)
+	_, ok := (heartbeatErr).(*m.EntityNotExistsError)
+	s.True(ok, "heartbeatErr must be EntityNotExistsError.")
+}
+
+func (s *TaskHandlersTestSuite) TestHeartBeat_CancelledError() {
+	mockService := mocks.TChanWorkflowService{}
+	cancelRequested := true
+	heartbeatResponse := m.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(&heartbeatResponse, nil)
+
+	cadenceInvoker := &cadenceInvoker{
+		identity:  "Test_Cadence_Invoker",
+		service:   &mockService,
+		taskToken: nil,
+	}
+
+	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+	s.NotNil(heartbeatErr)
+	_, ok := (heartbeatErr).(CanceledError)
+	s.True(ok, "heartbeatErr must be CanceledError.")
 }
 
 func (s *TaskHandlersTestSuite) printAllDecisions(decisions []*m.Decision) {

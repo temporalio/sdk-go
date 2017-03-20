@@ -414,7 +414,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 			return err
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 
-	if heartbeatErr == nil && heartbeatResponse.GetCancelRequested() {
+	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
 	}
 
