@@ -1,4 +1,4 @@
-Cadence-client
+cadence-client
 ==============
 [Cadence-client](https://eng.uber.com/) is awesome!
 
