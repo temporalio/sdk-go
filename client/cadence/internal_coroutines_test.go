@@ -68,6 +68,46 @@ func TestNonbufferedChannel(t *testing.T) {
 
 }
 
+func TestNonbufferedChannelBlockedReceive(t *testing.T) {
+	var history []string
+	var c2 Channel
+	d := newDispatcher(background, func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 = NewChannel(ctx)
+		Go(ctx, func(ctx Context) {
+			v, more := c1.ReceiveWithMoreFlag(ctx)
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("child1-end1-%v", v))
+			v, more = c1.ReceiveWithMoreFlag(ctx)
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("child1-end2-%v", v))
+		})
+		Go(ctx, func(ctx Context) {
+			history = append(history, "child2-start")
+			v, more := c2.ReceiveWithMoreFlag(ctx)
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("child2-end1-%v", v))
+			v, more = c2.ReceiveWithMoreFlag(ctx)
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("child2-end2-%v", v))
+		})
+
+		history = append(history, "root-before-channel-put")
+		c1.Send(ctx, "value11")
+		c1.Send(ctx, "value12")
+		history = append(history, "root-after-channel-put")
+
+	})
+	require.EqualValues(t, 0, len(history))
+	d.ExecuteUntilAllBlocked()
+	c2.SendAsync("value21")
+	d.ExecuteUntilAllBlocked()
+	c2.SendAsync("value22")
+	d.ExecuteUntilAllBlocked()
+
+	require.True(t, d.IsDone(), d.StackTrace())
+}
+
 func TestBufferedChannelPut(t *testing.T) {
 	var history []string
 	d := newDispatcher(background, func(ctx Context) {
@@ -137,7 +177,7 @@ func TestBufferedChannelGet(t *testing.T) {
 	})
 	require.EqualValues(t, 0, len(history))
 	d.ExecuteUntilAllBlocked()
-	require.True(t, d.IsDone())
+	require.True(t, d.IsDone(), strings.Join(history, "\n") + "\n\n" + d.StackTrace())
 
 	expected := []string{
 		"root-before-channel-get1",
