@@ -24,9 +24,8 @@ type testReplayWorkflow struct {
 }
 
 func (w testReplayWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	r, err := ExecuteActivity(ctx, ExecuteActivityParameters{
-		ActivityType: ActivityType{Name: "testActivity"},
-		TaskListName: "testTaskList"})
+	ctx1 := WithTaskList(ctx, "testTaskList")
+	r, err := ExecuteActivity(ctx1, ActivityType{Name: "testActivity"}, nil)
 	return r, err
 }
 

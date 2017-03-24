@@ -86,7 +86,7 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType m.DecisionType
 	}
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) *activityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
 
 	scheduleTaskAttr := &m.ScheduleActivityTaskDecisionAttributes{}
 	if parameters.ActivityID == nil {

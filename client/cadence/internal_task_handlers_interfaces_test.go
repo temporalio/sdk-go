@@ -30,7 +30,7 @@ func (wc testWorkflowContext) Complete(result []byte) {
 }
 func (wc testWorkflowContext) Fail(err error) {
 }
-func (wc testWorkflowContext) ScheduleActivityTask(parameters ExecuteActivityParameters, callback resultHandler) {
+func (wc testWorkflowContext) ScheduleActivityTask(parameters executeActivityParameters, callback resultHandler) {
 
 }
 

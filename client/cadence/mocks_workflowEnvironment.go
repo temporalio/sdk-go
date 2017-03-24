@@ -27,11 +27,11 @@ func (_m *MockWorkflowEnvironment) Complete(result []byte, err error) {
 }
 
 // ExecuteActivity provides a mock function with given fields: parameters, callback
-func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters ExecuteActivityParameters, callback resultHandler) *activityInfo {
+func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
 	ret := _m.Called(parameters, callback)
 
 	var r0 *activityInfo
-	if rf, ok := ret.Get(0).(func(ExecuteActivityParameters, resultHandler) *activityInfo); ok {
+	if rf, ok := ret.Get(0).(func(executeActivityParameters, resultHandler) *activityInfo); ok {
 		r0 = rf(parameters, callback)
 	} else {
 		if ret.Get(0) != nil {

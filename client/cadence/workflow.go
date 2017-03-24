@@ -1,8 +1,13 @@
 package cadence
 
 import (
+	"errors"
 	"fmt"
 	"time"
+)
+
+var (
+	errActivityParamsBadRequest = errors.New("Bad request. Missing activity parameters through context. Check ActivityOptions.")
 )
 
 // Channel must be used instead of native go channel by workflow code.
@@ -112,28 +117,33 @@ type Workflow interface {
 	Execute(ctx Context, input []byte) (result []byte, err error)
 }
 
-// ExecuteActivityParameters configuration parameters for scheduling an activity
-type ExecuteActivityParameters struct {
-	ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
-	ActivityType                  ActivityType
-	TaskListName                  string
-	Input                         []byte
-	ScheduleToCloseTimeoutSeconds int32
-	ScheduleToStartTimeoutSeconds int32
-	StartToCloseTimeoutSeconds    int32
-	HeartbeatTimeoutSeconds       int32
-	WaitForCancellation           bool
-}
-
 // ExecuteActivity requests activity execution in the context of a workflow.
+//  - Context can be used to pass the settings for this activity.
+// 	For example: task list that this need to be routed, timeouts that need to be configured.
+//	Use ActivityOptions to pass down the options.
+//			ctx1 := WithActivityOptions(ctx, GetActivityOptions().
+//					WithTaskList("exampleTaskList").
+//					WithScheduleToCloseTimeout(10).
+//					WithScheduleToStartTimeout(2))
+//			(or)
+//			ctx1 := WithTaskList(ctx, "exampleTaskList")
+//
 //  - If the activity failed to complete then the error would indicate the failure
 // and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
-func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result []byte, err error) {
+func ExecuteActivity(ctx Context, activityType ActivityType, input []byte) (result []byte, err error) {
+	parameters := getActivityOptions(ctx)
+	if parameters == nil {
+		// We need task list as a compulsory parameter. This can be removed after registration
+		return nil, errActivityParamsBadRequest
+	}
+	parameters.ActivityType = activityType
+	parameters.Input = input
+
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e error) {
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
 		result = r
 		err = e
 		ok := resultChannel.SendAsync(true)
@@ -155,13 +165,32 @@ func ExecuteActivity(ctx Context, parameters ExecuteActivityParameters) (result 
 }
 
 // ExecuteActivityAsync requests activity execution in the context of a workflow.
+//  - Context can be used to pass the settings for this activity.
+// 	For example: task list that this need to be routed, timeouts that need to be configured.
+//	Use ActivityOptions to pass down the options.
+//			ctx1 := WithActivityOptions(ctx, GetActivityOptions().
+//					WithTaskList("exampleTaskList").
+//					WithScheduleToCloseTimeout(10).
+//					WithScheduleToStartTimeout(2))
+//			(or)
+//			ctx1 := WithTaskList(ctx, "exampleTaskList")
+//
 //  - If the activity failed to complete then the future get error would indicate the failure
 // and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
-func ExecuteActivityAsync(ctx Context, parameters ExecuteActivityParameters) Future {
+func ExecuteActivityAsync(ctx Context, activityType ActivityType, input []byte) Future {
 	future, settable := NewFuture(ctx)
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(parameters, func(r []byte, e error) {
+	parameters := getActivityOptions(ctx)
+	if parameters == nil {
+		// We need task list as a compulsory parameter. This can be removed after registration
+		settable.Set(nil, errActivityParamsBadRequest)
+		return future
+	}
+	parameters.ActivityType = activityType
+	parameters.Input = input
+
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
 		settable.Set(r, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})

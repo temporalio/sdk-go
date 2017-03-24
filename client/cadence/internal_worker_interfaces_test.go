@@ -50,7 +50,7 @@ func (wf helloWorldWorkflow) Close() {
 
 func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 	activityName := "Greeter_Activity"
-	activityParameters := ExecuteActivityParameters{
+	activityParameters := executeActivityParameters{
 		TaskListName: "taskList",
 		ActivityType: ActivityType{activityName},
 		Input:        nil,

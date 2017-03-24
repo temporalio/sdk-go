@@ -1,0 +1,32 @@
+dist: trusty
+sudo: required
+
+language: go
+directories:
+    - $HOME/.glide/cache
+go:
+  - 1.8
+
+addons:
+  apt:
+    packages:
+      - gettext-base
+      - libyaml-dev
+      - openjdk-8-jre
+      - python
+      - python-dev
+      - python-pip
+
+before_install:
+
+install:
+  - go get -u github.com/Masterminds/glide
+  - go get github.com/axw/gocov/gocov
+  - go get github.com/mattn/goveralls
+  - go get golang.org/x/tools/cmd/cover
+
+script:
+  - make cover_ci
+
+after_success:
+  - export BRANCH=$(if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then echo $TRAVIS_BRANCH; else echo $TRAVIS_PULL_REQUEST_BRANCH; fi)

@@ -1,11 +1,13 @@
 package cadence
 
 import (
+	"context"
 	"testing"
 
+	"encoding/json"
 	"time"
 
-	"github.com/uber-go/cadence-client/common"
+	"fmt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -74,12 +76,8 @@ type helloWorldActivityWorkflow struct {
 }
 
 func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	id := "id1"
-	parameters := ExecuteActivityParameters{
-		ActivityID: &id,
-		Input:      input,
-	}
-	result, err = ExecuteActivity(ctx, parameters)
+	ctx1 := WithActivityOptions(ctx, GetActivityOptions().(*activityOptions).WithActivityID("id1"))
+	result, err = ExecuteActivity(ctx1, ActivityType{}, input)
 	require.NoError(w.t, err)
 	return []byte(string(result)), nil
 }
@@ -108,7 +106,7 @@ func TestSingleActivityWorkflow(t *testing.T) {
 	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
 	ctx.On("Complete", []byte("Hello World!"), nil).Return().Once()
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		parameters := args.Get(0).(ExecuteActivityParameters)
+		parameters := args.Get(0).(executeActivityParameters)
 		callback := args.Get(1).(resultHandler)
 		result := string(parameters.Input) + " World!"
 		cbProcessor.Add(callback, []byte(result), nil)
@@ -130,22 +128,13 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c1 := NewChannel(ctx)
 	c2 := NewChannel(ctx)
 	Go(ctx, func(ctx Context) {
-		id1 := "id1"
-		parameters := ExecuteActivityParameters{
-			ActivityID: &id1,
-			Input:      input,
-		}
-
-		result1, err1 = ExecuteActivity(ctx, parameters)
+		ctx1 := WithActivityOptions(ctx, GetActivityOptions().(*activityOptions).WithActivityID("id1"))
+		result1, err1 = ExecuteActivity(ctx1, ActivityType{}, nil)
 		c1.Send(ctx, true)
 	})
 	Go(ctx, func(ctx Context) {
-		id2 := "id2"
-		parameters := ExecuteActivityParameters{
-			ActivityID: &id2,
-			Input:      input,
-		}
-		result2, err2 = ExecuteActivity(ctx, parameters)
+		ctx2 := WithActivityOptions(ctx, GetActivityOptions().(*activityOptions).WithActivityID("id2"))
+		result2, err2 = ExecuteActivity(ctx2, ActivityType{}, nil)
 		if w.panic {
 			panic("simulated")
 		}
@@ -176,7 +165,7 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 
 	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		parameters := args.Get(0).(ExecuteActivityParameters)
+		parameters := args.Get(0).(executeActivityParameters)
 		callback := args.Get(1).(resultHandler)
 		switch *parameters.ActivityID {
 		case "id1":
@@ -334,15 +323,15 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 	// Sync cancellation
 	ctx1, c1 := WithCancel(ctx)
 	defer c1()
-	id1 := "id1"
-	res1, err1 := ExecuteActivity(ctx1, ExecuteActivityParameters{ActivityID: common.StringPtr(id1)})
+	ctx1 = WithActivityOptions(ctx1, GetActivityOptions().(*activityOptions).WithActivityID("id1"))
+	res1, err1 := ExecuteActivity(ctx1, ActivityType{}, nil)
 	require.Equal(w.t, string(res1), "test")
 	require.NoError(w.t, err1)
 
 	// Async Cancellation (Callback completes before cancel)
 	ctx2, c2 := WithCancel(ctx)
-	id2 := "id2"
-	f := ExecuteActivityAsync(ctx2, ExecuteActivityParameters{ActivityID: common.StringPtr(id2)})
+	ctx2 = WithActivityOptions(ctx2, GetActivityOptions().(*activityOptions).WithActivityID("id2"))
+	f := ExecuteActivityAsync(ctx2, ActivityType{}, nil)
 	c2()
 	res2, err2 := f.Get(ctx)
 	require.NotNil(w.t, res2)
@@ -350,8 +339,8 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 
 	// Async Cancellation (Callback doesn't complete)
 	ctx3, c3 := WithCancel(ctx)
-	id3 := "id3"
-	f3 := ExecuteActivityAsync(ctx3, ExecuteActivityParameters{ActivityID: common.StringPtr(id3)})
+	ctx3 = WithActivityOptions(ctx3, GetActivityOptions().(*activityOptions).WithActivityID("id3"))
+	f3 := ExecuteActivityAsync(ctx3, ActivityType{}, nil)
 	c3()
 	res3, err3 := f3.Get(ctx)
 	require.Nil(w.t, res3)
@@ -404,4 +393,109 @@ func TestActivityCancelWorkflow(t *testing.T) {
 
 	cbProcessor.Close()
 	ctx.AssertExpectations(t)
+}
+
+//
+// A sample example of external workflow.
+//
+
+// Workflow Deciders and Activities.
+type greetingsWorkflow struct{}
+type getNameActivity struct{}
+type getGreetingActivity struct{}
+type sayGreetingActivity struct{}
+
+type sayGreetingActivityRequest struct {
+	Name     string
+	Greeting string
+}
+
+// Greetings Workflow Decider.
+func (w greetingsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+	// Get Greeting.
+
+	ctx1 := WithActivityOptions(ctx, GetActivityOptions().
+		WithTaskList("exampleTaskList").
+		WithScheduleToCloseTimeout(10).
+		WithScheduleToStartTimeout(2))
+
+	greetResult, err := ExecuteActivity(ctx1, ActivityType{Name: "getGreetingActivity"}, input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Name.
+	nameResult, err := ExecuteActivity(ctx1, ActivityType{Name: "getNameActivity"}, input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Say Greeting.
+	request := &sayGreetingActivityRequest{Name: string(nameResult), Greeting: string(greetResult)}
+	sayGreetInput, err := json.Marshal(request)
+	if err != nil {
+		panic(fmt.Sprintf("Marshalling failed with error: %+v", err))
+	}
+	_, err = ExecuteActivity(ctx1, ActivityType{Name: "sayGreetingActivity"}, sayGreetInput)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+// Get Name Activity.
+func (g getNameActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
+	return []byte("World"), nil
+}
+
+func (g getNameActivity) ActivityType() ActivityType {
+	return ActivityType{Name: "getNameActivity"}
+}
+
+// Get Greeting Activity.
+func (ga getGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
+	return []byte("Hello"), nil
+}
+
+func (ga getGreetingActivity) ActivityType() ActivityType {
+	return ActivityType{Name: "getGreetingActivity"}
+}
+
+// Say Greeting Activity.
+func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
+	greeetingParams := &sayGreetingActivityRequest{}
+	err := json.Unmarshal(input, greeetingParams)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Saying Final Greeting: ")
+	fmt.Printf("%s %s!\n", greeetingParams.Greeting, greeetingParams.Name)
+	return nil, nil
+}
+
+func (ga sayGreetingActivity) ActivityType() ActivityType {
+	return ActivityType{Name: "sayGreetingActivity"}
+}
+
+func TestExternalExampleWorkflow(t *testing.T) {
+	w := NewWorkflowDefinition(&greetingsWorkflow{})
+	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{})
+
+	cbProcessor := newAsyncTestCallbackProcessor()
+	cbProcessor.Process()
+
+	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		callback := args.Get(1).(resultHandler)
+		cbProcessor.Add(callback, []byte("test"), nil)
+	}).Times(3)
+
+	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
+		workflowComplete <- struct{}{}
+	}).Once()
+
+	w.Execute(ctx, []byte(""))
+	<-workflowComplete
 }
