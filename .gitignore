@@ -8,7 +8,6 @@
 *.html
 .tmp/
 /vendor
-/cadence-client
+cadence-client
 test
 test.log
-sample
