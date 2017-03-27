@@ -31,14 +31,11 @@ func (c *ConcurrentRetrier) throttleInternal() time.Duration {
 	next := done
 
 	// Check if we have failure count.
-	failureCount := c.failureCount
-	if failureCount > 0 {
-		defer c.Unlock()
-		c.Lock()
-		if c.failureCount > 0 {
-			next = c.retrier.NextBackOff()
-		}
+	c.Lock()
+	if c.failureCount > 0 {
+		next = c.retrier.NextBackOff()
 	}
+	c.Unlock()
 
 	if next != done {
 		time.Sleep(next)
