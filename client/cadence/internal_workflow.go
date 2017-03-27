@@ -171,7 +171,6 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 			nil,
 			NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())),
 		)
-		dispatcher.Close()
 		return
 	}
 	rp := *getWorkflowResultPointerPointer(ctx)
@@ -181,7 +180,6 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 	}
 	// Cannot cast nil values from interface{} to interface
 	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, rp.error)
-	dispatcher.Close()
 }
 
 // For troubleshooting stack pretty printing only.
@@ -605,6 +603,10 @@ func (d *dispatcherImpl) IsDone() bool {
 
 func (d *dispatcherImpl) Close() {
 	d.mutex.Lock()
+	if d.closed {
+		d.mutex.Unlock()
+		return
+	}
 	d.closed = true
 	d.mutex.Unlock()
 	for i := 0; i < len(d.coroutines); i++ {
