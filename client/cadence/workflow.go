@@ -121,10 +121,11 @@ type Workflow interface {
 //  - Context can be used to pass the settings for this activity.
 // 	For example: task list that this need to be routed, timeouts that need to be configured.
 //	Use ActivityOptions to pass down the options.
-//			ctx1 := WithActivityOptions(ctx, GetActivityOptions().
+//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
 //					WithTaskList("exampleTaskList").
-//					WithScheduleToCloseTimeout(10).
-//					WithScheduleToStartTimeout(2))
+//					WithScheduleToCloseTimeout(time.Second).
+//					WithScheduleToStartTimeout(time.Second).
+//					WithHeartbeatTimeout(0)
 //			(or)
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
 //
@@ -168,10 +169,11 @@ func ExecuteActivity(ctx Context, activityType ActivityType, input []byte) (resu
 //  - Context can be used to pass the settings for this activity.
 // 	For example: task list that this need to be routed, timeouts that need to be configured.
 //	Use ActivityOptions to pass down the options.
-//			ctx1 := WithActivityOptions(ctx, GetActivityOptions().
+//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
 //					WithTaskList("exampleTaskList").
-//					WithScheduleToCloseTimeout(10).
-//					WithScheduleToStartTimeout(2))
+//					WithScheduleToCloseTimeout(time.Second).
+//					WithScheduleToStartTimeout(time.Second).
+//					WithHeartbeatTimeout(0)
 //			(or)
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
 //

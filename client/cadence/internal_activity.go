@@ -3,6 +3,7 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"time"
 	"golang.org/x/net/context"
 	"github.com/uber-go/cadence-client/common"
 )
@@ -96,26 +97,26 @@ func (ab *activityOptions) WithTaskList(name string) ActivityOptions {
 }
 
 // WithScheduleToCloseTimeout sets timeout for this Context.
-func (ab *activityOptions) WithScheduleToCloseTimeout(timeout int32) ActivityOptions {
-	ab.scheduleToCloseTimeoutSeconds = common.Int32Ptr(timeout)
+func (ab *activityOptions) WithScheduleToCloseTimeout(d time.Duration) ActivityOptions {
+	ab.scheduleToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ab
 }
 
 // WithScheduleToStartTimeout sets timeout for this Context.
-func (ab *activityOptions) WithScheduleToStartTimeout(timeout int32) ActivityOptions {
-	ab.scheduleToStartTimeoutSeconds = common.Int32Ptr(timeout)
+func (ab *activityOptions) WithScheduleToStartTimeout(d time.Duration) ActivityOptions {
+	ab.scheduleToStartTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ab
 }
 
 // WithStartToCloseTimeout sets timeout for this Context.
-func (ab *activityOptions) WithStartToCloseTimeout(timeout int32) ActivityOptions {
-	ab.startToCloseTimeoutSeconds = common.Int32Ptr(timeout)
+func (ab *activityOptions) WithStartToCloseTimeout(d time.Duration) ActivityOptions {
+	ab.startToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ab
 }
 
 // WithHeartbeatTimeout sets timeout for this Context.
-func (ab *activityOptions) WithHeartbeatTimeout(timeout int32) ActivityOptions {
-	ab.heartbeatTimeoutSeconds = common.Int32Ptr(timeout)
+func (ab *activityOptions) WithHeartbeatTimeout(d time.Duration) ActivityOptions {
+	ab.heartbeatTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ab
 }
 

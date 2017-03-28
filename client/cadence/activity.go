@@ -2,6 +2,7 @@ package cadence
 
 import (
 	"context"
+	"time"
 
 	"github.com/uber-go/cadence-client/.gen/go/shared"
 )
@@ -75,15 +76,21 @@ func WithActivityTask(
 // be stored inside of a context.
 type ActivityOptions interface {
 	WithTaskList(name string) ActivityOptions
-	WithScheduleToCloseTimeout(timeout int32) ActivityOptions
-	WithScheduleToStartTimeout(timeout int32) ActivityOptions
-	WithStartToCloseTimeout(timeout int32) ActivityOptions
-	WithHeartbeatTimeout(timeout int32) ActivityOptions
+	WithScheduleToCloseTimeout(d time.Duration) ActivityOptions
+	WithScheduleToStartTimeout(d time.Duration) ActivityOptions
+	WithStartToCloseTimeout(d time.Duration) ActivityOptions
+	WithHeartbeatTimeout(d time.Duration) ActivityOptions
 	WithWaitForCancellation(wait bool) ActivityOptions
 }
 
-// GetActivityOptions returns a builder that can be used to create a Context.
-func GetActivityOptions() ActivityOptions {
+// NewActivityOptions returns an instance of activity options that can be used to specify
+// options for an activity through context.
+//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
+//					WithTaskList("exampleTaskList").
+//					WithScheduleToCloseTimeout(time.Second).
+//					WithScheduleToStartTimeout(time.Second).
+//					WithHeartbeatTimeout(0)
+func NewActivityOptions() ActivityOptions {
 	return &activityOptions{}
 }
 
@@ -124,30 +131,30 @@ func WithTaskList(ctx Context, name string) Context {
 }
 
 // WithScheduleToCloseTimeout adds a timeout to the context.
-func WithScheduleToCloseTimeout(ctx Context, timeout int32) Context {
+func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = timeout
+	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
 // WithScheduleToStartTimeout adds a timeout to the context.
-func WithScheduleToStartTimeout(ctx Context, timeout int32) Context {
+func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = timeout
+	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
 // WithStartToCloseTimeout adds a timeout to the context.
-func WithStartToCloseTimeout(ctx Context, timeout int32) Context {
+func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = timeout
+	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
 // WithHeartbeatTimeout adds a timeout to the context.
-func WithHeartbeatTimeout(ctx Context, timeout int32) Context {
+func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = timeout
+	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
