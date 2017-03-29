@@ -398,27 +398,7 @@ type cadenceInvoker struct {
 }
 
 func (i *cadenceInvoker) Heartbeat(details []byte) error {
-	request := &s.RecordActivityTaskHeartbeatRequest{
-		TaskToken: i.taskToken,
-		Details:   details,
-		Identity:  common.StringPtr(i.identity)}
-
-	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
-	heartbeatErr := backoff.Retry(
-		func() error {
-			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
-			defer cancel()
-
-			var err error
-			heartbeatResponse, err = i.service.RecordActivityTaskHeartbeat(ctx, request)
-			return err
-		}, serviceOperationRetryPolicy, isServiceTransientError)
-
-	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
-		return NewCanceledError()
-	}
-
-	return heartbeatErr
+	return recordActivityHeartbeat(i.service, i.identity, i.taskToken, details)
 }
 
 func newServiceInvoker(taskToken []byte, identity string, service m.TChanWorkflowService) ServiceInvoker {
@@ -444,6 +424,11 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (i
 	}
 
 	output, err := activityImplementation.Execute(ctx, t.GetInput())
+	if err == ActivityResultPendingError {
+		// activity result is pending and will be completed asynchronously.
+		return nil, err
+	}
+
 	if err != nil {
 		reason, details := getErrorDetails(err)
 		responseFailure := &s.RespondActivityTaskFailedRequest{
@@ -465,4 +450,28 @@ func createNewDecision(decisionType s.DecisionType) *s.Decision {
 	return &s.Decision{
 		DecisionType: common.DecisionTypePtr(decisionType),
 	}
+}
+
+func recordActivityHeartbeat(service m.TChanWorkflowService, identity string, taskToken, details []byte) error {
+	request := &s.RecordActivityTaskHeartbeatRequest{
+		TaskToken: taskToken,
+		Details:   details,
+		Identity:  common.StringPtr(identity)}
+
+	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
+	heartbeatErr := backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+
+			var err error
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(ctx, request)
+			return err
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+
+	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
+		return NewCanceledError()
+	}
+
+	return heartbeatErr
 }

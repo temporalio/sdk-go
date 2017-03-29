@@ -213,6 +213,12 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 
 	// Process the activity task.
 	result, err := atp.taskHandler.Execute(activityTask.task)
+	if err == ActivityResultPendingError {
+		// activity result is pending and will be completed asynchronously.
+		// nothing is wrong at this point.
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
