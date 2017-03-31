@@ -3,8 +3,11 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"errors"
 	"time"
+
 	"golang.org/x/net/context"
+
 	"github.com/uber-go/cadence-client/common"
 )
 
@@ -71,6 +74,24 @@ func getActivityOptions(ctx Context) *executeActivityParameters {
 	return eap.(*executeActivityParameters)
 }
 
+func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error) {
+	p := getActivityOptions(ctx)
+	if p == nil {
+		// We need task list as a compulsory parameter. This can be removed after registration
+		return nil, errActivityParamsBadRequest
+	}
+	if p.ScheduleToStartTimeoutSeconds <= 0 {
+		return nil, errors.New("missing or negative ScheduleToStartTimeoutSeconds")
+	}
+	if p.ScheduleToCloseTimeoutSeconds <= 0 {
+		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
+	}
+	if p.StartToCloseTimeoutSeconds <= 0 {
+		return nil, errors.New("missing or negative StartToCloseTimeoutSeconds")
+	}
+	return p, nil
+}
+
 func setActivityParametersIfNotExist(ctx Context) Context {
 	if valCtx := getActivityOptions(ctx); valCtx == nil {
 		return WithValue(ctx, activityOptionsContextKey, &executeActivityParameters{})
@@ -133,4 +154,3 @@ func (ab *activityOptions) WithActivityID(activityID string) ActivityOptions {
 	ab.activityID = common.StringPtr(activityID)
 	return ab
 }
-

@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/common/backoff"
-	"github.com/uber-common/bark"
 )
 
 const (

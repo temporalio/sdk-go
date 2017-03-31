@@ -1,9 +1,9 @@
 package cadence
 
 import (
-	"testing"
-
 	"errors"
+	"testing"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
@@ -28,8 +28,11 @@ type testReplayWorkflow struct {
 }
 
 func (w testReplayWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	ctx1 := WithTaskList(ctx, "testTaskList")
-	r, err := ExecuteActivity(ctx1, ActivityType{Name: "testActivity"}, nil)
+	ctx = WithTaskList(ctx, "testTaskList")
+	ctx = WithScheduleToStartTimeout(ctx, time.Second)
+	ctx = WithScheduleToCloseTimeout(ctx, time.Second)
+	ctx = WithStartToCloseTimeout(ctx, time.Second)
+	r, err := ExecuteActivity(ctx, ActivityType{Name: "testActivity"}, nil)
 	return r, err
 }
 

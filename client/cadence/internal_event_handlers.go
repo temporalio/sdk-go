@@ -3,14 +3,13 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/uber-common/bark"
-
 	m "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
-	"errors"
 )
 
 // Assert that structs do indeed implement the interfaces

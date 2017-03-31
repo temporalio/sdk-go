@@ -177,7 +177,7 @@ func TestBufferedChannelGet(t *testing.T) {
 	})
 	require.EqualValues(t, 0, len(history))
 	d.ExecuteUntilAllBlocked()
-	require.True(t, d.IsDone(), strings.Join(history, "\n") + "\n\n" + d.StackTrace())
+	require.True(t, d.IsDone(), strings.Join(history, "\n")+"\n\n"+d.StackTrace())
 
 	expected := []string{
 		"root-before-channel-get1",
