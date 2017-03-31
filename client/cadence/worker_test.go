@@ -3,11 +3,15 @@ package cadence
 import (
 	"testing"
 
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
+	"errors"
+
 	log "github.com/Sirupsen/logrus"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-common/bark"
+	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	"github.com/uber-go/cadence-client/common"
+	"github.com/uber-go/cadence-client/mocks"
 )
 
 func getLogger() bark.Logger {
@@ -69,4 +73,46 @@ func TestWorkflowReplayer(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, r.StackTrace())
 	require.Contains(t, r.StackTrace(), "cadence.ExecuteActivity")
+}
+
+func TestCompleteActivity(t *testing.T) {
+	mockService := new(mocks.TChanWorkflowService)
+	wfClient := NewWorkflowClient(mockService, nil, "")
+	var completedRequest, canceledRequest, failedRequest interface{}
+	mockService.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil).Run(
+		func(args mock.Arguments) {
+			completedRequest = args.Get(1).(*s.RespondActivityTaskCompletedRequest)
+		})
+	mockService.On("RespondActivityTaskCanceled", mock.Anything, mock.Anything).Return(nil).Run(
+		func(args mock.Arguments) {
+			canceledRequest = args.Get(1).(*s.RespondActivityTaskCanceledRequest)
+		})
+	mockService.On("RespondActivityTaskFailed", mock.Anything, mock.Anything).Return(nil).Run(
+		func(args mock.Arguments) {
+			failedRequest = args.Get(1).(*s.RespondActivityTaskFailedRequest)
+		})
+
+	wfClient.CompleteActivity(nil, nil, nil)
+	require.NotNil(t, completedRequest)
+
+	wfClient.CompleteActivity(nil, nil, NewCanceledError())
+	require.NotNil(t, canceledRequest)
+
+	wfClient.CompleteActivity(nil, nil, errors.New(""))
+	require.NotNil(t, failedRequest)
+}
+
+func TestRecordActivityHeartbeat(t *testing.T) {
+	mockService := new(mocks.TChanWorkflowService)
+	wfClient := NewWorkflowClient(mockService, nil, "")
+	var heartbeatRequest *s.RecordActivityTaskHeartbeatRequest
+	cancelRequested := false
+	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(&heartbeatResponse, nil).
+		Run(func(args mock.Arguments) {
+			heartbeatRequest = args.Get(1).(*s.RecordActivityTaskHeartbeatRequest)
+		})
+
+	wfClient.RecordActivityHeartbeat(nil, nil)
+	require.NotNil(t, heartbeatRequest)
 }

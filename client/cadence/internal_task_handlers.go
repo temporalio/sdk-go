@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/uber-common/bark"
-	"github.com/uber-go/tally"
-
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/common/backoff"
 	"github.com/uber-go/cadence-client/common/metrics"
+	"github.com/uber-go/tally"
 	"golang.org/x/net/context"
 )
 
@@ -424,26 +423,7 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (i
 	}
 
 	output, err := activityImplementation.Execute(ctx, t.GetInput())
-	if err == ActivityResultPendingError {
-		// activity result is pending and will be completed asynchronously.
-		return nil, err
-	}
-
-	if err != nil {
-		reason, details := getErrorDetails(err)
-		responseFailure := &s.RespondActivityTaskFailedRequest{
-			TaskToken: t.TaskToken,
-			Reason:    common.StringPtr(reason),
-			Details:   details,
-			Identity:  common.StringPtr(ath.identity)}
-		return responseFailure, nil
-	}
-
-	responseComplete := &s.RespondActivityTaskCompletedRequest{
-		TaskToken: t.TaskToken,
-		Result_:   output,
-		Identity:  common.StringPtr(ath.identity)}
-	return responseComplete, nil
+	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err), nil
 }
 
 func createNewDecision(decisionType s.DecisionType) *s.Decision {
