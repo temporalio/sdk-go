@@ -1,7 +1,6 @@
 package cadence
 
 import (
-	"context"
 	"testing"
 
 	"encoding/json"
@@ -37,27 +36,25 @@ func newAsyncTestCallbackProcessor() *asyncTestCallbackProcessor {
 	}
 }
 
-func (ac *asyncTestCallbackProcessor) Process() {
-	go func() {
-		for {
-			c, more := <-ac.callbackCh
-			if !more {
-				break
-			}
+func (ac *asyncTestCallbackProcessor) ProcessOrWait(waitForComplete <-chan struct{}) bool {
+	for {
+		select {
+		case c := <-ac.callbackCh:
 			time.Sleep(time.Millisecond)
 			c.handler(c.result, c.err)
+
+		case <-waitForComplete:
+			return true
+
+		case <-time.After(2 * time.Second):
+			fmt.Println("timeout 10 second")
+			return false
 		}
-		ac.waitProcCompleteCh <- struct{}{}
-	}()
+	}
 }
 
 func (ac *asyncTestCallbackProcessor) Add(cb resultHandler, result []byte, err error) {
 	ac.callbackCh <- callbackHandlerWrapTest{handler: cb, result: result, err: err}
-}
-
-func (ac *asyncTestCallbackProcessor) Close() {
-	close(ac.callbackCh)
-	<-ac.waitProcCompleteCh
 }
 
 func (w *helloWorldWorklfow) Execute(ctx Context, input []byte) (result []byte, err error) {
@@ -76,10 +73,17 @@ type helloWorldActivityWorkflow struct {
 }
 
 func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+	ctx = WithActivityOptions(ctx, NewActivityOptions().
+		WithScheduleToStartTimeout(10 * time.Second).
+		WithStartToCloseTimeout(5 * time.Second).
+		WithScheduleToCloseTimeout(10 * time.Second))
 	ctx1 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-	result, err = ExecuteActivity(ctx1, ActivityType{}, input)
+	r1, err := ExecuteActivity(ctx1, "testAct", input)
+	if err != nil {
+		fmt.Printf("Error: %v \n", err.Error())
+	}
 	require.NoError(w.t, err)
-	return []byte(string(result)), nil
+	return r1.([]byte), nil
 }
 
 type resultHandlerMatcher struct {
@@ -98,13 +102,16 @@ func (m *resultHandlerMatcher) String() string {
 func TestSingleActivityWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&helloWorldActivityWorkflow{t: t})
 	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{}, 1)
 
 	// Process timer callbacks.
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
-	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
-	ctx.On("Complete", []byte("Hello World!"), nil).Return().Once()
+	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
+		//result := args.Get(0).([]byte)
+		//require.Contains(t, string(result), "Hello World!")
+		workflowComplete <- struct{}{}
+	}).Once()
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		parameters := args.Get(0).(executeActivityParameters)
 		callback := args.Get(1).(resultHandler)
@@ -112,7 +119,9 @@ func TestSingleActivityWorkflow(t *testing.T) {
 		cbProcessor.Add(callback, []byte(result), nil)
 	})
 	w.Execute(ctx, []byte("Hello"))
-	cbProcessor.Close()
+
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
 
@@ -122,19 +131,26 @@ type splitJoinActivityWorkflow struct {
 }
 
 func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	var result1, result2 []byte
+	var result1, result2 interface{}
 	var err1, err2 error
+
+	ctx = WithActivityOptions(ctx, NewActivityOptions().
+		WithScheduleToStartTimeout(10 * time.Second).
+		WithStartToCloseTimeout(5 * time.Second).
+		WithScheduleToCloseTimeout(10 * time.Second))
 
 	c1 := NewChannel(ctx)
 	c2 := NewChannel(ctx)
 	Go(ctx, func(ctx Context) {
 		ctx1 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-		result1, err1 = ExecuteActivity(ctx1, ActivityType{}, nil)
+		result1, err1 = ExecuteActivity(ctx1, "testAct", nil)
+		require.NoError(w.t, err1, err1)
 		c1.Send(ctx, true)
 	})
 	Go(ctx, func(ctx Context) {
 		ctx2 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id2"))
-		result2, err2 = ExecuteActivity(ctx2, ActivityType{}, nil)
+		result2, err2 = ExecuteActivity(ctx2, "testAct", nil)
+		require.NoError(w.t, err1, err1)
 		if w.panic {
 			panic("simulated")
 		}
@@ -152,18 +168,17 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	require.NoError(w.t, err1)
 	require.NoError(w.t, err2)
 
-	return []byte(string(result1) + string(result2)), nil
+	return []byte(string(result1.([]byte)) + string(result2.([]byte))), nil
 }
 
 func TestSplitJoinActivityWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t})
 	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{}, 1)
 
 	// Process timer callbacks.
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
-	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		parameters := args.Get(0).(executeActivityParameters)
 		callback := args.Get(1).(resultHandler)
@@ -175,23 +190,25 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 		}
 	}).Twice()
 
-	ctx.On("Complete", []byte("Hello Flow!"), nil).Return().Once()
+	ctx.On("Complete", []byte("Hello Flow!"), nil).Return().Run(func(args mock.Arguments) {
+		workflowComplete <- struct{}{}
+	}).Once()
 
 	w.Execute(ctx, []byte(""))
 
-	cbProcessor.Close()
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
 
 func TestWorkflowPanic(t *testing.T) {
 	w := NewWorkflowDefinition(&splitJoinActivityWorkflow{t: t, panic: true})
 	ctx := &MockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{}, 1)
 
 	// Process timer callbacks.
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
-	// TODO: Fix the tests to expose so mocking execute activity can inline complete the response.
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		callback := args.Get(1).(resultHandler)
 		cbProcessor.Add(callback, []byte("test"), nil)
@@ -200,11 +217,13 @@ func TestWorkflowPanic(t *testing.T) {
 		resultErr := args.Get(1).(Error)
 		require.EqualValues(t, "simulated", resultErr.Reason())
 		require.Contains(t, string(resultErr.Details()), "cadence.(*splitJoinActivityWorkflow).Execute")
+		workflowComplete <- struct{}{}
 	}).Once()
 
 	w.Execute(ctx, []byte("Hello"))
 
-	cbProcessor.Close()
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
 
@@ -277,11 +296,10 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 func TestTimerWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&testTimerWorkflow{t: t})
 	ctx := &MockWorkflowEnvironment{}
-	workflowComplete := make(chan struct{})
+	workflowComplete := make(chan struct{}, 1)
 
 	// Process timer callbacks.
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
 	newTimerCount := 0
 	var callbackHandler2 resultHandler
@@ -309,9 +327,8 @@ func TestTimerWorkflow(t *testing.T) {
 
 	w.Execute(ctx, []byte("Hello"))
 
-	<-workflowComplete
-
-	cbProcessor.Close()
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
 
@@ -320,18 +337,23 @@ type testActivityCancelWorkflow struct {
 }
 
 func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+	ctx = WithActivityOptions(ctx, NewActivityOptions().
+		WithScheduleToStartTimeout(10 * time.Second).
+		WithStartToCloseTimeout(5 * time.Second).
+		WithScheduleToCloseTimeout(10 * time.Second))
+
 	// Sync cancellation
 	ctx1, c1 := WithCancel(ctx)
 	defer c1()
 	ctx1 = WithActivityOptions(ctx1, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-	res1, err1 := ExecuteActivity(ctx1, ActivityType{}, nil)
-	require.Equal(w.t, string(res1), "test")
-	require.NoError(w.t, err1)
+	res1, err1 := ExecuteActivity(ctx1, "testAct")
+	require.NoError(w.t, err1, err1)
+	require.Equal(w.t, string(res1.([]byte)), "test")
 
 	// Async Cancellation (Callback completes before cancel)
 	ctx2, c2 := WithCancel(ctx)
 	ctx2 = WithActivityOptions(ctx2, NewActivityOptions().(*activityOptions).WithActivityID("id2"))
-	f := ExecuteActivityAsync(ctx2, ActivityType{}, nil)
+	f := ExecuteActivityAsync(ctx2, "testAct")
 	c2()
 	res2, err2 := f.Get(ctx)
 	require.NotNil(w.t, res2)
@@ -340,7 +362,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 	// Async Cancellation (Callback doesn't complete)
 	ctx3, c3 := WithCancel(ctx)
 	ctx3 = WithActivityOptions(ctx3, NewActivityOptions().(*activityOptions).WithActivityID("id3"))
-	f3 := ExecuteActivityAsync(ctx3, ActivityType{}, nil)
+	f3 := ExecuteActivityAsync(ctx3, "testAct")
 	c3()
 	res3, err3 := f3.Get(ctx)
 	require.Nil(w.t, res3)
@@ -352,10 +374,9 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 func TestActivityCancelWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&testActivityCancelWorkflow{t: t})
 	ctx := &MockWorkflowEnvironment{}
-	workflowComplete := make(chan struct{})
+	workflowComplete := make(chan struct{}, 1)
 
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
 	executeCount := 0
 	var callbackHandler3 resultHandler
@@ -388,10 +409,8 @@ func TestActivityCancelWorkflow(t *testing.T) {
 	}).Once()
 
 	w.Execute(ctx, []byte("Hello"))
-
-	<-workflowComplete
-
-	cbProcessor.Close()
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
 
@@ -401,9 +420,6 @@ func TestActivityCancelWorkflow(t *testing.T) {
 
 // Workflow Deciders and Activities.
 type greetingsWorkflow struct{}
-type getNameActivity struct{}
-type getGreetingActivity struct{}
-type sayGreetingActivity struct{}
 
 type sayGreetingActivityRequest struct {
 	Name     string
@@ -416,76 +432,41 @@ func (w greetingsWorkflow) Execute(ctx Context, input []byte) (result []byte, er
 
 	ctx1 := WithActivityOptions(ctx, NewActivityOptions().
 		WithTaskList("exampleTaskList").
-		WithScheduleToCloseTimeout(10).
-		WithScheduleToStartTimeout(2))
+		WithScheduleToStartTimeout(10 * time.Second).
+		WithStartToCloseTimeout(5 * time.Second).
+		WithScheduleToCloseTimeout(10 * time.Second))
 
-	greetResult, err := ExecuteActivity(ctx1, ActivityType{Name: "getGreetingActivity"}, input)
+	greetResult, err := ExecuteActivity(ctx1, "getGreetingActivity", input)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get Name.
-	nameResult, err := ExecuteActivity(ctx1, ActivityType{Name: "getNameActivity"}, input)
+	nameResult, err := ExecuteActivity(ctx1, "getNameActivity", input)
 	if err != nil {
 		return nil, err
 	}
 
 	// Say Greeting.
-	request := &sayGreetingActivityRequest{Name: string(nameResult), Greeting: string(greetResult)}
+	request := &sayGreetingActivityRequest{Name: string(nameResult.([]byte)), Greeting: string(greetResult.([]byte))}
 	sayGreetInput, err := json.Marshal(request)
 	if err != nil {
 		panic(fmt.Sprintf("Marshalling failed with error: %+v", err))
 	}
-	_, err = ExecuteActivity(ctx1, ActivityType{Name: "sayGreetingActivity"}, sayGreetInput)
+	_, err = ExecuteActivity(ctx1, "sayGreetingActivity", sayGreetInput)
 	if err != nil {
 		return nil, err
 	}
 
 	return nil, nil
-}
-
-// Get Name Activity.
-func (g getNameActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
-	return []byte("World"), nil
-}
-
-func (g getNameActivity) ActivityType() ActivityType {
-	return ActivityType{Name: "getNameActivity"}
-}
-
-// Get Greeting Activity.
-func (ga getGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
-	return []byte("Hello"), nil
-}
-
-func (ga getGreetingActivity) ActivityType() ActivityType {
-	return ActivityType{Name: "getGreetingActivity"}
-}
-
-// Say Greeting Activity.
-func (ga sayGreetingActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
-	greeetingParams := &sayGreetingActivityRequest{}
-	err := json.Unmarshal(input, greeetingParams)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("Saying Final Greeting: ")
-	fmt.Printf("%s %s!\n", greeetingParams.Greeting, greeetingParams.Name)
-	return nil, nil
-}
-
-func (ga sayGreetingActivity) ActivityType() ActivityType {
-	return ActivityType{Name: "sayGreetingActivity"}
 }
 
 func TestExternalExampleWorkflow(t *testing.T) {
 	w := NewWorkflowDefinition(&greetingsWorkflow{})
 	ctx := &MockWorkflowEnvironment{}
-	workflowComplete := make(chan struct{})
+	workflowComplete := make(chan struct{}, 1)
 
 	cbProcessor := newAsyncTestCallbackProcessor()
-	cbProcessor.Process()
 
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		callback := args.Get(1).(resultHandler)
@@ -497,5 +478,8 @@ func TestExternalExampleWorkflow(t *testing.T) {
 	}).Once()
 
 	w.Execute(ctx, []byte(""))
-	<-workflowComplete
+
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
+	ctx.AssertExpectations(t)
 }

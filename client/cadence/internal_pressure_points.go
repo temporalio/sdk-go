@@ -21,6 +21,8 @@ const (
 	PressurePointTypeActivityTaskStartTimeout    = "activity-task-start-timeout"
 	PressurePointConfigProbability               = "probability"
 	PressurePointConfigSleep                     = "sleep"
+	WorkerOptionsConfig                          = "worker-options"
+	WorkerOptionsConfigConcurrentPollRoutineSize = "ConcurrentPollRoutineSize"
 )
 
 type (

@@ -126,25 +126,37 @@ type Workflow interface {
 //					WithScheduleToCloseTimeout(time.Second).
 //					WithScheduleToStartTimeout(time.Second).
 //					WithHeartbeatTimeout(0)
-//			(or)
+//			or
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
-//
+//  - f - Either a activity name or a function that is getting scheduled.
+//  - args - The arguments that need to be passed to the function represented by 'f'.
 //  - If the activity failed to complete then the error would indicate the failure
 // and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
-func ExecuteActivity(ctx Context, activityType ActivityType, input []byte) (result []byte, err error) {
+// - result - Result the activity returns, if there is no result the activity returns
+//      then it will be nil, indicating no result.
+func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) (result interface{}, err error) {
+	// Validate type and its arguments.
+	activityType, input, err := getValidatedActivityFunction(f, args)
+	if err != nil {
+		return nil, err
+	}
+	// Validate context options.
 	parameters, err := getValidatedActivityOptions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	parameters.ActivityType = activityType
+	parameters.ActivityType = *activityType
 	parameters.Input = input
 
 	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
 	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
-		result = r
+		var serializeErr error
+		if result, serializeErr = deSerializeFunctionResult(f, r); serializeErr != nil {
+			e = serializeErr
+		}
 		err = e
 		ok := resultChannel.SendAsync(true)
 		if !ok {
@@ -173,26 +185,40 @@ func ExecuteActivity(ctx Context, activityType ActivityType, input []byte) (resu
 //					WithScheduleToCloseTimeout(time.Second).
 //					WithScheduleToStartTimeout(time.Second).
 //					WithHeartbeatTimeout(0)
-//			(or)
+//			or
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
-//
+//  - f - Either a activity name or a function that is getting scheduled.
+//  - args - The arguments that need to be passed to the function represented by 'f'.
 //  - If the activity failed to complete then the future get error would indicate the failure
 // and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
-func ExecuteActivityAsync(ctx Context, activityType ActivityType, input []byte) Future {
+// - result - Result the activity returns, if there is no result the activity returns
+//      then it will be nil, indicating no result.
+func ExecuteActivityAsync(ctx Context, f interface{}, args ...interface{}) Future {
+	// Validate type and its arguments.
 	future, settable := NewFuture(ctx)
-	parameters := getActivityOptions(ctx)
-	parameters, err := getValidatedActivityOptions(ctx)
+	activityType, input, err := getValidatedActivityFunction(f, args)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
-	parameters.ActivityType = activityType
+	// Validate context options.
+	parameters := getActivityOptions(ctx)
+	parameters, err = getValidatedActivityOptions(ctx)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+	parameters.ActivityType = *activityType
 	parameters.Input = input
 
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
-		settable.Set(r, e)
+		result, serializeErr := deSerializeFunctionResult(f, r)
+		if serializeErr != nil {
+			e = serializeErr
+		}
+		settable.Set(result, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
 	Go(ctx, func(ctx Context) {

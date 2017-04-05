@@ -56,9 +56,7 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow
 	StartWorkflowOptions struct {
 		ID                                     string
-		Type                                   WorkflowType
 		TaskList                               string
-		Input                                  []byte
 		ExecutionStartToCloseTimeoutSeconds    int32
 		DecisionTaskStartToCloseTimeoutSeconds int32
 		Identity                               string
@@ -109,7 +107,16 @@ func NewWorkflowClient(service m.TChanWorkflowService, metricsScope tally.Scope,
 }
 
 // StartWorkflowExecution starts a workflow execution
-func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (*WorkflowExecution, error) {
+// The user can use this to start using a functor like.
+// Either by
+//     StartWorkflowExecution(options, "workflowTypeName", input)
+//     or
+//     StartWorkflowExecution(options, workflowExecuteFn, arg1, arg2, arg3)
+func (wc *WorkflowClient) StartWorkflowExecution(
+	options StartWorkflowOptions,
+	workflowFunc interface{},
+	args ...interface{},
+) (*WorkflowExecution, error) {
 	// Get an identity.
 	identity := options.Identity
 	if identity == "" {
@@ -120,12 +127,18 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 		workflowID = uuid.NewRandom().String()
 	}
 
+	// Validate type and its arguments.
+	workflowType, input, err := getValidatedWorkerFunction(workflowFunc, args)
+	if err != nil {
+		return nil, err
+	}
+
 	startRequest := &s.StartWorkflowExecutionRequest{
 		RequestId:    common.StringPtr(uuid.New()),
 		WorkflowId:   common.StringPtr(workflowID),
-		WorkflowType: workflowTypePtr(options.Type),
+		WorkflowType: workflowTypePtr(*workflowType),
 		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
-		Input:        options.Input,
+		Input:        input,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(options.ExecutionStartToCloseTimeoutSeconds),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(options.DecisionTaskStartToCloseTimeoutSeconds),
 		Identity:                            common.StringPtr(identity)}
@@ -133,7 +146,7 @@ func (wc *WorkflowClient) StartWorkflowExecution(options StartWorkflowOptions) (
 	var response *s.StartWorkflowExecutionResponse
 
 	// Start creating workflow request.
-	err := backoff.Retry(
+	err = backoff.Retry(
 		func() error {
 			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 			defer cancel()
@@ -196,9 +209,8 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(taskToken, details []byte) err
 // WorkflowReplayerOptions represents options for workflow replayer.
 type WorkflowReplayerOptions struct {
 	Execution WorkflowExecution
-	Type      WorkflowType
-	Factory   WorkflowFactory
 	History   *s.History
+	Logger bark.Logger
 }
 
 // WorkflowReplayer replays a given state of workflow execution.
@@ -211,17 +223,24 @@ type WorkflowReplayer struct {
 }
 
 // NewWorkflowReplayer creates an instance of WorkflowReplayer
-func NewWorkflowReplayer(o WorkflowReplayerOptions, logger bark.Logger) *WorkflowReplayer {
+func NewWorkflowReplayer(
+	options WorkflowReplayerOptions,
+	workferFunc interface{},
+) *WorkflowReplayer {
+	fnName := getFunctionName(workferFunc)
+	workflowFactory := func(wt WorkflowType) (Workflow, error) {
+		return &workflowExecutor{name: fnName, fn: workferFunc}, nil
+	}
 	workflowTask := &s.PollForDecisionTaskResponse{
 		TaskToken: []byte("replayer-token"),
-		History:   o.History,
+		History:   options.History,
 		WorkflowExecution: &s.WorkflowExecution{
-			WorkflowId: common.StringPtr(o.Execution.ID),
-			RunId:      common.StringPtr(o.Execution.RunID),
+			WorkflowId: common.StringPtr(options.Execution.ID),
+			RunId:      common.StringPtr(options.Execution.RunID),
 		},
-		WorkflowType: &s.WorkflowType{Name: common.StringPtr(o.Type.Name)},
+		WorkflowType: &s.WorkflowType{Name: common.StringPtr(fnName)},
 	}
-	return NewWorkflowReplayerForPoll(workflowTask, o.Factory, logger)
+	return NewWorkflowReplayerForPoll(workflowTask, workflowFactory, options.Logger)
 }
 
 // NewWorkflowReplayerForPoll creates an instance of WorkflowReplayer from decision poll response
@@ -282,4 +301,93 @@ func getWorkflowDefinitionFactory(factory WorkflowFactory) workflowDefinitionFac
 		}
 		return NewWorkflowDefinition(wd), nil
 	}
+}
+
+// WorkerOptions is to configure a worker instance,
+// for example (1) the logger or any specific metrics.
+// 	       (2) Whether to heart beat for activities automatically.
+type WorkerOptions interface {
+	// Optional: To set the maximum concurrent activity executions this host can have.
+	// default: defaultMaxConcurrentActivityExecutionSize(10k)
+	SetMaxConcurrentActivityExecutionSize(size int) WorkerOptions
+
+	// Optional: Sets the rate limiting on number of activities that can be executed.
+	// This can be used to protect down stream services from flooding.
+	// default: defaultMaxActivityExecutionRate(100k)
+	SetMaxActivityExecutionRate(requestPerSecond float32) WorkerOptions
+
+	// Optional: if the activities need auto heart beating for those activities
+	// by the framework
+	// default: false not to heartbeat.
+	SetAutoHeartBeat(auto bool) WorkerOptions
+
+	// Optional: Sets an identify that can be used to track this host for debugging.
+	// default: default identity that include hostname, groupName and process ID.
+	SetIdentity(identity string) WorkerOptions
+
+	// Optional: Metrics to be reported.
+	// default: no metrics.
+	SetMetrics(metricsScope tally.Scope) WorkerOptions
+
+	// Optional: Logger framework can use to log.
+	// default: default logger provided.
+	SetLogger(logger bark.Logger) WorkerOptions
+
+	// Optional: Disable running workflow workers.
+	// default: false
+	SetDisableWorkflowWorker(disable bool) WorkerOptions
+
+	// Optional: Disable running activity workers.
+	// default: false
+	SetDisableActivityWorker(disable bool) WorkerOptions
+}
+
+// NewWorkerOptions returns an instance of worker options to configure.
+func NewWorkerOptions() WorkerOptions {
+	return NewWorkerOptionsInternal(nil)
+}
+
+// RegisterWorkflow - registers a workflow function with the framework.
+// A workflow takes a cadence context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleWorkflow(ctx cadence.Context, input []byte) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int, arg2 string) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int) (result string, err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+func RegisterWorkflow(
+	workflowFunc interface{},
+) error {
+	thImpl := getHostEnvironment()
+	return thImpl.RegisterWorkflow(workflowFunc)
+}
+
+// RegisterActivity - register a activity function with the framework.
+// A activity takes a context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
+//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
+//	func sampleActivity(ctx context.Context) (err error)
+//	func sampleActivity() (result string, err error)
+//	func sampleActivity(arg1 bool) (result int, err error)
+//	func sampleActivity(arg1 bool) (err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+func RegisterActivity(
+	activityFunc interface{},
+) error {
+	thImpl := getHostEnvironment()
+	return thImpl.RegisterActivity(activityFunc)
+}
+
+// NewWorker creates an instance of worker for managing workflow and activity executions.
+// service 	- thrift connection to the cadence server.
+// groupName 	- is the name you use to identify your client worker, also
+// 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
+// options 	-  configure any worker specific options like logger, metrics, identity.
+func NewWorker(
+	service m.TChanWorkflowService,
+	groupName string,
+	options WorkerOptions,
+) Lifecycle {
+	return newAggregatedWorker(service, groupName, options)
 }

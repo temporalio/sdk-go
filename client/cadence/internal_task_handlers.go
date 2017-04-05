@@ -266,7 +266,7 @@ ProcessEvents:
 		}
 
 		for _, event := range reorderedEvents {
-			wth.logger.Debugf("ProcessWorkflowTask: Id=%d, Event=%+v", event.GetEventId(), event)
+			wth.logger.Debugf("ProcessEvent: Id=%d, EventType=%v", event.GetEventId(), event.GetEventType())
 
 			isInReplay := event.GetEventId() < history.LastNonReplayedID()
 

@@ -8,7 +8,9 @@ import (
 
 	"golang.org/x/net/context"
 
+	"fmt"
 	"github.com/uber-go/cadence-client/common"
+	"reflect"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -90,6 +92,144 @@ func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error
 		return nil, errors.New("missing or negative StartToCloseTimeoutSeconds")
 	}
 	return p, nil
+}
+
+func marshalFunctionArgs(fnName string, args []interface{}) ([]byte, error) {
+	s := fnSignature{FnName: fnName, Args: args}
+	input, err := getHostEnvironment().Encoder().Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {
+	fType := reflect.TypeOf(f)
+	if fType.Kind() != reflect.Func {
+		return fmt.Errorf("Provided type: %v is not a function type", f)
+	}
+	fnName := getFunctionName(f)
+
+	fnArgIndex := 0
+	// Skip Context function argument.
+	if fType.NumIn() > 0 {
+		if isWorkflow && isWorkflowContext(fType.In(0)) {
+			fnArgIndex++
+		}
+		if !isWorkflow && isActivityContext(fType.In(0)) {
+			fnArgIndex++
+		}
+	}
+
+	// Validate provided args match with function order match.
+	if fType.NumIn()-fnArgIndex != len(args) {
+		return fmt.Errorf(
+			"expected %d args for function: %v but found %v",
+			fType.NumIn()-fnArgIndex, fnName, len(args))
+	}
+
+	for i := 0; fnArgIndex < fType.NumIn(); fnArgIndex, i = fnArgIndex+1, i+1 {
+		fnArgType := fType.In(fnArgIndex)
+		argType := reflect.TypeOf(args[i])
+		if !argType.AssignableTo(fnArgType) {
+			return fmt.Errorf(
+				"cannot assign function argument: %d from type: %s to type: %s",
+				fnArgIndex+1, argType, fnArgType,
+			)
+		}
+	}
+
+	return nil
+}
+
+func getValidatedActivityFunction(f interface{}, args []interface{}) (*ActivityType, []byte, error) {
+	fnName := ""
+	fType := reflect.TypeOf(f)
+	switch fType.Kind() {
+	case reflect.String:
+		fnName = reflect.ValueOf(f).String()
+
+	case reflect.Func:
+		if err := validateFunctionArgs(f, args, false); err != nil {
+			return nil, nil, err
+		}
+		fnName = getFunctionName(f)
+
+	default:
+		return nil, nil, fmt.Errorf(
+			"Invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
+	}
+
+	input, err := marshalFunctionArgs(fnName, args)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &ActivityType{Name: fnName}, input, nil
+}
+
+func isActivityContext(inType reflect.Type) bool {
+	contextElem := reflect.TypeOf((*context.Context)(nil)).Elem()
+	return inType.Implements(contextElem)
+}
+
+type fnReturnSignature struct {
+	Ret interface{}
+}
+
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value) ([]byte, error) {
+	fnName := getFunctionName(f)
+	resultSize := len(values)
+
+	if resultSize < 1 || resultSize > 2 {
+		return nil, fmt.Errorf(
+			"The function: %v signature returns %d results, it is expecting to return either error or (result, error)",
+			fnName, resultSize)
+	}
+
+	var result []byte
+	var err error
+
+	// Parse result
+	if resultSize > 1 {
+		r := values[0].Interface()
+		if err := getHostEnvironment().Encoder().Register(r); err != nil {
+			return nil, err
+		}
+		fr := fnReturnSignature{Ret: r}
+		result, err = getHostEnvironment().Encoder().Marshal(fr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Parse error.
+	errValue, ok := values[resultSize-1].Interface().(error)
+	if !ok {
+		return nil, fmt.Errorf(
+			"Failed to parse error result as it is not of error interface: %v",
+			values[resultSize-1].Interface())
+	}
+	return result, errValue
+}
+
+func deSerializeFunctionResult(f interface{}, result []byte) (interface{}, error) {
+	fnType := reflect.TypeOf(f)
+
+	switch fnType.Kind() {
+	case reflect.Func:
+		// We already validated that it either have (result, error) (or) just error.
+		if fnType.NumOut() <= 1 {
+			return nil, nil
+		} else if fnType.NumOut() == 2 {
+			var fr fnReturnSignature
+			if err := getHostEnvironment().Encoder().Unmarshal(result, &fr); err != nil {
+				return nil, err
+			}
+			return fr.Ret, nil
+		}
+	}
+	// For everything we return result.
+	return result, nil
 }
 
 func setActivityParametersIfNotExist(ctx Context) Context {

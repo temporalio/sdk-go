@@ -166,6 +166,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 	handler, ok := wc.scheduledTimers[timerID]
 	if !ok {
+		wc.logger.Debugf("Trying to RequestCancelTimer: %v, but found no timer pending.", timerID)
 		return
 	}
 	cancelTimerAttr := &m.CancelTimerDecisionAttributes{TimerId: common.StringPtr(timerID)}
