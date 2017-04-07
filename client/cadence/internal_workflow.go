@@ -4,15 +4,131 @@ package cadence
 
 import (
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"unicode"
-	"reflect"
+)
+
+type (
+	syncWorkflowDefinition struct {
+		workflow   workflow
+		dispatcher dispatcher
+	}
+
+	workflowResult struct {
+		workflowResult []byte
+		error          error
+	}
+
+	activityClient struct {
+		dispatcher  dispatcher
+		asyncClient asyncActivityClient
+	}
+
+	futureImpl struct {
+		value   interface{}
+		err     error
+		ready   bool
+		channel Channel
+		chained []*futureImpl // Futures that are chained to this one
+	}
+
+	// Dispatcher is a container of a set of coroutines.
+	dispatcher interface {
+		// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
+		// until all of them are completed or blocked on Channel or Selector
+		ExecuteUntilAllBlocked() (err PanicError)
+		// IsDone returns true when all of coroutines are completed
+		IsDone() bool
+		Close()             // Destroys all coroutines without waiting for their completion
+		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+	}
+
+	// Workflow is an interface that any workflow should implement.
+	// Code of a workflow must be deterministic. It must use cadence.Channel, cadence.Selector, and cadence.Go instead of
+	// native channels, select and go. It also must not use range operation over map as it is randomized by go runtime.
+	// All time manipulation should use current time returned by GetTime(ctx) method.
+	// Note that cadence.Context is used instead of context.Context to avoid use of raw channels.
+	workflow interface {
+		Execute(ctx Context, input []byte) (result []byte, err error)
+	}
+
+	valueCallbackPair struct {
+		value    interface{}
+		callback func()
+	}
+
+	channelImpl struct {
+		name            string              // human readable channel name
+		size            int                 // Channel buffer size. 0 for non buffered.
+		buffer          []interface{}       // buffered messages
+		blockedSends    []valueCallbackPair // puts waiting when buffer is full.
+		blockedReceives []func(interface{}) // receives waiting when no messages are available.
+		closed          bool                // true if channel is closed
+	}
+
+	// Single case statement of the Select
+	selectCase struct {
+		channel                 Channel                         // Channel of this case.
+		receiveFunc             *func(v interface{})            // function to call when channel has a message. nil for send case.
+		receiveWithMoreFlagFunc *func(v interface{}, more bool) // function to call when channel has a message. nil for send case.
+
+		sendFunc   *func()                         // function to call when channel accepted a message. nil for receive case.
+		sendValue  *interface{}                    // value to send to the channel. Used only for send case.
+		future     Future                          // Used for future case
+		futureFunc *func(v interface{}, err error) // function to call when Future is ready
+	}
+
+	// Implements Selector interface
+	selectorImpl struct {
+		name        string
+		cases       []selectCase // cases that this select is comprised from
+		defaultFunc *func()      // default case
+	}
+
+	// unblockFunc is passed evaluated by a coroutine yield. When it returns false the yield returns to a caller.
+	// stackDepth is the depth of stack from the last blocking call relevant to user.
+	// Used to truncate internal stack frames from thread stack.
+	unblockFunc func(status string, stackDepth int) (keepBlocked bool)
+
+	coroutineState struct {
+		name         string
+		dispatcher   *dispatcherImpl  // dispatcher this context belongs to
+		aboutToBlock chan bool        // used to notify dispatcher that coroutine that owns this context is about to block
+		unblock      chan unblockFunc // used to notify coroutine that it should continue executing.
+		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
+		closed       bool             // indicates that owning coroutine has finished execution
+		panicError   PanicError       // non nil if coroutine had unhandled panic
+	}
+
+	panicError struct {
+		value      interface{}
+		stackTrace string
+	}
+
+	dispatcherImpl struct {
+		sequence         int
+		channelSequence  int // used to name channels
+		selectorSequence int // used to name channels
+		coroutines       []*coroutineState
+		executing        bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
+		mutex            sync.Mutex // used to synchronize executing
+		closed           bool
+	}
 )
 
 const workflowEnvironmentContextKey = "workflowEnv"
 const workflowResultContextKey = "workflowResult"
+const coroutinesContextKey = "coroutines"
+
+// Assert that structs do indeed implement the interfaces
+var _ Channel = (*channelImpl)(nil)
+var _ Selector = (*selectorImpl)(nil)
+var _ dispatcher = (*dispatcherImpl)(nil)
+
+var stackBuf [100000]byte
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -29,29 +145,6 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 		panic("getWorkflowContext: Not a workflow context")
 	}
 	return wc.(workflowEnvironment)
-}
-
-type syncWorkflowDefinition struct {
-	workflow   Workflow
-	dispatcher dispatcher
-}
-
-type workflowResult struct {
-	workflowResult []byte
-	error          error
-}
-
-type activityClient struct {
-	dispatcher  dispatcher
-	asyncClient asyncActivityClient
-}
-
-type futureImpl struct {
-	value   interface{}
-	err     error
-	ready   bool
-	channel Channel
-	chained []*futureImpl // Futures that are chained to this one
 }
 
 func (f *futureImpl) Get(ctx Context) (interface{}, error) {
@@ -138,21 +231,10 @@ func (d *syncWorkflowDefinition) Close() {
 	}
 }
 
-// Dispatcher is a container of a set of coroutines.
-type dispatcher interface {
-	// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
-	// until all of them are completed or blocked on Channel or Selector
-	ExecuteUntilAllBlocked() (err PanicError)
-	// IsDone returns true when all of coroutines are completed
-	IsDone() bool
-	Close()             // Destroys all coroutines without waiting for their completion
-	StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
-}
-
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
-func newDispatcher(rootCtx Context, root Func) dispatcher {
+func newDispatcher(rootCtx Context, root func(ctx Context)) dispatcher {
 	result := &dispatcherImpl{}
 	result.newCoroutine(rootCtx, root)
 	return result
@@ -186,76 +268,6 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 // For troubleshooting stack pretty printing only.
 // Set to true to see full stack trace that includes framework methods.
 const disableCleanStackTraces = false
-
-type valueCallbackPair struct {
-	value    interface{}
-	callback func()
-}
-
-type channelImpl struct {
-	name            string              // human readable channel name
-	size            int                 // Channel buffer size. 0 for non buffered.
-	buffer          []interface{}       // buffered messages
-	blockedSends    []valueCallbackPair // puts waiting when buffer is full.
-	blockedReceives []func(interface{}) // receives waiting when no messages are available.
-	closed          bool                // true if channel is closed
-}
-
-// Single case statement of the Select
-type selectCase struct {
-	channel                 Channel                         // Channel of this case.
-	receiveFunc             *func(v interface{})            // function to call when channel has a message. nil for send case.
-	receiveWithMoreFlagFunc *func(v interface{}, more bool) // function to call when channel has a message. nil for send case.
-
-	sendFunc   *func()                         // function to call when channel accepted a message. nil for receive case.
-	sendValue  *interface{}                    // value to send to the channel. Used only for send case.
-	future     Future                          // Used for future case
-	futureFunc *func(v interface{}, err error) // function to call when Future is ready
-}
-
-// Implements Selector interface
-type selectorImpl struct {
-	name        string
-	cases       []selectCase // cases that this select is comprised from
-	defaultFunc *func()      // default case
-}
-
-// unblockFunc is passed evaluated by a coroutine yield. When it returns false the yield returns to a caller.
-// stackDepth is the depth of stack from the last blocking call relevant to user.
-// Used to truncate internal stack frames from thread stack.
-type unblockFunc func(status string, stackDepth int) (keepBlocked bool)
-
-type coroutineState struct {
-	name         string
-	dispatcher   *dispatcherImpl  // dispatcher this context belongs to
-	aboutToBlock chan bool        // used to notify dispatcher that coroutine that owns this context is about to block
-	unblock      chan unblockFunc // used to notify coroutine that it should continue executing.
-	keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
-	closed       bool             // indicates that owning coroutine has finished execution
-	panicError   PanicError       // non nil if coroutine had unhandled panic
-}
-
-type panicError struct {
-	value      interface{}
-	stackTrace string
-}
-
-type dispatcherImpl struct {
-	sequence         int
-	channelSequence  int // used to name channels
-	selectorSequence int // used to name channels
-	coroutines       []*coroutineState
-	executing        bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
-	mutex            sync.Mutex // used to synchronize executing
-	closed           bool
-}
-
-// Assert that structs do indeed implement the interfaces
-var _ Channel = (*channelImpl)(nil)
-var _ Selector = (*selectorImpl)(nil)
-var _ dispatcher = (*dispatcherImpl)(nil)
-
-const coroutinesContextKey = "coroutines"
 
 func getState(ctx Context) *coroutineState {
 	s := ctx.Value(coroutinesContextKey)
@@ -458,8 +470,6 @@ func (s *coroutineState) exit() {
 	}
 }
 
-var stackBuf [100000]byte
-
 func (s *coroutineState) stackTrace() string {
 	if s.closed {
 		return ""
@@ -472,11 +482,11 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
-func (s *coroutineState) NewCoroutine(ctx Context, f Func) {
+func (s *coroutineState) NewCoroutine(ctx Context, f func(ctx Context)) {
 	s.dispatcher.newCoroutine(ctx, f)
 }
 
-func (s *coroutineState) NewNamedCoroutine(ctx Context, name string, f Func) {
+func (s *coroutineState) NewNamedCoroutine(ctx Context, name string, f func(ctx Context)) {
 	s.dispatcher.newNamedCoroutine(ctx, name, f)
 }
 
@@ -518,11 +528,11 @@ func (e *panicError) StackTrace() string {
 	return e.stackTrace
 }
 
-func (d *dispatcherImpl) newCoroutine(ctx Context, f Func) {
+func (d *dispatcherImpl) newCoroutine(ctx Context, f func(ctx Context)) {
 	d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
 }
 
-func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f Func) {
+func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx Context)) {
 	state := d.newState(name)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
 	go func(crt *coroutineState) {
@@ -706,7 +716,7 @@ func (s *selectorImpl) Select(ctx Context) {
 }
 
 // NewWorkflowDefinition creates a  WorkflowDefinition from a Workflow
-func NewWorkflowDefinition(workflow Workflow) workflowDefinition {
+func newWorkflowDefinition(workflow workflow) workflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
@@ -735,4 +745,3 @@ func getValidatedWorkerFunction(workflowFunc interface{}, args []interface{}) (*
 	}
 	return &WorkflowType{Name: fnName}, input, nil
 }
-

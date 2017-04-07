@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	"errors"
 	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
@@ -19,22 +20,6 @@ import (
 
 // interfaces
 type (
-	// WorkflowTaskHandler represents workflow task handlers.
-	WorkflowTaskHandler interface {
-		// Process the workflow task
-		ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
-	}
-
-	// ActivityTaskHandler represents activity task handlers.
-	ActivityTaskHandler interface {
-		// Execute the activity task
-		// The return interface{} can have three requests, use switch to find the type of it.
-		// - RespondActivityTaskCompletedRequest
-		// - RespondActivityTaskFailedRequest
-		// - RespondActivityTaskCancelRequest
-		Execute(task *s.PollForActivityTaskResponse) (interface{}, error)
-	}
-
 	// workflowExecutionEventHandler process a single event.
 	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
@@ -59,19 +44,18 @@ type (
 type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		taskListName       string
-		identity           string
 		workflowDefFactory workflowDefinitionFactory
 		metricsScope       tally.Scope
 		ppMgr              pressurePointMgr
 		logger             bark.Logger
+		identity           string
 	}
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
 		taskListName    string
 		identity        string
-		implementations map[ActivityType]Activity
+		implementations map[ActivityType]activity
 		service         m.TChanWorkflowService
 		metricsScope    tally.Scope
 		logger          bark.Logger
@@ -212,20 +196,38 @@ OrderEvents:
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
 func newWorkflowTaskHandler(factory workflowDefinitionFactory,
-	params WorkerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
+	params workerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
 	return &workflowTaskHandlerImpl{
-		taskListName:       params.TaskList,
-		identity:           params.Identity,
 		workflowDefFactory: factory,
 		logger:             params.Logger,
 		ppMgr:              ppMgr,
-		metricsScope:       params.MetricsScope}
+		metricsScope:       params.MetricsScope,
+		identity:           params.Identity}
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
-func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
+	task *s.PollForDecisionTaskResponse,
+	emitStack bool,
+) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
 	if task == nil {
-		return nil, "", fmt.Errorf("nil workflowtask provided")
+		return nil, "", errors.New("nil workflowtask provided")
+	}
+	h := task.GetHistory()
+	if h == nil || len(h.Events) == 0 {
+		return nil, "", errors.New("nil or empty history")
+	}
+	event := h.Events[0]
+	if h == nil {
+		return nil, "", errors.New("nil first history event")
+	}
+	attributes := event.GetWorkflowExecutionStartedEventAttributes()
+	if attributes == nil {
+		return nil, "", errors.New("first history event is not WorkflowExecutionStarted")
+	}
+	taskList := attributes.GetTaskList()
+	if taskList == nil {
+		return nil, "", errors.New("nil TaskList in WorkflowExecutionStarted event")
 	}
 
 	wth.logger.Debugf("Processing New Workflow Task: Type=%s, PreviousStartedEventId=%d",
@@ -234,7 +236,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionT
 	// Setup workflow Info
 	workflowInfo := &WorkflowInfo{
 		WorkflowType: flowWorkflowTypeFrom(*task.WorkflowType),
-		TaskListName: wth.taskListName,
+		TaskListName: taskList.GetName(),
 		// workflowExecution
 	}
 
@@ -251,7 +253,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionT
 	eventHandler := newWorkflowExecutionEventHandler(
 		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
 	defer eventHandler.Close()
-	history := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
+	reorderedHistory := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
 	unhandledDecision := false
 
@@ -260,7 +262,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(task *s.PollForDecisionT
 	// Process events
 ProcessEvents:
 	for {
-		reorderedEvents := history.NextEvents()
+		reorderedEvents := reorderedHistory.NextEvents()
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
@@ -268,7 +270,7 @@ ProcessEvents:
 		for _, event := range reorderedEvents {
 			wth.logger.Debugf("ProcessEvent: Id=%d, EventType=%v", event.GetEventId(), event.GetEventType())
 
-			isInReplay := event.GetEventId() < history.LastNonReplayedID()
+			isInReplay := event.GetEventId() < reorderedHistory.LastNonReplayedID()
 
 			// Any metrics.
 			wth.reportAnyMetrics(event, isInReplay)
@@ -354,13 +356,13 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEve
 	if wth.ppMgr != nil && !reflect.ValueOf(wth.ppMgr).IsNil() && !isInReplay {
 		switch event.GetEventType() {
 		case s.EventType_DecisionTaskStarted:
-			return wth.ppMgr.Execute(PressurePointTypeDecisionTaskStartTimeout)
+			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskStartTimeout)
 		case s.EventType_ActivityTaskScheduled:
-			return wth.ppMgr.Execute(PressurePointTypeActivityTaskScheduleTimeout)
+			return wth.ppMgr.Execute(pressurePointTypeActivityTaskScheduleTimeout)
 		case s.EventType_ActivityTaskStarted:
-			return wth.ppMgr.Execute(PressurePointTypeActivityTaskStartTimeout)
+			return wth.ppMgr.Execute(pressurePointTypeActivityTaskStartTimeout)
 		case s.EventType_DecisionTaskCompleted:
-			return wth.ppMgr.Execute(PressurePointTypeDecisionTaskCompleted)
+			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskCompleted)
 		}
 	}
 	return nil
@@ -375,9 +377,9 @@ func (wth *workflowTaskHandlerImpl) reportAnyMetrics(event *s.HistoryEvent, isIn
 	}
 }
 
-func newActivityTaskHandler(activities []Activity,
-	service m.TChanWorkflowService, params WorkerExecutionParameters) ActivityTaskHandler {
-	implementations := make(map[ActivityType]Activity)
+func newActivityTaskHandler(activities []activity,
+	service m.TChanWorkflowService, params workerExecutionParameters) ActivityTaskHandler {
+	implementations := make(map[ActivityType]activity)
 	for _, a := range activities {
 		implementations[a.ActivityType()] = a
 	}
@@ -410,7 +412,7 @@ func newServiceInvoker(taskToken []byte, identity string, service m.TChanWorkflo
 
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (interface{}, error) {
-	ath.logger.Debugf("[WorkflowID: %s] Execute Activity: %s",
+	ath.logger.Debugf("[WorkflowID: %s] Execute activity: %s",
 		t.GetWorkflowExecution().GetWorkflowId(), t.GetActivityType().GetName())
 
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service)

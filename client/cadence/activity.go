@@ -13,12 +13,6 @@ type (
 		Name string
 	}
 
-	// Activity is an interface of an activity implementation.
-	Activity interface {
-		Execute(ctx context.Context, input []byte) ([]byte, error)
-		ActivityType() ActivityType
-	}
-
 	// ActivityInfo contains information about currently executing activity.
 	ActivityInfo struct {
 		TaskToken         []byte
@@ -27,6 +21,25 @@ type (
 		ActivityType      ActivityType
 	}
 )
+
+// RegisterActivity - register a activity function with the framework.
+// A activity takes a context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
+//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
+//	func sampleActivity(ctx context.Context) (err error)
+//	func sampleActivity() (result string, err error)
+//	func sampleActivity(arg1 bool) (result int, err error)
+//	func sampleActivity(arg1 bool) (err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+// This method calls panic if activityFunc doesn't comply with the expected format.
+func RegisterActivity(activityFunc interface{}) {
+	thImpl := getHostEnvironment()
+	err := thImpl.RegisterActivity(activityFunc)
+	if err != nil {
+		panic(err)
+	}
+}
 
 // GetActivityInfo returns information about currently executing activity.
 func GetActivityInfo(ctx context.Context) ActivityInfo {
@@ -46,7 +59,7 @@ func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
 	return env.serviceInvoker.Heartbeat(details)
 }
 
-// ServiceInvoker abstracts calls to the Cadence service from an Activity implementation.
+// ServiceInvoker abstracts calls to the Cadence service from an activity implementation.
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled

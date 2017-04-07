@@ -10,46 +10,74 @@ var (
 	errActivityParamsBadRequest = errors.New("missing activity parameters through context, check ActivityOptions")
 )
 
-// Channel must be used instead of native go channel by workflow code.
-// Use Context.NewChannel method to create an instance.
-type Channel interface {
-	Receive(ctx Context) (v interface{})
-	ReceiveWithMoreFlag(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
-	ReceiveAsync() (v interface{}, ok bool)                        // ok is true when value was returned
-	ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
-	Send(ctx Context, v interface{})
-	SendAsync(v interface{}) (ok bool) // ok when value was sent
-	Close()                            // prohibit sends
-}
+type (
 
-// Selector must be used instead of native go select by workflow code
-// Use Context.NewSelector method to create an instance.
-type Selector interface {
-	AddReceive(c Channel, f func(v interface{})) Selector
-	AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector
-	AddSend(c Channel, v interface{}, f func()) Selector
-	AddFuture(future Future, f func(v interface{}, err error)) Selector
-	AddDefault(f func())
-	Select(ctx Context)
-}
+	// Channel must be used instead of native go channel by workflow code.
+	// Use Context.NewChannel method to create an instance.
+	Channel interface {
+		Receive(ctx Context) (v interface{})
+		ReceiveWithMoreFlag(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
+		ReceiveAsync() (v interface{}, ok bool)                        // ok is true when value was returned
+		ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
+		Send(ctx Context, v interface{})
+		SendAsync(v interface{}) (ok bool) // ok when value was sent
+		Close()                            // prohibit sends
+	}
 
-// Future represents the result of an asynchronous computation.
-type Future interface {
-	Get(ctx Context) (interface{}, error)
-	IsReady() bool
-}
+	// Selector must be used instead of native go select by workflow code
+	// Use Context.NewSelector method to create an instance.
+	Selector interface {
+		AddReceive(c Channel, f func(v interface{})) Selector
+		AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector
+		AddSend(c Channel, v interface{}, f func()) Selector
+		AddFuture(future Future, f func(v interface{}, err error)) Selector
+		AddDefault(f func())
+		Select(ctx Context)
+	}
 
-// Settable is used to set value or error on a future.
-// See NewFuture function.
-type Settable interface {
-	Set(value interface{}, err error)
-	SetValue(value interface{})
-	SetError(err error)
-	Chain(future Future) // Value (or error) of the future become the same of the chained one.
-}
+	// Future represents the result of an asynchronous computation.
+	Future interface {
+		Get(ctx Context) (interface{}, error)
+		IsReady() bool
+	}
 
-// Func is a body of a coroutine which should be used instead of goroutines by the workflow code
-type Func func(ctx Context)
+	// Settable is used to set value or error on a future.
+	// See NewFuture function.
+	Settable interface {
+		Set(value interface{}, err error)
+		SetValue(value interface{})
+		SetError(err error)
+		Chain(future Future) // Value (or error) of the future become the same of the chained one.
+	}
+
+	// WorkflowType identifies a workflow type.
+	WorkflowType struct {
+		Name string
+	}
+
+	// WorkflowExecution Details.
+	WorkflowExecution struct {
+		ID    string
+		RunID string
+	}
+)
+
+// RegisterWorkflow - registers a workflow function with the framework.
+// A workflow takes a cadence context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleWorkflow(ctx cadence.Context, input []byte) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int, arg2 string) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int) (result string, err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+// This method calls panic if workflowFunc doesn't comply with the expected format.
+func RegisterWorkflow(workflowFunc interface{}) {
+	thImpl := getHostEnvironment()
+	err := thImpl.RegisterWorkflow(workflowFunc)
+	if err != nil {
+		panic(err)
+	}
+}
 
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
@@ -89,7 +117,7 @@ func NewNamedSelector(ctx Context, name string) Selector {
 }
 
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
-func Go(ctx Context, f Func) {
+func Go(ctx Context, f func(ctx Context)) {
 	state := getState(ctx)
 	state.dispatcher.newCoroutine(ctx, f)
 }
@@ -97,7 +125,7 @@ func Go(ctx Context, f Func) {
 // GoNamed creates a new coroutine with a given human readable name.
 // It has similar semantic to goroutine in a context of the workflow.
 // Name appears in stack traces that are blocked on this Channel.
-func GoNamed(ctx Context, name string, f Func) {
+func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	state := getState(ctx)
 	state.dispatcher.newNamedCoroutine(ctx, name, f)
 }
@@ -106,15 +134,6 @@ func GoNamed(ctx Context, name string, f Func) {
 func NewFuture(ctx Context) (Future, Settable) {
 	impl := &futureImpl{channel: NewChannel(ctx)}
 	return impl, impl
-}
-
-// Workflow is an interface that any workflow should implement.
-// Code of a workflow must be deterministic. It must use cadence.Channel, cadence.Selector, and cadence.Go instead of
-// native channels, select and go. It also must not use range operation over map as it is randomized by go runtime.
-// All time manipulation should use current time returned by GetTime(ctx) method.
-// Note that cadence.Context is used instead of context.Context to avoid use of raw channels.
-type Workflow interface {
-	Execute(ctx Context, input []byte) (result []byte, err error)
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.

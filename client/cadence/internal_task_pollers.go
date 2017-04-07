@@ -79,7 +79,7 @@ func isServiceTransientError(err error) bool {
 	return true
 }
 
-func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService, params WorkerExecutionParameters) *workflowTaskPoller {
+func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      service,
 		taskListName: params.TaskList,
@@ -158,7 +158,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 }
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkflowService,
-	params WorkerExecutionParameters) *activityTaskPoller {
+	params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		taskHandler:  taskHandler,
 		service:      service,
@@ -232,7 +232,7 @@ func reportActivityComplete(service m.TChanWorkflowService, request interface{})
 
 	ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 	defer cancel()
-	var reportErr error = nil
+	var reportErr error
 	switch request := request.(type) {
 	case *s.RespondActivityTaskCanceledRequest:
 		reportErr = backoff.Retry(
@@ -255,7 +255,7 @@ func reportActivityComplete(service m.TChanWorkflowService, request interface{})
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken, result []byte, err error) interface{} {
-	if err == ActivityResultPendingError {
+	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
 		return nil

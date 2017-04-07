@@ -66,10 +66,10 @@ func newSampleWorkflowTaskHandler(factory workflowDefinitionFactory) *sampleWork
 
 // Sample ActivityTaskHandler
 type sampleActivityTaskHandler struct {
-	activityRegistry map[m.ActivityType]*Activity
+	activityRegistry map[m.ActivityType]*activity
 }
 
-func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*Activity) *sampleActivityTaskHandler {
+func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*activity) *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
 }
 
@@ -132,7 +132,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
-	activationRegistry := make(map[m.ActivityType]*Activity)
+	activationRegistry := make(map[m.ActivityType]*activity)
 	taskHandler := newSampleActivityTaskHandler(activationRegistry)
 	request, err := taskHandler.Execute(response)
 	s.NoError(err)

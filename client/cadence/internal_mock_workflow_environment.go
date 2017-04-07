@@ -6,28 +6,28 @@ import (
 	mock "github.com/stretchr/testify/mock"
 )
 
-// MockWorkflowEnvironment is an mock type for the workflowEnvironment type
-type MockWorkflowEnvironment struct {
+// mockWorkflowEnvironment is an mock type for the workflowEnvironment type
+type mockWorkflowEnvironment struct {
 	mock.Mock
 }
 
 // RequestCancelActivity provides a mock function with given fields: activityID
-func (_m *MockWorkflowEnvironment) RequestCancelActivity(activityID string) {
+func (_m *mockWorkflowEnvironment) RequestCancelActivity(activityID string) {
 	_m.Called(activityID)
 }
 
 // RequestCancelTimer provides a mock function with given fields: timerID
-func (_m *MockWorkflowEnvironment) RequestCancelTimer(timerID string) {
+func (_m *mockWorkflowEnvironment) RequestCancelTimer(timerID string) {
 	_m.Called(timerID)
 }
 
 // Complete provides a mock function with given fields: result, err
-func (_m *MockWorkflowEnvironment) Complete(result []byte, err error) {
+func (_m *mockWorkflowEnvironment) Complete(result []byte, err error) {
 	_m.Called(result, err)
 }
 
 // ExecuteActivity provides a mock function with given fields: parameters, callback
-func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
+func (_m *mockWorkflowEnvironment) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
 	ret := _m.Called(parameters, callback)
 
 	var r0 *activityInfo
@@ -43,7 +43,7 @@ func (_m *MockWorkflowEnvironment) ExecuteActivity(parameters executeActivityPar
 }
 
 // NewTimer provides a mock function with given fields: d, callback
-func (_m *MockWorkflowEnvironment) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
+func (_m *mockWorkflowEnvironment) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
 	ret := _m.Called(d, callback)
 
 	var r0 *timerInfo
@@ -59,7 +59,7 @@ func (_m *MockWorkflowEnvironment) NewTimer(d time.Duration, callback resultHand
 }
 
 // Now provides a mock function with given fields:
-func (_m *MockWorkflowEnvironment) Now() time.Time {
+func (_m *mockWorkflowEnvironment) Now() time.Time {
 	ret := _m.Called()
 
 	var r0 time.Time
@@ -73,7 +73,7 @@ func (_m *MockWorkflowEnvironment) Now() time.Time {
 }
 
 // WorkflowInfo provides a mock function with given fields:
-func (_m *MockWorkflowEnvironment) WorkflowInfo() *WorkflowInfo {
+func (_m *mockWorkflowEnvironment) WorkflowInfo() *WorkflowInfo {
 	ret := _m.Called()
 
 	var r0 *WorkflowInfo
@@ -88,4 +88,4 @@ func (_m *MockWorkflowEnvironment) WorkflowInfo() *WorkflowInfo {
 	return r0
 }
 
-var _ workflowEnvironment = (*MockWorkflowEnvironment)(nil)
+var _ workflowEnvironment = (*mockWorkflowEnvironment)(nil)

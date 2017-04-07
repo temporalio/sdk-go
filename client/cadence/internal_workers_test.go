@@ -38,7 +38,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
-	executionParameters := WorkerExecutionParameters{
+	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger: logger,
@@ -56,13 +56,13 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
-	executionParameters := WorkerExecutionParameters{
+	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger: logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler(nil)}
-	activityWorker := newActivityWorkerInternal([]Activity{&greeterActivity{}}, service, executionParameters, overrides)
+	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, executionParameters, overrides)
 	activityWorker.Start()
 	activityWorker.Stop()
 }
@@ -72,7 +72,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
-	executionParameters := WorkerExecutionParameters{
+	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
 	}

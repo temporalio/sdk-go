@@ -25,7 +25,7 @@ type (
 		cancelActivity bool
 	}
 
-	// Greeter Activity
+	// Greeter activity
 	greeterActivity struct {
 	}
 
@@ -96,7 +96,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	logger := bark.NewLoggerFromLogrus(log.New())
 
 	// Workflow execution parameters.
-	workflowExecutionParameters := WorkerExecutionParameters{
+	workflowExecutionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 4,
 		Logger: logger,
@@ -118,14 +118,14 @@ func (s *InterfacesTestSuite) TestInterface() {
 	workflowWorker.Start()
 
 	// Create activity execution parameters.
-	activityExecutionParameters := WorkerExecutionParameters{
+	activityExecutionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 10,
 		Logger: logger,
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := NewActivityWorker([]Activity{&greeterActivity{}}, service, activityExecutionParameters)
+	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, activityExecutionParameters, nil)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 
@@ -136,8 +136,8 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := NewWorkflowClient(service, nil, "")
-	wfExecution, err := workflowClient.StartWorkflowExecution(workflowOptions, "workflowType")
+	workflowClient := NewClient(service, nil)
+	wfExecution, err := workflowClient.StartWorkflow(workflowOptions, "workflowType")
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)
 }
