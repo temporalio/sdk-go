@@ -112,3 +112,20 @@ func NewActivityTaskHandler(service m.TChanWorkflowService, identity string, log
 		service,
 		params)
 }
+
+// AddWorkflowRegistrationInterceptor adds interceptor that is called for each RegisterWorkflow call.
+// This function guarantees that the interceptor function is called for each registration even
+// if it itself is called from init()
+func AddWorkflowRegistrationInterceptor(
+	i func(name string, workflow interface{}) (string, interface{}),
+) {
+	getHostEnvironment().AddWorkflowRegistrationInterceptor(i)
+}
+
+// AddActivityRegistrationInterceptor adds interceptor that is called for each RegisterActivity call.
+// This function guarantees that the interceptor function is called for each registration even
+// if it itself is called from init()
+func AddActivityRegistrationInterceptor(
+	i func(name string, activity interface{}) (string, interface{})) {
+	getHostEnvironment().AddActivityRegistrationInterceptor(i)
+}

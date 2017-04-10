@@ -16,15 +16,56 @@ import (
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/mocks"
+	"sort"
 )
+
+// Used to test registration listeners
+var registeredActivities []string
+var registeredWorkflows []string
 
 func init() {
 	RegisterWorkflow(sampleWorkflowExecute)
+	AddWorkflowRegistrationInterceptor(func(workflowName string, workflow interface{}) (string, interface{}) {
+		registeredWorkflows = append(registeredWorkflows, workflowName)
+		return workflowName, workflow
+	})
 	RegisterWorkflow(testReplayWorkflow)
 
 	RegisterActivity(testActivity)
 	RegisterActivity(testActivityByteArgs)
+	AddActivityRegistrationInterceptor(func(activityName string, activity interface{}) (string, interface{}) {
+		registeredActivities = append(registeredActivities, activityName)
+		return activityName, activity
+
+	})
 	RegisterActivity(testActivityMultipleArgs)
+}
+
+func TestActivityRegistrationListener(t *testing.T) {
+	require.Equal(t, 3, len(registeredActivities))
+	expectedActivities := []string{
+		"github.com/uber-go/cadence-client/client/cadence.testActivity",
+		"github.com/uber-go/cadence-client/client/cadence.testActivityByteArgs",
+		"github.com/uber-go/cadence-client/client/cadence.testActivityMultipleArgs",
+	}
+	sort.Strings(expectedActivities)
+	expected := strings.Join(expectedActivities, ",")
+	sort.Strings(registeredActivities)
+	registered := strings.Join(registeredActivities, ",")
+	require.Equal(t, expected, registered)
+}
+
+func TestWorkflowRegistrationListener(t *testing.T) {
+	require.Equal(t, 2, len(registeredWorkflows))
+	expectedWorkflows := []string{
+		"github.com/uber-go/cadence-client/client/cadence.sampleWorkflowExecute",
+		"github.com/uber-go/cadence-client/client/cadence.testReplayWorkflow",
+	}
+	sort.Strings(expectedWorkflows)
+	expected := strings.Join(expectedWorkflows, ",")
+	sort.Strings(registeredWorkflows)
+	registered := strings.Join(registeredWorkflows, ",")
+	require.Equal(t, expected, registered)
 }
 
 func getLogger() bark.Logger {
