@@ -72,6 +72,7 @@ enum EventType {
   CancelTimerFailed,
   TimerCanceled,
   MarkerRecorded,
+  WorkflowExecutionTerminated,
 }
 
 enum WorkflowCompleteFailedCause {
@@ -95,9 +96,18 @@ struct WorkflowExecution {
   20: optional string runId
 }
 
+struct WorkflowExecutionInfo {
+  10: optional WorkflowExecution execution
+  20: optional WorkflowType type
+  30: optional i64 (js.type = "Long") startTime
+  40: optional i64 (js.type = "Long") closeTime
+
+}
+
 struct ScheduleActivityTaskDecisionAttributes {
   10: optional string activityId
   20: optional ActivityType activityType
+  25: optional string domain
   30: optional TaskList taskList
   40: optional binary input
   45: optional i32 scheduleToCloseTimeoutSeconds
@@ -200,6 +210,7 @@ struct DecisionTaskTimedOutEventAttributes {
 struct ActivityTaskScheduledEventAttributes {
   10: optional string activityId
   20: optional ActivityType activityType
+  25: optional string domain
   30: optional TaskList taskList
   40: optional binary input
   45: optional i32 scheduleToCloseTimeoutSeconds
@@ -287,6 +298,12 @@ struct MarkerRecordedEventAttributes {
   30: optional i64 (js.type = "Long") decisionTaskCompletedEventId
 }
 
+struct WorkflowExecutionTerminatedEventAttributes {
+  10: optional string reason
+  20: optional binary details
+  30: optional string identity
+}
+
 struct HistoryEvent {
   10:  optional i64 (js.type = "Long") eventId
   20:  optional i64 (js.type = "Long") timestamp
@@ -313,10 +330,24 @@ struct HistoryEvent {
   140: optional TimerCanceledEventAttributes timerCanceledEventAttributes
   150: optional CancelTimerFailedEventAttributes cancelTimerFailedEventAttributes
   160: optional MarkerRecordedEventAttributes markerRecordedEventAttributes
+  170: optional WorkflowExecutionTerminatedEventAttributes workflowExecutionTerminatedEventAttributes
 }
 
 struct History {
   10: optional list<HistoryEvent> events
+}
+
+struct WorkflowExecutionFilter {
+  10: optional string workflowId
+}
+
+struct WorkflowTypeFilter {
+  10: optional string name
+}
+
+struct StartTimeFilter {
+  10: optional i64 (js.type = "Long") earliestTime
+  20: optional i64 (js.type = "Long") latestTime
 }
 
 struct DomainInfo {
@@ -339,8 +370,9 @@ struct UpdateDomainInfo {
 struct RegisterDomainRequest {
   10: optional string name
   20: optional string description
-  30: optional i32 workflowExecutionRetentionPeriodInDays
-  40: optional bool emitMetric
+  30: optional string ownerEmail
+  40: optional i32 workflowExecutionRetentionPeriodInDays
+  50: optional bool emitMetric
 }
 
 struct DescribeDomainRequest {
@@ -457,3 +489,40 @@ struct GetWorkflowExecutionHistoryRequest {
 struct GetWorkflowExecutionHistoryResponse {
   10: optional History history
 }
+
+struct TerminateWorkflowExecutionRequest {
+  10: optional string domain
+  20: optional WorkflowExecution workflowExecution
+  30: optional string reason
+  40: optional binary details
+  50: optional string identity
+}
+
+struct ListOpenWorkflowExecutionsRequest {
+  10: optional string domain
+  20: optional i32 maximumPageSize
+  30: optional binary nextPageToken
+  40: optional StartTimeFilter StartTimeFilter
+  50: optional WorkflowExecutionFilter executionFilter
+  60: optional WorkflowTypeFilter typeFilter
+}
+
+struct ListOpenWorkflowExecutionsResponse {
+  10: optional list<WorkflowExecutionInfo> executions
+  20: optional binary nextPageToken
+}
+
+struct ListClosedWorkflowExecutionsRequest {
+  10: optional string domain
+  20: optional i32 maximumPageSize
+  30: optional binary nextPageToken
+  40: optional StartTimeFilter StartTimeFilter
+  50: optional WorkflowExecutionFilter executionFilter
+  60: optional WorkflowTypeFilter typeFilter
+}
+
+struct ListClosedWorkflowExecutionsResponse {
+  10: optional list<WorkflowExecutionInfo> executions
+  20: optional binary nextPageToken
+}
+

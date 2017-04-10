@@ -177,4 +177,35 @@ service WorkflowService {
       2: shared.InternalServiceError internalServiceError,
       3: shared.EntityNotExistsError entityNotExistError,
     )
+
+  /**
+  * TerminateWorkflowExecution terminates an existing workflow execution by recording WorkflowExecutionTerminated event
+  * in the history and immediately terminating the execution instance.
+  **/
+  void TerminateWorkflowExecution(1: shared.TerminateWorkflowExecutionRequest terminateRequest)
+    throws (
+      1: shared.BadRequestError badRequestError,
+      2: shared.InternalServiceError internalServiceError,
+      3: shared.EntityNotExistsError entityNotExistError,
+    )
+
+  /**
+  * ListOpenWorkflowExecutions is a visibility API to list the open executions in a specific domain.
+  **/
+  shared.ListOpenWorkflowExecutionsResponse ListOpenWorkflowExecutions(1: shared.ListOpenWorkflowExecutionsRequest listRequest)
+    throws (
+      1: shared.BadRequestError badRequestError,
+      2: shared.InternalServiceError internalServiceError,
+      3: shared.EntityNotExistsError entityNotExistError,
+    )
+
+  /**
+  * ListClosedWorkflowExecutions is a visibility API to list the closed executions in a specific domain.
+  **/
+  shared.ListClosedWorkflowExecutionsResponse ListClosedWorkflowExecutions(1: shared.ListClosedWorkflowExecutionsRequest listRequest)
+    throws (
+      1: shared.BadRequestError badRequestError,
+      2: shared.InternalServiceError internalServiceError,
+      3: shared.EntityNotExistsError entityNotExistError,
+    )
 }
