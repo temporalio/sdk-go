@@ -61,13 +61,15 @@ func NewWorkerOptions() WorkerOptions {
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // service 	- thrift connection to the cadence server.
+// domain - the name of the cadence domain.
 // groupName 	- is the name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
 func NewWorker(
 	service m.TChanWorkflowService,
+	domain string,
 	groupName string,
 	options WorkerOptions,
 ) Worker {
-	return newAggregatedWorker(service, groupName, options)
+	return newAggregatedWorker(service, domain, groupName, options)
 }

@@ -50,7 +50,7 @@ type (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service m.TChanWorkflowService, options *ClientOptions) Client {
+func NewClient(service m.TChanWorkflowService, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -61,5 +61,10 @@ func NewClient(service m.TChanWorkflowService, options *ClientOptions) Client {
 	if options != nil {
 		metricScope = options.MetricsScope
 	}
-	return &workflowClient{workflowService: service, metricsScope: metricScope, identity: identity}
+	return &workflowClient{
+		workflowService: service,
+		domain:          domain,
+		metricsScope:    metricScope,
+		identity:        identity,
+	}
 }

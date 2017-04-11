@@ -15,6 +15,7 @@ type (
 	workflowClient struct {
 		workflowExecution WorkflowExecution
 		workflowService   m.TChanWorkflowService
+		domain            string
 		metricsScope      tally.Scope
 		identity          string
 	}
@@ -43,6 +44,7 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	startRequest := &s.StartWorkflowExecutionRequest{
+		Domain:       common.StringPtr(wc.domain),
 		RequestId:    common.StringPtr(uuid.New()),
 		WorkflowId:   common.StringPtr(workflowID),
 		WorkflowType: workflowTypePtr(*workflowType),
@@ -82,6 +84,7 @@ func (wc *workflowClient) StartWorkflow(
 // GetWorkflowHistory gets history of a particular workflow.
 func (wc *workflowClient) GetWorkflowHistory(workflowID string, runID string) (*s.History, error) {
 	request := &s.GetWorkflowExecutionHistoryRequest{
+		Domain: common.StringPtr(wc.domain),
 		Execution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
 			RunId:      common.StringPtr(runID),

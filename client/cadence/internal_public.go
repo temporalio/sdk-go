@@ -47,6 +47,7 @@ func NewWorkerOptionsInternal(testTags map[string]map[string]string) WorkerOptio
 func NewWorkflowTaskWorker(
 	taskHandler WorkflowTaskHandler,
 	service m.TChanWorkflowService,
+	domain string,
 	taskList string,
 	options WorkerOptions,
 ) (worker Worker) {
@@ -60,7 +61,7 @@ func NewWorkflowTaskWorker(
 	}
 
 	processTestTags(wOptions, &workerParams)
-	return newWorkflowTaskWorkerInternal(taskHandler, service, workerParams)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, workerParams)
 }
 
 // NewActivityTaskWorker returns instance of an activity task handler worker.
@@ -68,6 +69,7 @@ func NewWorkflowTaskWorker(
 func NewActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
 	service m.TChanWorkflowService,
+	domain string,
 	taskList string,
 	options WorkerOptions,
 ) Worker {
@@ -81,7 +83,7 @@ func NewActivityTaskWorker(
 	}
 
 	processTestTags(wOptions, &workerParams)
-	return newActivityTaskWorker(taskHandler, service, workerParams)
+	return newActivityTaskWorker(taskHandler, service, domain, workerParams)
 }
 
 // NewWorkflowTaskHandler creates an instance of a WorkflowTaskHandler from a decision poll response

@@ -43,6 +43,7 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     m.TChanWorkflowService
+		domain              string
 		poller              taskPoller // taskPoller to poll the tasks.
 		worker              *baseWorker
 		identity            string
@@ -57,6 +58,7 @@ type (
 		executionParameters workerExecutionParameters
 		activityRegistry    activityRegistry
 		workflowService     m.TChanWorkflowService
+		domain              string
 		poller              *activityTaskPoller
 		worker              *baseWorker
 		identity            string
@@ -94,10 +96,11 @@ type (
 func newWorkflowWorker(
 	factory workflowDefinitionFactory,
 	service m.TChanWorkflowService,
+	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
 ) Worker {
-	return newWorkflowWorkerInternal(factory, service, params, ppMgr, nil)
+	return newWorkflowWorkerInternal(factory, service, domain, params, ppMgr, nil)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -114,6 +117,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func newWorkflowWorkerInternal(
 	factory workflowDefinitionFactory,
 	service m.TChanWorkflowService,
+	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
 	overrides *workerOverrides,
@@ -126,18 +130,20 @@ func newWorkflowWorkerInternal(
 	} else {
 		taskHandler = newWorkflowTaskHandler(factory, params, ppMgr)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, params)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, params)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
 	service m.TChanWorkflowService,
+	domain string,
 	params workerExecutionParameters,
 ) Worker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(
 		taskHandler,
 		service,
+		domain,
 		params,
 	)
 	worker := newBaseWorker(baseWorkerOptions{
@@ -171,6 +177,7 @@ func (ww *workflowWorker) Stop() {
 func newActivityWorker(
 	activities []activity,
 	service m.TChanWorkflowService,
+	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 ) Worker {
@@ -182,17 +189,19 @@ func newActivityWorker(
 	} else {
 		taskHandler = newActivityTaskHandler(activities, service, params)
 	}
-	return newActivityTaskWorker(taskHandler, service, params)
+	return newActivityTaskWorker(taskHandler, service, domain, params)
 }
 
 func newActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
 	service m.TChanWorkflowService,
+	domain string,
 	workerParams workerExecutionParameters) (worker Worker) {
 
 	poller := newActivityTaskPoller(
 		taskHandler,
 		service,
+		domain,
 		workerParams,
 	)
 	base := newBaseWorker(baseWorkerOptions{
@@ -662,6 +671,7 @@ func (aw *aggregatedWorker) Stop() {
 // aggregatedWorker returns an instance to manage the workers.
 func newAggregatedWorker(
 	service m.TChanWorkflowService,
+	domain string,
 	groupName string,
 	options WorkerOptions,
 ) (worker Worker) {
@@ -685,6 +695,7 @@ func newAggregatedWorker(
 			workflowWorker = newWorkflowWorkerWithPressurePoints(
 				workflowFactory,
 				service,
+				domain,
 				workerParams,
 				wOptions.testTags,
 			)
@@ -692,6 +703,7 @@ func newAggregatedWorker(
 			workflowWorker = newWorkflowWorker(
 				getWorkflowDefinitionFactory(workflowFactory),
 				service,
+				domain,
 				workerParams,
 				nil)
 		}
@@ -706,6 +718,7 @@ func newAggregatedWorker(
 			activityWorker = newActivityWorker(
 				activityTypes,
 				service,
+				domain,
 				workerParams,
 				nil,
 			)

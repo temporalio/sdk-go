@@ -94,7 +94,7 @@ func TestInterfacesTestSuite(t *testing.T) {
 
 func (s *InterfacesTestSuite) TestInterface() {
 	logger := bark.NewLoggerFromLogrus(log.New())
-
+	domain := "testDomain"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -113,7 +113,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(testWorkflowDefinitionFactory, service, workflowExecutionParameters, nil)
+	workflowWorker := newWorkflowWorker(testWorkflowDefinitionFactory, service, domain, workflowExecutionParameters, nil)
 	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
@@ -125,7 +125,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, activityExecutionParameters, nil)
+	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, domain, activityExecutionParameters, nil)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 
@@ -136,7 +136,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeoutSeconds:    10,
 		DecisionTaskStartToCloseTimeoutSeconds: 10,
 	}
-	workflowClient := NewClient(service, nil)
+	workflowClient := NewClient(service, domain, nil)
 	wfExecution, err := workflowClient.StartWorkflow(workflowOptions, "workflowType")
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)

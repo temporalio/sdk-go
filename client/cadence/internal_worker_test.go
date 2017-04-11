@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"sort"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -16,7 +18,6 @@ import (
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/mocks"
-	"sort"
 )
 
 // Used to test registration listeners
@@ -153,6 +154,8 @@ func TestCreateWorker(t *testing.T) {
 	service := new(mocks.TChanWorkflowService)
 	logger := getLogger()
 
+	domain := "testDomain"
+
 	workflowID := "w1"
 	runID := "r1"
 	activityType := "github.com/uber-go/cadence-client/client/cadence.testActivity"
@@ -197,6 +200,7 @@ func TestCreateWorker(t *testing.T) {
 	// Start Worker.
 	worker := NewWorker(
 		service,
+		domain,
 		"testGroupName2",
 		workerOptions)
 	err = worker.Start()
@@ -208,7 +212,8 @@ func TestCreateWorker(t *testing.T) {
 
 func TestCompleteActivity(t *testing.T) {
 	mockService := new(mocks.TChanWorkflowService)
-	wfClient := NewClient(mockService, nil)
+	domain := "testDomain"
+	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil).Run(
 		func(args mock.Arguments) {
@@ -235,7 +240,8 @@ func TestCompleteActivity(t *testing.T) {
 
 func TestRecordActivityHeartbeat(t *testing.T) {
 	mockService := new(mocks.TChanWorkflowService)
-	wfClient := NewClient(mockService, nil)
+	domain := "testDomain"
+	wfClient := NewClient(mockService, domain, nil)
 	var heartbeatRequest *s.RecordActivityTaskHeartbeatRequest
 	cancelRequested := false
 	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}

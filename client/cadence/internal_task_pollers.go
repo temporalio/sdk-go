@@ -38,6 +38,7 @@ type (
 
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
+		domain       string
 		taskListName string
 		identity     string
 		service      m.TChanWorkflowService
@@ -48,6 +49,7 @@ type (
 
 	// activityTaskPoller implements polling/processing a workflow task
 	activityTaskPoller struct {
+		domain       string
 		taskListName string
 		identity     string
 		service      m.TChanWorkflowService
@@ -79,9 +81,11 @@ func isServiceTransientError(err error) bool {
 	return true
 }
 
-func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService, params workerExecutionParameters) *workflowTaskPoller {
+func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService,
+	domain string, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      service,
+		domain:       domain,
 		taskListName: params.TaskList,
 		identity:     params.Identity,
 		taskHandler:  taskHandler,
@@ -140,6 +144,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	wtp.logger.Debug("workflowTaskPoller::Poll")
 	request := &s.PollForDecisionTaskRequest{
+		Domain:   common.StringPtr(wtp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
 		Identity: common.StringPtr(wtp.identity),
 	}
@@ -158,10 +163,11 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 }
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkflowService,
-	params workerExecutionParameters) *activityTaskPoller {
+	domain string, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		taskHandler:  taskHandler,
 		service:      service,
+		domain:       domain,
 		taskListName: params.TaskList,
 		identity:     params.Identity,
 		logger:       params.Logger,
@@ -171,6 +177,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkf
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll() (*activityTask, error) {
 	request := &s.PollForActivityTaskRequest{
+		Domain:   common.StringPtr(atp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),
 		Identity: common.StringPtr(atp.identity),
 	}

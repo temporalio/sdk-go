@@ -32,6 +32,7 @@ func TestWorkersTestSuite(t *testing.T) {
 }
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
+	domain := "testDomain"
 	// mocks
 	logger := bark.NewLoggerFromLogrus(log.New())
 	service := new(mocks.TChanWorkflowService)
@@ -44,12 +45,13 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		Logger: logger,
 	}
 	overrides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
-	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, executionParameters, nil, overrides)
+	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, domain, executionParameters, nil, overrides)
 	workflowWorker.Start()
 	workflowWorker.Stop()
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
+	domain := "testDomain"
 	// mocks
 	logger := bark.NewLoggerFromLogrus(log.New())
 	service := new(mocks.TChanWorkflowService)
@@ -62,12 +64,13 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 		Logger: logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler(nil)}
-	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, executionParameters, overrides)
+	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, domain, executionParameters, overrides)
 	activityWorker.Start()
 	activityWorker.Stop()
 }
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
+	domain := "testDomain"
 	// mocks
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
@@ -77,7 +80,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 		ConcurrentPollRoutineSize: 5,
 	}
 	overrides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
-	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, executionParameters, nil, overrides)
+	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, domain, executionParameters, nil, overrides)
 	workflowWorker.Start()
 	workflowWorker.Stop()
 }

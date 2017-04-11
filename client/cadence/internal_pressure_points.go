@@ -40,6 +40,7 @@ type (
 func newWorkflowWorkerWithPressurePoints(
 	factory workflowFactory,
 	service m.TChanWorkflowService,
+	domain string,
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string) (worker Worker) {
 	return newWorkflowWorker(
@@ -51,6 +52,7 @@ func newWorkflowWorkerWithPressurePoints(
 			return newWorkflowDefinition(wd), nil
 		},
 		service,
+		domain,
 		params,
 		&pressurePointMgrImpl{config: pressurePoints, logger: params.Logger})
 }
