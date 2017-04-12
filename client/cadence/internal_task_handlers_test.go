@@ -111,11 +111,15 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	taskList := "tl1"
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
-		createTestEventActivityTaskScheduled(2, &m.ActivityTaskScheduledEventAttributes{ActivityId: common.StringPtr("0")}),
+		createTestEventActivityTaskScheduled(2, &m.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &m.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			TaskList:     &m.TaskList{Name: &taskList},
+		}),
 		createTestEventActivityTaskStarted(3, &m.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
 	}
-	task := createWorkflowTask(testEvents, 0)
+	task := createWorkflowTask(testEvents[0:1], 0)
 	params := workerExecutionParameters{
 		TaskList: taskList,
 		Identity: "test-id-1",
@@ -126,11 +130,9 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 
 	s.NoError(err)
 	s.NotNil(response)
-	s.Equal(2, len(response.GetDecisions()))
+	s.Equal(1, len(response.GetDecisions()))
 	s.Equal(m.DecisionType_ScheduleActivityTask, response.GetDecisions()[0].GetDecisionType())
 	s.NotNil(response.GetDecisions()[0].GetScheduleActivityTaskDecisionAttributes())
-	s.Equal(m.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[1].GetDecisionType())
-	s.NotNil(response.GetDecisions()[1].GetCompleteWorkflowExecutionDecisionAttributes())
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
 	task = createWorkflowTask(testEvents, 2)
@@ -140,6 +142,31 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	s.Equal(1, len(response.GetDecisions()))
 	s.Equal(m.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[0].GetDecisionType())
 	s.NotNil(response.GetDecisions()[0].GetCompleteWorkflowExecutionDecisionAttributes())
+}
+
+func (s *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
+	// Schedule an activity and see if we complete workflow.
+	taskList := "taskList"
+	testEvents := []*m.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventActivityTaskScheduled(2, &m.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &m.ActivityType{Name: common.StringPtr("some_random_activity")},
+			TaskList:     &m.TaskList{Name: &taskList},
+		}),
+	}
+	task := createWorkflowTask(testEvents, 2)
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "test-id-1",
+		Logger:   s.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
+	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
+
+	s.NotNil(err)
+	s.Nil(response)
+	s.Contains(err.Error(), "nondeterministic")
 }
 
 func (s *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityTask() {
