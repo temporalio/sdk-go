@@ -37,17 +37,18 @@ func init() {
 	AddActivityRegistrationInterceptor(func(activityName string, activity interface{}) (string, interface{}) {
 		registeredActivities = append(registeredActivities, activityName)
 		return activityName, activity
-
 	})
 	RegisterActivity(testActivityMultipleArgs)
+	RegisterActivity(testActivityReturnString)
 }
 
 func TestActivityRegistrationListener(t *testing.T) {
-	require.Equal(t, 3, len(registeredActivities))
+	require.Equal(t, 4, len(registeredActivities))
 	expectedActivities := []string{
 		"github.com/uber-go/cadence-client/client/cadence.testActivity",
 		"github.com/uber-go/cadence-client/client/cadence.testActivityByteArgs",
 		"github.com/uber-go/cadence-client/client/cadence.testActivityMultipleArgs",
+		"github.com/uber-go/cadence-client/client/cadence.testActivityReturnString",
 	}
 	sort.Strings(expectedActivities)
 	expected := strings.Join(expectedActivities, ",")
@@ -73,7 +74,7 @@ func getLogger() bark.Logger {
 	formatter := &log.TextFormatter{}
 	formatter.FullTimestamp = true
 	log1 := log.New()
-	log1.Level = log.DebugLevel
+	//log1.Level = log.DebugLevel
 	log1.Formatter = formatter
 	return bark.NewLoggerFromLogrus(log1)
 }
@@ -330,7 +331,6 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 
 	// By functions.
 	_, err = ExecuteActivity(ctx, testActivityByteArgs, input)
-	fmt.Printf("activitiesCallingOptionsWorkflow: %v \n", err)
 	require.NoError(w.t, err, err)
 
 	_, err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, "test", true)
@@ -378,6 +378,10 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 
 	_, err = ExecuteActivity(ctx, "testActivityNoArgsAndNoResult")
 	require.NoError(w.t, err, err)
+
+	rString, err = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnString")
+	require.NoError(w.t, err, err)
+	require.Equal(w.t, "testActivity", rString.(string), rString)
 
 	return []byte("Done"), nil
 }
@@ -438,7 +442,7 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 		}
 		callback := args.Get(1).(resultHandler)
 		cbProcessor.Add(callback, r, nil)
-	}).Times(15)
+	}).Times(16)
 
 	ctx.On("Complete", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
 		if args.Get(1) != nil {
