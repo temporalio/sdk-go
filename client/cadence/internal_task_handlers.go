@@ -15,6 +15,7 @@ import (
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/common/backoff"
 	"github.com/uber-go/cadence-client/common/metrics"
+	"github.com/uber-go/cadence-client/common/util"
 	"github.com/uber-go/tally"
 	"golang.org/x/net/context"
 )
@@ -355,6 +356,8 @@ func isEventTypeRespondToDecision(t s.EventType) bool {
 		return true
 	case s.EventType_WorkflowExecutionFailed:
 		return true
+	case s.EventType_MarkerRecorded:
+		return true
 	default:
 		return false
 	}
@@ -364,81 +367,15 @@ func matchReplayWithHistory(replayDecisions []*s.Decision, historyEvents []*s.Hi
 	for i := 0; i < len(historyEvents); i++ {
 		e := historyEvents[i]
 		if i >= len(replayDecisions) {
-			return fmt.Errorf("nondeterministic workflow: missing replay decision for %s", historyEventToString(e))
+			return fmt.Errorf("nondeterministic workflow: missing replay decision for %s", util.HistoryEventToString(e))
 		}
 		d := replayDecisions[i]
 		if !isDecisionMatchEvent(d, e, false) {
 			return fmt.Errorf("nondeterministic workflow: history event is %s, replay decision is %s",
-				historyEventToString(e), decisionToString(d))
+				util.HistoryEventToString(e), util.DecisionToString(d))
 		}
 	}
 	return nil
-}
-
-// TODO: find a better place for these toString methods. also consider making them public.
-func historyEventToString(e *s.HistoryEvent) string {
-	switch e.GetEventType() {
-	case s.EventType_ActivityTaskScheduled:
-		attr := e.GetActivityTaskScheduledEventAttributes()
-		return fmt.Sprintf("%s, ActivityType: %s, ActivityId: %s, TaskList: %s, InputSize: %d",
-			e.GetEventType(), attr.GetActivityType().GetName(), attr.GetActivityId(), attr.GetTaskList().GetName(), len(attr.GetInput()))
-
-	case s.EventType_ActivityTaskCancelRequested:
-		attr := e.GetActivityTaskCancelRequestedEventAttributes()
-		return fmt.Sprintf("%s, ActivityId: %s", e.GetEventType(), attr.GetActivityId())
-
-	case s.EventType_TimerStarted:
-		attr := e.GetTimerStartedEventAttributes()
-		return fmt.Sprintf("%s, TimerId: %s, StartToFireTimeoutSeconds: %d",
-			e.GetEventType(), attr.GetTimerId(), attr.GetStartToFireTimeoutSeconds())
-
-	case s.EventType_TimerCanceled:
-		attr := e.GetTimerCanceledEventAttributes()
-		return fmt.Sprintf("%s, TimerId: %s", e.GetEventType(), attr.GetTimerId())
-
-	case s.EventType_WorkflowExecutionCompleted:
-		attr := e.GetWorkflowExecutionCompletedEventAttributes()
-		return fmt.Sprintf("%s, ResultSize: %d", e.GetEventType(), len(attr.GetResult_()))
-
-	case s.EventType_WorkflowExecutionFailed:
-		attr := e.GetWorkflowExecutionFailedEventAttributes()
-		return fmt.Sprintf("%s, Reason: %d", e.GetEventType(), attr.GetReason())
-	}
-
-	// TODO: add cases for other event type. for now this should work.
-	return e.GetEventType().String()
-}
-
-func decisionToString(d *s.Decision) string {
-	switch d.GetDecisionType() {
-	case s.DecisionType_ScheduleActivityTask:
-		attr := d.GetScheduleActivityTaskDecisionAttributes()
-		return fmt.Sprintf("%s, ActivityType: %s, ActivityId: %s, TaskList: %s, InputSize: %d",
-			d.GetDecisionType(), attr.GetActivityType().GetName(), attr.GetActivityId(), attr.GetTaskList().GetName(), len(attr.GetInput()))
-
-	case s.DecisionType_RequestCancelActivityTask:
-		attr := d.GetRequestCancelActivityTaskDecisionAttributes()
-		return fmt.Sprintf("%s, ActivityId: %s", d.GetDecisionType(), attr.GetActivityId())
-
-	case s.DecisionType_StartTimer:
-		attr := d.GetStartTimerDecisionAttributes()
-		return fmt.Sprintf("%s, TimerId: %s, StartToFireTimeoutSeconds: %d",
-			d.GetDecisionType(), attr.GetTimerId(), attr.GetStartToFireTimeoutSeconds())
-
-	case s.DecisionType_CancelTimer:
-		attr := d.GetCancelTimerDecisionAttributes()
-		return fmt.Sprintf("%s, TimerId: %s", d.GetDecisionType(), attr.GetTimerId())
-
-	case s.DecisionType_CompleteWorkflowExecution:
-		attr := d.GetCompleteWorkflowExecutionDecisionAttributes()
-		return fmt.Sprintf("%s, ResultSize: %d", d.GetDecisionType(), len(attr.GetResult_()))
-
-	case s.DecisionType_FailWorkflowExecution:
-		attr := d.GetFailWorkflowExecutionDecisionAttributes()
-		return fmt.Sprintf("%s, Reason: %d", d.GetDecisionType(), attr.GetReason())
-	}
-
-	return d.GetDecisionType().String()
 }
 
 func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) bool {
@@ -526,6 +463,18 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 				bytes.Compare(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) != 0 {
 				return false
 			}
+		}
+
+		return true
+
+	case s.DecisionType_RecordMarker:
+		if e.GetEventType() != s.EventType_MarkerRecorded {
+			return false
+		}
+		eventAttributes := e.GetMarkerRecordedEventAttributes()
+		decisionAttributes := d.GetRecordMarkerDecisionAttributes()
+		if eventAttributes.GetMarkerName() != decisionAttributes.GetMarkerName() {
+			return false
 		}
 
 		return true
