@@ -314,18 +314,19 @@ type hostEnv interface {
 	RegisterFnType(fnType reflect.Type) error
 }
 
+type interceptorFn func(name string, workflow interface{}) (string, interface{})
+
 // hostEnvImpl is the implementation of hostEnv
 type hostEnvImpl struct {
 	sync.Mutex
 	workflowFuncMap                  map[string]interface{}
 	activityFuncMap                  map[string]interface{}
 	encoding                         gobEncoding
-	activityRegistrationInterceptors []func(name string, workflow interface{}) (string, interface{})
-	workflowRegistrationInterceptors []func(name string, workflow interface{}) (string, interface{})
+	activityRegistrationInterceptors []interceptorFn
+	workflowRegistrationInterceptors []interceptorFn
 }
 
-func (th *hostEnvImpl) AddWorkflowRegistrationInterceptor(
-	i func(name string, workflow interface{}) (string, interface{})) {
+func (th *hostEnvImpl) AddWorkflowRegistrationInterceptor(i interceptorFn) {
 	// As this function as well as registrations are called from init
 	// the order is not defined. So this code deals with registration before listener is
 	// registered as well as ones that come after.
@@ -344,8 +345,7 @@ func (th *hostEnvImpl) AddWorkflowRegistrationInterceptor(
 	}
 }
 
-func (th *hostEnvImpl) AddActivityRegistrationInterceptor(
-	i func(name string, activity interface{}) (string, interface{})) {
+func (th *hostEnvImpl) AddActivityRegistrationInterceptor(i interceptorFn) {
 	// As this function as well as registrations are called from init
 	// the order is not defined. So this code deals with registration before listener is
 	// registered as well as ones that come after.
@@ -364,32 +364,30 @@ func (th *hostEnvImpl) AddActivityRegistrationInterceptor(
 	}
 }
 
-func (th *hostEnvImpl) RegisterWorkflow(wf interface{}) error {
+func (th *hostEnvImpl) RegisterWorkflow(af interface{}) error {
 	// Validate that it is a function
-	fnType := reflect.TypeOf(wf)
-	if err := th.validateFnFormat(fnType, true); err != nil {
+	fnType := reflect.TypeOf(af)
+	if err := validateFnFormat(fnType, true); err != nil {
 		return err
 	}
 	// Check if already registered
-	fnName := getFunctionName(wf)
+	fnName := getFunctionName(af)
 	if _, ok := th.getWorkflowFn(fnName); ok {
-		return fmt.Errorf("Workflow type \"%v\" is already registered", fnName)
+		return fmt.Errorf("workflow type \"%v\" is already registered", fnName)
 	}
 	// Register args with encoding.
 	if err := th.registerEncodingTypes(fnType); err != nil {
 		return err
 	}
-	for _, l := range th.workflowRegistrationInterceptors {
-		l(fnName, wf)
-	}
-	th.addWorkflowFn(fnName, wf)
+	fnName, af = th.invokeInterceptors(fnName, af, th.workflowRegistrationInterceptors)
+	th.addWorkflowFn(fnName, af)
 	return nil
 }
 
 func (th *hostEnvImpl) RegisterActivity(af interface{}) error {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
-	if err := th.validateFnFormat(fnType, false); err != nil {
+	if err := validateFnFormat(fnType, false); err != nil {
 		return err
 	}
 	// Check if already registered
@@ -401,11 +399,22 @@ func (th *hostEnvImpl) RegisterActivity(af interface{}) error {
 	if err := th.registerEncodingTypes(fnType); err != nil {
 		return err
 	}
-	for _, l := range th.activityRegistrationInterceptors {
-		l(fnName, af)
-	}
+	fnName, af = th.invokeInterceptors(fnName, af, th.activityRegistrationInterceptors)
 	th.addActivityFn(fnName, af)
 	return nil
+}
+
+func (th *hostEnvImpl) invokeInterceptors(name string, f interface{}, interceptors []interceptorFn) (string, interface{}) {
+	th.Lock()
+	var copy []interceptorFn
+	for _, i := range interceptors {
+		copy = append(copy, i)
+	}
+	th.Unlock()
+	for _, l := range copy {
+		name, f = l(name, f)
+	}
+	return name, f
 }
 
 // Get the encoder.
@@ -472,6 +481,9 @@ func (th *hostEnvImpl) getRegisteredActivityTypes() []string {
 
 // register all the types with encoder.
 func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
+	th.Lock()
+	defer th.Unlock()
+
 	// Register arguments.
 	for i := 0; i < fnType.NumIn(); i++ {
 		argType := fnType.In(i)
@@ -503,7 +515,7 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 }
 
 // Validate function parameters.
-func (th *hostEnvImpl) validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
+func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expected a func as input but was %s", fnType.Kind())
 	}
