@@ -100,7 +100,10 @@ func (wc *workflowClient) GetWorkflowHistory(workflowID string, runID string) (*
 			response, err1 = wc.workflowService.GetWorkflowExecutionHistory(ctx, request)
 			return err1
 		}, serviceOperationRetryPolicy, isServiceTransientError)
-	return response.GetHistory(), err
+	if err != nil {
+		return nil, err
+	}
+	return response.GetHistory(), nil
 }
 
 // CompleteActivity reports activity completed. activity Execute method can return cadence.ErrActivityResultPending to
