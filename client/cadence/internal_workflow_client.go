@@ -10,12 +10,23 @@ import (
 	"github.com/uber-go/tally"
 )
 
+// Assert that structs do indeed implement the interfaces
+var _ Client = (*workflowClient)(nil)
+var _ DomainClient = (*domainClient)(nil)
+
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
 		workflowExecution WorkflowExecution
 		workflowService   m.TChanWorkflowService
 		domain            string
+		metricsScope      tally.Scope
+		identity          string
+	}
+
+	// domainClient is the client for managing domains.
+	domainClient struct {
+		workflowService   m.TChanWorkflowService
 		metricsScope      tally.Scope
 		identity          string
 	}
@@ -120,3 +131,77 @@ func (wc *workflowClient) CompleteActivity(taskToken, result []byte, err error) 
 func (wc *workflowClient) RecordActivityHeartbeat(taskToken, details []byte) error {
 	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, details)
 }
+
+
+// Register a domain with cadence server
+// The errors it can throw:
+//	- DomainAlreadyExistsError
+//	- BadRequestError
+//	- InternalServiceError
+func (dc *domainClient) Register(options DomainRegistrationOptions) error {
+	request := &s.RegisterDomainRequest{
+		Name: common.StringPtr(options.Name),
+		OwnerEmail: common.StringPtr(options.OwnerEmail),
+		Description: common.StringPtr(options.Description),
+		WorkflowExecutionRetentionPeriodInDays: common.Int32Ptr(options.WorkflowExecutionRetentionPeriodInDays),
+		EmitMetric: common.BoolPtr(options.EmitMetric),
+	}
+
+	return backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			return dc.workflowService.RegisterDomain(ctx, request)
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+}
+
+// Describe a domain. The domain has two part of information
+// DomainInfo - Which has Name, Status, Description, Owner Email
+// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+// The errors it can throw:
+//	- EntityNotExistsError
+//	- BadRequestError
+//	- InternalServiceError
+func (dc *domainClient) Describe(name string) (*s.DomainInfo, *s.DomainConfiguration, error)  {
+	request := &s.DescribeDomainRequest{
+		Name: common.StringPtr(name),
+	}
+
+	var response *s.DescribeDomainResponse
+	err := backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			var err error
+			response, err = dc.workflowService.DescribeDomain(ctx, request)
+			return err
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, nil, err
+	}
+	return response.GetDomainInfo(), response.GetConfiguration(), nil
+}
+
+// Update a domain. The domain has two part of information
+// DomainInfo - Which has Name, Status, Description, Owner Email
+// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+// The errors it can throw:
+//	- EntityNotExistsError
+//	- BadRequestError
+//	- InternalServiceError
+func (dc *domainClient)Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error {
+	request := &s.UpdateDomainRequest{
+		Name: common.StringPtr(name),
+		UpdatedInfo: domainInfo,
+		Configuration: domainConfig,
+	}
+
+	return backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			_, err := dc.workflowService.UpdateDomain(ctx, request)
+			return err
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+}
+

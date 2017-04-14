@@ -47,6 +47,44 @@ type (
 		ExecutionStartToCloseTimeoutSeconds    int32
 		DecisionTaskStartToCloseTimeoutSeconds int32
 	}
+
+	// DomainClient is the client for managing operations on the domain.
+	// CLI, tools, ... can use this layer to manager operations on domain.
+	DomainClient interface {
+		// Register a domain with cadence server
+		// The errors it can throw:
+		//	- DomainAlreadyExistsError
+		//	- BadRequestError
+		//	- InternalServiceError
+		Register(options DomainRegistrationOptions) error
+
+		// Describe a domain. The domain has two part of information.
+		// DomainInfo - Which has Name, Status, Description, Owner Email.
+		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// The errors it can throw:
+		//	- EntityNotExistsError
+		//	- BadRequestError
+		//	- InternalServiceError
+		Describe(name string) (*s.DomainInfo, *s.DomainConfiguration, error)
+
+		// Update a domain. The domain has two part of information.
+		// UpdateDomainInfo - To update domain Description and Owner Email.
+		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// The errors it can throw:
+		//	- EntityNotExistsError
+		//	- BadRequestError
+		//	- InternalServiceError
+		Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error
+	}
+
+	// DomainRegistrationOptions describes all the options that can be specified for registering a domain.
+	DomainRegistrationOptions struct {
+		Name                                   string
+		Description                            string
+		OwnerEmail                             string
+		WorkflowExecutionRetentionPeriodInDays int32
+		EmitMetric                             bool
+	}
 )
 
 // NewClient creates an instance of a workflow client
@@ -64,6 +102,25 @@ func NewClient(service m.TChanWorkflowService, domain string, options *ClientOpt
 	return &workflowClient{
 		workflowService: service,
 		domain:          domain,
+		metricsScope:    metricScope,
+		identity:        identity,
+	}
+}
+
+// NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
+func NewDomainClient(service m.TChanWorkflowService, options *ClientOptions) DomainClient {
+	var identity string
+	if options == nil || options.Identity == "" {
+		identity = getWorkerIdentity("")
+	} else {
+		identity = options.Identity
+	}
+	var metricScope tally.Scope
+	if options != nil {
+		metricScope = options.MetricsScope
+	}
+	return &domainClient{
+		workflowService: service,
 		metricsScope:    metricScope,
 		identity:        identity,
 	}

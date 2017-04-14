@@ -19,6 +19,11 @@ func StringPtr(v string) *string {
 	return &v
 }
 
+// BoolPtr makes a copy and returns the pointer to a string.
+func BoolPtr(v bool) *bool {
+	return &v
+}
+
 // TaskListPtr makes a copy and returns the pointer to a TaskList.
 func TaskListPtr(v s.TaskList) *s.TaskList {
 	return &v

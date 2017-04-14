@@ -75,6 +75,8 @@ func isServiceTransientError(err error) bool {
 		return false
 	case *s.WorkflowExecutionAlreadyStartedError:
 		return false
+	case *s.DomainAlreadyExistsError:
+		return false
 	}
 
 	// s.InternalServiceError
