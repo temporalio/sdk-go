@@ -739,7 +739,7 @@ func getValidatedWorkerFunction(workflowFunc interface{}, args []interface{}) (*
 			workflowFunc)
 	}
 
-	input, err := marshalFunctionArgs(fnName, args)
+	input, err := marshalFunctionArgs(args)
 	if err != nil {
 		return nil, nil, err
 	}

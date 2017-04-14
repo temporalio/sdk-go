@@ -26,9 +26,9 @@ type (
 
 	// domainClient is the client for managing domains.
 	domainClient struct {
-		workflowService   m.TChanWorkflowService
-		metricsScope      tally.Scope
-		identity          string
+		workflowService m.TChanWorkflowService
+		metricsScope    tally.Scope
+		identity        string
 	}
 )
 
@@ -132,21 +132,12 @@ func (wc *workflowClient) RecordActivityHeartbeat(taskToken, details []byte) err
 	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, details)
 }
 
-
 // Register a domain with cadence server
 // The errors it can throw:
 //	- DomainAlreadyExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Register(options DomainRegistrationOptions) error {
-	request := &s.RegisterDomainRequest{
-		Name: common.StringPtr(options.Name),
-		OwnerEmail: common.StringPtr(options.OwnerEmail),
-		Description: common.StringPtr(options.Description),
-		WorkflowExecutionRetentionPeriodInDays: common.Int32Ptr(options.WorkflowExecutionRetentionPeriodInDays),
-		EmitMetric: common.BoolPtr(options.EmitMetric),
-	}
-
+func (dc *domainClient) Register(request *s.RegisterDomainRequest) error {
 	return backoff.Retry(
 		func() error {
 			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
@@ -162,7 +153,7 @@ func (dc *domainClient) Register(options DomainRegistrationOptions) error {
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Describe(name string) (*s.DomainInfo, *s.DomainConfiguration, error)  {
+func (dc *domainClient) Describe(name string) (*s.DomainInfo, *s.DomainConfiguration, error) {
 	request := &s.DescribeDomainRequest{
 		Name: common.StringPtr(name),
 	}
@@ -189,10 +180,10 @@ func (dc *domainClient) Describe(name string) (*s.DomainInfo, *s.DomainConfigura
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient)Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error {
+func (dc *domainClient) Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error {
 	request := &s.UpdateDomainRequest{
-		Name: common.StringPtr(name),
-		UpdatedInfo: domainInfo,
+		Name:          common.StringPtr(name),
+		UpdatedInfo:   domainInfo,
 		Configuration: domainConfig,
 	}
 
@@ -204,4 +195,3 @@ func (dc *domainClient)Update(name string, domainInfo *s.UpdateDomainInfo, domai
 			return err
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 }
-

@@ -167,7 +167,7 @@ func TestCreateWorker(t *testing.T) {
 	activityID := "a1"
 	taskList := "tl1"
 	var startedEventID int64 = 10
-	input, err := marshalFunctionArgs(activityType, []interface{}{})
+	input, err := marshalFunctionArgs([]interface{}{})
 	require.NoError(t, err)
 
 	activityTask := &s.PollForActivityTaskResponse{
@@ -259,7 +259,7 @@ func TestRecordActivityHeartbeat(t *testing.T) {
 }
 
 func testEncodeFunction(t *testing.T, f interface{}, args ...interface{}) string {
-	s := fnSignature{FnName: getFunctionName(f), Args: args}
+	s := fnSignature{Args: args}
 	input, err := getHostEnvironment().Encoder().Marshal(s)
 	require.NoError(t, err, err)
 	require.NotNil(t, input)
@@ -278,7 +278,7 @@ func testEncodeFunction(t *testing.T, f interface{}, args ...interface{}) string
 }
 
 func testEncodeWithName(t *testing.T, args ...interface{}) {
-	s := fnSignature{FnName: "test", Args: args}
+	s := fnSignature{Args: args}
 	input, err := getHostEnvironment().Encoder().Marshal(s)
 	require.NoError(t, err, err)
 	require.NotNil(t, input)
@@ -287,7 +287,6 @@ func testEncodeWithName(t *testing.T, args ...interface{}) {
 	err = getHostEnvironment().Encoder().Unmarshal(input, &s2)
 	require.NoError(t, err, err)
 
-	require.Equal(t, s.FnName, s2.FnName)
 	require.Equal(t, len(s.Args), len(s2.Args))
 	require.Equal(t, s.Args, s2.Args)
 }
@@ -524,8 +523,7 @@ func testEncodeFunctionArgs(workflowFunc interface{}, args ...interface{}) []byt
 		fmt.Println(err)
 		panic("Failed to register function types")
 	}
-	fnName := getFunctionName(workflowFunc)
-	input, err := marshalFunctionArgs(fnName, args)
+	input, err := marshalFunctionArgs(args)
 	if err != nil {
 		fmt.Println(err)
 		panic("Failed to encode arguments")

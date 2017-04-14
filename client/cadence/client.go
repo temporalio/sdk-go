@@ -56,7 +56,7 @@ type (
 		//	- DomainAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(options DomainRegistrationOptions) error
+		Register(request *s.RegisterDomainRequest) error
 
 		// Describe a domain. The domain has two part of information.
 		// DomainInfo - Which has Name, Status, Description, Owner Email.
@@ -75,15 +75,6 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error
-	}
-
-	// DomainRegistrationOptions describes all the options that can be specified for registering a domain.
-	DomainRegistrationOptions struct {
-		Name                                   string
-		Description                            string
-		OwnerEmail                             string
-		WorkflowExecutionRetentionPeriodInDays int32
-		EmitMetric                             bool
 	}
 )
 

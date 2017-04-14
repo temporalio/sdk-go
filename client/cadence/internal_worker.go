@@ -584,8 +584,7 @@ func getHostEnvironment() *hostEnvImpl {
 
 // fnSignature represents a function and its arguments
 type fnSignature struct {
-	FnName string
-	Args   []interface{}
+	Args []interface{}
 }
 
 // Wrapper to execute workflow functions.

@@ -110,8 +110,8 @@ func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error
 	return p, nil
 }
 
-func marshalFunctionArgs(fnName string, args []interface{}) ([]byte, error) {
-	s := fnSignature{FnName: fnName, Args: args}
+func marshalFunctionArgs(args []interface{}) ([]byte, error) {
+	s := fnSignature{Args: args}
 	input, err := getHostEnvironment().Encoder().Marshal(s)
 	if err != nil {
 		return nil, err
@@ -176,7 +176,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}) (*ActivityT
 			"Invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
 	}
 
-	input, err := marshalFunctionArgs(fnName, args)
+	input, err := marshalFunctionArgs(args)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -234,7 +234,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value) ([]byt
 
 func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte) (interface{}, error) {
 	if fnType.Kind() != reflect.Func {
-		return nil, fmt.Errorf("expecting only function type but got type: %v.", fnType)
+		return nil, fmt.Errorf("expecting only function type but got type: %v", fnType)
 	}
 
 	// We already validated during registration that it either have (result, error) (or) just error.
