@@ -156,6 +156,54 @@ func (wc *workflowClient) RecordActivityHeartbeat(taskToken, details []byte) err
 	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, details)
 }
 
+// ListClosedWorkflow gets closed workflow executions based on request filters
+// The errors it can throw:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+func (wc *workflowClient) ListClosedWorkflow(request *s.ListClosedWorkflowExecutionsRequest) (*s.ListClosedWorkflowExecutionsResponse, error) {
+	if len(request.GetDomain()) == 0 {
+		request.Domain = common.StringPtr(wc.domain)
+	}
+	var response *s.ListClosedWorkflowExecutionsResponse
+	err := backoff.Retry(
+		func() error {
+			var err1 error
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			response, err1 = wc.workflowService.ListClosedWorkflowExecutions(ctx, request)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+// ListClosedWorkflow gets open workflow executions based on request filters
+// The errors it can throw:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+func (wc *workflowClient) ListOpenWorkflow(request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error) {
+	if len(request.GetDomain()) == 0 {
+		request.Domain = common.StringPtr(wc.domain)
+	}
+	var response *s.ListOpenWorkflowExecutionsResponse
+	err := backoff.Retry(
+		func() error {
+			var err1 error
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			response, err1 = wc.workflowService.ListOpenWorkflowExecutions(ctx, request)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // Register a domain with cadence server
 // The errors it can throw:
 //	- DomainAlreadyExistsError
