@@ -103,11 +103,6 @@ type (
 		panicError   PanicError       // non nil if coroutine had unhandled panic
 	}
 
-	panicError struct {
-		value      interface{}
-		stackTrace string
-	}
-
 	dispatcherImpl struct {
 		sequence         int
 		channelSequence  int // used to name channels
@@ -516,18 +511,6 @@ func (s *coroutineState) NewNamedBufferedChannel(name string, size int) Channel 
 	return &channelImpl{name: name, size: size}
 }
 
-func (e *panicError) Error() string {
-	return fmt.Sprintf("%v", e.value)
-}
-
-func (e *panicError) Value() interface{} {
-	return e.value
-}
-
-func (e *panicError) StackTrace() string {
-	return e.stackTrace
-}
-
 func (d *dispatcherImpl) newCoroutine(ctx Context, f func(ctx Context)) {
 	d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
 }
@@ -540,7 +523,7 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx 
 		defer func() {
 			if r := recover(); r != nil {
 				st := getStackTrace(name, "panic", 3)
-				crt.panicError = &panicError{value: r, stackTrace: st}
+				crt.panicError = newPanicError(r, st)
 			}
 		}()
 		crt.initialYield(1, "")

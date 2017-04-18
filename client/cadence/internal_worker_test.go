@@ -445,8 +445,10 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 
 	ctx.On("Complete", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
 		if args.Get(1) != nil {
-			err := args.Get(1).(Error)
-			fmt.Printf("Error: %v, Stack: %v \n", err.Reason(), string(err.Details()))
+			err := args.Get(1).(ErrorWithDetails)
+			var details []byte
+			err.Details(&details)
+			fmt.Printf("ErrorWithDetails: %v, Stack: %v \n", err.Reason(), string(details))
 		}
 		workflowComplete <- struct{}{}
 	}).Once()

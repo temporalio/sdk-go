@@ -456,7 +456,9 @@ func TestPanic(t *testing.T) {
 	require.EqualValues(t, 0, len(history))
 	err := d.ExecuteUntilAllBlocked()
 	require.NotNil(t, err)
-	require.EqualValues(t, "simulated failure", err.Value())
+	var value string
+	err.Value(&value)
+	require.EqualValues(t, "simulated failure", value)
 	require.EqualValues(t, "simulated failure", err.Error())
 
 	require.Contains(t, err.StackTrace(), "client/cadence.TestPanic")

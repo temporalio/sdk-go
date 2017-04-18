@@ -376,7 +376,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
 	delete(weh.scheduledActivites, activityID)
 
-	err := NewTimeoutError(attributes.GetTimeoutType())
+	var err error
+	tt := attributes.GetTimeoutType()
+	if tt == m.TimeoutType_HEARTBEAT {
+		err = NewHeartbeatTimeoutError(attributes.GetDetails())
+	} else {
+		err = NewTimeoutError(attributes.GetTimeoutType())
+	}
 	// Invoke the callback
 	handler(nil, err)
 	return nil
