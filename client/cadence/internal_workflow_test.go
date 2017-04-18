@@ -401,7 +401,7 @@ func TestActivityCancelWorkflow(t *testing.T) {
 			cbProcessor.Add(
 				callbackHandler3,
 				nil,
-				NewCanceledErrorWithDetails([]byte("testCancelDetails")),
+				NewCanceledError([]byte("testCancelDetails")),
 			)
 		}
 	}).Times(3)

@@ -406,7 +406,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
 	delete(weh.scheduledActivites, activityID)
 
-	err := NewCanceledErrorWithDetails(attributes.GetDetails())
+	err := NewCanceledError(attributes.GetDetails())
 	// Invoke the callback
 	handler(nil, err)
 	return nil

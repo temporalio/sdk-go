@@ -17,23 +17,23 @@ type (
 	ErrorWithDetails interface {
 		error
 		Reason() string
-		Details(d interface{}) // Extracts details into passed pointer
-		errorWithDetails()     // interface marker
+		Details(d ...interface{}) // Extracts details into passed pointers
+		errorWithDetails()        // interface marker
 	}
 
 	// TimeoutError returned when activity or child workflow timed out
 	TimeoutError interface {
 		error
 		TimeoutType() shared.TimeoutType
-		Details(d interface{}) // Present only for HEARTBEAT TimeoutType
-		timeoutError()         // interface marker
+		Details(d ...interface{}) // Present only for HEARTBEAT TimeoutType
+		timeoutError()            // interface marker
 	}
 
 	// CanceledError returned when operation was canceled
 	CanceledError interface {
 		error
-		Details(d interface{}) // Extracts details into passed pointer
-		canceledError()        // interface marker
+		Details(d ...interface{}) // Extracts details into passed pointers
+		canceledError()           // interface marker
 	}
 
 	// PanicError contains information about panicked workflow
@@ -68,26 +68,22 @@ func NewErrorWithDetails(reason string, details interface{}) ErrorWithDetails {
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
+// WARNING: This function is public only to support unit testing of workflows.
+// It shouldn't be used by application level code.
 func NewTimeoutError(timeoutType shared.TimeoutType) TimeoutError {
 	return &timeoutError{timeoutType: timeoutType}
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
-func NewHeartbeatTimeoutError(details []byte) TimeoutError {
-	return &timeoutError{timeoutType: shared.TimeoutType_HEARTBEAT, details: details}
-}
-
-// NewCanceledErrorWithDetails creates CanceledError instance
-func NewCanceledErrorWithDetails(details interface{}) CanceledError {
-	if details == nil {
-		details = []byte{}
-	}
-	return &canceledError{details: details.([]byte)}
+// WARNING: This function is public only to support unit testing of workflows.
+// It shouldn't be used by application level code.
+func NewHeartbeatTimeoutError(details ...interface{}) TimeoutError {
+	return &timeoutError{timeoutType: shared.TimeoutType_HEARTBEAT, details: toByteSlice(details)}
 }
 
 // NewCanceledError creates CanceledError instance
-func NewCanceledError() CanceledError {
-	return NewCanceledErrorWithDetails(nil)
+func NewCanceledError(details ...interface{}) CanceledError {
+	return &canceledError{details: toByteSlice(details)}
 }
 
 // errorWithDetails implements ErrorWithDetails
@@ -107,8 +103,8 @@ func (e *errorWithDetails) Reason() string {
 }
 
 // Details is from ErrorWithDetails interface
-func (e *errorWithDetails) Details(d interface{}) {
-	assignToInterface(d, e.details)
+func (e *errorWithDetails) Details(d ...interface{}) {
+	assignValue(d, e.details)
 }
 
 // errorWithDetails is from ErrorWithDetails interface
@@ -130,8 +126,8 @@ func (e *timeoutError) TimeoutType() shared.TimeoutType {
 }
 
 // Details is from TimeoutError interface
-func (e *timeoutError) Details(d interface{}) {
-	assignToInterface(d, e.details)
+func (e *timeoutError) Details(d ...interface{}) {
+	assignValue(d, e.details)
 }
 
 func (e *timeoutError) timeoutError() {}
@@ -146,8 +142,8 @@ func (e *canceledError) Error() string {
 }
 
 // Details is from CanceledError interface
-func (e *canceledError) Details(d interface{}) {
-	assignToInterface(d, e.details)
+func (e *canceledError) Details(d ...interface{}) {
+	assignValue(d, e.details)
 }
 
 func (e *canceledError) canceledError() {}
@@ -165,8 +161,8 @@ func (e *panicError) Error() string {
 	return fmt.Sprintf("%v", e.value)
 }
 
-func (e *panicError) Value(v  interface{}) {
-	assignToInterface(v, e.value)
+func (e *panicError) Value(v interface{}) {
+	reflect.ValueOf(v).Elem().Set(reflect.ValueOf(e.value))
 }
 
 func (e *panicError) StackTrace() string {
@@ -175,10 +171,23 @@ func (e *panicError) StackTrace() string {
 
 func (e *panicError) panicError() {}
 
-func assignToInterface(to interface{}, from interface{}) {
-	v := reflect.ValueOf(to)
-	if v.Type().Kind() != reflect.Ptr {
-		panic("Pointer argument expected")
+func toByteSlice(args []interface{}) []byte {
+	if len(args) > 1 {
+		panic("multiple args not supported yet")
 	}
-	v.Elem().Set(reflect.ValueOf(from))
+	if len(args) == 0 {
+		return []byte{}
+	}
+	return args[0].([]byte)
+}
+
+func assignValue(to []interface{}, from interface{}) {
+	if len(to) == 0 {
+		panic("empty receiver")
+	}
+	if len(to) > 1 {
+		panic("multiple args not supported yet")
+	}
+	vto := reflect.ValueOf(to[0])
+	vto.Elem().Set(reflect.ValueOf(from))
 }
