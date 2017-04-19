@@ -6,18 +6,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/common/backoff"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
-	tagWorkerID   = "WorkerID"
-	tagWorkerType = "WorkerType"
-	tagRoutineID  = "routineID"
-	tagWorkerErr  = "WorkerErr"
-
 	retryPollOperationInitialInterval    = time.Millisecond
 	retryPollOperationMaxInterval        = 1 * time.Second
 	retryPollOperationExpirationInterval = backoff.NoInterval // We don't ever expire
@@ -68,7 +64,7 @@ type (
 		shutdownWG      sync.WaitGroup             // The WaitGroup for shutting down existing routines.
 		rateLimiter     common.TokenBucket         // Poll rate limiter
 		retrier         *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger          bark.Logger
+		logger          *zap.Logger
 	}
 )
 
@@ -79,15 +75,15 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger bark.Logger) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger *zap.Logger) *baseWorker {
 	return &baseWorker{
 		options:     options,
 		shutdownCh:  make(chan struct{}),
 		rateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
 		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger: logger.WithFields(bark.Fields{
-			tagWorkerID:   options.identity,
-			tagWorkerType: options.workerType}),
+		logger: logger.With(
+			zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: options.identity},
+			zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
 	}
 }
 
@@ -105,7 +101,7 @@ func (bw *baseWorker) Start() {
 	}
 
 	bw.isWorkerStarted = true
-	bw.logger.Infof("Started Worker with %v routines.", bw.options.routineCount)
+	bw.logger.Info("Started Worker", zap.Int("RoutineCount", bw.options.routineCount))
 }
 
 // Shutdown is a blocking call and cleans up all the resources assosciated with worker.
@@ -137,8 +133,7 @@ func (bw *baseWorker) execute(routineID int) {
 
 		err := bw.options.taskPoller.PollAndProcessSingleTask()
 		if err != nil {
-			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID, tagWorkerErr: err}).
-				Errorf("Poll failed with error: %+v", err)
+			bw.logger.Error("Poll failed with Error", zap.Int(tagRoutineID, routineID), zap.Error(err))
 			bw.retrier.Failed()
 		} else {
 			bw.retrier.Succeeded()
@@ -147,7 +142,7 @@ func (bw *baseWorker) execute(routineID int) {
 		select {
 		// Shutdown the Routine.
 		case <-bw.shutdownCh:
-			bw.logger.WithFields(bark.Fields{tagRoutineID: routineID}).Info("Shutting Down!")
+			bw.logger.Info("Worker shutting down.", zap.Int(tagRoutineID, routineID))
 			bw.shutdownWG.Done()
 			return
 

@@ -1,35 +1,29 @@
-hash: ce513dc0a77b6c6b9c20241d6fc8ace339f13462ad8f1feb43ca07cde9b059c8
-updated: 2017-03-18T18:10:40.34434356-07:00
+hash: 0008e66338ba88853061addad5702b77fec17f67befdfd58cc1d791f01a40902
+updated: 2017-04-17T17:14:00.390177791-07:00
 imports:
 - name: github.com/apache/thrift
-  version: b79396f799fe88d2dae48573f61257aac5b2c09b
+  version: 2d65c2365f19f637bc732222e71d78727bf0b709
   subpackages:
   - lib/go/thrift
-- name: github.com/cactus/go-statsd-client
-  version: d8eabe07bc70ff9ba6a56836cde99d1ea3d005f7
-  subpackages:
-  - statsd
 - name: github.com/davecgh/go-spew
-  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
   - spew
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/opentracing/opentracing-go
-  version: 6edb48674bd9467b8e91fda004f2bd7202d60ce4
+  version: eaa2524c1b95618f98127d9c4149d28b852397b4
   subpackages:
   - ext
   - log
 - name: github.com/pborman/uuid
   version: 1b00554d822231195d1babd97ff4a781231955c9
 - name: github.com/pmezard/go-difflib
-  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
   - difflib
-- name: github.com/Sirupsen/logrus
-  version: 08a8a7c27e3d058a8989316a850daad1c10bf4ab
 - name: github.com/stretchr/objx
-  version: cbeaeb16a013161a98496fad62933b1d21786672
+  version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
 - name: github.com/stretchr/testify
   version: 4d4bfba8f1d1027c4fdbe371823030df51419987
   subpackages:
@@ -37,14 +31,16 @@ imports:
   - mock
   - require
   - suite
-- name: github.com/uber-common/bark
-  version: d52ffa061726911f47fcd3d9e8b9b55f22794772
 - name: github.com/uber-go/atomic
-  version: 0c9e689d64f004564b79d9a663634756df322902
+  version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
 - name: github.com/uber-go/tally
-  version: 08e86c3c1eb55364d563bd6beb982040225f4bb7
+  version: d0a3e6333f3535bb7d63f9c82983a65c802fb44c
+- name: github.com/uber-go/zap
+  version: 1550bc05539134bbf8612a35f34a79ab8bf34ee3
+  subpackages:
+  - zapcore
 - name: github.com/uber/tchannel-go
-  version: 79387824978f91318be3bfb43ae12e04c38cfe97
+  version: 0b7f160817553b0bacb5b108dd84a5022dbdd1c4
   subpackages:
   - internal/argreader
   - relay
@@ -53,16 +49,29 @@ imports:
   - tnet
   - trand
   - typed
+- name: go.uber.org/atomic
+  version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
+- name: go.uber.org/zap
+  version: 1550bc05539134bbf8612a35f34a79ab8bf34ee3
+  subpackages:
+  - buffer
+  - internal/bufferpool
+  - internal/color
+  - internal/exit
+  - internal/multierror
+  - zapcore
 - name: golang.org/x/net
-  version: 906cda9512f77671ab44f8c8563b13a8e707b230
+  version: 5602c733f70afc6dcec6766be0d5034d4c4f14de
   subpackages:
   - context
-- name: golang.org/x/sys
-  version: d4feaf1a7e61e1d9e79e6c4e76c6349e9cab0a03
-  subpackages:
-  - unix
 testImports:
 - name: github.com/golang/mock
   version: bd3c8e81be01eef76d4b503f5e687d2d1354d2d9
   subpackages:
   - gomock
+- name: github.com/Sirupsen/logrus
+  version: 10f801ebc38b33738c9d17d50860f484a0988ff5
+- name: golang.org/x/sys
+  version: f3918c30c5c2cb527c0b071a27c35120a6c0719a
+  subpackages:
+  - unix

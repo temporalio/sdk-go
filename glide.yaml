@@ -3,9 +3,10 @@ import:
 - package: github.com/uber/tchannel-go
   subpackages:
   - thrift
+- package: go.uber.org/zap
+  version: ^1
 testImport:
-#- package: github.com/stretchr/testify
-#  subpackages:
-#  - assert
-- package: github.com/golang/mock/gomock
+- package: github.com/golang/mock
+  subpackages:
+  - gomock
 - package: github.com/pborman/uuid

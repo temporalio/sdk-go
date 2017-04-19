@@ -3,13 +3,12 @@ package cadence
 import (
 	"testing"
 
-	m "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/mocks"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-common/bark"
+	m "github.com/uber-go/cadence-client/.gen/go/shared"
+	"github.com/uber-go/cadence-client/mocks"
+	"go.uber.org/zap"
 )
 
 type (
@@ -34,7 +33,7 @@ func TestWorkersTestSuite(t *testing.T) {
 func (s *WorkersTestSuite) TestWorkflowWorker() {
 	domain := "testDomain"
 	// mocks
-	logger := bark.NewLoggerFromLogrus(log.New())
+	logger, _ := zap.NewDevelopment()
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
@@ -53,7 +52,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 func (s *WorkersTestSuite) TestActivityWorker() {
 	domain := "testDomain"
 	// mocks
-	logger := bark.NewLoggerFromLogrus(log.New())
+	logger, _ := zap.NewDevelopment()
 	service := new(mocks.TChanWorkflowService)
 	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)

@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/mocks"
+	"go.uber.org/zap"
 )
 
 var (
@@ -93,7 +92,7 @@ func TestInterfacesTestSuite(t *testing.T) {
 }
 
 func (s *InterfacesTestSuite) TestInterface() {
-	logger := bark.NewLoggerFromLogrus(log.New())
+	logger, _ := zap.NewDevelopment()
 	domain := "testDomain"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{

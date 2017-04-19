@@ -5,19 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"sort"
-
-	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/uber-common/bark"
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
 	"github.com/uber-go/cadence-client/mocks"
+	"go.uber.org/zap"
 )
 
 // Used to test registration listeners
@@ -70,13 +68,9 @@ func TestWorkflowRegistrationListener(t *testing.T) {
 	require.Equal(t, expected, registered)
 }
 
-func getLogger() bark.Logger {
-	formatter := &log.TextFormatter{}
-	formatter.FullTimestamp = true
-	log1 := log.New()
-	//log1.Level = log.DebugLevel
-	log1.Formatter = formatter
-	return bark.NewLoggerFromLogrus(log1)
+func getLogger() *zap.Logger {
+	logger, _ := zap.NewDevelopment()
+	return logger
 }
 
 func testReplayWorkflow(ctx Context) error {
@@ -87,7 +81,7 @@ func testReplayWorkflow(ctx Context) error {
 		WithScheduleToCloseTimeout(time.Second))
 	_, err := ExecuteActivity(ctx, "testActivity")
 	if err != nil {
-		getLogger().Errorf("activity failed with error: %v", err)
+		getLogger().Error("activity failed with error.", zap.Error(err))
 		panic("Failed workflow")
 	}
 	return err

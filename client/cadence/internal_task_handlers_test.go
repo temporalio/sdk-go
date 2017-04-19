@@ -3,19 +3,19 @@ package cadence
 import (
 	"testing"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
+	"github.com/uber-go/cadence-client/common/util"
 	"github.com/uber-go/cadence-client/mocks"
+	"go.uber.org/zap"
 )
 
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
-		logger bark.Logger
+		logger *zap.Logger
 	}
 )
 
@@ -24,9 +24,8 @@ func (s *TaskHandlersTestSuite) SetupTest() {
 }
 
 func (s *TaskHandlersTestSuite) SetupSuite() {
-	log2 := log.New()
-	//log2.Level = log.DebugLevel
-	s.logger = bark.NewLoggerFromLogrus(log2)
+	logger, _ := zap.NewDevelopment()
+	s.logger = logger
 }
 
 func TestTaskHandlersTestSuite(t *testing.T) {
@@ -281,7 +280,7 @@ func (s *TaskHandlersTestSuite) TestHeartBeat_CancelledError() {
 }
 
 func (s *TaskHandlersTestSuite) printAllDecisions(decisions []*m.Decision) {
-	for i, d := range decisions {
-		s.logger.Infof("Decision: %v: %+v", i, d)
+	for _, d := range decisions {
+		s.logger.Info(util.DecisionToString(d))
 	}
 }

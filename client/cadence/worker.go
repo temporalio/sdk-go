@@ -1,9 +1,9 @@
 package cadence
 
 import (
-	"github.com/uber-common/bark"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 type (
@@ -42,7 +42,7 @@ type (
 
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
-		SetLogger(logger bark.Logger) WorkerOptions
+		SetLogger(logger *zap.Logger) WorkerOptions
 
 		// Optional: Disable running workflow workers.
 		// default: false

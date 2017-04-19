@@ -1,14 +1,13 @@
 package cadence
 
 import (
-	"fmt"
+	"errors"
 	"math/rand"
 	"strconv"
 	"time"
 
-	"github.com/uber-common/bark"
-
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
+	"go.uber.org/zap"
 )
 
 // ** This is for internal stress testing framework **
@@ -32,7 +31,7 @@ type (
 
 	pressurePointMgrImpl struct {
 		config map[string]map[string]string
-		logger bark.Logger
+		logger *zap.Logger
 	}
 )
 
@@ -64,16 +63,18 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 			if probablity, err := strconv.Atoi(value); err == nil {
 				if rand.Int31n(100) < int32(probablity) {
 					// Drop the task.
-					p.logger.Debugf("Execute: PressurePointName: %s, Configured with probability: %d is getting dropped.",
-						pressurePointName, probablity)
-					return fmt.Errorf("pressurepoint configured")
+					p.logger.Debug("pressurePointMgrImpl.Execute drop task.",
+						zap.String("PressurePointName", pressurePointName),
+						zap.Int("probability", probablity))
+					return errors.New("pressurepoint configured")
 				}
 			}
 		} else if value, ok3 := config[pressurePointConfigSleep]; ok3 {
 			if timeout, err := strconv.Atoi(value); err == nil {
 				if timeout > 0 {
-					p.logger.Debugf("Execute: PressurePointName: %s, Sleep for: %d.",
-						pressurePointName, timeout)
+					p.logger.Debug("pressurePointMgrImpl.Execute sleep.",
+						zap.String("PressurePointName", pressurePointName),
+						zap.Int("DurationSeconds", timeout))
 					d := time.Duration(timeout) * time.Second
 					time.Sleep(d)
 					return nil

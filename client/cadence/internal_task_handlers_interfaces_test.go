@@ -3,14 +3,12 @@ package cadence
 import (
 	"testing"
 
-	"golang.org/x/net/context"
-
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber/tchannel-go/thrift"
-
 	m "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/mocks"
+	"github.com/uber/tchannel-go/thrift"
+	"golang.org/x/net/context"
 )
 
 type (
