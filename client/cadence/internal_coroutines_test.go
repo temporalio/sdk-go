@@ -1,13 +1,13 @@
 package cadence
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -236,10 +236,13 @@ func TestBlockingSelect(t *testing.T) {
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
 			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
 			c2.Send(ctx, "two")
+			history = append(history, "add-two-done")
 		})
 
 		s := NewSelector(ctx)
@@ -258,15 +261,57 @@ func TestBlockingSelect(t *testing.T) {
 		history = append(history, "done")
 	})
 	d.ExecuteUntilAllBlocked()
-	require.True(t, d.IsDone())
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
 		"select1",
 		"add-one",
+		"add-one-done",
 		"add-two",
 		"c1-one",
 		"select2",
 		"c2-two",
+		"done",
+		"add-two-done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestBlockingSelectAsyncSend(t *testing.T) {
+	var history []string
+	d := newDispatcher(background, func(ctx Context) {
+
+		c1 := NewChannel(ctx)
+		s := NewSelector(ctx)
+		s.
+			AddReceiveWithMoreFlag(c1, func(v interface{}, more bool) {
+				assert.True(t, more)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			})
+		for i := 0; i < 3; i++ {
+			ii := i // to reference within closure
+			Go(ctx, func(ctx Context) {
+				history = append(history, fmt.Sprintf("add-%v", ii))
+				c1.SendAsync(ii)
+			})
+			history = append(history, fmt.Sprintf("select-%v", ii))
+			s.Select(ctx)
+		}
+		history = append(history, "done")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+
+	expected := []string{
+		"select-0",
+		"add-0",
+		"c1-0",
+		"select-1",
+		"add-1",
+		"c1-1",
+		"select-2",
+		"add-2",
+		"c1-2",
 		"done",
 	}
 	require.EqualValues(t, expected, history)
@@ -302,9 +347,50 @@ func TestSendSelect(t *testing.T) {
 	expected := []string{
 		"select1",
 		"receiver",
+		"c2-two",
 		"send2",
 		"select2",
+		"send1",
+		"done",
+		"c1-one",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSendSelectWithAsyncReceive(t *testing.T) {
+	var history []string
+	d := newDispatcher(background, func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+		Go(ctx, func(ctx Context) {
+			history = append(history, "receiver")
+			v, ok, more := c2.ReceiveAsyncWithMoreFlag()
+			assert.True(t, ok)
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("c2-%v", v))
+			v, more = c1.ReceiveWithMoreFlag(ctx)
+
+			assert.True(t, more)
+			history = append(history, fmt.Sprintf("c1-%v", v))
+		})
+		s := NewSelector(ctx)
+		s.AddSend(c1, "one", func() { history = append(history, "send1") }).
+			AddSend(c2, "two", func() { history = append(history, "send2") })
+		history = append(history, "select1")
+		s.Select(ctx)
+		history = append(history, "select2")
+		s.Select(ctx)
+		history = append(history, "done")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+
+	expected := []string{
+		"select1",
+		"receiver",
 		"c2-two",
+		"send2",
+		"select2",
 		"send1",
 		"done",
 		"c1-one",
@@ -669,33 +755,37 @@ func TestFutureChain(t *testing.T) {
 func TestSelectFuture(t *testing.T) {
 	var history []string
 	d := newDispatcher(background, func(ctx Context) {
-		c1 := NewChannel(ctx)
-		future, settable := NewFuture(ctx)
+		future1, settable1 := NewFuture(ctx)
+		future2, settable2 := NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
-			c1.Send(ctx, "one")
+			settable1.SetValue("one")
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			settable.SetValue("two")
+			settable2.SetValue("two")
 		})
 
 		s := NewSelector(ctx)
 		s.
-			AddReceiveWithMoreFlag(c1, func(v interface{}, more bool) {
-				assert.True(t, more)
+			AddFuture(future1, func(v interface{}, err error) {
+				assert.Nil(t, err)
 				history = append(history, fmt.Sprintf("c1-%v", v))
-			}).AddFuture(future, func(v interface{}, err error) {
-			assert.Nil(t, err)
-			history = append(history, fmt.Sprintf("c2-%v", v))
-		})
+			}).
+			AddFuture(future2, func(v interface{}, err error) {
+				assert.Nil(t, err)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
 		history = append(history, "select1")
 		s.Select(ctx)
 		history = append(history, "select2")
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	err := d.ExecuteUntilAllBlocked()
+	if err != nil {
+		require.NoError(t, err, err.StackTrace())
+	}
 	require.True(t, d.IsDone())
 
 	expected := []string{

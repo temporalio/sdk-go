@@ -132,7 +132,7 @@ func GoNamed(ctx Context, name string, f func(ctx Context)) {
 
 // NewFuture creates a new future as well as associated Settable that is used to set its value.
 func NewFuture(ctx Context) (Future, Settable) {
-	impl := &futureImpl{channel: NewChannel(ctx)}
+	impl := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	return impl, impl
 }
 
