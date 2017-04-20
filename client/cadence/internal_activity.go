@@ -241,6 +241,9 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte) (interfac
 	if fnType.NumOut() <= 1 {
 		return nil, nil
 	} else if fnType.NumOut() == 2 {
+		if result == nil {
+			return reflect.Zero(fnType.Out(0)).Interface(), nil
+		}
 		var fr fnReturnSignature
 		if err := getHostEnvironment().Encoder().Unmarshal(result, &fr); err != nil {
 			return nil, err
