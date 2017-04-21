@@ -83,7 +83,7 @@ func testReplayWorkflow(ctx Context) error {
 		WithScheduleToStartTimeout(time.Second).
 		WithStartToCloseTimeout(time.Second).
 		WithScheduleToCloseTimeout(time.Second))
-	_, err := ExecuteActivity(ctx, "testActivity")
+	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
 		getLogger().Error("activity failed with error.", zap.Error(err))
 		panic("Failed workflow")
@@ -129,7 +129,7 @@ func TestDecisionTaskHandler(t *testing.T) {
 	_, stackTrace, err := r.ProcessWorkflowTask(task, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, stackTrace, stackTrace)
-	require.Contains(t, stackTrace, "cadence.ExecuteActivity")
+	require.Contains(t, stackTrace, "cadence.(*futureImpl).Get")
 }
 
 // testSampleWorkflow
@@ -327,35 +327,42 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 		WithScheduleToCloseTimeout(10*time.Second))
 
 	// By functions.
-	_, err = ExecuteActivity(ctx, testActivityByteArgs, input)
+	err = ExecuteActivity(ctx, testActivityByteArgs, input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, "test", true)
+	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, "test", true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, testActivityNoResult, 2, "test")
+	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, testActivityNoContextArg, 2, "test")
+	err = ExecuteActivity(ctx, testActivityNoContextArg, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, testActivityNoError, 2, "test")
+	err = ExecuteActivity(ctx, testActivityNoError, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, testActivityNoArgsAndNoResult)
+	err = ExecuteActivity(ctx, testActivityNoArgsAndNoResult).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	r, err := ExecuteActivity(ctx, testActivityReturnByteArray)
+	f := ExecuteActivity(ctx, testActivityReturnByteArray)
+	var r []byte
+	err = f.Get(ctx, &r)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, []byte("testActivity"), r.([]byte))
+	require.Equal(w.t, []byte("testActivity"), r)
 
-	rInt, err := ExecuteActivity(ctx, testActivityReturnInt)
+	f = ExecuteActivity(ctx, testActivityReturnInt)
+	var rInt int
+	err = f.Get(ctx, &rInt)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, 5, rInt.(int))
+	require.Equal(w.t, 5, rInt)
 
-	rString, err := ExecuteActivity(ctx, testActivityReturnString)
+	f = ExecuteActivity(ctx, testActivityReturnString)
+	var rString string
+	err = f.Get(ctx, &rString)
+
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, "testActivity", rString.(string))
+	require.Equal(w.t, "testActivity", rString)
 
 	r2String, err := ExecuteActivity(ctx, testActivityReturnEmptyString)
 	require.NoError(w.t, err, err)
@@ -366,27 +373,28 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.Equal(w.t, testActivityResult{}, r2Struct.(testActivityResult))
 
 	// By names.
-	_, err = ExecuteActivity(ctx, "testActivityByteArgs", input)
+	err = ExecuteActivity(ctx, "testActivityByteArgs", input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true)
+	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, "testActivityNoResult", 2, "test")
+	err = ExecuteActivity(ctx, "testActivityNoResult", 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, "testActivityNoContextArg", 2, "test")
+	err = ExecuteActivity(ctx, "testActivityNoContextArg", 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, "testActivityNoError", 2, "test")
+	err = ExecuteActivity(ctx, "testActivityNoError", 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	_, err = ExecuteActivity(ctx, "testActivityNoArgsAndNoResult")
+	err = ExecuteActivity(ctx, "testActivityNoArgsAndNoResult").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	rString, err = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnString")
+	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnString")
+	err = f.Get(ctx, &rString)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, "testActivity", rString.(string), rString)
+	require.Equal(w.t, "testActivity", rString, rString)
 
 	r2sString, err := ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyString")
 	require.NoError(w.t, err, err)

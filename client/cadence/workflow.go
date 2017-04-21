@@ -30,14 +30,23 @@ type (
 		AddReceive(c Channel, f func(v interface{})) Selector
 		AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector
 		AddSend(c Channel, v interface{}, f func()) Selector
-		AddFuture(future Future, f func(v interface{}, err error)) Selector
+		AddFuture(future Future, f func(f Future)) Selector
 		AddDefault(f func())
 		Select(ctx Context)
 	}
 
 	// Future represents the result of an asynchronous computation.
 	Future interface {
-		Get(ctx Context) (interface{}, error)
+		// Get blocks until the future is ready. When ready it either returns non nil error
+		// or assigns result value to the provided pointer.
+		// Example:
+		// var v string
+		// if err := f.Get(ctx, &v); err != nil {
+		//     return err
+		// }
+		// fmt.Printf("Value=%v", v)
+		Get(ctx Context, valuePtr interface{}) error
+		// When true Get is guaranteed to not block
 		IsReady() bool
 	}
 
@@ -149,72 +158,12 @@ func NewFuture(ctx Context) (Future, Settable) {
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
 //  - f - Either a activity name or a function that is getting scheduled.
 //  - args - The arguments that need to be passed to the function represented by 'f'.
-//  - If the activity failed to complete then the error would indicate the failure
-// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
-//  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
-// error ActivityTaskCanceledError.
-// - result - Result the activity returns, if there is no result the activity returns
-//      then it will be nil, indicating no result.
-func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) (result interface{}, err error) {
-	// Validate type and its arguments.
-	activityType, input, err := getValidatedActivityFunction(f, args)
-	if err != nil {
-		return nil, err
-	}
-	// Validate context options.
-	parameters, err := getValidatedActivityOptions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	parameters.ActivityType = *activityType
-	parameters.Input = input
-
-	channelName := fmt.Sprintf("\"activity %v\"", parameters.ActivityID)
-	resultChannel := NewNamedBufferedChannel(ctx, channelName, 1)
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
-		var serializeErr error
-		if result, serializeErr = deSerializeFunctionResult(f, r); serializeErr != nil {
-			e = serializeErr
-		}
-		err = e
-		ok := resultChannel.SendAsync(true)
-		if !ok {
-			panic("unexpected")
-		}
-		executeDispatcher(ctx, getDispatcher(ctx))
-	})
-	Go(ctx, func(ctx Context) {
-		if ctx.Done() == nil {
-			return // not cancellable.
-		}
-		if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
-			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
-		}
-	})
-	_ = resultChannel.Receive(ctx)
-	return
-}
-
-// ExecuteActivityAsync requests activity execution in the context of a workflow.
-//  - Context can be used to pass the settings for this activity.
-// 	For example: task list that this need to be routed, timeouts that need to be configured.
-//	Use ActivityOptions to pass down the options.
-//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
-//					WithTaskList("exampleTaskList").
-//					WithScheduleToCloseTimeout(time.Second).
-//					WithScheduleToStartTimeout(time.Second).
-//					WithHeartbeatTimeout(0)
-//			or
-//			ctx1 := WithTaskList(ctx, "exampleTaskList")
-//  - f - Either a activity name or a function that is getting scheduled.
-//  - args - The arguments that need to be passed to the function represented by 'f'.
 //  - If the activity failed to complete then the future get error would indicate the failure
 // and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
-// - result - Result the activity returns, if there is no result the activity returns
-//      then it will be nil, indicating no result.
-func ExecuteActivityAsync(ctx Context, f interface{}, args ...interface{}) Future {
+// - returns Future with activity result or failure
+func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
 	future, settable := NewFuture(ctx)
 	activityType, input, err := getValidatedActivityFunction(f, args)
@@ -307,6 +256,6 @@ func NewTimer(ctx Context, d time.Duration) Future {
 //    error TimerCanceledError.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	t := NewTimer(ctx, d)
-	_, err = t.Get(ctx)
+	err = t.Get(ctx, nil)
 	return
 }

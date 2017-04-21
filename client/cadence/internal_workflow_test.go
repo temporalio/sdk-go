@@ -46,7 +46,7 @@ func (ac *asyncTestCallbackProcessor) ProcessOrWait(waitForComplete <-chan struc
 			return true
 
 		case <-time.After(2 * time.Second):
-			fmt.Println("timeout 10 second")
+			fmt.Println("timeout 2 second")
 			return false
 		}
 	}
@@ -77,12 +77,14 @@ func (w *helloWorldActivityWorkflow) Execute(ctx Context, input []byte) (result 
 		WithStartToCloseTimeout(5*time.Second).
 		WithScheduleToCloseTimeout(10*time.Second))
 	ctx1 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-	r1, err := ExecuteActivity(ctx1, "testAct", input)
+	f := ExecuteActivity(ctx1, "testAct", input)
+	var r1 []byte
+	err = f.Get(ctx, &r1)
 	if err != nil {
 		fmt.Printf("Error: %v \n", err.Error())
 	}
 	require.NoError(w.t, err)
-	return r1.([]byte), nil
+	return r1, nil
 }
 
 type resultHandlerMatcher struct {
@@ -130,7 +132,7 @@ type splitJoinActivityWorkflow struct {
 }
 
 func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	var result1, result2 interface{}
+	var result1, result2 []byte
 	var err1, err2 error
 
 	ctx = WithActivityOptions(ctx, NewActivityOptions().
@@ -142,18 +144,23 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	c2 := NewChannel(ctx)
 	Go(ctx, func(ctx Context) {
 		ctx1 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-		result1, err1 = ExecuteActivity(ctx1, "testAct", nil)
+		f := ExecuteActivity(ctx1, "testAct")
+		err1 = f.Get(ctx, &result1)
 		require.NoError(w.t, err1, err1)
 		c1.Send(ctx, true)
 	})
 	Go(ctx, func(ctx Context) {
 		ctx2 := WithActivityOptions(ctx, NewActivityOptions().(*activityOptions).WithActivityID("id2"))
-		result2, err2 = ExecuteActivity(ctx2, "testAct", nil)
+		f := ExecuteActivity(ctx2, "testAct")
+		err1 := f.Get(ctx, &result2)
 		require.NoError(w.t, err1, err1)
 		if w.panic {
 			panic("simulated")
 		}
+		fmt.Printf("Before c2.Send")
+
 		c2.Send(ctx, true)
+		fmt.Printf("After c2.Send")
 	})
 
 	c1.Receive(ctx)
@@ -167,7 +174,7 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 	require.NoError(w.t, err1)
 	require.NoError(w.t, err2)
 
-	return []byte(string(result1.([]byte)) + string(result2.([]byte))), nil
+	return []byte(string(result1) + string(result2)), nil
 }
 
 func TestSplitJoinActivityWorkflow(t *testing.T) {
@@ -186,6 +193,8 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 			cbProcessor.Add(callback, []byte("Hello"), nil)
 		case "id2":
 			cbProcessor.Add(callback, []byte(" Flow!"), nil)
+		default:
+			panic(fmt.Sprintf("Unexpected activityID: %v", *parameters.ActivityID))
 		}
 	}).Twice()
 
@@ -259,7 +268,8 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 
 	isWokeByTimer := false
 
-	NewSelector(ctx).AddFuture(t, func(v interface{}, err error) {
+	NewSelector(ctx).AddFuture(t, func(f Future) {
+		err := f.Get(ctx, nil)
 		require.NoError(w.t, err)
 		isWokeByTimer = true
 	}).Select(ctx)
@@ -270,9 +280,8 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 	ctx2, c2 := WithCancel(ctx)
 	t2 := NewTimer(ctx2, 1)
 	c2()
-	r2, err2 := t2.Get(ctx2)
+	err2 := t2.Get(ctx2, nil)
 
-	require.Nil(w.t, r2)
 	require.Error(w.t, err2)
 	_, isCancelErr := err2.(CanceledError)
 	require.True(w.t, isCancelErr)
@@ -347,25 +356,29 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 	ctx1, c1 := WithCancel(ctx)
 	defer c1()
 	ctx1 = WithActivityOptions(ctx1, NewActivityOptions().(*activityOptions).WithActivityID("id1"))
-	res1, err1 := ExecuteActivity(ctx1, "testAct")
+	f := ExecuteActivity(ctx1, "testAct")
+	var res1 []byte
+	err1 := f.Get(ctx, &res1)
 	require.NoError(w.t, err1, err1)
-	require.Equal(w.t, string(res1.([]byte)), "test")
+	require.Equal(w.t, string(res1), "test")
 
 	// Async Cancellation (Callback completes before cancel)
 	ctx2, c2 := WithCancel(ctx)
 	ctx2 = WithActivityOptions(ctx2, NewActivityOptions().(*activityOptions).WithActivityID("id2"))
-	f := ExecuteActivityAsync(ctx2, "testAct")
+	f = ExecuteActivity(ctx2, "testAct")
 	c2()
-	res2, err2 := f.Get(ctx)
+	var res2 []byte
+	err2 := f.Get(ctx, &res2)
 	require.NotNil(w.t, res2)
 	require.NoError(w.t, err2)
 
 	// Async Cancellation (Callback doesn't complete)
 	ctx3, c3 := WithCancel(ctx)
 	ctx3 = WithActivityOptions(ctx3, NewActivityOptions().(*activityOptions).WithActivityID("id3"))
-	f3 := ExecuteActivityAsync(ctx3, "testAct")
+	f3 := ExecuteActivity(ctx3, "testAct")
 	c3()
-	res3, err3 := f3.Get(ctx)
+	var res3 []byte
+	err3 := f3.Get(ctx, &res3)
 	require.Nil(w.t, res3)
 	var details []byte
 	err3.(CanceledError).Details(&details)
@@ -439,24 +452,30 @@ func (w greetingsWorkflow) Execute(ctx Context, input []byte) (result []byte, er
 		WithStartToCloseTimeout(5*time.Second).
 		WithScheduleToCloseTimeout(10*time.Second))
 
-	greetResult, err := ExecuteActivity(ctx1, "getGreetingActivity", input)
+	f := ExecuteActivity(ctx1, "getGreetingActivity", input)
+	var greetResult []byte
+	err = f.Get(ctx, &greetResult)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get Name.
-	nameResult, err := ExecuteActivity(ctx1, "getNameActivity", input)
+	f = ExecuteActivity(ctx1, "getNameActivity", input)
+	var nameResult []byte
+	err = f.Get(ctx, &nameResult)
+
 	if err != nil {
 		return nil, err
 	}
 
 	// Say Greeting.
-	request := &sayGreetingActivityRequest{Name: string(nameResult.([]byte)), Greeting: string(greetResult.([]byte))}
+	request := &sayGreetingActivityRequest{Name: string(nameResult), Greeting: string(greetResult)}
 	sayGreetInput, err := json.Marshal(request)
 	if err != nil {
 		panic(fmt.Sprintf("Marshalling failed with error: %+v", err))
 	}
-	_, err = ExecuteActivity(ctx1, "sayGreetingActivity", sayGreetInput)
+
+	err = ExecuteActivity(ctx1, "sayGreetingActivity", sayGreetInput).Get(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
