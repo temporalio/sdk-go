@@ -364,13 +364,17 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, "testActivity", rString)
 
-	r2String, err := ExecuteActivity(ctx, testActivityReturnEmptyString)
+	f = ExecuteActivity(ctx, testActivityReturnEmptyString)
+	var r2String string
+	err = f.Get(ctx, &r2String)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, "", r2String.(string))
+	require.Equal(w.t, "", r2String)
 
-	r2Struct, err := ExecuteActivity(ctx, testActivityReturnEmptyStruct)
+	f = ExecuteActivity(ctx, testActivityReturnEmptyStruct)
+	var r2Struct testActivityResult
+	err = f.Get(ctx, &r2Struct)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, testActivityResult{}, r2Struct.(testActivityResult))
+	require.Equal(w.t, testActivityResult{}, r2Struct)
 
 	// By names.
 	err = ExecuteActivity(ctx, "testActivityByteArgs", input).Get(ctx, nil)
@@ -396,13 +400,16 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, "testActivity", rString, rString)
 
-	r2sString, err := ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyString")
+	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyString")
+	var r2sString string
+	err = f.Get(ctx, &r2String)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, "", r2sString.(string))
+	require.Equal(w.t, "", r2sString)
 
-	r2sStruct, err := ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyStruct")
+	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyStruct")
+	err = f.Get(ctx, &r2Struct)
 	require.NoError(w.t, err, err)
-	require.Equal(w.t, testActivityResult{}, r2sStruct.(testActivityResult))
+	require.Equal(w.t, testActivityResult{}, r2Struct)
 
 	return []byte("Done"), nil
 }
@@ -449,7 +456,7 @@ func testActivityReturnEmptyString() (string, error) {
 	return "", nil
 }
 
-type testActivityResult struct {}
+type testActivityResult struct{}
 
 // testActivityReturnEmptyStruct
 func testActivityReturnEmptyStruct() (testActivityResult, error) {
@@ -475,7 +482,7 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 		} else if strings.Contains(params.ActivityType.Name, "testActivityReturnString") {
 			r = testEncodeFunctionResult("testActivity")
 		} else if strings.Contains(params.ActivityType.Name, "testActivityReturnEmptyString") ||
-			strings.Contains(params.ActivityType.Name, "testActivityReturnEmptyStruct"){
+			strings.Contains(params.ActivityType.Name, "testActivityReturnEmptyStruct") {
 			r = nil
 		} else {
 			r = testEncodeFunctionResult([]byte("test"))
