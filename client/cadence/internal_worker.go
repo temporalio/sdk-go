@@ -66,7 +66,7 @@ type (
 
 	// Worker overrides.
 	workerOverrides struct {
-		workflowTaskHander  WorkflowTaskHandler
+		workflowTaskHandler WorkflowTaskHandler
 		activityTaskHandler ActivityTaskHandler
 	}
 
@@ -130,8 +130,8 @@ func newWorkflowWorkerInternal(
 	// Get a workflow task handler.
 	ensureRequiredParams(&params)
 	var taskHandler WorkflowTaskHandler
-	if overrides != nil && overrides.workflowTaskHander != nil {
-		taskHandler = overrides.workflowTaskHander
+	if overrides != nil && overrides.workflowTaskHandler != nil {
+		taskHandler = overrides.workflowTaskHandler
 	} else {
 		taskHandler = newWorkflowTaskHandler(factory, params, ppMgr)
 	}

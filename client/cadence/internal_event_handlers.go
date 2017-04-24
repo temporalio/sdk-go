@@ -25,7 +25,6 @@ type (
 	workflowExecutionEventHandlerImpl struct {
 		*workflowEnvironmentImpl
 		workflowDefinition workflowDefinition
-		logger             *zap.Logger
 	}
 
 	// workflowEnvironmentImpl an implementation of workflowEnvironment represents a environment for workflow execution.
@@ -33,7 +32,7 @@ type (
 		workflowInfo              *WorkflowInfo
 		workflowDefinitionFactory workflowDefinitionFactory
 
-		scheduledActivites             map[string]resultHandler // Map of Activities(activity ID ->) and their response handlers
+		scheduledActivities            map[string]resultHandler // Map of Activities(activity ID ->) and their response handlers
 		waitForCancelRequestActivities map[string]bool          // Map of activity ID to whether to wait for cancelation.
 		scheduledEventIDToActivityID   map[int64]string         // Mapping from scheduled event ID to activity ID
 		scheduledTimers                map[string]resultHandler // Map of scheduledTimers(timer ID ->) and their response handlers
@@ -51,7 +50,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 	context := &workflowEnvironmentImpl{
 		workflowInfo:                   workflowInfo,
 		workflowDefinitionFactory:      workflowDefinitionFactory,
-		scheduledActivites:             make(map[string]resultHandler),
+		scheduledActivities:            make(map[string]resultHandler),
 		waitForCancelRequestActivities: make(map[string]bool),
 		scheduledEventIDToActivityID:   make(map[int64]string),
 		scheduledTimers:                make(map[string]resultHandler),
@@ -63,7 +62,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 			zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.ID},
 			zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.RunID},
 		)}
-	return &workflowExecutionEventHandlerImpl{context, nil, logger}
+	return &workflowExecutionEventHandlerImpl{context, nil}
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -112,7 +111,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	decision.ScheduleActivityTaskDecisionAttributes = scheduleTaskAttr
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
-	wc.scheduledActivites[scheduleTaskAttr.GetActivityId()] = callback
+	wc.scheduledActivities[scheduleTaskAttr.GetActivityId()] = callback
 	wc.waitForCancelRequestActivities[scheduleTaskAttr.GetActivityId()] = parameters.WaitForCancellation
 	wc.logger.Debug("ExectueActivity",
 		zap.String(tagActivityID, scheduleTaskAttr.GetActivityId()),
@@ -123,7 +122,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
-	handler, ok := wc.scheduledActivites[activityID]
+	handler, ok := wc.scheduledActivities[activityID]
 	if !ok {
 		return
 	}
@@ -323,7 +322,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(
 	if !ok {
 		return fmt.Errorf("unable to find activity ID for the event: %v", attributes)
 	}
-	handler, ok := weh.scheduledActivites[activityID]
+	handler, ok := weh.scheduledActivities[activityID]
 	if !ok {
 		if wait, exist := weh.waitForCancelRequestActivities[activityID]; exist && !wait {
 			return nil
@@ -333,7 +332,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(
 	}
 
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
-	delete(weh.scheduledActivites, activityID)
+	delete(weh.scheduledActivities, activityID)
 
 	// Invoke the callback
 	handler(attributes.GetResult_(), nil)
@@ -348,7 +347,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 	if !ok {
 		return fmt.Errorf("unable to find activity ID for the event: %v", attributes)
 	}
-	handler, ok := weh.scheduledActivites[activityID]
+	handler, ok := weh.scheduledActivities[activityID]
 	if !ok {
 		if wait, exist := weh.waitForCancelRequestActivities[activityID]; exist && !wait {
 			return nil
@@ -358,7 +357,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(
 	}
 
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
-	delete(weh.scheduledActivites, activityID)
+	delete(weh.scheduledActivities, activityID)
 
 	err := NewErrorWithDetails(*attributes.Reason, attributes.Details)
 	// Invoke the callback
@@ -373,7 +372,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 	if !ok {
 		return fmt.Errorf("unable to find activity ID for the event: %v", attributes)
 	}
-	handler, ok := weh.scheduledActivites[activityID]
+	handler, ok := weh.scheduledActivities[activityID]
 	if !ok {
 		if wait, exist := weh.waitForCancelRequestActivities[activityID]; exist && !wait {
 			return nil
@@ -383,7 +382,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(
 	}
 
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
-	delete(weh.scheduledActivites, activityID)
+	delete(weh.scheduledActivities, activityID)
 
 	var err error
 	tt := attributes.GetTimeoutType()
@@ -404,7 +403,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 	if !ok {
 		return fmt.Errorf("unable to find activity ID for the event: %v", attributes)
 	}
-	handler, ok := weh.scheduledActivites[activityID]
+	handler, ok := weh.scheduledActivities[activityID]
 	if !ok {
 		if wait, exist := weh.waitForCancelRequestActivities[activityID]; exist && !wait {
 			return nil
@@ -413,7 +412,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(
 	}
 
 	// Clear this so we don't have a recursive call that while executing might call the cancel one.
-	delete(weh.scheduledActivites, activityID)
+	delete(weh.scheduledActivities, activityID)
 
 	err := NewCanceledError(attributes.GetDetails())
 	// Invoke the callback

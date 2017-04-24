@@ -43,7 +43,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		ConcurrentPollRoutineSize: 5,
 		Logger: logger,
 	}
-	overrides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(nil)}
 	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, domain, executionParameters, nil, overrides)
 	workflowWorker.Start()
 	workflowWorker.Stop()
@@ -78,7 +78,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
 	}
-	overrides := &workerOverrides{workflowTaskHander: newSampleWorkflowTaskHandler(nil)}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(nil)}
 	workflowWorker := newWorkflowWorkerInternal(testWorkflowDefinitionFactory, service, domain, executionParameters, nil, overrides)
 	workflowWorker.Start()
 	workflowWorker.Stop()

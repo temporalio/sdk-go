@@ -60,12 +60,12 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 	if config, ok := p.config[pressurePointName]; ok {
 		// If probability is configured.
 		if value, ok2 := config[pressurePointConfigProbability]; ok2 {
-			if probablity, err := strconv.Atoi(value); err == nil {
-				if rand.Int31n(100) < int32(probablity) {
+			if probability, err := strconv.Atoi(value); err == nil {
+				if rand.Int31n(100) < int32(probability) {
 					// Drop the task.
 					p.logger.Debug("pressurePointMgrImpl.Execute drop task.",
 						zap.String("PressurePointName", pressurePointName),
-						zap.Int("probability", probablity))
+						zap.Int("probability", probability))
 					return errors.New("pressurepoint configured")
 				}
 			}
