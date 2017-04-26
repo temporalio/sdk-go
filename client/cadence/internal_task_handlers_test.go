@@ -82,6 +82,10 @@ func createWorkflowTask(events []*m.HistoryEvent, previousStartEventID int64) *m
 		PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
 		WorkflowType:           workflowTypePtr(WorkflowType{"testWorkflow"}),
 		History:                &m.History{Events: events},
+		WorkflowExecution: &m.WorkflowExecution{
+			WorkflowId: common.StringPtr("fake-workflow-id"),
+			RunId:      common.StringPtr("fake-run-id"),
+		},
 	}
 }
 

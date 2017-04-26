@@ -44,6 +44,10 @@ type (
 		// default: default logger provided.
 		SetLogger(logger *zap.Logger) WorkerOptions
 
+		// Optional: Enable logging in replay
+		// default: false
+		SetEnableLoggingInReplay(enable bool) WorkerOptions
+
 		// Optional: Disable running workflow workers.
 		// default: false
 		SetDisableWorkflowWorker(disable bool) WorkerOptions

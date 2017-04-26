@@ -27,7 +27,7 @@ type (
 	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
 		// Return List of decisions made, whether a decision is unhandled, any error.
-		ProcessEvent(event *s.HistoryEvent) ([]*s.Decision, bool, error)
+		ProcessEvent(event *s.HistoryEvent, isReplay bool) ([]*s.Decision, bool, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -47,11 +47,12 @@ type (
 type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		workflowDefFactory workflowDefinitionFactory
-		metricsScope       tally.Scope
-		ppMgr              pressurePointMgr
-		logger             *zap.Logger
-		identity           string
+		workflowDefFactory    workflowDefinitionFactory
+		metricsScope          tally.Scope
+		ppMgr                 pressurePointMgr
+		logger                *zap.Logger
+		identity              string
+		enableLoggingInReplay bool
 	}
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
@@ -201,11 +202,13 @@ OrderEvents:
 func newWorkflowTaskHandler(factory workflowDefinitionFactory,
 	params workerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
 	return &workflowTaskHandlerImpl{
-		workflowDefFactory: factory,
-		logger:             params.Logger,
-		ppMgr:              ppMgr,
-		metricsScope:       params.MetricsScope,
-		identity:           params.Identity}
+		workflowDefFactory:    factory,
+		logger:                params.Logger,
+		ppMgr:                 ppMgr,
+		metricsScope:          params.MetricsScope,
+		identity:              params.Identity,
+		enableLoggingInReplay: params.EnableLoggingInReplay,
+	}
 }
 
 // ProcessWorkflowTask processes each all the events of the workflow task.
@@ -241,7 +244,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowInfo := &WorkflowInfo{
 		WorkflowType: flowWorkflowTypeFrom(*task.WorkflowType),
 		TaskListName: taskList.GetName(),
-		// workflowExecution
+		WorkflowExecution: WorkflowExecution{
+			ID:    *task.WorkflowExecution.WorkflowId,
+			RunID: *task.WorkflowExecution.RunId,
+		},
 	}
 
 	isWorkflowCompleted := false
@@ -255,7 +261,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}
 
 	eventHandler := newWorkflowExecutionEventHandler(
-		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger)
+		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger, wth.enableLoggingInReplay)
 	defer eventHandler.Close()
 	reorderedHistory := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
@@ -274,10 +280,6 @@ ProcessEvents:
 		}
 
 		for _, event := range reorderedEvents {
-			wth.logger.Debug("ProcessEvent",
-				zap.Int64(tagEventID, event.GetEventId()),
-				zap.String(tagEventType, event.GetEventType().String()))
-
 			isInReplay := event.GetEventId() < reorderedHistory.LastNonReplayedID()
 			if isEventTypeRespondToDecision(event.GetEventType()) {
 				respondEvents = append(respondEvents, event)
@@ -292,7 +294,7 @@ ProcessEvents:
 				return nil, "", err
 			}
 
-			eventDecisions, unhandled, err := eventHandler.ProcessEvent(event)
+			eventDecisions, unhandled, err := eventHandler.ProcessEvent(event, isInReplay)
 			if err != nil {
 				return nil, "", err
 			}

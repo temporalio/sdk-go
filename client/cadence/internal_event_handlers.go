@@ -42,11 +42,38 @@ type (
 		currentReplayTime              time.Time                // Indicates current replay time of the decision.
 		postEventHooks                 []func()                 // postEvent hooks that need to be executed at the end of the event.
 		logger                         *zap.Logger
+		isReplay                       bool // flag to indicate if workflow is in replay mode
+		enableLoggingInReplay          bool // flag to indicate if workflow should enable logging in replay mode
+	}
+
+	// wrapper around zapcore.Core that will be aware of replay
+	replayAwareZapCore struct {
+		zapcore.Core
+		isReplay              *bool // pointer to bool that indicate if it is in replay mode
+		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
 	}
 )
 
+func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
+	return func(c zapcore.Core) zapcore.Core {
+		return &replayAwareZapCore{c, isReplay, enableLoggingInReplay}
+	}
+}
+
+func (c *replayAwareZapCore) Check(entry zapcore.Entry, checkedEntry *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if *c.isReplay && !*c.enableLoggingInReplay {
+		return checkedEntry
+	}
+	return c.Core.Check(entry, checkedEntry)
+}
+
+func (c *replayAwareZapCore) With(fields []zapcore.Field) zapcore.Core {
+	coreWithFields := c.Core.With(fields)
+	return &replayAwareZapCore{coreWithFields, c.isReplay, c.enableLoggingInReplay}
+}
+
 func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory workflowDefinitionFactory,
-	completeHandler completionHandler, logger *zap.Logger) workflowExecutionEventHandler {
+	completeHandler completionHandler, logger *zap.Logger, enableLoggingInReplay bool) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:                   workflowInfo,
 		workflowDefinitionFactory:      workflowDefinitionFactory,
@@ -57,11 +84,14 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		executeDecisions:               make([]*m.Decision, 0),
 		completeHandler:                completeHandler,
 		postEventHooks:                 []func(){},
-		logger: logger.With(
-			zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},
-			zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.ID},
-			zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.RunID},
-		)}
+		enableLoggingInReplay:          enableLoggingInReplay,
+	}
+	context.logger = logger.With(
+		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},
+		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.ID},
+		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.RunID},
+	).WithOptions(zap.WrapCore(wrapLogger(&context.isReplay, &context.enableLoggingInReplay)))
+
 	return &workflowExecutionEventHandlerImpl{context, nil}
 }
 
@@ -71,6 +101,10 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 
 func (wc *workflowEnvironmentImpl) Complete(result []byte, err error) {
 	wc.completeHandler(result, err)
+}
+
+func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
+	return wc.logger
 }
 
 func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
@@ -113,6 +147,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 	wc.scheduledActivities[scheduleTaskAttr.GetActivityId()] = callback
 	wc.waitForCancelRequestActivities[scheduleTaskAttr.GetActivityId()] = parameters.WaitForCancellation
+
 	wc.logger.Debug("ExectueActivity",
 		zap.String(tagActivityID, scheduleTaskAttr.GetActivityId()),
 		zap.String(tagActivityType, scheduleTaskAttr.GetActivityType().GetName()),
@@ -199,11 +234,15 @@ func (wc *workflowEnvironmentImpl) addPostEventHooks(hook func()) {
 	wc.postEventHooks = append(wc.postEventHooks, hook)
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent) ([]*m.Decision, bool, error) {
-
+func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent, isReplay bool) ([]*m.Decision, bool, error) {
 	if event == nil {
 		return nil, false, errors.New("nil event provided")
 	}
+
+	weh.isReplay = isReplay
+	weh.logger.Debug("ProcessEvent",
+		zap.Int64(tagEventID, event.GetEventId()),
+		zap.String(tagEventType, event.GetEventType().String()))
 
 	unhandledDecision := false
 

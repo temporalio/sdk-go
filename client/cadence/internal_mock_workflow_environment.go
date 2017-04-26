@@ -4,6 +4,7 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 )
 
 // mockWorkflowEnvironment is an mock type for the workflowEnvironment type
@@ -24,6 +25,22 @@ func (_m *mockWorkflowEnvironment) RequestCancelTimer(timerID string) {
 // Complete provides a mock function with given fields: result, err
 func (_m *mockWorkflowEnvironment) Complete(result []byte, err error) {
 	_m.Called(result, err)
+}
+
+// GetLogger provides a mock function with to return a logger
+func (_m *mockWorkflowEnvironment) GetLogger() *zap.Logger {
+	ret := _m.Called()
+
+	var r0 *zap.Logger
+	if rf, ok := ret.Get(0).(func() *zap.Logger); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*zap.Logger)
+		}
+	}
+
+	return r0
 }
 
 // ExecuteActivity provides a mock function with given fields: parameters, callback

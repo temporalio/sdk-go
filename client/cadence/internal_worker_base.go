@@ -34,6 +34,7 @@ type (
 		workflowTimerClient
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
+		GetLogger() *zap.Logger
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
@@ -133,7 +134,7 @@ func (bw *baseWorker) execute(routineID int) {
 
 		err := bw.options.taskPoller.PollAndProcessSingleTask()
 		if err != nil {
-			bw.logger.Error("Poll failed with Error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+			bw.logger.Info("Poll failed with Error", zap.Int(tagRoutineID, routineID), zap.Error(err))
 			bw.retrier.Failed()
 		} else {
 			bw.retrier.Succeeded()

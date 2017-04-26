@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -210,6 +212,11 @@ type WorkflowInfo struct {
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return getWorkflowEnvironment(ctx).WorkflowInfo()
+}
+
+// GetLogger returns a logger to be used in workflow's context
+func GetLogger(ctx Context) *zap.Logger {
+	return getWorkflowEnvironment(ctx).GetLogger()
 }
 
 // Now returns the current time when the decision is started or replayed.
