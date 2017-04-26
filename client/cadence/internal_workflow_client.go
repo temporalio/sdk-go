@@ -146,14 +146,22 @@ func (wc *workflowClient) GetWorkflowHistory(workflowID string, runID string) (*
 // should be called when that activity is completed with the actual result and error. If err is nil, activity task
 // completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 // activity task failed event will be reported.
-func (wc *workflowClient) CompleteActivity(taskToken, result []byte, err error) error {
-	request := convertActivityResultToRespondRequest(wc.identity, taskToken, result, err)
+func (wc *workflowClient) CompleteActivity(taskToken []byte, activityFunc interface{}, result interface{}, err error) error {
+	data, err0 := validateFunctionResults(activityFunc, result)
+	if err0 != nil {
+		return err0
+	}
+	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err)
 	return reportActivityComplete(wc.workflowService, request)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
-func (wc *workflowClient) RecordActivityHeartbeat(taskToken, details []byte) error {
-	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, details)
+func (wc *workflowClient) RecordActivityHeartbeat(taskToken []byte, details ...interface{}) error {
+	data, err := getHostEnvironment().encodeArgs(details)
+	if err != nil {
+		return err
+	}
+	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters

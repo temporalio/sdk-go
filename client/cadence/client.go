@@ -33,10 +33,14 @@ type (
 		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
-		CompleteActivity(taskToken, result []byte, err error) error
+		// Example:-
+		//  	CompleteActivity(token, getGreetingsFunc, "Hello", nil)
+		//      CompleteActivity(token, "getGreetingsFunc", "Hello", nil)
+		CompleteActivity(taskToken []byte, activityFunc interface{}, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
-		RecordActivityHeartbeat(taskToken, details []byte) error
+		// details - is the progress you want to record along with heart beat for this activity.
+		RecordActivityHeartbeat(taskToken []byte, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters
 		// The errors it can throw:

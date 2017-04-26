@@ -501,31 +501,34 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 
 	// Register arguments.
 	for i := 0; i < fnType.NumIn(); i++ {
-		argType := fnType.In(i)
-		// Interfaces cannot be registered, their implementations should be
-		// https://golang.org/pkg/encoding/gob/#Register
-		if argType.Kind() != reflect.Interface {
-			arg := reflect.Zero(argType).Interface()
-			if err := th.Encoder().Register(arg); err != nil {
-				return fmt.Errorf("unable to register the message for encoding: %v", err)
-			}
+		err := th.registerType(fnType.In(i))
+		if err != nil {
+			return err
 		}
 	}
 	// Register return types.
 	// TODO: (Siva) We need register all concrete implementations of error, Either
 	// through pre-registry (or) at the time conversion.
 	for i := 0; i < fnType.NumOut(); i++ {
-		argType := fnType.Out(i)
-		// Interfaces cannot be registered, their implementations should be
-		// https://golang.org/pkg/encoding/gob/#Register
-		if argType.Kind() != reflect.Interface {
-			arg := reflect.Zero(argType).Interface()
-			if err := th.Encoder().Register(arg); err != nil {
-				return fmt.Errorf("unable to register the message for encoding: %v", err)
-			}
+		err := th.registerType(fnType.Out(i))
+		if err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+// register type with our encoder.
+func (th *hostEnvImpl) registerType(t reflect.Type) error {
+	// Interfaces cannot be registered, their implementations should be
+	// https://golang.org/pkg/encoding/gob/#Register
+	if t.Kind() != reflect.Interface {
+		arg := reflect.Zero(t).Interface()
+		if err := th.Encoder().Register(arg); err != nil {
+			return fmt.Errorf("unable to register the message for encoding: %v", err)
+		}
+	}
 	return nil
 }
 

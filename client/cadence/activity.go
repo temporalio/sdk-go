@@ -61,9 +61,13 @@ func GetActivityLogger(ctx context.Context) *zap.Logger {
 
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
 // TODO: Implement automatic heartbeating with cancellation through ctx.
-func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
+func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) error {
+	data, err := getHostEnvironment().encodeArgs(details)
+	if err != nil {
+		return err
+	}
 	env := getActivityEnv(ctx)
-	return env.serviceInvoker.Heartbeat(details)
+	return env.serviceInvoker.Heartbeat(data)
 }
 
 // ServiceInvoker abstracts calls to the Cadence service from an activity implementation.
