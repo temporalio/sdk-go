@@ -134,20 +134,20 @@ func AddActivityRegistrationInterceptor(
 
 // SerializeFnArgs serializes an activity function arguments.
 func SerializeFnArgs(args ...interface{}) ([]byte, error) {
-	data, err := marshalFunctionArgs(args)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return getHostEnvironment().encodeArgs(args)
 }
 
 // DeserializeFnResults de-serializes a function results.
 // The input result doesn't include the error. The cadence server has result, error.
 // This is to de-serialize the result.
-func DeserializeFnResults(result []byte) (interface{}, error) {
-	var fr fnReturnSignature
-	if err := getHostEnvironment().Encoder().Unmarshal(result, &fr); err != nil {
-		return nil, err
-	}
-	return fr.Ret, nil
+func DeserializeFnResults(result []byte, to interface{}) error {
+	return getHostEnvironment().decodeArg(result, to)
+}
+
+// newDecodeFuture creates a new future as well as associated Settable that is used to set its value.
+// fn - the decoded value needs to be validated against a function.
+func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
+	impl := &decodeFutureImpl{
+		futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
+	return impl, impl
 }

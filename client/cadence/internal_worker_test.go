@@ -129,7 +129,7 @@ func TestDecisionTaskHandler(t *testing.T) {
 	_, stackTrace, err := r.ProcessWorkflowTask(task, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, stackTrace, stackTrace)
-	require.Contains(t, stackTrace, "cadence.(*futureImpl).Get")
+	require.Contains(t, stackTrace, "cadence.(*decodeFutureImpl).Get")
 }
 
 // testSampleWorkflow
@@ -154,7 +154,7 @@ func testActivityMultipleArgs(ctx context.Context, arg1 int, arg2 string, arg3 b
 func TestCreateWorker(t *testing.T) {
 	// Create service endpoint
 	service := new(mocks.TChanWorkflowService)
-	logger := getLogger()
+	//logger := getLogger()
 
 	domain := "testDomain"
 
@@ -165,7 +165,7 @@ func TestCreateWorker(t *testing.T) {
 	activityID := "a1"
 	taskList := "tl1"
 	var startedEventID int64 = 10
-	input, err := marshalFunctionArgs([]interface{}{})
+	input, err := getHostEnvironment().encodeArgs([]interface{}{})
 	require.NoError(t, err)
 
 	activityTask := &s.PollForActivityTaskResponse{
@@ -197,7 +197,7 @@ func TestCreateWorker(t *testing.T) {
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
 	// Configure worker options.
-	workerOptions := NewWorkerOptions().SetLogger(logger).SetMaxActivityExecutionRate(20)
+	workerOptions := NewWorkerOptions().SetMaxActivityExecutionRate(20)
 
 	// Start Worker.
 	worker := NewWorker(
@@ -551,17 +551,143 @@ func TestRegisterVariousWorkflowTypes(t *testing.T) {
 	//require.NoError(t, err)
 }
 
+type testErrorDetails struct {
+	T string
+}
+
+func TestActivityErrorWithDetails(t *testing.T) {
+	a1 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (err error) {
+			return NewErrorWithDetails("testReason", "testStringDetails")
+		}}
+	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, 1))
+
+	err := deSerializeFunctionResult(a1.fn, encResult, nil)
+	require.NoError(t, err)
+	require.Error(t, e)
+	errWD := e.(ErrorWithDetails)
+	require.Equal(t, "testReason", errWD.Reason())
+	var strDetails string
+	errWD.Details(&strDetails)
+	require.Equal(t, "testStringDetails", strDetails)
+
+	a2 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (err error) {
+			return NewErrorWithDetails("testReason", testErrorDetails{T: "testErrorStack"})
+		}}
+	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
+	err = deSerializeFunctionResult(a2.fn, encResult, nil)
+	require.NoError(t, err)
+	require.Error(t, e)
+	errWD = e.(ErrorWithDetails)
+	require.Equal(t, "testReason", errWD.Reason())
+	var td testErrorDetails
+	errWD.Details(&td)
+	require.Equal(t, testErrorDetails{T: "testErrorStack"}, td)
+
+	a3 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (result string, err error) {
+			return "testResult", NewErrorWithDetails("testReason", testErrorDetails{T: "testErrorStack3"})
+		}}
+	encResult, e = a3.Execute(context.Background(), testEncodeFunctionArgs(a3.fn, 1))
+	var result string
+	err = deSerializeFunctionResult(a3.fn, encResult, &result)
+	require.NoError(t, err)
+	require.Equal(t, "testResult", result)
+	require.Error(t, e)
+	errWD = e.(ErrorWithDetails)
+	require.Equal(t, "testReason", errWD.Reason())
+	errWD.Details(&td)
+	require.Equal(t, testErrorDetails{T: "testErrorStack3"}, td)
+
+	a4 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (result string, err error) {
+			return "testResult4", NewErrorWithDetails("testReason", "testMultipleString", testErrorDetails{T: "testErrorStack4"})
+		}}
+	encResult, e = a4.Execute(context.Background(), testEncodeFunctionArgs(a4.fn, 1))
+	err = deSerializeFunctionResult(a3.fn, encResult, &result)
+	require.NoError(t, err)
+	require.Equal(t, "testResult4", result)
+	require.Error(t, e)
+	errWD = e.(ErrorWithDetails)
+	require.Equal(t, "testReason", errWD.Reason())
+	var ed string
+	errWD.Details(&ed, &td)
+	require.Equal(t, "testMultipleString", ed)
+	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
+}
+
+func TestActivityCancelledError(t *testing.T) {
+	a1 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (err error) {
+			return NewCanceledError("testCancelStringDetails")
+		}}
+	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, 1))
+	err := deSerializeFunctionResult(a1.fn, encResult, nil)
+	require.NoError(t, err)
+	require.Error(t, e)
+	errWD := e.(CanceledError)
+	var strDetails string
+	errWD.Details(&strDetails)
+	require.Equal(t, "testCancelStringDetails", strDetails)
+
+	a2 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (err error) {
+			return NewCanceledError(testErrorDetails{T: "testCancelErrorStack"})
+		}}
+	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
+	err = deSerializeFunctionResult(a2.fn, encResult, nil)
+	require.NoError(t, err)
+	require.Error(t, e)
+	errWD = e.(CanceledError)
+	var td testErrorDetails
+	errWD.Details(&td)
+	require.Equal(t, testErrorDetails{T: "testCancelErrorStack"}, td)
+
+	a3 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (result string, err error) {
+			return "testResult", NewCanceledError(testErrorDetails{T: "testErrorStack3"})
+		}}
+	encResult, e = a3.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
+	var r string
+	err = deSerializeFunctionResult(a3.fn, encResult, &r)
+	require.NoError(t, err)
+	require.Equal(t, "testResult", r)
+	require.Error(t, e)
+	errWD = e.(CanceledError)
+	errWD.Details(&td)
+	require.Equal(t, testErrorDetails{T: "testErrorStack3"}, td)
+
+	a4 := activityExecutor{
+		name: "test",
+		fn: func(arg1 int) (result string, err error) {
+			return "testResult4", NewCanceledError("testMultipleString", testErrorDetails{T: "testErrorStack4"})
+		}}
+	encResult, e = a4.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
+	err = deSerializeFunctionResult(a3.fn, encResult, &r)
+	require.NoError(t, err)
+	require.Equal(t, "testResult4", r)
+	require.Error(t, e)
+	errWD = e.(CanceledError)
+	var ed string
+	errWD.Details(&ed, &td)
+	require.Equal(t, "testMultipleString", ed)
+	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
+}
+
 // Encode function result.
 func testEncodeFunctionResult(r interface{}) []byte {
-	if err := getHostEnvironment().Encoder().Register(r); err != nil {
-		fmt.Println(err)
-		panic("Failed to register")
-	}
-	fr := fnReturnSignature{Ret: r}
-	result, err := getHostEnvironment().Encoder().Marshal(fr)
+	result, err := getHostEnvironment().encodeArg(r)
 	if err != nil {
 		fmt.Println(err)
-		panic("Failed to Marshal")
+		panic("Failed to encode")
 	}
 	return result
 }
@@ -573,7 +699,7 @@ func testEncodeFunctionArgs(workflowFunc interface{}, args ...interface{}) []byt
 		fmt.Println(err)
 		panic("Failed to register function types")
 	}
-	input, err := marshalFunctionArgs(args)
+	input, err := getHostEnvironment().encodeArgs(args)
 	if err != nil {
 		fmt.Println(err)
 		panic("Failed to encode arguments")

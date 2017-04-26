@@ -157,10 +157,10 @@ func (w *splitJoinActivityWorkflow) Execute(ctx Context, input []byte) (result [
 		if w.panic {
 			panic("simulated")
 		}
-		fmt.Printf("Before c2.Send")
+		fmt.Println("Before c2.Send")
 
 		c2.Send(ctx, true)
-		fmt.Printf("After c2.Send")
+		fmt.Println("After c2.Send")
 	})
 
 	c1.Receive(ctx)
@@ -190,9 +190,9 @@ func TestSplitJoinActivityWorkflow(t *testing.T) {
 		callback := args.Get(1).(resultHandler)
 		switch *parameters.ActivityID {
 		case "id1":
-			cbProcessor.Add(callback, []byte("Hello"), nil)
+			cbProcessor.Add(callback, testEncodeFunctionResult([]byte("Hello")), nil)
 		case "id2":
-			cbProcessor.Add(callback, []byte(" Flow!"), nil)
+			cbProcessor.Add(callback, testEncodeFunctionResult([]byte(" Flow!")), nil)
 		default:
 			panic(fmt.Sprintf("Unexpected activityID: %v", *parameters.ActivityID))
 		}
@@ -495,7 +495,13 @@ func TestExternalExampleWorkflow(t *testing.T) {
 		cbProcessor.Add(callback, []byte("test"), nil)
 	}).Times(3)
 
-	ctx.On("Complete", mock.Anything, nil).Return().Run(func(args mock.Arguments) {
+	ctx.On("Complete", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
+		if args.Get(1) != nil {
+			err := args.Get(1).(ErrorWithDetails)
+			var details []byte
+			err.Details(&details)
+			fmt.Printf("ErrorWithDetails: %v, Stack: %v \n", err.Reason(), string(details))
+		}
 		workflowComplete <- struct{}{}
 	}).Once()
 

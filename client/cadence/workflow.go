@@ -167,7 +167,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 // - returns Future with activity result or failure
 func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
-	future, settable := NewFuture(ctx)
+	future, settable := newDecodeFuture(ctx, f)
 	activityType, input, err := getValidatedActivityFunction(f, args)
 	if err != nil {
 		settable.Set(nil, err)
@@ -184,11 +184,7 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 	parameters.Input = input
 
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
-		result, serializeErr := deSerializeFunctionResult(f, r)
-		if serializeErr != nil {
-			e = serializeErr
-		}
-		settable.Set(result, e)
+		settable.Set(r, e)
 		executeDispatcher(ctx, getDispatcher(ctx))
 	})
 	Go(ctx, func(ctx Context) {
