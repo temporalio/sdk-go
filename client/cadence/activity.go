@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"go.uber.org/zap"
 )
 
 type (
@@ -52,6 +53,12 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 	}
 }
 
+// GetActivityLogger returns a logger that can be used in activity
+func GetActivityLogger(ctx context.Context) *zap.Logger {
+	env := getActivityEnv(ctx)
+	return env.logger
+}
+
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
 // TODO: Implement automatic heartbeating with cancellation through ctx.
 func RecordActivityHeartbeat(ctx context.Context, details []byte) error {
@@ -72,6 +79,7 @@ func WithActivityTask(
 	ctx context.Context,
 	task *shared.PollForActivityTaskResponse,
 	invoker ServiceInvoker,
+	logger *zap.Logger,
 ) context.Context {
 	// TODO: Add activity start to close timeout to activity task and use it as the deadline
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
@@ -82,6 +90,7 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: *task.WorkflowExecution.RunId,
 			ID:    *task.WorkflowExecution.WorkflowId},
+		logger: logger,
 	})
 }
 

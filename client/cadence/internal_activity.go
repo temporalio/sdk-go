@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/uber-go/cadence-client/common"
+	"go.uber.org/zap"
 )
 
 type (
@@ -55,6 +56,7 @@ type (
 		activityID        string
 		activityType      ActivityType
 		serviceInvoker    ServiceInvoker
+		logger            *zap.Logger
 	}
 
 	// activityOptions stores all activity-specific parameters that will
