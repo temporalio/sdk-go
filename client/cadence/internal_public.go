@@ -31,6 +31,8 @@ type (
 	}
 )
 
+var enableVerboseLogging bool
+
 // NewWorkerOptionsInternal creates an instance of worker options with default values.
 func NewWorkerOptionsInternal(testTags map[string]map[string]string) WorkerOptions {
 	return &workerOptions{
@@ -142,6 +144,11 @@ func SerializeFnArgs(args ...interface{}) ([]byte, error) {
 // This is to de-serialize the result.
 func DeserializeFnResults(result []byte, to interface{}) error {
 	return getHostEnvironment().decodeArg(result, to)
+}
+
+// EnableVerboseLogging enable or disable verbose logging. This is for internal use only.
+func EnableVerboseLogging(enable bool) {
+	enableVerboseLogging = enable
 }
 
 // newDecodeFuture creates a new future as well as associated Settable that is used to set its value.

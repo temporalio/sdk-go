@@ -12,7 +12,6 @@ import (
 	"github.com/uber-go/cadence-client/common/metrics"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -90,9 +89,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkf
 		identity:     params.Identity,
 		taskHandler:  taskHandler,
 		metricsScope: params.MetricsScope,
-		logger: params.Logger.With(
-			zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: params.Identity},
-			zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: params.TaskList}),
+		logger:       params.Logger,
 	}
 }
 
@@ -144,7 +141,9 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
-	wtp.logger.Debug("workflowTaskPoller::Poll")
+	if enableVerboseLogging {
+		wtp.logger.Debug("workflowTaskPoller::Poll")
+	}
 	request := &s.PollForDecisionTaskRequest{
 		Domain:   common.StringPtr(wtp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
@@ -172,14 +171,15 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkf
 		domain:       domain,
 		taskListName: params.TaskList,
 		identity:     params.Identity,
-		logger: params.Logger.With(
-			zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: params.Identity},
-			zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: params.TaskList}),
+		logger:       params.Logger,
 		metricsScope: params.MetricsScope}
 }
 
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll() (*activityTask, error) {
+	if enableVerboseLogging {
+		atp.logger.Debug("activityTaskPoller::Poll")
+	}
 	request := &s.PollForActivityTaskRequest{
 		Domain:   common.StringPtr(atp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),

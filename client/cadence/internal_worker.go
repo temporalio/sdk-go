@@ -881,28 +881,40 @@ func newAggregatedWorker(
 		EnableLoggingInReplay:     wOptions.enableLoggingInReplay,
 	}
 
+	ensureRequiredParams(&workerParams)
+	workerParams.Logger = workerParams.Logger.With(
+		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
+		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: groupName},
+		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
+	)
+	logger := workerParams.Logger
+
 	processTestTags(wOptions, &workerParams)
 
 	env := getHostEnvironment()
 	// workflow factory.
 	var workflowWorker Worker
-	if !wOptions.disableWorkflowWorker && env.lenWorkflowFns() > 0 {
-		workflowFactory := newRegisteredWorkflowFactory()
-		if wOptions.testTags != nil && len(wOptions.testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(
-				workflowFactory,
-				service,
-				domain,
-				workerParams,
-				wOptions.testTags,
-			)
+	if !wOptions.disableWorkflowWorker {
+		if env.lenWorkflowFns() > 0 {
+			workflowFactory := newRegisteredWorkflowFactory()
+			if wOptions.testTags != nil && len(wOptions.testTags) > 0 {
+				workflowWorker = newWorkflowWorkerWithPressurePoints(
+					workflowFactory,
+					service,
+					domain,
+					workerParams,
+					wOptions.testTags,
+				)
+			} else {
+				workflowWorker = newWorkflowWorker(
+					getWorkflowDefinitionFactory(workflowFactory),
+					service,
+					domain,
+					workerParams,
+					nil)
+			}
 		} else {
-			workflowWorker = newWorkflowWorker(
-				getWorkflowDefinitionFactory(workflowFactory),
-				service,
-				domain,
-				workerParams,
-				nil)
+			logger.Warn("Workflow worker is enabled but no workflow is registered. Use cadence.RegisterWorkflow() to register your workflow.")
 		}
 	}
 
@@ -919,6 +931,8 @@ func newAggregatedWorker(
 				workerParams,
 				nil,
 			)
+		} else {
+			logger.Warn("Activity worker is enabled but no activity is registered. Use cadence.RegisterActivity() to register your activity.")
 		}
 	}
 	return &aggregatedWorker{workflowWorker: workflowWorker, activityWorker: activityWorker}

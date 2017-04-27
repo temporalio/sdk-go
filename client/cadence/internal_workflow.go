@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"go.uber.org/zap"
 )
 
 type (
@@ -276,10 +278,9 @@ func getDispatcher(ctx Context) dispatcher {
 func executeDispatcher(ctx Context, dispatcher dispatcher) {
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
-		getWorkflowEnvironment(ctx).Complete(
-			nil,
-			NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())),
-		)
+		env := getWorkflowEnvironment(ctx)
+		env.GetLogger().Error("Dispatcher panic.", zap.Error(panicErr))
+		env.Complete(nil, NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())))
 		return
 	}
 	rp := *getWorkflowResultPointerPointer(ctx)

@@ -82,9 +82,7 @@ func newBaseWorker(options baseWorkerOptions, logger *zap.Logger) *baseWorker {
 		shutdownCh:  make(chan struct{}),
 		rateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
 		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger: logger.With(
-			zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: options.identity},
-			zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		logger:      logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
 	}
 }
 

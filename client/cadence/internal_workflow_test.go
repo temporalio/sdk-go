@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 type testContext struct {
@@ -229,6 +230,7 @@ func TestWorkflowPanic(t *testing.T) {
 		require.Contains(t, string(details), "cadence.(*splitJoinActivityWorkflow).Execute")
 		workflowComplete <- struct{}{}
 	}).Once()
+	ctx.On("GetLogger").Return(zap.NewNop())
 
 	w.Execute(ctx, []byte("Hello"))
 

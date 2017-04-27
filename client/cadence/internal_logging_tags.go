@@ -1,16 +1,17 @@
 package cadence
 
 const (
-	tagWorkerID     = "WorkerID"
-	tagWorkerType   = "WorkerType"
-	tagRoutineID    = "routineID"
 	tagActivityID   = "ActivityID"
-	tagWorkflowID   = "WorkflowID"
-	tagRunID        = "RunID"
 	tagActivityType = "ActivityType"
-	tagWorkflowType = "WorkflowType"
-	tagTimerID      = "TimerID"
-	tagTaskList     = "TaskList"
+	tagDomain       = "Domain"
 	tagEventID      = "EventID"
 	tagEventType    = "EventType"
+	tagRoutineID    = "routineID"
+	tagRunID        = "RunID"
+	tagTaskList     = "TaskList"
+	tagTimerID      = "TimerID"
+	tagWorkflowID   = "WorkflowID"
+	tagWorkflowType = "WorkflowType"
+	tagWorkerID     = "WorkerID"
+	tagWorkerType   = "WorkerType"
 )
