@@ -799,6 +799,31 @@ func getValidatedWorkerFunction(workflowFunc interface{}, args []interface{}) (*
 	return &WorkflowType{Name: fnName}, input, nil
 }
 
+const workflowEnvOptionsContextKey = "wfEnvOptions"
+
+func getWorkflowEnvOptions(ctx Context) *wfEnvironmentOptions {
+	env := ctx.Value(workflowEnvOptionsContextKey)
+	if env != nil {
+		return env.(*wfEnvironmentOptions)
+	}
+	return nil
+}
+
+func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
+	if valCtx := getWorkflowEnvOptions(ctx); valCtx == nil {
+		return WithValue(ctx, workflowEnvOptionsContextKey, &wfEnvironmentOptions{})
+	}
+	return ctx
+}
+
+type wfEnvironmentOptions struct {
+	workflowType                        *WorkflowType
+	input                               []byte
+	taskListName                        *string
+	executionStartToCloseTimeoutSeconds *int32
+	taskStartToCloseTimeoutSeconds      *int32
+}
+
 // decodeFutureImpl
 type decodeFutureImpl struct {
 	futureImpl

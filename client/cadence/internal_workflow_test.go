@@ -511,3 +511,36 @@ func TestExternalExampleWorkflow(t *testing.T) {
 	require.True(t, c, "Workflow failed to complete")
 	ctx.AssertExpectations(t)
 }
+
+type continueAsNewWorkflowTest struct{}
+
+func (w continueAsNewWorkflowTest) Execute(ctx Context, input []byte) (result []byte, err error) {
+	ctx = WithWorkflowTaskList(ctx, "newTaskList")
+	ctx = WithExecutionStartToCloseTimeout(ctx, time.Second)
+	ctx = WithWorkflowTaskStartToCloseTimeout(ctx, time.Second)
+	return nil, NewContinueAsNewError(ctx, "continueAsNewWorkflowTest", []byte("start"))
+}
+
+func TestContinueAsNewWorkflow(t *testing.T) {
+	w := newWorkflowDefinition(&continueAsNewWorkflowTest{})
+	ctx := &mockWorkflowEnvironment{}
+	workflowComplete := make(chan struct{}, 1)
+
+	cbProcessor := newAsyncTestCallbackProcessor()
+
+	ctx.On("Complete", []byte(nil), mock.Anything).Return().Run(func(args mock.Arguments) {
+		resultErr := args.Get(1).(*continueAsNewError)
+		require.EqualValues(t, "continueAsNewWorkflowTest", resultErr.options.workflowType.Name)
+		require.EqualValues(t, 1, *resultErr.options.executionStartToCloseTimeoutSeconds)
+		require.EqualValues(t, 1, *resultErr.options.taskStartToCloseTimeoutSeconds)
+		require.EqualValues(t, "newTaskList", *resultErr.options.taskListName)
+		workflowComplete <- struct{}{}
+	}).Once()
+
+	w.Execute(ctx, []byte(""))
+
+	c := cbProcessor.ProcessOrWait(workflowComplete)
+	require.True(t, c, "Workflow failed to complete")
+	ctx.AssertExpectations(t)
+
+}

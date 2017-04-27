@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uber-go/cadence-client/common"
 	"go.uber.org/zap"
 )
 
@@ -261,4 +262,25 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 	t := NewTimer(ctx, d)
 	err = t.Get(ctx, nil)
 	return
+}
+
+// WithWorkflowTaskList adds a task list to the context.
+func WithWorkflowTaskList(ctx Context, name string) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).taskListName = common.StringPtr(name)
+	return ctx1
+}
+
+// WithExecutionStartToCloseTimeout adds a workflow execution timeout to the context.
+func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
+	return ctx1
+}
+
+// WithWorkflowTaskStartToCloseTimeout adds a decision timeout to the context.
+func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
+	return ctx1
 }

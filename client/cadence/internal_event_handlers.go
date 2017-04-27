@@ -318,6 +318,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent
 	case m.EventType_CancelTimerFailed:
 		// No Operation.
 
+	case m.EventType_ContinueAsNewWorkflowExecutionFailed:
+	case m.EventType_WorkflowExecutionContinuedAsNew:
+		// No Operation.
+
 	default:
 		return nil, unhandledDecision, fmt.Errorf("missing event handler for event type: %v", event)
 	}

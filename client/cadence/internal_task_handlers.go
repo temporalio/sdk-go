@@ -83,6 +83,15 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 	}
 }
 
+// Get workflow start attributes.
+func (eh *history) GetWorkflowStartedAttr() (*s.WorkflowExecutionStartedEventAttributes, error) {
+	events := eh.workflowTask.task.History.Events
+	if len(events) == 0 || events[0].GetEventType() != s.EventType_WorkflowExecutionStarted {
+		return nil, errors.New("unable to find WorkflowExecutionStartedEventAttributes in the history")
+	}
+	return events[0].WorkflowExecutionStartedEventAttributes, nil
+}
+
 // Get last non replayed event ID.
 func (eh *history) LastNonReplayedID() int64 {
 	if eh.workflowTask.task.PreviousStartedEventId == nil {
@@ -324,7 +333,17 @@ ProcessEvents:
 		return nil, "", err
 	}
 
-	eventDecisions := wth.completeWorkflow(isWorkflowCompleted, unhandledDecision, completionResult, failure)
+	startAttributes, err := reorderedHistory.GetWorkflowStartedAttr()
+	if err != nil {
+		wth.logger.Error("Unable to read workflow start attributes.", zap.Error(err))
+		return nil, "", err
+	}
+	eventDecisions, err := wth.completeWorkflow(
+		isWorkflowCompleted, unhandledDecision, completionResult, failure, startAttributes)
+	if err != nil {
+		wth.logger.Error("Complete workflow failed.", zap.Error(err))
+		return nil, "", err
+	}
 	if len(eventDecisions) > 0 {
 		decisions = append(decisions, eventDecisions...)
 		if wth.metricsScope != nil {
@@ -489,11 +508,46 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 	return false
 }
 
-func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, unhandledDecision bool, completionResult []byte,
-	err error) []*s.Decision {
+func (wth *workflowTaskHandlerImpl) completeWorkflow(
+	isWorkflowCompleted bool, unhandledDecision bool, completionResult []byte,
+	err error, startAttributes *s.WorkflowExecutionStartedEventAttributes) ([]*s.Decision, error) {
 	decisions := []*s.Decision{}
 	if !unhandledDecision {
-		if err != nil {
+		if contErr, ok := err.(*continueAsNewError); ok {
+			// Continue as new error.
+
+			// Get workflow start attributes.
+			// task list name.
+			var taskListName string
+			if contErr.options.taskListName != nil {
+				taskListName = *contErr.options.taskListName
+			} else {
+				taskListName = startAttributes.TaskList.GetName()
+			}
+
+			// timeouts.
+			var executionStartToCloseTimeoutSeconds, taskStartToCloseTimeoutSeconds int32
+			if contErr.options.executionStartToCloseTimeoutSeconds != nil {
+				executionStartToCloseTimeoutSeconds = *contErr.options.executionStartToCloseTimeoutSeconds
+			} else {
+				executionStartToCloseTimeoutSeconds = startAttributes.GetExecutionStartToCloseTimeoutSeconds()
+			}
+			if contErr.options.taskStartToCloseTimeoutSeconds != nil {
+				taskStartToCloseTimeoutSeconds = *contErr.options.taskStartToCloseTimeoutSeconds
+			} else {
+				taskStartToCloseTimeoutSeconds = startAttributes.GetTaskStartToCloseTimeoutSeconds()
+			}
+
+			continueAsNewDecision := createNewDecision(s.DecisionType_ContinueAsNewWorkflowExecution)
+			continueAsNewDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
+				WorkflowType: workflowTypePtr(*contErr.options.workflowType),
+				Input:        contErr.options.input,
+				TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(taskListName)}),
+				ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionStartToCloseTimeoutSeconds),
+				TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(taskStartToCloseTimeoutSeconds),
+			}
+			decisions = append(decisions, continueAsNewDecision)
+		} else if err != nil {
 			// Workflow failures
 			failDecision := createNewDecision(s.DecisionType_FailWorkflowExecution)
 			reason, details := getErrorDetails(err)
@@ -511,7 +565,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(isWorkflowCompleted bool, u
 			decisions = append(decisions, completeDecision)
 		}
 	}
-	return decisions
+	return decisions, nil
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEvent, isInReplay bool) error {
