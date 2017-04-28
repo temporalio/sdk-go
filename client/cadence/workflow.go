@@ -164,7 +164,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 //  - If the activity failed to complete then the future get error would indicate the failure
 // and it can be one of ErrorWithDetails, TimeoutError, CanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
-// error ActivityTaskCanceledError.
+// error CanceledError.
 // - returns Future with activity result or failure
 func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
