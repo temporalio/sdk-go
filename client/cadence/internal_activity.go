@@ -282,14 +282,7 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}) err
 	}
 
 	// For everything we return result.
-	fv := reflect.ValueOf(to)
-	if fv.IsValid() {
-		fv.Elem().SetBytes(result)
-	} else {
-		return errors.New("deSerializeFunctionResult: Unable to assign result to the type provided")
-	}
-
-	return nil
+	return getHostEnvironment().decodeArg(result, to)
 }
 
 func setActivityParametersIfNotExist(ctx Context) Context {

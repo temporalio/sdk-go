@@ -805,3 +805,109 @@ func TestSelectFuture(t *testing.T) {
 	}
 	require.EqualValues(t, expected, history)
 }
+
+func TestSelectDecodeFuture(t *testing.T) {
+	var history []string
+	d := newDispatcher(background, func(ctx Context) {
+		future1, settable1 := newDecodeFuture(ctx, "testFn1")
+		future2, settable2 := newDecodeFuture(ctx, "testFn2")
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			settable1.SetValue([]byte("one"))
+		})
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			settable2.SetValue([]byte("two"))
+		})
+
+		s := NewSelector(ctx)
+		s.
+			AddFuture(future1, func(f Future) {
+				var v []byte
+				err := f.Get(ctx, &v)
+				assert.NoError(t, err)
+				history = append(history, fmt.Sprintf("c1-%s", v))
+			}).
+			AddFuture(future2, func(f Future) {
+				var v []byte
+				err := f.Get(ctx, &v)
+				assert.NoError(t, err)
+				history = append(history, fmt.Sprintf("c2-%s", v))
+			})
+		history = append(history, "select1")
+		s.Select(ctx)
+		history = append(history, "select2")
+		s.Select(ctx)
+		history = append(history, "done")
+	})
+	err := d.ExecuteUntilAllBlocked()
+	if err != nil {
+		require.NoError(t, err, err.StackTrace())
+	}
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-two",
+		"c1-one",
+		"select2",
+		"c2-two",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestDecodeFutureChain(t *testing.T) {
+	var history []string
+	var f, cf Future
+	var s, cs Settable
+
+	d := newDispatcher(background, func(ctx Context) {
+		f, s = newDecodeFuture(ctx, "testFn")
+		cf, cs = newDecodeFuture(ctx, "testFun")
+		s.Chain(cf)
+		Go(ctx, func(ctx Context) {
+			history = append(history, "child-start")
+			assert.False(t, f.IsReady())
+			var v []byte
+			err := f.Get(ctx, &v)
+			assert.NotNil(t, err)
+			assert.NotNil(t, v)
+			assert.True(t, f.IsReady())
+			history = append(history, fmt.Sprintf("future-get-%s-%v", v, err))
+			// test second get of the ready future
+			err = f.Get(ctx, &v)
+			assert.NotNil(t, err)
+			assert.NotNil(t, v)
+			assert.True(t, f.IsReady())
+			history = append(history, fmt.Sprintf("child-end-%s-%v", v, err))
+		})
+		history = append(history, "root-end")
+
+	})
+	require.EqualValues(t, 0, len(history))
+	err := d.ExecuteUntilAllBlocked()
+	if err != nil {
+		require.NoError(t, err, err.StackTrace())
+	}
+	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
+	history = append(history, "future-set")
+	assert.False(t, f.IsReady())
+	cs.Set([]byte("value1"), errors.New("error1"))
+	assert.True(t, f.IsReady())
+	err = d.ExecuteUntilAllBlocked()
+	if err != nil {
+		require.NoError(t, err, err.StackTrace())
+	}
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"root-end",
+		"child-start",
+		"future-set",
+		"future-get-value1-error1",
+		"child-end-value1-error1",
+	}
+	require.EqualValues(t, expected, history)
+}

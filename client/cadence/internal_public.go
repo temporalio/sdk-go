@@ -157,6 +157,6 @@ func EnableVerboseLogging(enable bool) {
 // fn - the decoded value needs to be validated against a function.
 func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 	impl := &decodeFutureImpl{
-		futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
+		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
 	return impl, impl
 }

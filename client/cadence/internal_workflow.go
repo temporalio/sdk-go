@@ -35,7 +35,7 @@ type (
 		err     error
 		ready   bool
 		channel *channelImpl
-		chained []*futureImpl // Futures that are chained to this one
+		chained []asyncFuture // Futures that are chained to this one
 	}
 
 	// Dispatcher is a container of a set of coroutines.
@@ -83,7 +83,7 @@ type (
 
 		sendFunc   *func()         // function to call when channel accepted a message. nil for receive case.
 		sendValue  *interface{}    // value to send to the channel. Used only for send case.
-		future     *futureImpl     // Used for future case
+		future     asyncFuture     // Used for future case
 		futureFunc *func(f Future) // function to call when Future is ready
 	}
 
@@ -117,6 +117,23 @@ type (
 		executing        bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
 		mutex            sync.Mutex // used to synchronize executing
 		closed           bool
+	}
+
+	asyncFuture interface {
+		Future
+		// Used by selectorImpl
+		// If Future is ready returns its value immediately.
+		// If not registers callback which is called when it is ready.
+		GetAsync(callback receiveCallback) (v interface{}, ok bool, err error)
+
+		// This future will added to list of dependency futures.
+		ChainFuture(f Future)
+
+		// Gets the current value and error.
+		// Make sure this is called once the future is ready.
+		GetValueAndError() (v interface{}, err error)
+
+		Set(value interface{}, err error)
 	}
 )
 
@@ -173,7 +190,7 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 // Used by selectorImpl
 // If Future is ready returns its value immediately.
 // If not registers callback which is called when it is ready.
-func (f *futureImpl) getAsync(callback receiveCallback) (v interface{}, ok bool, err error) {
+func (f *futureImpl) GetAsync(callback receiveCallback) (v interface{}, ok bool, err error) {
 	_, _, more := f.channel.receiveAsyncImpl(callback)
 	// Future uses Channel.Close to indicate that it is ready.
 	// So more being true (channel is still open) indicates future is not ready.
@@ -221,18 +238,28 @@ func (f *futureImpl) Chain(future Future) {
 	if f.ready {
 		panic("already set")
 	}
-	ch, ok := future.(*futureImpl)
+
+	ch, ok := future.(asyncFuture)
 	if !ok {
 		panic("cannot chain Future that wasn't created with cadence.NewFuture")
 	}
 	if !ch.IsReady() {
-		ch.chained = append(ch.chained, f)
+		ch.ChainFuture(f)
 		return
 	}
-	f.value = ch.value
-	f.err = ch.err
+	val, err := ch.GetValueAndError()
+	f.value = val
+	f.err = err
 	f.ready = true
 	return
+}
+
+func (f *futureImpl) ChainFuture(future Future) {
+	f.chained = append(f.chained, future.(asyncFuture))
+}
+
+func (f *futureImpl) GetValueAndError() (interface{}, error) {
+	return f.value, f.err
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
@@ -669,7 +696,11 @@ func (s *selectorImpl) AddSend(c Channel, v interface{}, f func()) Selector {
 }
 
 func (s *selectorImpl) AddFuture(future Future, f func(future Future)) Selector {
-	s.cases = append(s.cases, &selectCase{future: future.(*futureImpl), futureFunc: &f})
+	asyncF, ok := future.(asyncFuture)
+	if !ok {
+		panic("cannot chain Future that wasn't created with cadence.NewFuture")
+	}
+	s.cases = append(s.cases, &selectCase{future: asyncF, futureFunc: &f})
 	return s
 }
 
@@ -746,7 +777,7 @@ func (s *selectorImpl) Select(ctx Context) {
 				}
 				return true
 			}
-			_, ok, _ := p.future.getAsync(callback)
+			_, ok, _ := p.future.GetAsync(callback)
 			if ok {
 				p.futureFunc = nil
 				f(p.future)
@@ -827,7 +858,7 @@ type wfEnvironmentOptions struct {
 
 // decodeFutureImpl
 type decodeFutureImpl struct {
-	futureImpl
+	*futureImpl
 	fn interface{}
 }
 
