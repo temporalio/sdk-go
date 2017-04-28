@@ -530,6 +530,7 @@ func testWorkflowReturnString(ctx Context, arg1 int) (result string, err error) 
 }
 
 type testWorkflowResult struct {
+	V int
 }
 
 func testWorkflowReturnStruct(ctx Context, arg1 int) (result testWorkflowResult, err error) {
@@ -684,6 +685,19 @@ func TestActivityCancelledError(t *testing.T) {
 	errWD.Details(&ed, &td)
 	require.Equal(t, "testMultipleString", ed)
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
+}
+
+func TestActivityExecutionVariousTypes(t *testing.T) {
+	a1 := activityExecutor{
+		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
+			return &testWorkflowResult{V: 2}, nil
+		}}
+	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, "test"))
+	require.NoError(t, e)
+	var result *testWorkflowResult
+	err := deSerializeFunctionResult(a1.fn, encResult, &result)
+	require.NoError(t, err)
+	require.Equal(t, 2, result.V)
 }
 
 // Encode function result.

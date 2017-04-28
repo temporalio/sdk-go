@@ -208,10 +208,6 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType.Implements(contextElem)
 }
 
-type fnReturnSignature struct {
-	Ret interface{}
-}
-
 func validateFunctionAndGetResults(f interface{}, values []reflect.Value) ([]byte, error) {
 	fnName := getFunctionName(f)
 	resultSize := len(values)

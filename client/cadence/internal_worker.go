@@ -519,15 +519,17 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 	return nil
 }
 
+func (th *hostEnvImpl) registerValue(v interface{}) error {
+	rType := reflect.Indirect(reflect.ValueOf(v)).Type()
+	return th.registerType(rType)
+}
+
 // register type with our encoder.
 func (th *hostEnvImpl) registerType(t reflect.Type) error {
 	// Interfaces cannot be registered, their implementations should be
 	// https://golang.org/pkg/encoding/gob/#Register
-	if t.Kind() == reflect.Interface {
+	if t.Kind() == reflect.Interface || t.Kind() == reflect.Ptr {
 		return nil
-	}
-	if t.Kind() == reflect.Ptr {
-		t = reflect.TypeOf(t.Elem())
 	}
 	arg := reflect.Zero(t).Interface()
 	return th.Encoder().Register(arg)
@@ -588,7 +590,7 @@ func (th *hostEnvImpl) encode(r interface{}) ([]byte, error) {
 		return r.([]byte), nil
 	}
 
-	err := th.registerType(reflect.TypeOf(r))
+	err := th.registerValue(r)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +608,7 @@ func (th *hostEnvImpl) decode(data []byte, to interface{}) error {
 		return nil
 	}
 
-	err := th.registerType(reflect.TypeOf(to))
+	err := th.registerValue(to)
 	if err != nil {
 		return err
 	}
@@ -624,12 +626,13 @@ func (th *hostEnvImpl) encodeArgs(args []interface{}) ([]byte, error) {
 	}
 
 	for i := 0; i < len(args); i++ {
-		err := th.registerType(reflect.TypeOf(args[i]))
+		err := th.registerValue(args[i])
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	// TODO: get rid of fnSignature and encode all of them directly with encoder.
 	s := fnSignature{Args: args}
 	input, err := getHostEnvironment().encode(s)
 	if err != nil {
@@ -668,7 +671,7 @@ func (th *hostEnvImpl) decodeArgsTo(data []byte, to []interface{}) error {
 	}
 
 	for i := 0; i < len(to); i++ {
-		err := th.registerType(reflect.TypeOf(to[i]))
+		err := th.registerValue(to[i])
 		if err != nil {
 			return err
 		}
@@ -694,8 +697,12 @@ func (th *hostEnvImpl) encodeArg(arg interface{}) ([]byte, error) {
 		return arg.([]byte), nil
 	}
 
-	s := fnReturnSignature{Ret: arg}
-	input, err := getHostEnvironment().encode(s)
+	err := th.registerValue(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	input, err := getHostEnvironment().encode(arg)
 	if err != nil {
 		return nil, err
 	}
@@ -709,16 +716,13 @@ func (th *hostEnvImpl) decodeArg(data []byte, to interface{}) error {
 		return nil
 	}
 
-	s := fnReturnSignature{}
-	err := getHostEnvironment().decode(data, &s)
+	err := th.registerValue(to)
 	if err != nil {
 		return err
 	}
-	fv := reflect.ValueOf(to)
-	if fv.IsValid() {
-		fv.Elem().Set(reflect.ValueOf(s.Ret))
-	}
-	return nil
+
+	err = getHostEnvironment().decode(data, to)
+	return err
 }
 
 func isTypeByteSlice(inType reflect.Type) bool {
