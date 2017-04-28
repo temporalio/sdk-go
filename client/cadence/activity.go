@@ -60,14 +60,24 @@ func GetActivityLogger(ctx context.Context) *zap.Logger {
 }
 
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
-// TODO: Implement automatic heartbeating with cancellation through ctx.
-func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) error {
+// If the activity is either cancelled (or) workflow/activity doesn't exist then we would cancel
+// the context with error context.Canceled.
+// 	TODO: we don't have a way to distinguish between the two cases when context is cancelled because
+// 	context doesn't support overriding value of ctx.Error.
+// 	TODO: Implement automatic heartbeating with cancellation through ctx.
+// details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
+//	can check error TimeOutType()/Details().
+func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	data, err := getHostEnvironment().encodeArgs(details)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	env := getActivityEnv(ctx)
-	return env.serviceInvoker.Heartbeat(data)
+	err = env.serviceInvoker.Heartbeat(data)
+	if err != nil {
+		log := GetActivityLogger(ctx)
+		log.Debug("RecordActivityHeartbeat With Error:", zap.Error(err))
+	}
 }
 
 // ServiceInvoker abstracts calls to the Cadence service from an activity implementation.

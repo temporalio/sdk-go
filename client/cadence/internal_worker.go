@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultConcurrentPollRoutineSize          = 1
+	defaultConcurrentPollRoutineSize          = 2
 	defaultMaxConcurrentActivityExecutionSize = 10000  // Large execution size(unlimited)
 	defaultMaxActivityExecutionRate           = 100000 // Large execution rate(100K per sec)
 )

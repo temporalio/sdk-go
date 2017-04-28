@@ -161,7 +161,7 @@ func (wc *workflowClient) RecordActivityHeartbeat(taskToken []byte, details ...i
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, data)
+	return recordActivityHeartbeat(wc.workflowService, wc.identity, taskToken, data, serviceOperationRetryPolicy)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters

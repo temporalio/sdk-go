@@ -249,38 +249,20 @@ func (s *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 }
 
 func (s *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
-	mockService := mocks.TChanWorkflowService{}
+	mockService := &mocks.TChanWorkflowService{}
 	entityNotExistsError := &m.EntityNotExistsError{}
 	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(nil, entityNotExistsError)
 
-	cadenceInvoker := &cadenceInvoker{
-		identity:  "Test_Cadence_Invoker",
-		service:   &mockService,
-		taskToken: nil,
-	}
+	cadenceInvoker := newServiceInvoker(
+		nil,
+		"Test_Cadence_Invoker",
+		mockService,
+		func() {})
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	s.NotNil(heartbeatErr)
 	_, ok := (heartbeatErr).(*m.EntityNotExistsError)
 	s.True(ok, "heartbeatErr must be EntityNotExistsError.")
-}
-
-func (s *TaskHandlersTestSuite) TestHeartBeat_CancelledError() {
-	mockService := mocks.TChanWorkflowService{}
-	cancelRequested := true
-	heartbeatResponse := m.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
-	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(&heartbeatResponse, nil)
-
-	cadenceInvoker := &cadenceInvoker{
-		identity:  "Test_Cadence_Invoker",
-		service:   &mockService,
-		taskToken: nil,
-	}
-
-	heartbeatErr := cadenceInvoker.Heartbeat(nil)
-	s.NotNil(heartbeatErr)
-	_, ok := (heartbeatErr).(CanceledError)
-	s.True(ok, "heartbeatErr must be CanceledError.")
 }
 
 func (s *TaskHandlersTestSuite) printAllDecisions(decisions []*m.Decision) {

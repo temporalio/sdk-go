@@ -544,7 +544,6 @@ func testWorkflowReturnStructPtrPtr(ctx Context, arg1 int) (result **testWorkflo
 	return nil, nil
 }
 
-
 func TestRegisterVariousWorkflowTypes(t *testing.T) {
 	RegisterWorkflow(testWorkflowSample)
 	RegisterWorkflow(testWorkflowMultipleArgs)

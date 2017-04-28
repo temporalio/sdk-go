@@ -3,6 +3,7 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"context"
 	"time"
 
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
@@ -280,7 +281,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 	}
 
 	reason, details := getErrorDetails(err)
-	if _, ok := err.(CanceledError); ok {
+	if _, ok := err.(CanceledError); ok || err == context.Canceled {
 		return &s.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
 			Details:   details,

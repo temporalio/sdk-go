@@ -162,7 +162,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 //  - f - Either a activity name or a function that is getting scheduled.
 //  - args - The arguments that need to be passed to the function represented by 'f'.
 //  - If the activity failed to complete then the future get error would indicate the failure
-// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError.
+// and it can be one of ErrorWithDetails, TimeoutError, CanceledError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error ActivityTaskCanceledError.
 // - returns Future with activity result or failure
