@@ -82,6 +82,8 @@ func NewActivityTaskWorker(
 		Identity:                  wOptions.identity,
 		MetricsScope:              wOptions.metricsScope,
 		Logger:                    wOptions.logger,
+		EnableLoggingInReplay:     wOptions.enableLoggingInReplay,
+		UserContext:               wOptions.userContext,
 	}
 
 	processTestTags(wOptions, &workerParams)

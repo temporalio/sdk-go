@@ -94,6 +94,7 @@ func WithActivityTask(
 	task *shared.PollForActivityTaskResponse,
 	invoker ServiceInvoker,
 	logger *zap.Logger,
+	userContext context.Context,
 ) context.Context {
 	// TODO: Add activity start to close timeout to activity task and use it as the deadline
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
@@ -104,7 +105,8 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: *task.WorkflowExecution.RunId,
 			ID:    *task.WorkflowExecution.WorkflowId},
-		logger: logger,
+		logger:      logger,
+		userContext: userContext,
 	})
 }
 

@@ -62,6 +62,7 @@ type (
 		service         m.TChanWorkflowService
 		metricsScope    tally.Scope
 		logger          *zap.Logger
+		userContext     context.Context
 	}
 
 	// history wrapper method to help information about events.
@@ -659,9 +660,13 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (i
 		zap.String(tagRunID, t.GetWorkflowExecution().GetRunId()),
 		zap.String(tagActivityType, t.GetActivityType().GetName()))
 
-	canCtx, cancel := context.WithCancel(context.Background())
+	rootCtx := ath.userContext
+	if rootCtx == nil {
+		rootCtx = context.Background()
+	}
+	canCtx, cancel := context.WithCancel(rootCtx)
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel)
-	ctx := WithActivityTask(canCtx, t, invoker, ath.logger)
+	ctx := WithActivityTask(canCtx, t, invoker, ath.logger, ath.userContext)
 	activityType := *t.GetActivityType()
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
 	if !ok {

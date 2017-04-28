@@ -1,6 +1,8 @@
 package cadence
 
 import (
+	"context"
+
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -55,6 +57,9 @@ type (
 		// Optional: Disable running activity workers.
 		// default: false
 		SetDisableActivityWorker(disable bool) WorkerOptions
+
+		// Optional: sets context for activity
+		WithActivityContext(ctx context.Context) WorkerOptions
 	}
 )
 
