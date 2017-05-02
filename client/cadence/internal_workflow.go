@@ -306,7 +306,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
 		env := getWorkflowEnvironment(ctx)
-		env.GetLogger().Error("Dispatcher panic.", zap.Error(panicErr))
+		env.GetLogger().Error("Dispatcher panic.", zap.String("PanicStack", panicErr.StackTrace()))
 		env.Complete(nil, NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())))
 		return
 	}
@@ -479,16 +479,20 @@ func (s *coroutineState) yield(status string) {
 }
 
 func getStackTrace(coroutineName, status string, stackDepth int) string {
+	top := fmt.Sprintf("coroutine %s [%s]:", coroutineName, status)
+	// Omit top stackDepth frames + top status line.
+	// Omit bottom two frames which is wrapping of coroutine in a goroutine.
+	return getStackTraceRaw(top, stackDepth*2+1, 4)
+}
+
+func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 	stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
 	rawStack := fmt.Sprintf("%s", strings.TrimRightFunc(string(stack), unicode.IsSpace))
 	if disableCleanStackTraces {
 		return rawStack
 	}
 	lines := strings.Split(rawStack, "\n")
-	// Omit top stackDepth frames + top status line.
-	// Omit bottom two frames which is wrapping of coroutine in a goroutine.
-	lines = lines[stackDepth*2+1 : len(lines)-4]
-	top := fmt.Sprintf("coroutine %s [%s]:", coroutineName, status)
+	lines = lines[omitTop : len(lines)-omitBottom]
 	lines = append([]string{top}, lines...)
 	return strings.Join(lines, "\n")
 }
@@ -526,7 +530,7 @@ func (s *coroutineState) stackTrace() string {
 	}
 	stackCh := make(chan string, 1)
 	s.unblock <- func(status string, stackDepth int) bool {
-		stackCh <- getStackTrace(s.name, status, stackDepth+1)
+		stackCh <- getStackTrace(s.name, status, stackDepth+2)
 		return true
 	}
 	return <-stackCh
@@ -577,7 +581,7 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx 
 		defer crt.close()
 		defer func() {
 			if r := recover(); r != nil {
-				st := getStackTrace(name, "panic", 3)
+				st := getStackTrace(name, "panic", 4)
 				crt.panicError = newPanicError(r, st)
 			}
 		}()

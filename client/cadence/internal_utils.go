@@ -58,6 +58,10 @@ func getErrorDetails(err error) (string, []byte) {
 		wErr.Details(&details)
 		return "canceled", details
 	}
+	if wErr, ok := err.(PanicError); ok {
+		return err.Error(), []byte(wErr.StackTrace())
+	}
+
 	return err.Error(), []byte("")
 }
 

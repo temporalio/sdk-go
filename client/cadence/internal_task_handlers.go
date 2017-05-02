@@ -654,7 +654,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (interface{}, error) {
+func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (result interface{}, err error) {
 	ath.logger.Debug("Processing new activity task",
 		zap.String(tagWorkflowID, t.GetWorkflowExecution().GetWorkflowId()),
 		zap.String(tagRunID, t.GetWorkflowExecution().GetRunId()),
@@ -673,6 +673,17 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (i
 		// Couldn't find the activity implementation.
 		return nil, fmt.Errorf("No implementation for activityType=%v", activityType.GetName())
 	}
+
+	// panic handler
+	defer func() {
+		if p := recover(); p != nil {
+			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskListName)
+			st := getStackTraceRaw(topLine, 7, 0)
+			ath.logger.Error("Activity panic.", zap.String("PanicStack", st))
+			panicErr := newPanicError(p, st)
+			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
+		}
+	}()
 
 	output, err := activityImplementation.Execute(ctx, t.GetInput())
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err), nil
