@@ -186,7 +186,6 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
 		settable.Set(r, e)
-		executeDispatcher(ctx, getDispatcher(ctx))
 	})
 	Go(ctx, func(ctx Context) {
 		if ctx.Done() == nil {
@@ -236,7 +235,6 @@ func NewTimer(ctx Context, d time.Duration) Future {
 
 	t := getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e error) {
 		settable.Set(nil, e)
-		executeDispatcher(ctx, getDispatcher(ctx))
 	})
 	if t != nil {
 		Go(ctx, func(ctx Context) {

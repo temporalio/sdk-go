@@ -121,6 +121,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		}),
 		createTestEventActivityTaskStarted(3, &m.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(4, &m.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskStarted(5),
 	}
 	task := createWorkflowTask(testEvents[0:1], 0)
 	params := workerExecutionParameters{

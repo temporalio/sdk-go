@@ -31,7 +31,7 @@ type (
 	}
 )
 
-var enableVerboseLogging bool
+var enableVerboseLogging = false
 
 // NewWorkerOptionsInternal creates an instance of worker options with default values.
 func NewWorkerOptionsInternal(testTags map[string]map[string]string) WorkerOptions {

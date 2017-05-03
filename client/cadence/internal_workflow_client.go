@@ -1,6 +1,7 @@
 package cadence
 
 import (
+	"errors"
 	"github.com/pborman/uuid"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
@@ -8,7 +9,6 @@ import (
 	"github.com/uber-go/cadence-client/common/backoff"
 	"github.com/uber-go/cadence-client/common/metrics"
 	"github.com/uber-go/tally"
-	"errors"
 )
 
 // Assert that structs do indeed implement the interfaces

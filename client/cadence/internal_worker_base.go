@@ -40,6 +40,9 @@ type (
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
 		Execute(env workflowEnvironment, input []byte)
+		// Called for each non timed out startDecision event.
+		// Executed after all history events since the previous decision are applied to workflowDefinition
+		OnDecisionTaskStarted()
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 		Close()
 	}

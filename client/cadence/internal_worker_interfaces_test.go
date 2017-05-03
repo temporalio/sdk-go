@@ -47,6 +47,10 @@ func (wf helloWorldWorkflow) Close() {
 
 }
 
+func (wf helloWorldWorkflow) OnDecisionTaskStarted() {
+
+}
+
 func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
 	activityName := "Greeter_Activity"
 	activityParameters := executeActivityParameters{

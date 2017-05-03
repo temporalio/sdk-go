@@ -233,7 +233,11 @@ func (wc *workflowEnvironmentImpl) addPostEventHooks(hook func()) {
 	wc.postEventHooks = append(wc.postEventHooks, hook)
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent, isReplay bool) ([]*m.Decision, bool, error) {
+func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
+	event *m.HistoryEvent,
+	isReplay bool,
+	isLast bool,
+) ([]*m.Decision, bool, error) {
 	if event == nil {
 		return nil, false, errors.New("nil event provided")
 	}
@@ -265,7 +269,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent
 	case m.EventType_DecisionTaskScheduled:
 	// No Operation
 	case m.EventType_DecisionTaskStarted:
-	// No Operation
+		weh.workflowDefinition.OnDecisionTaskStarted()
 	case m.EventType_DecisionTaskTimedOut:
 	// TODO:
 	case m.EventType_DecisionTaskCompleted:
@@ -334,6 +338,14 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(event *m.HistoryEvent
 		}
 		weh.postEventHooks = []func(){}
 	}
+
+	// When replaying histories to get stack trace or current state the last event might be not
+	// decision started. So always call OnDecisionTaskStarted on the last event.
+	// Don't call for EventType_DecisionTaskStarted as it was already called when handling it.
+	if isLast && event.GetEventType() != m.EventType_DecisionTaskStarted {
+		weh.workflowDefinition.OnDecisionTaskStarted()
+	}
+
 	return weh.SwapExecuteDecisions([]*m.Decision{}), unhandledDecision, nil
 }
 
