@@ -57,7 +57,6 @@ type (
 		activityType      ActivityType
 		serviceInvoker    ServiceInvoker
 		logger            *zap.Logger
-		userContext       context.Context
 	}
 
 	// activityOptions stores all activity-specific parameters that will
