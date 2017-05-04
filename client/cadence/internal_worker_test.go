@@ -473,6 +473,8 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 
 	cbProcessor := newAsyncTestCallbackProcessor(w.OnDecisionTaskStarted)
 
+	ctx.On("RegisterCancel", mock.Anything).Return().Run(func(args mock.Arguments) {}).Once()
+
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		params := args.Get(0).(executeActivityParameters)
 		var r []byte

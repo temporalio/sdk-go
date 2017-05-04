@@ -105,4 +105,23 @@ func (_m *mockWorkflowEnvironment) WorkflowInfo() *WorkflowInfo {
 	return r0
 }
 
+// RequestCancelWorkflow provides a mock function with given fields: domainName, workflowID, runID
+func (_m *mockWorkflowEnvironment) RequestCancelWorkflow(domainName string, workflowID string, runID string) error {
+	ret := _m.Called(domainName, workflowID, runID)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, string, string) error); ok {
+		r0 = rf(domainName, workflowID, runID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RegisterCancel provides a mock function with given fields: handler
+func (_m *mockWorkflowEnvironment) RegisterCancel(handler func()) {
+	_m.Called(handler)
+}
+
 var _ workflowEnvironment = (*mockWorkflowEnvironment)(nil)

@@ -34,6 +34,8 @@ type (
 		workflowTimerClient
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
+		RegisterCancel(handler func())
+		RequestCancelWorkflow(domainName, workflowID, runID string) error
 		GetLogger() *zap.Logger
 	}
 

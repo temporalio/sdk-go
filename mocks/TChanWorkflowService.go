@@ -199,20 +199,6 @@ func (_m *TChanWorkflowService) RegisterDomain(ctx thrift.Context, registerReque
 	return r0
 }
 
-// RequestCancelWorkflowExecution provides a mock function with given fields: ctx, cancelRequest
-func (_m *TChanWorkflowService) RequestCancelWorkflowExecution(ctx thrift.Context, cancelRequest *shared.RequestCancelWorkflowExecutionRequest) error {
-	ret := _m.Called(ctx, cancelRequest)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.RequestCancelWorkflowExecutionRequest) error); ok {
-		r0 = rf(ctx, cancelRequest)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
 // RespondActivityTaskCanceled provides a mock function with given fields: ctx, canceledRequest
 func (_m *TChanWorkflowService) RespondActivityTaskCanceled(ctx thrift.Context, canceledRequest *shared.RespondActivityTaskCanceledRequest) error {
 	ret := _m.Called(ctx, canceledRequest)
@@ -269,20 +255,6 @@ func (_m *TChanWorkflowService) RespondDecisionTaskCompleted(ctx thrift.Context,
 	return r0
 }
 
-// SignalWorkflowExecution provides a mock function with given fields: ctx, signalRequest
-func (_m *TChanWorkflowService) SignalWorkflowExecution(ctx thrift.Context, signalRequest *shared.SignalWorkflowExecutionRequest) error {
-	ret := _m.Called(ctx, signalRequest)
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.SignalWorkflowExecutionRequest) error); ok {
-		r0 = rf(ctx, signalRequest)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
 // StartWorkflowExecution provides a mock function with given fields: ctx, startRequest
 func (_m *TChanWorkflowService) StartWorkflowExecution(ctx thrift.Context, startRequest *shared.StartWorkflowExecutionRequest) (*shared.StartWorkflowExecutionResponse, error) {
 	ret := _m.Called(ctx, startRequest)
@@ -313,6 +285,34 @@ func (_m *TChanWorkflowService) TerminateWorkflowExecution(ctx thrift.Context, t
 	var r0 error
 	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.TerminateWorkflowExecutionRequest) error); ok {
 		r0 = rf(ctx, terminateRequest)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RequestCancelWorkflowExecution provides a mock function with given fields: ctx, cancelRequest
+func (_m *TChanWorkflowService) RequestCancelWorkflowExecution(ctx thrift.Context, cancelRequest *shared.RequestCancelWorkflowExecutionRequest) error {
+	ret := _m.Called(ctx, cancelRequest)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.RequestCancelWorkflowExecutionRequest) error); ok {
+		r0 = rf(ctx, cancelRequest)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// SignalWorkflowExecution provides a mock function with given fields: ctx, signalRequest
+func (_m *TChanWorkflowService) SignalWorkflowExecution(ctx thrift.Context, signalRequest *shared.SignalWorkflowExecutionRequest) error {
+	ret := _m.Called(ctx, signalRequest)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.SignalWorkflowExecutionRequest) error); ok {
+		r0 = rf(ctx, signalRequest)
 	} else {
 		r0 = ret.Error(0)
 	}

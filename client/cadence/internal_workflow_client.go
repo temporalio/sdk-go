@@ -93,6 +93,25 @@ func (wc *workflowClient) StartWorkflow(
 	return executionInfo, nil
 }
 
+// CancelWorkflow cancels a workflow in execution.
+func (wc *workflowClient) CancelWorkflow(workflowID string, runID string) error {
+	request := &s.RequestCancelWorkflowExecutionRequest{
+		Domain: common.StringPtr(wc.domain),
+		WorkflowExecution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      common.StringPtr(runID),
+		},
+		Identity: common.StringPtr(wc.identity),
+	}
+
+	return backoff.Retry(
+		func() error {
+			ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
+			defer cancel()
+			return wc.workflowService.RequestCancelWorkflowExecution(ctx, request)
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+}
+
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.

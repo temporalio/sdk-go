@@ -262,6 +262,27 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 	return
 }
 
+// RequestCancelWorkflow can be used to request cancellation of an external workflow.
+// - workflowID - name of the workflow ID.
+// - runID 	- Optional - indicates the instance of a workflow.
+// You can specify the domain of the workflow using the context like
+//	ctx := WithWorkflowDomain(ctx, "domain-name")
+func RequestCancelWorkflow(ctx Context, workflowID, runID string) error {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	options := getWorkflowEnvOptions(ctx1)
+	if options.domain == nil {
+		return errors.New("need a valid domain")
+	}
+	return getWorkflowEnvironment(ctx).RequestCancelWorkflow(*options.domain, workflowID, runID)
+}
+
+// WithWorkflowDomain adds a domain to the context.
+func WithWorkflowDomain(ctx Context, name string) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).domain = common.StringPtr(name)
+	return ctx1
+}
+
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)

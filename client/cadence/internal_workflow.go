@@ -18,6 +18,7 @@ type (
 	syncWorkflowDefinition struct {
 		workflow   workflow
 		dispatcher dispatcher
+		cancel     CancelFunc
 		rootCtx    Context
 	}
 
@@ -269,10 +270,17 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 	d.rootCtx = WithValue(d.rootCtx, workflowResultContextKey, &resultPtr)
 
 	d.dispatcher = newDispatcher(d.rootCtx, func(ctx Context) {
+		ctx, d.cancel = WithCancel(ctx)
 		r := &workflowResult{}
 		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
 		rpp := getWorkflowResultPointerPointer(ctx)
 		*rpp = r
+	})
+
+	getWorkflowEnvironment(d.rootCtx).RegisterCancel(func() {
+		// It is ok to call this method multiple times.
+		// it doesn't do anything new, the context remains cancelled.
+		d.cancel()
 	})
 }
 
@@ -862,6 +870,7 @@ type wfEnvironmentOptions struct {
 	taskListName                        *string
 	executionStartToCloseTimeoutSeconds *int32
 	taskStartToCloseTimeoutSeconds      *int32
+	domain                              *string
 }
 
 // decodeFutureImpl

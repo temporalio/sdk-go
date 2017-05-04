@@ -64,15 +64,14 @@ func (c *tchanWorkflowServiceClient) DeprecateDomain(ctx thrift.Context, depreca
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "DeprecateDomain", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for DeprecateDomain")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -86,15 +85,14 @@ func (c *tchanWorkflowServiceClient) DescribeDomain(ctx thrift.Context, describe
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "DescribeDomain", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for DescribeDomain")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -108,15 +106,14 @@ func (c *tchanWorkflowServiceClient) GetWorkflowExecutionHistory(ctx thrift.Cont
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "GetWorkflowExecutionHistory", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for GetWorkflowExecutionHistory")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -130,15 +127,14 @@ func (c *tchanWorkflowServiceClient) ListClosedWorkflowExecutions(ctx thrift.Con
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "ListClosedWorkflowExecutions", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for ListClosedWorkflowExecutions")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -152,15 +148,14 @@ func (c *tchanWorkflowServiceClient) ListOpenWorkflowExecutions(ctx thrift.Conte
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "ListOpenWorkflowExecutions", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for ListOpenWorkflowExecutions")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -174,13 +169,11 @@ func (c *tchanWorkflowServiceClient) PollForActivityTask(ctx thrift.Context, pol
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "PollForActivityTask", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for PollForActivityTask")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
 		}
 	}
 
@@ -194,13 +187,11 @@ func (c *tchanWorkflowServiceClient) PollForDecisionTask(ctx thrift.Context, pol
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "PollForDecisionTask", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for PollForDecisionTask")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
 		}
 	}
 
@@ -214,15 +205,14 @@ func (c *tchanWorkflowServiceClient) RecordActivityTaskHeartbeat(ctx thrift.Cont
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RecordActivityTaskHeartbeat", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RecordActivityTaskHeartbeat")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -236,15 +226,14 @@ func (c *tchanWorkflowServiceClient) RegisterDomain(ctx thrift.Context, register
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RegisterDomain", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.DomainExistsError != nil:
-			err = resp.DomainExistsError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RegisterDomain")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.DomainExistsError; e != nil {
+			err = e
 		}
 	}
 
@@ -258,15 +247,14 @@ func (c *tchanWorkflowServiceClient) RequestCancelWorkflowExecution(ctx thrift.C
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RequestCancelWorkflowExecution", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RequestCancelWorkflowExecution")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -280,15 +268,14 @@ func (c *tchanWorkflowServiceClient) RespondActivityTaskCanceled(ctx thrift.Cont
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RespondActivityTaskCanceled", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RespondActivityTaskCanceled")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -302,15 +289,14 @@ func (c *tchanWorkflowServiceClient) RespondActivityTaskCompleted(ctx thrift.Con
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RespondActivityTaskCompleted", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RespondActivityTaskCompleted")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -324,15 +310,14 @@ func (c *tchanWorkflowServiceClient) RespondActivityTaskFailed(ctx thrift.Contex
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RespondActivityTaskFailed", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RespondActivityTaskFailed")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -346,15 +331,14 @@ func (c *tchanWorkflowServiceClient) RespondDecisionTaskCompleted(ctx thrift.Con
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "RespondDecisionTaskCompleted", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for RespondDecisionTaskCompleted")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -368,15 +352,14 @@ func (c *tchanWorkflowServiceClient) SignalWorkflowExecution(ctx thrift.Context,
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "SignalWorkflowExecution", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for SignalWorkflowExecution")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -390,15 +373,14 @@ func (c *tchanWorkflowServiceClient) StartWorkflowExecution(ctx thrift.Context, 
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "StartWorkflowExecution", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.SessionAlreadyExistError != nil:
-			err = resp.SessionAlreadyExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for StartWorkflowExecution")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.SessionAlreadyExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -412,15 +394,14 @@ func (c *tchanWorkflowServiceClient) TerminateWorkflowExecution(ctx thrift.Conte
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "TerminateWorkflowExecution", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for TerminateWorkflowExecution")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 
@@ -434,15 +415,14 @@ func (c *tchanWorkflowServiceClient) UpdateDomain(ctx thrift.Context, updateRequ
 	}
 	success, err := c.client.Call(ctx, c.thriftService, "UpdateDomain", &args, &resp)
 	if err == nil && !success {
-		switch {
-		case resp.BadRequestError != nil:
-			err = resp.BadRequestError
-		case resp.InternalServiceError != nil:
-			err = resp.InternalServiceError
-		case resp.EntityNotExistError != nil:
-			err = resp.EntityNotExistError
-		default:
-			err = fmt.Errorf("received no result or unknown exception for UpdateDomain")
+		if e := resp.BadRequestError; e != nil {
+			err = e
+		}
+		if e := resp.InternalServiceError; e != nil {
+			err = e
+		}
+		if e := resp.EntityNotExistError; e != nil {
+			err = e
 		}
 	}
 

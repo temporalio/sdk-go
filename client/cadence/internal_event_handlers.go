@@ -41,9 +41,11 @@ type (
 		completeHandler                completionHandler        // events completion handler
 		currentReplayTime              time.Time                // Indicates current replay time of the decision.
 		postEventHooks                 []func()                 // postEvent hooks that need to be executed at the end of the event.
+		cancelHandler                  func()                   // A cancel handler to be invoked on a cancel notification
 		logger                         *zap.Logger
 		isReplay                       bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay          bool // flag to indicate if workflow should enable logging in replay mode
+		isWorkflowCancelRequested      bool // if the workflow cancel is requested.
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -103,6 +105,30 @@ func (wc *workflowEnvironmentImpl) Complete(result []byte, err error) {
 	wc.completeHandler(result, err)
 }
 
+func (wc *workflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID, runID string) error {
+	if domainName == "" {
+		return errors.New("need a valid domain, provided empty")
+	}
+	if workflowID == "" {
+		return errors.New("need a valid workflow ID, provided empty")
+	}
+
+	attributes := m.NewRequestCancelExternalWorkflowExecutionDecisionAttributes()
+	attributes.Domain = common.StringPtr(domainName)
+	attributes.WorkflowId = common.StringPtr(workflowID)
+	attributes.RunId = common.StringPtr(runID)
+
+	decision := wc.CreateNewDecision(m.DecisionType_RequestCancelExternalWorkflowExecution)
+	decision.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
+
+	wc.executeDecisions = append(wc.executeDecisions, decision)
+	return nil
+}
+
+func (wc *workflowEnvironmentImpl) RegisterCancel(handler func()) {
+	wc.cancelHandler = handler
+}
+
 func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
 	return wc.logger
 }
@@ -158,8 +184,16 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	handler, ok := wc.scheduledActivities[activityID]
 	if !ok {
+		wc.logger.Debug("RequestCancelActivity failed because the activity ID doesn't exist.",
+			zap.String(tagActivityID, activityID))
 		return
 	}
+	if wc.isWorkflowCancelRequested {
+		wc.logger.Debug("RequestCancelActivity is not sent because workflow has cancel requested.",
+			zap.String(tagActivityID, activityID))
+		return
+	}
+
 	requestCancelAttr := &m.RequestCancelActivityTaskDecisionAttributes{
 		ActivityId: common.StringPtr(activityID)}
 
@@ -215,6 +249,11 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 		wc.logger.Debug("RequestCancelTimer failed, TimerID not exists.", zap.String(tagTimerID, timerID))
 		return
 	}
+	if wc.isWorkflowCancelRequested {
+		wc.logger.Debug("RequestCancelTimer is not sent because workflow has cancel requested.", zap.String(tagTimerID, timerID))
+		return
+	}
+
 	cancelTimerAttr := &m.CancelTimerDecisionAttributes{TimerId: common.StringPtr(timerID)}
 	decision := wc.CreateNewDecision(m.DecisionType_CancelTimer)
 	decision.CancelTimerDecisionAttributes = cancelTimerAttr
@@ -323,6 +362,16 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case m.EventType_CancelTimerFailed:
 		// No Operation.
 
+	case m.EventType_WorkflowExecutionCancelRequested:
+		weh.handleWorkflowExecutionCancelRequested(event.WorkflowExecutionCancelRequestedEventAttributes)
+
+	case m.EventType_WorkflowExecutionCanceled:
+		// No Operation.
+	case m.EventType_CancelWorkflowExecutionFailed:
+		// No Operation.
+	case m.EventType_RequestCancelExternalWorkflowExecutionInitiated:
+		// No Operation.
+	case m.EventType_RequestCancelExternalWorkflowExecutionFailed:
 	case m.EventType_ContinueAsNewWorkflowExecutionFailed:
 	case m.EventType_WorkflowExecutionContinuedAsNew:
 		// No Operation.
@@ -490,4 +539,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(
 	// Invoke the callback
 	handler(nil, nil)
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelRequested(
+	attributes *m.WorkflowExecutionCancelRequestedEventAttributes) {
+	weh.cancelHandler()
+	weh.isWorkflowCancelRequested = true
 }
