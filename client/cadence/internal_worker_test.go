@@ -258,43 +258,27 @@ func TestRecordActivityHeartbeat(t *testing.T) {
 }
 
 func testEncodeFunction(t *testing.T, f interface{}, args ...interface{}) string {
-	s := fnSignature{Args: args}
-	input, err := getHostEnvironment().Encoder().Marshal(s)
+	input, err := getHostEnvironment().Encoder().Marshal(args)
 	require.NoError(t, err, err)
-	require.NotNil(t, input)
 
-	var s2 fnSignature
-	err = getHostEnvironment().Encoder().Unmarshal(input, &s2)
+	var result []interface{}
+	for _, v := range args {
+		arg := reflect.New(reflect.TypeOf(v)).Interface()
+		result = append(result, arg)
+	}
+	err = getHostEnvironment().Encoder().Unmarshal(input, result)
 	require.NoError(t, err, err)
 
 	targetArgs := []reflect.Value{}
-	for _, arg := range s2.Args {
-		targetArgs = append(targetArgs, reflect.ValueOf(arg))
+	for _, arg := range result {
+		targetArgs = append(targetArgs, reflect.ValueOf(arg).Elem())
 	}
 	fnValue := reflect.ValueOf(f)
 	retValues := fnValue.Call(targetArgs)
 	return retValues[0].Interface().(string)
 }
 
-func testEncodeWithName(t *testing.T, args ...interface{}) {
-	s := fnSignature{Args: args}
-	input, err := getHostEnvironment().Encoder().Marshal(s)
-	require.NoError(t, err, err)
-	require.NotNil(t, input)
-
-	var s2 fnSignature
-	err = getHostEnvironment().Encoder().Unmarshal(input, &s2)
-	require.NoError(t, err, err)
-
-	require.Equal(t, len(s.Args), len(s2.Args))
-	require.Equal(t, s.Args, s2.Args)
-}
-
 func TestEncoder(t *testing.T) {
-	testEncodeWithName(t, 2, 3)
-	testEncodeWithName(t, nil)
-	testEncodeWithName(t)
-
 	getHostEnvironment().Encoder().Register(new(emptyCtx))
 	// Two param functor.
 	f1 := func(ctx Context, r []byte) string {
@@ -692,14 +676,71 @@ func TestActivityCancelledError(t *testing.T) {
 func TestActivityExecutionVariousTypes(t *testing.T) {
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
-			return &testWorkflowResult{V: 2}, nil
+			return &testWorkflowResult{V: 1}, nil
 		}}
 	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, "test"))
 	require.NoError(t, e)
-	var result *testWorkflowResult
-	err := deSerializeFunctionResult(a1.fn, encResult, &result)
+	var r *testWorkflowResult
+	err := deSerializeFunctionResult(a1.fn, encResult, &r)
 	require.NoError(t, err)
-	require.Equal(t, 2, result.V)
+	require.Equal(t, 1, r.V)
+
+	a2 := activityExecutor{
+		fn: func(ctx context.Context, arg1 *testWorkflowResult) (*testWorkflowResult, error) {
+			return &testWorkflowResult{V: 2}, nil
+		}}
+	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, r))
+	require.NoError(t, e)
+	err = deSerializeFunctionResult(a2.fn, encResult, &r)
+	require.NoError(t, err)
+	require.Equal(t, 2, r.V)
+}
+
+type encodingTest struct {
+	encoding encoding
+	input    []interface{}
+}
+
+var encodingTests = []encodingTest{
+	{&gobEncoding{}, []interface{}{"test"}},
+	{&gobEncoding{}, []interface{}{"test1", "test2"}},
+	{&gobEncoding{}, []interface{}{"test1", 1, false}},
+	{&gobEncoding{}, []interface{}{"test1", testWorkflowResult{V: 10}, false}},
+	{&gobEncoding{}, []interface{}{"test2", &testWorkflowResult{V: 20}, 4}},
+}
+
+// duplicate of GetHostEnvironment().registerType()
+func testRegisterType(enc encoding, v interface{}) error {
+	t := reflect.Indirect(reflect.ValueOf(v)).Type()
+	if t.Kind() == reflect.Interface || t.Kind() == reflect.Ptr {
+		return nil
+	}
+	arg := reflect.Zero(t).Interface()
+	return enc.Register(arg)
+}
+
+func TestGobEncoding(t *testing.T) {
+	for _, et := range encodingTests {
+		for _, obj := range et.input {
+			err := testRegisterType(et.encoding, obj)
+			require.NoError(t, err, err)
+		}
+		data, err := et.encoding.Marshal(et.input)
+		require.NoError(t, err, err)
+
+		var result []interface{}
+		for _, v := range et.input {
+			arg := reflect.New(reflect.TypeOf(v)).Interface()
+			result = append(result, arg)
+		}
+		err = et.encoding.Unmarshal(data, result)
+		require.NoError(t, err, err)
+
+		for i := 0; i < len(et.input); i++ {
+			vat := reflect.ValueOf(result[i]).Elem().Interface()
+			require.Equal(t, et.input[i], vat)
+		}
+	}
 }
 
 // Encode function result.

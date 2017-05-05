@@ -594,16 +594,19 @@ func (th *hostEnvImpl) getRegisteredActivities() []activity {
 	return result
 }
 
-// encode a single value.
-func (th *hostEnvImpl) encode(r interface{}) ([]byte, error) {
-	if isTypeByteSlice(reflect.TypeOf(r)) {
-		return r.([]byte), nil
+// encode set of values.
+func (th *hostEnvImpl) encode(r []interface{}) ([]byte, error) {
+	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
+		return r[0].([]byte), nil
 	}
 
-	err := th.registerValue(r)
-	if err != nil {
-		return nil, err
+	for _, v := range r {
+		err := th.registerValue(v)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	data, err := getHostEnvironment().Encoder().Marshal(r)
 	if err != nil {
 		return nil, err
@@ -611,47 +614,32 @@ func (th *hostEnvImpl) encode(r interface{}) ([]byte, error) {
 	return data, nil
 }
 
-// decode a single value.
-func (th *hostEnvImpl) decode(data []byte, to interface{}) error {
-	if isTypeByteSlice(reflect.TypeOf(to)) {
-		reflect.ValueOf(to).Elem().SetBytes(data)
+// decode a set of values.
+func (th *hostEnvImpl) decode(data []byte, to []interface{}) error {
+	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
+		reflect.ValueOf(to[0]).Elem().SetBytes(data)
 		return nil
 	}
 
-	err := th.registerValue(to)
-	if err != nil {
-		return err
+	for _, v := range to {
+		err := th.registerValue(v)
+		if err != nil {
+			return err
+		}
 	}
+
 	if err := getHostEnvironment().Encoder().Unmarshal(data, to); err != nil {
 		return err
 	}
 	return nil
 }
 
-// encode multiple values.
-// Option whether to by pass byte buffer.
+// encode multiple arguments(arguments to a function).
 func (th *hostEnvImpl) encodeArgs(args []interface{}) ([]byte, error) {
-	if len(args) == 1 && isTypeByteSlice(reflect.TypeOf(args[0])) {
-		return args[0].([]byte), nil
-	}
-
-	for i := 0; i < len(args); i++ {
-		err := th.registerValue(args[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: get rid of fnSignature and encode all of them directly with encoder.
-	s := fnSignature{Args: args}
-	input, err := getHostEnvironment().encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return input, nil
+	return th.encode(args)
 }
 
-// decode multiple values.
+// decode multiple arguments(arguments to a function).
 func (th *hostEnvImpl) decodeArgs(fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
 	var r []interface{}
 argsLoop:
@@ -663,7 +651,7 @@ argsLoop:
 		arg := reflect.New(argT).Interface()
 		r = append(r, arg)
 	}
-	err = th.decodeArgsTo(data, r)
+	err = th.decode(data, r)
 	if err != nil {
 		return
 	}
@@ -673,66 +661,14 @@ argsLoop:
 	return
 }
 
-// decode multiple values in to a given structure.
-func (th *hostEnvImpl) decodeArgsTo(data []byte, to []interface{}) error {
-	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
-		reflect.ValueOf(to[0]).Elem().SetBytes(data)
-		return nil
-	}
-
-	for i := 0; i < len(to); i++ {
-		err := th.registerValue(to[i])
-		if err != nil {
-			return err
-		}
-	}
-
-	s := fnSignature{}
-	err := getHostEnvironment().decode(data, &s)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < len(to); i++ {
-		vto := reflect.ValueOf(to[i])
-		if vto.IsValid() {
-			vto.Elem().Set(reflect.ValueOf(s.Args[i]))
-		}
-	}
-	return nil
-}
-
 // encode single value(like return parameter).
 func (th *hostEnvImpl) encodeArg(arg interface{}) ([]byte, error) {
-	if isTypeByteSlice(reflect.TypeOf(arg)) {
-		return arg.([]byte), nil
-	}
-
-	err := th.registerValue(arg)
-	if err != nil {
-		return nil, err
-	}
-
-	input, err := getHostEnvironment().encode(arg)
-	if err != nil {
-		return nil, err
-	}
-	return input, nil
+	return th.encode([]interface{}{arg})
 }
 
 // decode single value(like return parameter).
 func (th *hostEnvImpl) decodeArg(data []byte, to interface{}) error {
-	if isTypeByteSlice(reflect.TypeOf(to)) {
-		reflect.ValueOf(to).Elem().SetBytes(data)
-		return nil
-	}
-
-	err := th.registerValue(to)
-	if err != nil {
-		return err
-	}
-
-	err = getHostEnvironment().decode(data, to)
-	return err
+	return th.decode(data, []interface{}{to})
 }
 
 func isTypeByteSlice(inType reflect.Type) bool {
@@ -754,11 +690,6 @@ func getHostEnvironment() *hostEnvImpl {
 		}
 	})
 	return thImpl
-}
-
-// fnSignature represents a function and its arguments
-type fnSignature struct {
-	Args []interface{}
 }
 
 // Wrapper to execute workflow functions.
@@ -993,8 +924,8 @@ func isInterfaceNil(i interface{}) bool {
 // encoding is capable of encoding and decoding objects
 type encoding interface {
 	Register(obj interface{}) error
-	Marshal(interface{}) ([]byte, error)
-	Unmarshal([]byte, interface{}) error
+	Marshal([]interface{}) ([]byte, error)
+	Unmarshal([]byte, []interface{}) error
 }
 
 // gobEncoding encapsulates gob encoding and decoding
@@ -1007,21 +938,29 @@ func (g gobEncoding) Register(obj interface{}) error {
 	return nil
 }
 
-// Marshal encodes an object into bytes
-func (g gobEncoding) Marshal(obj interface{}) ([]byte, error) {
+// Marshal encodes an array of object into bytes
+func (g gobEncoding) Marshal(objs []interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(obj); err != nil {
-		return nil, fmt.Errorf("unable to encode with gob: %v", err)
+	for i, obj := range objs {
+		if err := enc.Encode(obj); err != nil {
+			return nil, fmt.Errorf(
+				"unable to encode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
+		}
 	}
 	return buf.Bytes(), nil
 }
 
-// Unmarshal decodes a byte array into the passed in object
-func (g gobEncoding) Unmarshal(data []byte, obj interface{}) error {
+// Unmarshal decodes a byte array into the passed in objects
+// TODO: To deal with different number of arguments, may be encode number of arguments as a first value as well.
+// so we can decode if a ssubset of them are asked.
+func (g gobEncoding) Unmarshal(data []byte, objs []interface{}) error {
 	dec := gob.NewDecoder(bytes.NewBuffer(data))
-	if err := dec.Decode(obj); err != nil {
-		return fmt.Errorf("unable to decode with gob: %v", err)
+	for i, obj := range objs {
+		if err := dec.Decode(obj); err != nil {
+			return fmt.Errorf(
+				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
+		}
 	}
 	return nil
 }

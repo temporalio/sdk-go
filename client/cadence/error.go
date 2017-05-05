@@ -144,7 +144,7 @@ func (e *errorWithDetails) Reason() string {
 
 // Details is from ErrorWithDetails interface
 func (e *errorWithDetails) Details(d ...interface{}) {
-	if err := getHostEnvironment().decodeArgsTo(e.details, d); err != nil {
+	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
 }
@@ -169,7 +169,7 @@ func (e *timeoutError) TimeoutType() shared.TimeoutType {
 
 // Details is from TimeoutError interface
 func (e *timeoutError) Details(d ...interface{}) {
-	if err := getHostEnvironment().decodeArgsTo(e.details, d); err != nil {
+	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
 
@@ -188,7 +188,7 @@ func (e *canceledError) Error() string {
 
 // Details is from CanceledError interface
 func (e *canceledError) Details(d ...interface{}) {
-	if err := getHostEnvironment().decodeArgsTo(e.details, d); err != nil {
+	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
 }
