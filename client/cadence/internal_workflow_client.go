@@ -180,7 +180,7 @@ func (wc *workflowClient) CompleteActivity(taskToken []byte, result interface{},
 		}
 	}
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err)
-	return reportActivityComplete(wc.workflowService, request)
+	return reportActivityComplete(wc.workflowService, request, wc.metricsScope)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.

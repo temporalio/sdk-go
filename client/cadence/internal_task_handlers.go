@@ -226,6 +226,14 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	emitStack bool,
 ) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+	currentTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(currentTime)
+		if wth.metricsScope != nil {
+			wth.metricsScope.Timer(metrics.DecisionsExecutionLatency).Record(deltaTime)
+		}
+	}()
+
 	if task == nil {
 		return nil, "", errors.New("nil workflowtask provided")
 	}
@@ -699,6 +707,14 @@ func newServiceInvoker(
 
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (result interface{}, err error) {
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if ath.metricsScope != nil {
+			ath.metricsScope.Timer(metrics.ActivityExecutionLatency).Record(deltaTime)
+		}
+	}()
+
 	ath.logger.Debug("Processing new activity task",
 		zap.String(tagWorkflowID, t.GetWorkflowExecution().GetWorkflowId()),
 		zap.String(tagRunID, t.GetWorkflowExecution().GetRunId()),

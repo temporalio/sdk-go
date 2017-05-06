@@ -96,6 +96,15 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkf
 
 // PollAndProcessSingleTask process one single task
 func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if wtp.metricsScope != nil {
+			wtp.metricsScope.Counter(metrics.DecisionsTotalCounter).Inc(1)
+			wtp.metricsScope.Timer(metrics.DecisionsEndToEndLatency).Record(deltaTime)
+		}
+	}()
+
 	// Get the task.
 	workflowTask, err := wtp.poll()
 	if err != nil {
@@ -107,20 +116,19 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 		return nil
 	}
 
-	startTime := time.Now()
-	defer func() {
-		deltaTime := time.Now().Sub(startTime)
-		if wtp.metricsScope != nil {
-			wtp.metricsScope.Counter(metrics.DecisionsTotalCounter).Inc(1)
-			wtp.metricsScope.Timer(metrics.DecisionsEndToEndLatency).Record(deltaTime)
-		}
-	}()
-
 	// Process the task.
 	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, false)
 	if err != nil {
 		return err
 	}
+
+	responseStartTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(responseStartTime)
+		if wtp.metricsScope != nil {
+			wtp.metricsScope.Timer(metrics.DecisionsResponseLatency).Record(deltaTime)
+		}
+	}()
 
 	// Respond task completion.
 	err = backoff.Retry(
@@ -142,6 +150,14 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if wtp.metricsScope != nil {
+			wtp.metricsScope.Timer(metrics.DecisionsPollLatency).Record(deltaTime)
+		}
+	}()
+
 	if enableVerboseLogging {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	}
@@ -178,6 +194,14 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkf
 
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll() (*activityTask, error) {
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if atp.metricsScope != nil {
+			atp.metricsScope.Timer(metrics.ActivityPollLatency).Record(deltaTime)
+		}
+	}()
+
 	if enableVerboseLogging {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	}
@@ -202,6 +226,15 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 
 // PollAndProcessSingleTask process one single activity task
 func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if atp.metricsScope != nil {
+			atp.metricsScope.Counter(metrics.ActivitiesTotalCounter).Inc(1)
+			atp.metricsScope.Timer(metrics.ActivityEndToEndLatency).Record(deltaTime)
+		}
+	}()
+
 	// Get the task.
 	activityTask, err := atp.poll()
 	if err != nil {
@@ -213,22 +246,13 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 		return nil
 	}
 
-	startTime := time.Now()
-	defer func() {
-		deltaTime := time.Now().Sub(startTime)
-		if atp.metricsScope != nil {
-			atp.metricsScope.Counter(metrics.ActivitiesTotalCounter).Inc(1)
-			atp.metricsScope.Timer(metrics.ActivityEndToEndLatency).Record(deltaTime)
-		}
-	}()
-
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(activityTask.task)
 	if err != nil {
 		return err
 	}
 
-	reportErr := reportActivityComplete(atp.service, request)
+	reportErr := reportActivityComplete(atp.service, request, atp.metricsScope)
 	if reportErr != nil {
 		atp.logger.Debug("reportActivityComplete failed", zap.Error(reportErr))
 	}
@@ -236,11 +260,19 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	return reportErr
 }
 
-func reportActivityComplete(service m.TChanWorkflowService, request interface{}) error {
+func reportActivityComplete(service m.TChanWorkflowService, request interface{}, metricsScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
 	}
+
+	startTime := time.Now()
+	defer func() {
+		deltaTime := time.Now().Sub(startTime)
+		if metricsScope != nil {
+			metricsScope.Timer(metrics.ActivityResponseLatency).Record(deltaTime)
+		}
+	}()
 
 	ctx, cancel := common.NewTChannelContext(respondTaskServiceTimeOut, common.RetryDefaultOptions)
 	defer cancel()

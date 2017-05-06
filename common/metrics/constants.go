@@ -48,6 +48,12 @@ const (
 	WorkflowEndToEndLatency         = "workflows-endtoend-latency"
 	ActivityEndToEndLatency         = "activities-endtoend-latency"
 	DecisionsEndToEndLatency        = "decisions-endtoend-latency"
+	ActivityPollLatency             = "activities-poll-latency"
+	DecisionsPollLatency            = "decisions-poll-latency"
+	ActivityExecutionLatency        = "activities-execution-latency"
+	DecisionsExecutionLatency       = "decisions-execution-latency"
+	ActivityResponseLatency         = "activities-response-latency"
+	DecisionsResponseLatency        = "decisions-response-latency"
 )
 
 // ServiceMetrics are types for common service base metrics
