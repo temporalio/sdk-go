@@ -587,7 +587,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 func (th *hostEnvImpl) getRegisteredActivities() []activity {
 	result := []activity{}
 	th.Lock()
-	for name, af := range thImpl.activityFuncMap {
+	for name, af := range th.activityFuncMap {
 		result = append(result, &activityExecutor{name: name, fn: af})
 	}
 	th.Unlock()
@@ -866,16 +866,19 @@ func newAggregatedWorker(
 	return &aggregatedWorker{workflowWorker: workflowWorker, activityWorker: activityWorker}
 }
 
-func newRegisteredWorkflowFactory() workflowFactory {
+func (th *hostEnvImpl) newRegisteredWorkflowFactory() workflowFactory {
 	return func(wt WorkflowType) (workflow, error) {
-		env := getHostEnvironment()
-		wf, ok := env.getWorkflowFn(wt.Name)
+		wf, ok := th.getWorkflowFn(wt.Name)
 		if !ok {
-			supported := strings.Join(env.getRegisteredWorkflowTypes(), ", ")
+			supported := strings.Join(th.getRegisteredWorkflowTypes(), ", ")
 			return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 		}
 		return &workflowExecutor{name: wt.Name, fn: wf}, nil
 	}
+}
+
+func newRegisteredWorkflowFactory() workflowFactory {
+	return getHostEnvironment().newRegisteredWorkflowFactory()
 }
 
 func processTestTags(wOptions *workerOptions, ep *workerExecutionParameters) {

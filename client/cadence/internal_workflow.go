@@ -318,7 +318,9 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
 		env := getWorkflowEnvironment(ctx)
-		env.GetLogger().Error("Dispatcher panic.", zap.String("PanicStack", panicErr.StackTrace()))
+		env.GetLogger().Error("Dispatcher panic.",
+			zap.String("PanicError", panicErr.Error()),
+			zap.String("PanicStack", panicErr.StackTrace()))
 		env.Complete(nil, NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())))
 		return
 	}

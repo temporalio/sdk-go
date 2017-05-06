@@ -659,7 +659,9 @@ func newActivityTaskHandler(activities []activity,
 		implementations: implementations,
 		service:         service,
 		logger:          params.Logger,
-		metricsScope:    params.MetricsScope}
+		metricsScope:    params.MetricsScope,
+		userContext:     params.UserContext,
+	}
 }
 
 type cadenceInvoker struct {
@@ -739,7 +741,9 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 		if p := recover(); p != nil {
 			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskListName)
 			st := getStackTraceRaw(topLine, 7, 0)
-			ath.logger.Error("Activity panic.", zap.String("PanicStack", st))
+			ath.logger.Error("Activity panic.",
+				zap.String("PanicError", fmt.Sprintf("%v", p)),
+				zap.String("PanicStack", st))
 			panicErr := newPanicError(p, st)
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
 		}
