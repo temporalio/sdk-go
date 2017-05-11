@@ -303,8 +303,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	// No Operation
 	case m.EventType_WorkflowExecutionTimedOut:
 	// TODO:
-	case m.EventType_CompleteWorkflowExecutionFailed:
-		unhandledDecision = true
 	case m.EventType_DecisionTaskScheduled:
 	// No Operation
 	case m.EventType_DecisionTaskStarted:
@@ -367,12 +365,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case m.EventType_WorkflowExecutionCanceled:
 		// No Operation.
-	case m.EventType_CancelWorkflowExecutionFailed:
-		// No Operation.
+
 	case m.EventType_RequestCancelExternalWorkflowExecutionInitiated:
 		// No Operation.
 	case m.EventType_RequestCancelExternalWorkflowExecutionFailed:
-	case m.EventType_ContinueAsNewWorkflowExecutionFailed:
 	case m.EventType_WorkflowExecutionContinuedAsNew:
 		// No Operation.
 

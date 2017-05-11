@@ -112,9 +112,6 @@ func HistoryEventToString(e *s.HistoryEvent) string {
 	case s.EventType_TimerFired:
 		data = e.GetTimerFiredEventAttributes()
 
-	case s.EventType_CompleteWorkflowExecutionFailed:
-		data = e.GetCompleteWorkflowExecutionFailedEventAttributes()
-
 	case s.EventType_CancelTimerFailed:
 		data = e.GetCancelTimerFailedEventAttributes()
 
