@@ -71,7 +71,7 @@ func (wc *workflowClient) StartWorkflow(
 	// Start creating workflow request.
 	err = backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 
 			var err1 error
@@ -106,7 +106,7 @@ func (wc *workflowClient) CancelWorkflow(workflowID string, runID string) error 
 
 	return backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			return wc.workflowService.RequestCancelWorkflowExecution(ctx, request)
 		}, serviceOperationRetryPolicy, isServiceTransientError)
@@ -128,7 +128,7 @@ func (wc *workflowClient) TerminateWorkflow(workflowID string, runID string, rea
 
 	err := backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			return wc.workflowService.TerminateWorkflowExecution(ctx, request)
 		}, serviceOperationRetryPolicy, isServiceTransientError)
@@ -150,7 +150,7 @@ func (wc *workflowClient) GetWorkflowHistory(workflowID string, runID string) (*
 	err := backoff.Retry(
 		func() error {
 			var err1 error
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			response, err1 = wc.workflowService.GetWorkflowExecutionHistory(ctx, request)
 			return err1
@@ -205,7 +205,7 @@ func (wc *workflowClient) ListClosedWorkflow(request *s.ListClosedWorkflowExecut
 	err := backoff.Retry(
 		func() error {
 			var err1 error
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			response, err1 = wc.workflowService.ListClosedWorkflowExecutions(ctx, request)
 			return err1
@@ -229,7 +229,7 @@ func (wc *workflowClient) ListOpenWorkflow(request *s.ListOpenWorkflowExecutions
 	err := backoff.Retry(
 		func() error {
 			var err1 error
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			response, err1 = wc.workflowService.ListOpenWorkflowExecutions(ctx, request)
 			return err1
@@ -248,7 +248,7 @@ func (wc *workflowClient) ListOpenWorkflow(request *s.ListOpenWorkflowExecutions
 func (dc *domainClient) Register(request *s.RegisterDomainRequest) error {
 	return backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			return dc.workflowService.RegisterDomain(ctx, request)
 		}, serviceOperationRetryPolicy, isServiceTransientError)
@@ -269,7 +269,7 @@ func (dc *domainClient) Describe(name string) (*s.DomainInfo, *s.DomainConfigura
 	var response *s.DescribeDomainResponse
 	err := backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			var err error
 			response, err = dc.workflowService.DescribeDomain(ctx, request)
@@ -297,7 +297,7 @@ func (dc *domainClient) Update(name string, domainInfo *s.UpdateDomainInfo, doma
 
 	return backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			_, err := dc.workflowService.UpdateDomain(ctx, request)
 			return err

@@ -19,6 +19,9 @@ import (
 // library version
 const versionHeaderName = "cadence-client-version"
 
+// default tchannel rpc call timeout
+const defaultRpcTimeout = 10 * time.Second
+
 // retryNeverOptions - Never retry the connection
 var retryNeverOptions = &tchannel.RetryOptions{
 	RetryOn: tchannel.RetryNever,
@@ -29,12 +32,29 @@ var retryDefaultOptions = &tchannel.RetryOptions{
 	RetryOn: tchannel.RetryDefault,
 }
 
+// sets the rpc timeout for a tchannel context
+func tchanTimeout(timeout time.Duration) func(builder *tchannel.ContextBuilder) {
+	return func(b *tchannel.ContextBuilder) {
+		b.SetTimeout(timeout)
+	}
+}
+
+// sets the retry option for a tchannel context
+func tchanRetryOption(retryOpt *tchannel.RetryOptions) func(builder *tchannel.ContextBuilder) {
+	return func(b *tchannel.ContextBuilder) {
+		b.SetRetryOptions(retryOpt)
+	}
+}
+
 // newTChannelContext - Get a tchannel context
-func newTChannelContext(timeout time.Duration, retryOptions *tchannel.RetryOptions) (tchannel.ContextWithHeaders, context.CancelFunc) {
-	return tchannel.NewContextBuilder(timeout).
-		SetRetryOptions(retryOptions).
-		AddHeader(versionHeaderName, LibraryVersion).
-		Build()
+func newTChannelContext(options ...func(builder *tchannel.ContextBuilder)) (tchannel.ContextWithHeaders, context.CancelFunc) {
+	builder := tchannel.NewContextBuilder(defaultRpcTimeout)
+	builder.SetRetryOptions(retryDefaultOptions)
+	builder.AddHeader(versionHeaderName, LibraryVersion)
+	for _, opt := range options {
+		opt(builder)
+	}
+	return builder.Build()
 }
 
 // GetWorkerIdentity gets a default identity for the worker.

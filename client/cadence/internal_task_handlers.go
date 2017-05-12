@@ -773,7 +773,7 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 
 			var err error

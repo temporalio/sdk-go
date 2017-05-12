@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	pollTaskServiceTimeOut    = 3 * time.Minute // Server long poll is 1 * Minutes + delta
-	respondTaskServiceTimeOut = 10 * time.Second
+	pollTaskServiceTimeOut = 3 * time.Minute // Server long poll is 1 * Minutes + delta
 
 	retryServiceOperationInitialInterval    = time.Millisecond
 	retryServiceOperationMaxInterval        = 4 * time.Second
@@ -133,7 +132,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	// Respond task completion.
 	err = backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+			ctx, cancel := newTChannelContext()
 			defer cancel()
 			err1 := wtp.service.RespondDecisionTaskCompleted(ctx, completedRequest)
 			if err1 != nil {
@@ -167,7 +166,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		Identity: common.StringPtr(wtp.identity),
 	}
 
-	ctx, cancel := newTChannelContext(pollTaskServiceTimeOut, retryNeverOptions)
+	ctx, cancel := newTChannelContext(tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
 	defer cancel()
 
 	response, err := wtp.service.PollForDecisionTask(ctx, request)
@@ -211,7 +210,7 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		Identity: common.StringPtr(atp.identity),
 	}
 
-	ctx, cancel := newTChannelContext(pollTaskServiceTimeOut, retryNeverOptions)
+	ctx, cancel := newTChannelContext(tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
 	defer cancel()
 
 	response, err := atp.service.PollForActivityTask(ctx, request)
@@ -274,7 +273,7 @@ func reportActivityComplete(service m.TChanWorkflowService, request interface{},
 		}
 	}()
 
-	ctx, cancel := newTChannelContext(respondTaskServiceTimeOut, retryDefaultOptions)
+	ctx, cancel := newTChannelContext()
 	defer cancel()
 	var reportErr error
 	switch request := request.(type) {
