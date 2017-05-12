@@ -10,7 +10,32 @@ import (
 
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
+	"github.com/uber/tchannel-go"
+	"golang.org/x/net/context"
 )
+
+// versionHeaderName refers to the name of the
+// tchannel / http header that contains the client
+// library version
+const versionHeaderName = "cadence-client-version"
+
+// retryNeverOptions - Never retry the connection
+var retryNeverOptions = &tchannel.RetryOptions{
+	RetryOn: tchannel.RetryNever,
+}
+
+// retryDefaultOptions - retry with default options.
+var retryDefaultOptions = &tchannel.RetryOptions{
+	RetryOn: tchannel.RetryDefault,
+}
+
+// newTChannelContext - Get a tchannel context
+func newTChannelContext(timeout time.Duration, retryOptions *tchannel.RetryOptions) (tchannel.ContextWithHeaders, context.CancelFunc) {
+	return tchannel.NewContextBuilder(timeout).
+		SetRetryOptions(retryOptions).
+		AddHeader(versionHeaderName, LibraryVersion).
+		Build()
+}
 
 // GetWorkerIdentity gets a default identity for the worker.
 func getWorkerIdentity(tasklistName string) string {
