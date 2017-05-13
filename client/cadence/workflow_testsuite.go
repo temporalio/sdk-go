@@ -2,18 +2,10 @@ package cadence
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/facebookgo/clock"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/mocks"
-	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/zap"
 )
 
@@ -78,72 +70,13 @@ func NewWorkflowTestSuite() *WorkflowTestSuite {
 // NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. You can use the returned TestWorkflowEnvironment
 // to run your workflow in the test environment.
 func (s *WorkflowTestSuite) NewTestWorkflowEnvironment() *TestWorkflowEnvironment {
-	return &TestWorkflowEnvironment{impl: s.newTestWorkflowEnvironmentImpl()}
+	return &TestWorkflowEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
 // NewTestActivityEnvironment creates a new instance of TestActivityEnviornment. You can use the returned TestActivityEnviornment
 // to run your activity in the test environment.
 func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnviornment {
-	return &TestActivityEnviornment{impl: s.newTestWorkflowEnvironmentImpl()}
-}
-
-func (s *WorkflowTestSuite) newTestWorkflowEnvironmentImpl() *testWorkflowEnvironmentImpl {
-	env := &testWorkflowEnvironmentImpl{
-		testSuite: s,
-		logger:    s.logger,
-
-		overrodeActivities:         make(map[string]interface{}),
-		taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
-
-		workflowInfo: &WorkflowInfo{
-			WorkflowExecution: WorkflowExecution{
-				ID:    defaultTestWorkflowID,
-				RunID: defaultTestRunID,
-			},
-			WorkflowType: WorkflowType{Name: "workflow-type-not-specified"},
-			TaskListName: defaultTestTaskList,
-		},
-
-		locker:              &sync.Mutex{},
-		scheduledActivities: make(map[string]*activityHandle),
-		scheduledTimers:     make(map[string]*timerHandle),
-		callbackChannel:     make(chan callbackHandle, 1000),
-		testTimeout:         time.Second * 3,
-	}
-
-	if env.logger == nil {
-		logger, _ := zap.NewDevelopment()
-		env.logger = logger
-	}
-
-	// setup mock service
-	mockService := new(mocks.TChanWorkflowService)
-	mockHeartbeatFn := func(c thrift.Context, r *shared.RecordActivityTaskHeartbeatRequest) error {
-		activityID := string(r.TaskToken)
-		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
-		_, ok := env.scheduledActivities[activityID]
-		env.locker.Unlock()
-		if !ok {
-			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
-				zap.String(tagActivityID, activityID))
-			return shared.NewEntityNotExistsError()
-		}
-		env.logger.Debug("RecordActivityTaskHeartbeat", zap.String(tagActivityID, activityID))
-		return nil
-	}
-
-	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(
-		&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)},
-		mockHeartbeatFn)
-	env.service = mockService
-
-	if env.workerOptions == nil {
-		env.workerOptions = NewWorkerOptions().SetLogger(env.logger)
-	}
-
-	env.clock = clock.NewMock()
-
-	return env
+	return &TestActivityEnviornment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
 // RegisterWorkflow registers a workflow that could be used by tests of this WorkflowTestSuite instance. All workflow registered
@@ -180,40 +113,7 @@ func (t *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use EncodedValue.Get() to extract strong typed result value.
 func (t *TestActivityEnviornment) ExecuteActivity(activityFn interface{}, args ...interface{}) (EncodedValue, error) {
-	env := t.impl
-	fnName := getFunctionName(activityFn)
-
-	input, err := getHostEnvironment().encodeArgs(args)
-	if err != nil {
-		panic(err)
-	}
-
-	task := newTestActivityTask(
-		defaultTestWorkflowID,
-		defaultTestRunID,
-		"0",
-		fnName,
-		input,
-	)
-
-	// ensure activityFn is registered to defaultTestTaskList
-	env.testSuite.RegisterActivity(activityFn)
-	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
-	result, err := taskHandler.Execute(task)
-	if err != nil {
-		panic(err)
-	}
-	switch request := result.(type) {
-	case *shared.RespondActivityTaskCanceledRequest:
-		return nil, NewCanceledError(request.Details)
-	case *shared.RespondActivityTaskFailedRequest:
-		return nil, NewErrorWithDetails(*request.Reason, request.Details)
-	case *shared.RespondActivityTaskCompletedRequest:
-		return EncodedValue(request.Result_), nil
-	default:
-		// will never happen
-		return nil, fmt.Errorf("unsupported respond type %T", result)
-	}
+	return t.impl.executeActivity(activityFn, args...)
 }
 
 // SetWorkerOption sets the WorkerOptions that will be use by TestActivityEnviornment. TestActivityEnviornment will
@@ -232,7 +132,7 @@ func (t *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args .
 // OverrideActivity overrides an actual activity with a fake activity. The fake activity will be invoked in place where the
 // actual activity should have been invoked.
 func (t *TestWorkflowEnvironment) OverrideActivity(activityFn, fakeActivityFn interface{}) {
-	t.impl.OverrideActivity(activityFn, fakeActivityFn)
+	t.impl.overrideActivity(activityFn, fakeActivityFn)
 }
 
 // Now returns the current workflow time (a.k.a cadence.Now() time) of this TestWorkflowEnvironment.

@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
+	"github.com/stretchr/testify/mock"
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/cadence-client/common"
+	"github.com/uber-go/cadence-client/mocks"
+	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
@@ -85,6 +88,65 @@ type (
 	}
 )
 
+func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironmentImpl {
+	env := &testWorkflowEnvironmentImpl{
+		testSuite: s,
+		logger:    s.logger,
+
+		overrodeActivities:         make(map[string]interface{}),
+		taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
+
+		workflowInfo: &WorkflowInfo{
+			WorkflowExecution: WorkflowExecution{
+				ID:    defaultTestWorkflowID,
+				RunID: defaultTestRunID,
+			},
+			WorkflowType: WorkflowType{Name: "workflow-type-not-specified"},
+			TaskListName: defaultTestTaskList,
+		},
+
+		locker:              &sync.Mutex{},
+		scheduledActivities: make(map[string]*activityHandle),
+		scheduledTimers:     make(map[string]*timerHandle),
+		callbackChannel:     make(chan callbackHandle, 1000),
+		testTimeout:         time.Second * 3,
+	}
+
+	if env.logger == nil {
+		logger, _ := zap.NewDevelopment()
+		env.logger = logger
+	}
+
+	// setup mock service
+	mockService := new(mocks.TChanWorkflowService)
+	mockHeartbeatFn := func(c thrift.Context, r *shared.RecordActivityTaskHeartbeatRequest) error {
+		activityID := string(r.TaskToken)
+		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
+		_, ok := env.scheduledActivities[activityID]
+		env.locker.Unlock()
+		if !ok {
+			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
+				zap.String(tagActivityID, activityID))
+			return shared.NewEntityNotExistsError()
+		}
+		env.logger.Debug("RecordActivityTaskHeartbeat", zap.String(tagActivityID, activityID))
+		return nil
+	}
+
+	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(
+		&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)},
+		mockHeartbeatFn)
+	env.service = mockService
+
+	if env.workerOptions == nil {
+		env.workerOptions = NewWorkerOptions().SetLogger(env.logger)
+	}
+
+	env.clock = clock.NewMock()
+
+	return env
+}
+
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
 	for _, activityFn := range activityFns {
 		env.testSuite.RegisterActivity(activityFn)
@@ -138,7 +200,44 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	env.startMainLoop()
 }
 
-func (env *testWorkflowEnvironmentImpl) OverrideActivity(activityFn, fakeActivityFn interface{}) {
+func (env *testWorkflowEnvironmentImpl) executeActivity(
+	activityFn interface{}, args ...interface{}) (EncodedValue, error) {
+	fnName := getFunctionName(activityFn)
+
+	input, err := getHostEnvironment().encodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	task := newTestActivityTask(
+		defaultTestWorkflowID,
+		defaultTestRunID,
+		"0",
+		fnName,
+		input,
+	)
+
+	// ensure activityFn is registered to defaultTestTaskList
+	env.testSuite.RegisterActivity(activityFn)
+	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
+	result, err := taskHandler.Execute(task)
+	if err != nil {
+		panic(err)
+	}
+	switch request := result.(type) {
+	case *shared.RespondActivityTaskCanceledRequest:
+		return nil, NewCanceledError(request.Details)
+	case *shared.RespondActivityTaskFailedRequest:
+		return nil, NewErrorWithDetails(*request.Reason, request.Details)
+	case *shared.RespondActivityTaskCompletedRequest:
+		return EncodedValue(request.Result_), nil
+	default:
+		// will never happen
+		return nil, fmt.Errorf("unsupported respond type %T", result)
+	}
+}
+
+func (env *testWorkflowEnvironmentImpl) overrideActivity(activityFn, fakeActivityFn interface{}) {
 	// verify both functions are valid activity func
 	actualFnType := reflect.TypeOf(activityFn)
 	if err := validateFnFormat(actualFnType, false); err != nil {
