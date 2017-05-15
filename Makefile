@@ -17,6 +17,10 @@ PROGS = cadence-client
 TEST_ARG ?= -race -v -timeout 5m
 BUILD := ./build
 
+LIBRARY_VERSION=v0.1.0
+GIT_SHA=`git rev-parse HEAD`
+OUT_VERSION_FILE=./client/cadence/version.go
+
 export PATH := $(GOPATH)/bin:$(PATH)
 
 THRIFT_GEN=$(GOPATH)/bin/thrift-gen
@@ -52,10 +56,14 @@ clean_thrift:
 
 thriftc: clean_thrift glide $(THRIFT_GEN_SRC)
 
-bins: thriftc
+libversion_gen: ./cmd/tools/libversiongen.go
+    # auto-generate const for libversion and git-sha
+	go run ./cmd/tools/libversiongen.go -v=$(LIBRARY_VERSION) -s=$(GIT_SHA) -o=$(OUT_VERSION_FILE)
+
+bins: libversion_gen thriftc
 	go build -i -o cadence-client main.go
 
-bins_nothrift: glide
+bins_nothrift: libversion_gen glide
 	go build -i -o cadence-client main.go
 
 test: bins
