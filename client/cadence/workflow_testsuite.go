@@ -155,18 +155,31 @@ func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 	return t
 }
 
-// TODO: create an interface for all the test intercept callbacks.
-// SetOnActivityStartedListener sets a listener that will be called before an activity task started.
+// SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
 func (t *TestWorkflowEnvironment) SetOnActivityStartedListener(
-	listener func(ctx context.Context, args EncodedValues)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)) *TestWorkflowEnvironment {
 	t.impl.onActivityStartedListener = listener
 	return t
 }
 
-// SetOnActivityEndedListener sets a listener that will be called after an activity task ended.
-func (t *TestWorkflowEnvironment) SetOnActivityEndedListener(
-	listener func(result EncodedValue, err error, activityType string)) *TestWorkflowEnvironment {
-	t.impl.onActivityEndedListener = listener
+// SetOnActivityEndedListener sets a listener that will be called after an activity is completed.
+func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
+	listener func(activityInfo *ActivityInfo, result EncodedValue, err error)) *TestWorkflowEnvironment {
+	t.impl.onActivityCompletedListener = listener
+	return t
+}
+
+// SetOnActivityCancelledListener sets a listener that will be called after an activity is cancelled.
+func (t *TestWorkflowEnvironment) SetOnActivityCancelledListener(
+	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
+	t.impl.onActivityCancelledListener = listener
+	return t
+}
+
+// SetOnActivityCancelledListener sets a listener that will be called when activity heartbeat.
+func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
+	listener func(activityInfo *ActivityInfo, details EncodedValues)) *TestWorkflowEnvironment {
+	t.impl.onActivityHeartbeatListener = listener
 	return t
 }
 
@@ -219,7 +232,6 @@ func (t *TestWorkflowEnvironment) CancelWorkflow() {
 		t.impl.workflowInfo.WorkflowExecution.RunID)
 }
 
-//
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. You can use this API to make some event (like activity completion,
