@@ -59,11 +59,7 @@ thriftc: clean_thrift glide $(THRIFT_GEN_SRC)
 copyright: ./cmd/tools/copyright/licensegen.go
 	go run ./cmd/tools/copyright/licensegen.go --verifyOnly
 
-libversion_gen: ./cmd/tools/libversiongen.go
-    	# auto-generate const for libversion and git-sha
-	go run ./cmd/tools/libversiongen.go -v=$(LIBRARY_VERSION) -s=$(GIT_SHA) -o=$(OUT_VERSION_FILE)
-
-bins_nothrift: copyright libversion_gen glide
+bins_nothrift: copyright glide
 	go build -i -o cadence-client main.go
 
 bins: thriftc bins_nothrift
