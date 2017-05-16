@@ -16,10 +16,11 @@ import (
 
 type (
 	syncWorkflowDefinition struct {
-		workflow   workflow
-		dispatcher dispatcher
-		cancel     CancelFunc
-		rootCtx    Context
+		workflow        workflow
+		dispatcher      dispatcher
+		cancel          CancelFunc
+		cancelRequested bool
+		rootCtx         Context
 	}
 
 	workflowResult struct {
@@ -269,8 +270,16 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 	var resultPtr *workflowResult
 	d.rootCtx = WithValue(d.rootCtx, workflowResultContextKey, &resultPtr)
 
+	// There is a inter dependency, before we call Execute() we can have a cancel request since
+	// dispatcher executes code on decision task started, we might not have cancel handler created.
+	// WithCancel -> creates channel -> needs dispatcher -> dispatcher needs a root function with context.
+	// We use cancelRequested to remember if the cancel request came in.
+
 	d.dispatcher = newDispatcher(d.rootCtx, func(ctx Context) {
 		ctx, d.cancel = WithCancel(ctx)
+		if d.cancelRequested {
+			d.cancel()
+		}
 		r := &workflowResult{}
 		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
 		rpp := getWorkflowResultPointerPointer(ctx)
@@ -280,7 +289,10 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 	getWorkflowEnvironment(d.rootCtx).RegisterCancel(func() {
 		// It is ok to call this method multiple times.
 		// it doesn't do anything new, the context remains cancelled.
-		d.cancel()
+		if d.cancel != nil {
+			d.cancel()
+		}
+		d.cancelRequested = true
 	})
 }
 
