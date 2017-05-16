@@ -14,6 +14,7 @@ import (
 const testTaskList = "test-task-list"
 
 type WorkflowTestSuiteUnitTest struct {
+	suite.Suite
 	WorkflowTestSuite
 	activityOptions ActivityOptions
 }

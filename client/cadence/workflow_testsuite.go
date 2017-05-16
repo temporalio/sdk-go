@@ -2,10 +2,9 @@ package cadence
 
 import (
 	"context"
-	"testing"
+	"sync"
 	"time"
 
-	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 )
 
@@ -18,9 +17,9 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		suite.Suite
 		logger  *zap.Logger
 		hostEnv *hostEnvImpl
+		locker  sync.Mutex
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -44,9 +43,11 @@ func (b EncodedValues) Get(valuePtrs ...interface{}) error {
 	return getHostEnvironment().decode(b, valuePtrs)
 }
 
-// SetT sets the testing.T instance. This method is called by testify to setup the testing.T for test suite.
-func (s *WorkflowTestSuite) SetT(t *testing.T) {
-	s.Suite.SetT(t)
+func (s *WorkflowTestSuite) initIfNotDoneYet() {
+	if s.hostEnv != nil {
+		return
+	}
+	s.locker.Lock()
 	if s.hostEnv == nil {
 		s.hostEnv = &hostEnvImpl{
 			workflowFuncMap: make(map[string]interface{}),
@@ -54,28 +55,20 @@ func (s *WorkflowTestSuite) SetT(t *testing.T) {
 			encoding:        gobEncoding{},
 		}
 	}
-}
-
-// NewWorkflowTestSuite creates a WorkflowTestSuite
-func NewWorkflowTestSuite() *WorkflowTestSuite {
-	return &WorkflowTestSuite{
-		hostEnv: &hostEnvImpl{
-			workflowFuncMap: make(map[string]interface{}),
-			activityFuncMap: make(map[string]interface{}),
-			encoding:        gobEncoding{},
-		},
-	}
+	s.locker.Unlock()
 }
 
 // NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. You can use the returned TestWorkflowEnvironment
 // to run your workflow in the test environment.
 func (s *WorkflowTestSuite) NewTestWorkflowEnvironment() *TestWorkflowEnvironment {
+	s.initIfNotDoneYet()
 	return &TestWorkflowEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
 // NewTestActivityEnvironment creates a new instance of TestActivityEnviornment. You can use the returned TestActivityEnviornment
 // to run your activity in the test environment.
 func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnviornment {
+	s.initIfNotDoneYet()
 	return &TestActivityEnviornment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
@@ -83,6 +76,7 @@ func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnviornmen
 // via cadence.RegisterWorkflow() are still valid and will be available to all tests of all instance of WorkflowTestSuite.
 // In the context of unit tests, workflow registration is only required if you are invoking workflow by name.
 func (s *WorkflowTestSuite) RegisterWorkflow(workflowFn interface{}) {
+	s.initIfNotDoneYet()
 	err := s.hostEnv.RegisterWorkflow(workflowFn)
 	if err != nil {
 		panic(err)
@@ -93,6 +87,7 @@ func (s *WorkflowTestSuite) RegisterWorkflow(workflowFn interface{}) {
 // and only available to all tests of this WorkflowTestSuite instance. Activities registered via cadence.RegisterActivity()
 // are still valid and will be available to all tests of all instances of WorkflowTestSuite.
 func (s *WorkflowTestSuite) RegisterActivity(activityFn interface{}) {
+	s.initIfNotDoneYet()
 	fnName := getFunctionName(activityFn)
 	_, ok := s.hostEnv.activityFuncMap[fnName]
 	if !ok {
@@ -207,12 +202,15 @@ func (t *TestWorkflowEnvironment) IsWorkflowCompleted() bool {
 	return t.impl.isTestCompleted
 }
 
-// GetWorkflowResult return the encoded result from test workflow
-func (t *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) {
-	s, r := t.impl.testSuite, t.impl.testResult
-	s.NotNil(r)
-	err := r.Get(valuePtr)
-	s.NoError(err)
+// GetWorkflowResult extracts the encoded result from test workflow, it returns error if the extraction failed.
+func (t *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error {
+	if !t.impl.isTestCompleted {
+		panic("workflow is not completed")
+	}
+	if t.impl.testResult == nil {
+		return nil
+	}
+	return t.impl.testResult.Get(valuePtr)
 }
 
 // GetWorkflowError return the error from test workflow
