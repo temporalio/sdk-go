@@ -98,11 +98,11 @@ func getLogger() *zap.Logger {
 }
 
 func testReplayWorkflow(ctx Context) error {
-	ctx = WithActivityOptions(ctx, NewActivityOptions().
-		WithTaskList("testTaskList").
-		WithScheduleToStartTimeout(time.Second).
-		WithStartToCloseTimeout(time.Second).
-		WithScheduleToCloseTimeout(time.Second))
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
 		getLogger().Error("activity failed with error.", zap.Error(err))
@@ -145,7 +145,7 @@ func TestDecisionTaskHandler(t *testing.T) {
 		PreviousStartedEventId: common.Int64Ptr(5),
 	}
 
-	r := NewWorkflowTaskHandler("identity", logger)
+	r := NewWorkflowTaskHandler(testDomain, "identity", logger)
 	_, stackTrace, err := r.ProcessWorkflowTask(task, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, stackTrace, stackTrace)
@@ -217,7 +217,8 @@ func TestCreateWorker(t *testing.T) {
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
 	// Configure worker options.
-	workerOptions := NewWorkerOptions().SetMaxActivityExecutionRate(20)
+	workerOptions := WorkerOptions{}
+	workerOptions.MaxActivityExecutionRate = 20
 
 	// Start Worker.
 	worker := NewWorker(
@@ -325,11 +326,11 @@ type activitiesCallingOptionsWorkflow struct {
 }
 
 func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	ctx = WithActivityOptions(ctx, NewActivityOptions().
-		WithTaskList("exampleTaskList").
-		WithScheduleToStartTimeout(10*time.Second).
-		WithStartToCloseTimeout(5*time.Second).
-		WithScheduleToCloseTimeout(10*time.Second))
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
 
 	// By functions.
 	err = ExecuteActivity(ctx, testActivityByteArgs, input).Get(ctx, nil)
@@ -478,6 +479,7 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 	cbProcessor := newAsyncTestCallbackProcessor(w.OnDecisionTaskStarted)
 
 	ctx.On("RegisterCancel", mock.Anything).Return().Run(func(args mock.Arguments) {}).Once()
+	ctx.On("WorkflowInfo").Return(&WorkflowInfo{TaskListName: "t", Domain: "d"}).Once()
 
 	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		params := args.Get(0).(executeActivityParameters)

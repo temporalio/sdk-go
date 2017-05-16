@@ -39,54 +39,55 @@ type (
 	// for example (1) the logger or any specific metrics.
 	// 	       (2) Whether to heart beat for activities automatically.
 	// Use NewWorkerOptions function to create an instance.
-	WorkerOptions interface {
+	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this host can have.
+		// The zero value of this uses the default value.
 		// default: defaultMaxConcurrentActivityExecutionSize(10k)
-		SetMaxConcurrentActivityExecutionSize(size int) WorkerOptions
+		MaxConcurrentActivityExecutionSize int
 
-		// Optional: Sets the rate limiting on number of activities that can be executed.
+		// Optional: Sets the rate limiting on number of activities that can be executed per second.
 		// This can be used to protect down stream services from flooding.
+		// The zero value of this uses the default value.
 		// default: defaultMaxActivityExecutionRate(100k)
-		SetMaxActivityExecutionRate(requestPerSecond float32) WorkerOptions
+		MaxActivityExecutionRate float32
 
 		// Optional: if the activities need auto heart beating for those activities
 		// by the framework
 		// default: false not to heartbeat.
-		SetAutoHeartBeat(auto bool) WorkerOptions
+		AutoHeartBeat bool
 
 		// Optional: Sets an identify that can be used to track this host for debugging.
 		// default: default identity that include hostname, groupName and process ID.
-		SetIdentity(identity string) WorkerOptions
+		Identity string
 
 		// Optional: Metrics to be reported.
 		// default: no metrics.
-		SetMetrics(metricsScope tally.Scope) WorkerOptions
+		MetricsScope tally.Scope
 
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
-		SetLogger(logger *zap.Logger) WorkerOptions
+		Logger *zap.Logger
 
-		// Optional: Enable logging in replay
+		// Optional: Enable logging in replay.
+		// In the decider you can use Cadence.GetLogger(ctx) to access logger that is replay aware.
+		// This will enable workflow decider code to log during
+		// the replay mode as well. This will be too verbose and often repeated logs.
 		// default: false
-		SetEnableLoggingInReplay(enable bool) WorkerOptions
+		EnableLoggingInReplay bool
 
 		// Optional: Disable running workflow workers.
 		// default: false
-		SetDisableWorkflowWorker(disable bool) WorkerOptions
+		DisableWorkflowWorker bool
 
 		// Optional: Disable running activity workers.
 		// default: false
-		SetDisableActivityWorker(disable bool) WorkerOptions
+		DisableActivityWorker bool
 
-		// Optional: sets context for activity
-		WithActivityContext(ctx context.Context) WorkerOptions
+		// Optional: sets context for activity. The context can be used to pass any configuration to activity
+		// like common logger for all activities.
+		BackgroundActivityContext context.Context
 	}
 )
-
-// NewWorkerOptions returns an instance of worker options to configure.
-func NewWorkerOptions() WorkerOptions {
-	return NewWorkerOptionsInternal(nil)
-}
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // service 	- thrift connection to the cadence server.

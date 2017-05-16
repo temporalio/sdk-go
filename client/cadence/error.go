@@ -139,8 +139,20 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) Co
 	if err != nil {
 		panic(err)
 	}
-	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	options := getWorkflowEnvOptions(ctx1)
+	options := getWorkflowEnvOptions(ctx)
+	if options == nil {
+		panic("context is missing required options for continue as new")
+	}
+	if options.taskListName == nil || *options.taskListName == "" {
+		panic("invalid task list provided")
+	}
+	if options.executionStartToCloseTimeoutSeconds == nil || *options.executionStartToCloseTimeoutSeconds <= 0 {
+		panic("invalid executionStartToCloseTimeoutSeconds provided")
+	}
+	if options.taskStartToCloseTimeoutSeconds == nil || *options.taskStartToCloseTimeoutSeconds <= 0 {
+		panic("invalid taskStartToCloseTimeoutSeconds provided")
+	}
+
 	options.workflowType = workflowType
 	options.input = input
 	return &continueAsNewError{wfn: wfn, args: args, options: options}

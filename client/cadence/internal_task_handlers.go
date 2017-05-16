@@ -66,6 +66,7 @@ type (
 type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
+		domain                string
 		workflowDefFactory    workflowDefinitionFactory
 		metricsScope          tally.Scope
 		ppMgr                 pressurePointMgr
@@ -231,10 +232,11 @@ OrderEvents:
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(factory workflowDefinitionFactory,
+func newWorkflowTaskHandler(factory workflowDefinitionFactory, domain string,
 	params workerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
 	return &workflowTaskHandlerImpl{
 		workflowDefFactory:    factory,
+		domain:                domain,
 		logger:                params.Logger,
 		ppMgr:                 ppMgr,
 		metricsScope:          params.MetricsScope,
@@ -290,6 +292,9 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			ID:    *task.WorkflowExecution.WorkflowId,
 			RunID: *task.WorkflowExecution.RunId,
 		},
+		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
+		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
+		Domain: wth.domain,
 	}
 
 	isWorkflowCompleted := false
@@ -585,36 +590,13 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		decisions = append(decisions, cancelDecision)
 	} else if contErr, ok := err.(*continueAsNewError); ok {
 		// Continue as new error.
-
-		// Get workflow start attributes.
-		// task list name.
-		var taskListName string
-		if contErr.options.taskListName != nil {
-			taskListName = *contErr.options.taskListName
-		} else {
-			taskListName = startAttributes.TaskList.GetName()
-		}
-
-		// timeouts.
-		var executionStartToCloseTimeoutSeconds, taskStartToCloseTimeoutSeconds int32
-		if contErr.options.executionStartToCloseTimeoutSeconds != nil {
-			executionStartToCloseTimeoutSeconds = *contErr.options.executionStartToCloseTimeoutSeconds
-		} else {
-			executionStartToCloseTimeoutSeconds = startAttributes.GetExecutionStartToCloseTimeoutSeconds()
-		}
-		if contErr.options.taskStartToCloseTimeoutSeconds != nil {
-			taskStartToCloseTimeoutSeconds = *contErr.options.taskStartToCloseTimeoutSeconds
-		} else {
-			taskStartToCloseTimeoutSeconds = startAttributes.GetTaskStartToCloseTimeoutSeconds()
-		}
-
 		continueAsNewDecision := createNewDecision(s.DecisionType_ContinueAsNewWorkflowExecution)
 		continueAsNewDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
 			WorkflowType: workflowTypePtr(*contErr.options.workflowType),
 			Input:        contErr.options.input,
-			TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(taskListName)}),
-			ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionStartToCloseTimeoutSeconds),
-			TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(taskStartToCloseTimeoutSeconds),
+			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.options.taskListName}),
+			ExecutionStartToCloseTimeoutSeconds: contErr.options.executionStartToCloseTimeoutSeconds,
+			TaskStartToCloseTimeoutSeconds:      contErr.options.taskStartToCloseTimeoutSeconds,
 		}
 		decisions = append(decisions, continueAsNewDecision)
 	} else if err != nil {

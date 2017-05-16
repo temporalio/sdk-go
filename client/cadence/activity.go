@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"github.com/uber-go/cadence-client/common"
 	"go.uber.org/zap"
 )
 
@@ -130,52 +131,52 @@ func WithActivityTask(
 
 // ActivityOptions stores all activity-specific parameters that will
 // be stored inside of a context.
-type ActivityOptions interface {
-	WithTaskList(name string) ActivityOptions
-	WithScheduleToCloseTimeout(d time.Duration) ActivityOptions
-	WithScheduleToStartTimeout(d time.Duration) ActivityOptions
-	WithStartToCloseTimeout(d time.Duration) ActivityOptions
-	WithHeartbeatTimeout(d time.Duration) ActivityOptions
-	WithWaitForCancellation(wait bool) ActivityOptions
-}
+type ActivityOptions struct {
+	// TaskList that the activity needs to be scheduled on.
+	// optional: The default task list with the same name as the workflow task list.
+	TaskList string
 
-// NewActivityOptions returns an instance of activity options that can be used to specify
-// options for an activity through context.
-//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
-//					WithTaskList("exampleTaskList").
-//					WithScheduleToCloseTimeout(time.Second).
-//					WithScheduleToStartTimeout(time.Second).
-//					WithHeartbeatTimeout(0)
-func NewActivityOptions() ActivityOptions {
-	return &activityOptions{}
+	// ScheduleToCloseTimeout - The end to end time out for the activity needed.
+	// The zero value of this uses default value.
+	// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
+	ScheduleToCloseTimeout time.Duration
+
+	// ScheduleToStartTimeout - The queue time out before the activity starts executed.
+	// Mandatory: No default.
+	ScheduleToStartTimeout time.Duration
+
+	// StartToCloseTimeout - The time out from the start of execution to end of it.
+	// Mandatory: No default.
+	StartToCloseTimeout time.Duration
+
+	// HeartbeatTimeout - The periodic timeout while the activity is in execution. This is
+	// the max interval the server needs to hear at-least one ping from the activity.
+	// Optional: Default zero, means no heart beating is needed.
+	HeartbeatTimeout time.Duration
+
+	// WaitForCancellation - Whether to wait for cancelled activity to be completed(
+	// activity can be failed, completed, cancel accepted)
+	// Optional: default false
+	WaitForCancellation bool
+
+	// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
+	// to specify this then talk to cadence team. This is something will be done in future.
+	// Optional: default empty string
+	ActivityID string
 }
 
 // WithActivityOptions adds all options to the context.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
-	ao := options.(*activityOptions)
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
-	if ao.taskListName != nil {
-		eap.TaskListName = *ao.taskListName
-	}
-	if ao.scheduleToCloseTimeoutSeconds != nil {
-		eap.ScheduleToCloseTimeoutSeconds = *ao.scheduleToCloseTimeoutSeconds
-	}
-	if ao.startToCloseTimeoutSeconds != nil {
-		eap.StartToCloseTimeoutSeconds = *ao.startToCloseTimeoutSeconds
-	}
-	if ao.scheduleToStartTimeoutSeconds != nil {
-		eap.ScheduleToStartTimeoutSeconds = *ao.scheduleToStartTimeoutSeconds
-	}
-	if ao.heartbeatTimeoutSeconds != nil {
-		eap.HeartbeatTimeoutSeconds = *ao.heartbeatTimeoutSeconds
-	}
-	if ao.waitForCancellation != nil {
-		eap.WaitForCancellation = *ao.waitForCancellation
-	}
-	if ao.activityID != nil {
-		eap.ActivityID = ao.activityID
-	}
+
+	eap.TaskListName = options.TaskList
+	eap.ScheduleToCloseTimeoutSeconds = int32(options.ScheduleToCloseTimeout.Seconds())
+	eap.StartToCloseTimeoutSeconds = int32(options.StartToCloseTimeout.Seconds())
+	eap.ScheduleToStartTimeoutSeconds = int32(options.ScheduleToStartTimeout.Seconds())
+	eap.HeartbeatTimeoutSeconds = int32(options.HeartbeatTimeout.Seconds())
+	eap.WaitForCancellation = options.WaitForCancellation
+	eap.ActivityID = common.StringPtr(options.ActivityID)
 	return ctx1
 }
 

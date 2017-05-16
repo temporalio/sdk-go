@@ -28,6 +28,8 @@ package cadence
 // point of view only to access them from other packages.
 
 import (
+	"context"
+
 	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"go.uber.org/zap"
@@ -53,17 +55,6 @@ type (
 
 var enableVerboseLogging = false
 
-// NewWorkerOptionsInternal creates an instance of worker options with default values.
-func NewWorkerOptionsInternal(testTags map[string]map[string]string) WorkerOptions {
-	return &workerOptions{
-		maxConcurrentActivityExecutionSize: defaultMaxConcurrentActivityExecutionSize,
-		maxActivityExecutionRate:           defaultMaxActivityExecutionRate,
-		autoHeartBeatForActivities:         false,
-		testTags:                           testTags,
-		// Defaults for metrics, identity, logger is filled in by the WorkflowWorker APIs.
-	}
-}
-
 // NewWorkflowTaskWorker returns an instance of a workflow task handler worker.
 // To be used by framework level code that requires access to the original workflow task.
 func NewWorkflowTaskWorker(
@@ -73,16 +64,16 @@ func NewWorkflowTaskWorker(
 	taskList string,
 	options WorkerOptions,
 ) (worker Worker) {
-	wOptions := options.(*workerOptions)
+	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
 		TaskList:                  taskList,
 		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
-		Identity:                  wOptions.identity,
-		MetricsScope:              wOptions.metricsScope,
-		Logger:                    wOptions.logger,
+		Identity:                  wOptions.Identity,
+		MetricsScope:              wOptions.MetricsScope,
+		Logger:                    wOptions.Logger,
 	}
 
-	processTestTags(wOptions, &workerParams)
+	processTestTags(&wOptions, &workerParams)
 	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, workerParams)
 }
 
@@ -95,31 +86,32 @@ func NewActivityTaskWorker(
 	taskList string,
 	options WorkerOptions,
 ) Worker {
-	wOptions := options.(*workerOptions)
+	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
 		TaskList:                  taskList,
 		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
-		Identity:                  wOptions.identity,
-		MetricsScope:              wOptions.metricsScope,
-		Logger:                    wOptions.logger,
-		EnableLoggingInReplay:     wOptions.enableLoggingInReplay,
-		UserContext:               wOptions.userContext,
+		Identity:                  wOptions.Identity,
+		MetricsScope:              wOptions.MetricsScope,
+		Logger:                    wOptions.Logger,
+		EnableLoggingInReplay:     wOptions.EnableLoggingInReplay,
+		UserContext:               wOptions.BackgroundActivityContext,
 	}
 
-	processTestTags(wOptions, &workerParams)
+	processTestTags(&wOptions, &workerParams)
 	return newActivityTaskWorker(taskHandler, service, domain, workerParams)
 }
 
 // NewWorkflowTaskHandler creates an instance of a WorkflowTaskHandler from a decision poll response
 // using workflow functions registered through RegisterWorkflow
 // To be used to replay a workflow in a debugger.
-func NewWorkflowTaskHandler(identity string, logger *zap.Logger) WorkflowTaskHandler {
+func NewWorkflowTaskHandler(domain string, identity string, logger *zap.Logger) WorkflowTaskHandler {
 	params := workerExecutionParameters{
 		Identity: identity,
 		Logger:   logger,
 	}
 	return newWorkflowTaskHandler(
 		getWorkflowDefinitionFactory(newRegisteredWorkflowFactory()),
+		domain,
 		params,
 		nil)
 }
@@ -179,4 +171,10 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 	impl := &decodeFutureImpl{
 		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
 	return impl, impl
+}
+
+// WithTestTags - is used for internal cadence use to pass any test tags.
+// TODO: Build the tags on top of the context and pass it around instead of map of maps.
+func WithTestTags(ctx context.Context, testTags map[string]map[string]string) context.Context {
+	return context.WithValue(ctx, testTagsContextKey, testTags)
 }

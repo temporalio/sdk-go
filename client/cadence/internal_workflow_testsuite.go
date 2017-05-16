@@ -167,8 +167,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		mockHeartbeatFn)
 	env.service = mockService
 
-	if env.workerOptions == nil {
-		env.workerOptions = NewWorkerOptions().SetLogger(env.logger)
+	if env.workerOptions.Logger == nil {
+		env.workerOptions.Logger = env.logger
 	}
 
 	env.clock = clock.NewMock()
@@ -553,13 +553,13 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string) ActivityTaskHandler {
-	wOptions := env.workerOptions.(*workerOptions)
+	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
 	params := workerExecutionParameters{
 		TaskList:     taskList,
-		Identity:     wOptions.identity,
-		MetricsScope: wOptions.metricsScope,
+		Identity:     wOptions.Identity,
+		MetricsScope: wOptions.MetricsScope,
 		Logger:       env.logger,
-		UserContext:  wOptions.userContext,
+		UserContext:  wOptions.BackgroundActivityContext,
 	}
 	ensureRequiredParams(&params)
 

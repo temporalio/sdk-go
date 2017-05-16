@@ -32,6 +32,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	testDomain = "test-domain"
+)
+
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
@@ -120,7 +124,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 		Identity: "test-id-1",
 		Logger:   s.logger,
 	}
-	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, testDomain, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 	s.NoError(err)
 	s.NotNil(response)
@@ -149,7 +153,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		Identity: "test-id-1",
 		Logger:   s.logger,
 	}
-	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, testDomain, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -185,7 +189,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		Identity: "test-id-1",
 		Logger:   s.logger,
 	}
-	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, nil)
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, testDomain, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NotNil(err)
@@ -212,7 +216,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityTask() {
 		Identity: "test-id-1",
 		Logger:   s.logger,
 	}
-	taskHandler := newWorkflowTaskHandler(twdFactory, params, nil)
+	taskHandler := newWorkflowTaskHandler(twdFactory, testDomain, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.NoError(err)
@@ -245,7 +249,7 @@ func (s *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
 		Identity: "test-id-1",
 		Logger:   s.logger,
 	}
-	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, params, ppMgr)
+	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, testDomain, params, ppMgr)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
 	s.Error(err)

@@ -172,12 +172,17 @@ func NewFuture(ctx Context) (Future, Settable) {
 //  - Context can be used to pass the settings for this activity.
 // 	For example: task list that this need to be routed, timeouts that need to be configured.
 //	Use ActivityOptions to pass down the options.
-//			ctx1 := WithActivityOptions(ctx, NewActivityOptions().
-//					WithTaskList("exampleTaskList").
-//					WithScheduleToCloseTimeout(time.Second).
-//					WithScheduleToStartTimeout(time.Second).
-//					WithHeartbeatTimeout(0)
-//			or
+//			ao := ActivityOptions{
+// 				TaskList: "exampleTaskList",
+// 				ScheduleToStartTimeout: 10 * time.Second,
+// 				StartToCloseTimeout: 5 * time.Second,
+// 				ScheduleToCloseTimeout: 10 * time.Second,
+// 				HeartbeatTimeout: 0,
+// 			}
+//			ctx1 := WithActivityOptions(ctx, ao)
+//
+//			or to override a single option
+//
 //			ctx1 := WithTaskList(ctx, "exampleTaskList")
 //  - f - Either a activity name or a function that is getting scheduled.
 //  - args - The arguments that need to be passed to the function represented by 'f'.
@@ -220,9 +225,12 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 
 // WorkflowInfo information about currently executing workflow
 type WorkflowInfo struct {
-	WorkflowExecution WorkflowExecution
-	WorkflowType      WorkflowType
-	TaskListName      string
+	WorkflowExecution                   WorkflowExecution
+	WorkflowType                        WorkflowType
+	TaskListName                        string
+	ExecutionStartToCloseTimeoutSeconds int32
+	TaskStartToCloseTimeoutSeconds      int32
+	Domain                              string
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.

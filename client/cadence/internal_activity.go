@@ -27,9 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"time"
 
-	"github.com/uber-go/cadence-client/common"
 	"go.uber.org/zap"
 )
 
@@ -55,6 +53,7 @@ type (
 		StartToCloseTimeoutSeconds    int32
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
+		OriginalTaskListName          string
 	}
 
 	// asyncActivityClient for requesting activity execution
@@ -78,22 +77,7 @@ type (
 		serviceInvoker    ServiceInvoker
 		logger            *zap.Logger
 	}
-
-	// activityOptions stores all activity-specific parameters that will
-	// be stored inside of a context.
-	activityOptions struct {
-		activityID                    *string
-		taskListName                  *string
-		scheduleToCloseTimeoutSeconds *int32
-		scheduleToStartTimeoutSeconds *int32
-		startToCloseTimeoutSeconds    *int32
-		heartbeatTimeoutSeconds       *int32
-		waitForCancellation           *bool
-	}
 )
-
-// Assert that structs do indeed implement the interfaces
-var _ ActivityOptions = (*activityOptions)(nil)
 
 const activityEnvContextKey = "activityEnv"
 const activityOptionsContextKey = "activityOptions"
@@ -120,15 +104,27 @@ func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error
 		// We need task list as a compulsory parameter. This can be removed after registration
 		return nil, errActivityParamsBadRequest
 	}
+	if p.TaskListName == "" {
+		// We default to origin task list name.
+		p.TaskListName = p.OriginalTaskListName
+	}
 	if p.ScheduleToStartTimeoutSeconds <= 0 {
 		return nil, errors.New("missing or negative ScheduleToStartTimeoutSeconds")
-	}
-	if p.ScheduleToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
 	}
 	if p.StartToCloseTimeoutSeconds <= 0 {
 		return nil, errors.New("missing or negative StartToCloseTimeoutSeconds")
 	}
+	if p.ScheduleToCloseTimeoutSeconds < 0 {
+		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
+	}
+	if p.ScheduleToCloseTimeoutSeconds == 0 {
+		// This is a optional parameter, we default to sum of the other two timeouts.
+		p.ScheduleToCloseTimeoutSeconds = p.ScheduleToStartTimeoutSeconds + p.StartToCloseTimeoutSeconds
+	}
+	if p.HeartbeatTimeoutSeconds < 0 {
+		return nil, errors.New("invalid negative HeartbeatTimeoutSeconds")
+	}
+
 	return p, nil
 }
 
@@ -309,48 +305,4 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 		return WithValue(ctx, activityOptionsContextKey, &executeActivityParameters{})
 	}
 	return ctx
-}
-
-// WithTaskList sets the task list name for this Context.
-func (ab *activityOptions) WithTaskList(name string) ActivityOptions {
-	ab.taskListName = common.StringPtr(name)
-	return ab
-}
-
-// WithScheduleToCloseTimeout sets timeout for this Context.
-func (ab *activityOptions) WithScheduleToCloseTimeout(d time.Duration) ActivityOptions {
-	ab.scheduleToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
-	return ab
-}
-
-// WithScheduleToStartTimeout sets timeout for this Context.
-func (ab *activityOptions) WithScheduleToStartTimeout(d time.Duration) ActivityOptions {
-	ab.scheduleToStartTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
-	return ab
-}
-
-// WithStartToCloseTimeout sets timeout for this Context.
-func (ab *activityOptions) WithStartToCloseTimeout(d time.Duration) ActivityOptions {
-	ab.startToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
-	return ab
-}
-
-// WithHeartbeatTimeout sets timeout for this Context.
-func (ab *activityOptions) WithHeartbeatTimeout(d time.Duration) ActivityOptions {
-	ab.heartbeatTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
-	return ab
-}
-
-// WithWaitForCancellation sets timeout for this Context.
-func (ab *activityOptions) WithWaitForCancellation(wait bool) ActivityOptions {
-	ab.waitForCancellation = &wait
-	return ab
-}
-
-// WithActivityID sets the activity task list ID for this Context.
-// NOTE: We don't expose configuring activity ID to the user, This is something will be done in future
-// so they have end to end scenario of how to use this ID to complete and fail an activity(business use case).
-func (ab *activityOptions) WithActivityID(activityID string) ActivityOptions {
-	ab.activityID = common.StringPtr(activityID)
-	return ab
 }

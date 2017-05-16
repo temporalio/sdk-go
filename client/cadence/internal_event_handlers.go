@@ -174,7 +174,7 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType m.DecisionType
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
 
 	scheduleTaskAttr := &m.ScheduleActivityTaskDecisionAttributes{}
-	if parameters.ActivityID == nil {
+	if parameters.ActivityID == nil || *parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = common.StringPtr(wc.GenerateSequenceID())
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
