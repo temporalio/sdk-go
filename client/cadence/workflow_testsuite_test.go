@@ -118,7 +118,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TimerWorkflow_ClockAutoFastForward() {
 	s.Equal([]string{"t2", "t3", "t1", "t4"}, firedTimerRecord)
 }
 
-func (s *WorkflowTestSuiteUnitTest) xTest_WorkflowAutoForwardClock() {
+func (s *WorkflowTestSuiteUnitTest) xTestWorkflowAutoForwardClock() {
 	/**
 	TODO: update this test once we update the test workflow clock implementation.
 	*/
@@ -245,7 +245,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	s.Equal("async_complete", result)
 }
 
-func (s *WorkflowTestSuiteUnitTest) xTest_WorkflowCancellation() {
+func (s *WorkflowTestSuiteUnitTest) xTestWorkflowCancellation() {
 	/**
 	TODO: fix test workflow clock implementation.
 	This test is not working for now because current implementation only auto forward clock for timer when there is no

@@ -106,8 +106,8 @@ func (s *WorkflowTestSuite) RegisterActivity(activityFn interface{}) {
 
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
 // with Debug level logging enabled.
-func (t *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
-	t.logger = logger
+func (s *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
+	s.logger = logger
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
@@ -162,7 +162,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityStartedListener(
 	return t
 }
 
-// SetOnActivityEndedListener sets a listener that will be called after an activity is completed.
+// SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
 func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 	listener func(activityInfo *ActivityInfo, result EncodedValue, err error)) *TestWorkflowEnvironment {
 	t.impl.onActivityCompletedListener = listener
@@ -176,7 +176,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityCancelledListener(
 	return t
 }
 
-// SetOnActivityCancelledListener sets a listener that will be called when activity heartbeat.
+// SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details EncodedValues)) *TestWorkflowEnvironment {
 	t.impl.onActivityHeartbeatListener = listener
@@ -243,6 +243,6 @@ func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // SetActivityTaskList set the affinity between activity and tasklist. By default, activity can be invoked by any tasklist
 // in this test environment. You can use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
-func (env *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
-	env.impl.setActivityTaskList(tasklist, activityFn...)
+func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
+	t.impl.setActivityTaskList(tasklist, activityFn...)
 }
