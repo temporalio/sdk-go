@@ -39,8 +39,8 @@ import (
 // library version
 const versionHeaderName = "cadence-client-version"
 
-// default tchannel rpc call timeout
-const defaultRpcTimeout = 10 * time.Second
+// defaultRPCTimeout is the default tchannel rpc call timeout
+const defaultRPCTimeout = 10 * time.Second
 
 // retryNeverOptions - Never retry the connection
 var retryNeverOptions = &tchannel.RetryOptions{
@@ -68,7 +68,7 @@ func tchanRetryOption(retryOpt *tchannel.RetryOptions) func(builder *tchannel.Co
 
 // newTChannelContext - Get a tchannel context
 func newTChannelContext(options ...func(builder *tchannel.ContextBuilder)) (tchannel.ContextWithHeaders, context.CancelFunc) {
-	builder := tchannel.NewContextBuilder(defaultRpcTimeout)
+	builder := tchannel.NewContextBuilder(defaultRPCTimeout)
 	builder.SetRetryOptions(retryDefaultOptions)
 	builder.AddHeader(versionHeaderName, LibraryVersion)
 	for _, opt := range options {

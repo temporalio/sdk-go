@@ -28,8 +28,8 @@ import (
 )
 
 func TestTChannelBuilderOptions(t *testing.T) {
-	builder := tchannel.NewContextBuilder(defaultRpcTimeout)
-	require.Equal(t, defaultRpcTimeout, builder.Timeout)
+	builder := tchannel.NewContextBuilder(defaultRPCTimeout)
+	require.Equal(t, defaultRPCTimeout, builder.Timeout)
 
 	opt1 := tchanTimeout(time.Minute)
 	opt2 := tchanRetryOption(retryNeverOptions)

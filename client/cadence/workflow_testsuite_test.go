@@ -39,6 +39,8 @@ type WorkflowTestSuiteUnitTest struct {
 	activityOptions ActivityOptions
 }
 
+type testContextKey string
+
 func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.activityOptions = NewActivityOptions().
 		WithTaskList(testTaskList).
@@ -220,12 +222,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
-	testKey, testValue := "test_key", "test_value"
+	testKey, testValue := testContextKey("test_key"), "test_value"
 	userCtx := context.WithValue(context.Background(), testKey, testValue)
 	workerOptions := NewWorkerOptions().WithActivityContext(userCtx)
 
 	// inline activity using value passing through user context.
-	activityWithUserContext := func(ctx context.Context, keyName string) (string, error) {
+	activityWithUserContext := func(ctx context.Context, keyName testContextKey) (string, error) {
 		value := ctx.Value(keyName)
 		if value != nil {
 			return value.(string), nil
