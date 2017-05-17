@@ -140,13 +140,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_TimerWorkflow_ClockAutoFastForward() {
 	s.Equal([]string{"t2", "t3", "t1", "t4"}, firedTimerRecord)
 }
 
-func (s *WorkflowTestSuiteUnitTest) xTestWorkflowAutoForwardClock() {
-	/**
-	TODO: update this test once we update the test workflow clock implementation.
-	*/
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowAutoForwardClock() {
 	workflowFn := func(ctx Context) (string, error) {
-		f1 := NewTimer(ctx, time.Second*2)
+		// Schedule a timer with long duration. In this test, we won't actually wait for that long, because the test suite
+		// will auto forward clock when workflow is blocked and there is no running activity.
+		f1 := NewTimer(ctx, time.Minute)
+
 		ctx = WithActivityOptions(ctx, s.activityOptions)
+		// Execute activity that returns immediately, once the activity returns, the workflow will be blocked on timer
+		// and the test suite will auto forward clock to fire the timer.
 		f2 := ExecuteActivity(ctx, testActivityHello, "controlled_execution")
 
 		timerErr := f1.Get(ctx, nil) // wait until timer fires
@@ -175,6 +177,46 @@ func (s *WorkflowTestSuiteUnitTest) xTestWorkflowAutoForwardClock() {
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal("hello_controlled_execution", result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
+	workflowFn := func(ctx Context) (string, error) {
+		// Schedule a long timer.
+		t1 := NewTimer(ctx, time.Minute)
+
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		// Schedule 2 activities, one returns immediately, the other will take 10s to run.
+		f1 := ExecuteActivity(ctx, testActivityHello, "controlled_execution")
+		f2Ctx, f2Cancel := WithCancel(ctx)
+		f2 := ExecuteActivity(f2Ctx, testActivityHeartbeat, time.Second*10)
+
+		err := f1.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+
+		// Schedule a short timer after f1 completed.
+		t2 := NewTimer(ctx, time.Millisecond)
+		NewSelector(ctx).AddFuture(t2, func(f Future) {
+			// when t2 fires, we would cancel f2
+			if !f2.IsReady() {
+				f2Cancel()
+			}
+		}).Select(ctx) // wait until t2 fires
+
+		t1.Get(ctx, nil) // wait for the long timer to fire.
+
+		return "expected", nil
+	} // END of workflow code
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("expected", result)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
@@ -268,13 +310,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	s.Equal("async_complete", result)
 }
 
-func (s *WorkflowTestSuiteUnitTest) xTestWorkflowCancellation() {
-	/**
-	TODO: fix test workflow clock implementation.
-	This test is not working for now because current implementation only auto forward clock for timer when there is no
-	running activities. As long as there is running activities, the workflow clock will stall. We need to change this
-	behavior to continue moving forward workflow clock at real wall clock pace while there is running activities.
-	*/
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		f := ExecuteActivity(ctx, testActivityHeartbeat, "msg1", time.Second*10)
@@ -283,15 +319,14 @@ func (s *WorkflowTestSuiteUnitTest) xTestWorkflowCancellation() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(time.Minute)
-
-	// Register a delayed callback using workflow timer internally. By default, the test suite enables the auto clock
-	// forwarding when workflow is blocked. So, when the workflow is blocked on the testActivityHeartbeat activity, the
-	// mock clock will auto forward and fires timer which calls our registered callback. Our callback would cancel the
-	// workflow, which will terminate the whole workflow.
+	// Register a delayed callback using workflow timer internally. The callback will be called when workflow clock passed
+	// by the specified delay duration. The test suite enables the auto clock forwarding when workflow is blocked and no
+	// activities are running. However, if there are running activities, test suite's workflow clock will move forward at
+	// the real wall clock pace. In this test case, the activity is configured to run for 10s, so the workflow will be
+	// blocked. But after 1ms, the registered callback will be invoked, which will request to cancel the workflow.
 	env.RegisterDelayedCallback(func() {
 		env.CancelWorkflow()
-	}, time.Hour)
+	}, time.Millisecond)
 
 	env.ExecuteWorkflow(workflowFn)
 
