@@ -27,7 +27,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"go.uber.org/cadence/.gen/go/shared"
 
 )
 

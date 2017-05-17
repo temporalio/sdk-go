@@ -30,12 +30,12 @@ import (
 
 	"github.com/facebookgo/clock"
 	"github.com/stretchr/testify/mock"
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
-	"github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/mocks"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
+	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 

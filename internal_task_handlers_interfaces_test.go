@@ -25,9 +25,9 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	m "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/mocks"
 	"github.com/uber/tchannel-go/thrift"
+	m "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/mocks"
 	"golang.org/x/net/context"
 )
 

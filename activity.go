@@ -24,8 +24,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
 	"go.uber.org/zap"
 )
 

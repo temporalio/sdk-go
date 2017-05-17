@@ -1,8 +1,8 @@
-hash: 0008e66338ba88853061addad5702b77fec17f67befdfd58cc1d791f01a40902
-updated: 2017-04-17T17:14:00.390177791-07:00
+hash: bd37bde215b9bf8bee37d2bd3c32a6db97cf09671a9976de4816f9469ac5ac16
+updated: 2017-05-16T18:24:52.574723354-07:00
 imports:
 - name: github.com/apache/thrift
-  version: 2d65c2365f19f637bc732222e71d78727bf0b709
+  version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
   subpackages:
   - lib/go/thrift
 - name: github.com/davecgh/go-spew
@@ -17,7 +17,7 @@ imports:
   - ext
   - log
 - name: github.com/pborman/uuid
-  version: 1b00554d822231195d1babd97ff4a781231955c9
+  version: a97ce2ca70fa5a848076093f05e639a89ca34d06
 - name: github.com/pmezard/go-difflib
   version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
@@ -25,20 +25,16 @@ imports:
 - name: github.com/stretchr/objx
   version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
 - name: github.com/stretchr/testify
-  version: 4d4bfba8f1d1027c4fdbe371823030df51419987
+  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
   subpackages:
   - assert
   - mock
   - require
   - suite
 - name: github.com/uber-go/atomic
-  version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
+  version: e682c1008ac17bf26d2e4b5ad6cdd08520ed0b22
 - name: github.com/uber-go/tally
-  version: d0a3e6333f3535bb7d63f9c82983a65c802fb44c
-- name: github.com/uber-go/zap
-  version: 1550bc05539134bbf8612a35f34a79ab8bf34ee3
-  subpackages:
-  - zapcore
+  version: e9b601813b0be4771b1b3995390567b67ab2b3fc
 - name: github.com/uber/tchannel-go
   version: 0b7f160817553b0bacb5b108dd84a5022dbdd1c4
   subpackages:
@@ -52,7 +48,7 @@ imports:
 - name: go.uber.org/atomic
   version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
 - name: go.uber.org/zap
-  version: 1550bc05539134bbf8612a35f34a79ab8bf34ee3
+  version: fab453050a7a08c35f31fc5fff6f2dbd962285ab
   subpackages:
   - buffer
   - internal/bufferpool
@@ -61,16 +57,12 @@ imports:
   - internal/multierror
   - zapcore
 - name: golang.org/x/net
-  version: 5602c733f70afc6dcec6766be0d5034d4c4f14de
+  version: 34057069f4ab13dc4433c68d368737ebeafcccdc
   subpackages:
   - context
 testImports:
-- name: github.com/golang/mock
-  version: bd3c8e81be01eef76d4b503f5e687d2d1354d2d9
-  subpackages:
-  - gomock
 - name: github.com/Sirupsen/logrus
-  version: 10f801ebc38b33738c9d17d50860f484a0988ff5
+  version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: golang.org/x/sys
   version: f3918c30c5c2cb527c0b071a27c35120a6c0719a
   subpackages:

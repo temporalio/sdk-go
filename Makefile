@@ -1,5 +1,5 @@
 .PHONY: test bins clean cover cover_ci
-PROJECT_ROOT = github.com/uber-go/cadence-client
+PROJECT_ROOT = go.uber.org/cadence
 
 export PATH := $(GOPATH)/bin:$(PATH)
 
@@ -19,7 +19,7 @@ BUILD := ./build
 
 LIBRARY_VERSION=v0.1.0
 GIT_SHA=`git rev-parse HEAD`
-OUT_VERSION_FILE=./client/cadence/version.go
+OUT_VERSION_FILE=./version.go
 
 export PATH := $(GOPATH)/bin:$(PATH)
 
@@ -54,16 +54,14 @@ glide:
 clean_thrift:
 	rm -rf .gen
 
-thriftc: clean_thrift glide $(THRIFT_GEN_SRC)
+thriftc: clean_thrift $(THRIFT_GEN_SRC)
 
 copyright: ./cmd/tools/copyright/licensegen.go
 	go run ./cmd/tools/copyright/licensegen.go --verifyOnly
 
 bins_nothrift: copyright lint glide
-	go build -i -o cadence-client main.go
 
 bins: thriftc bins_nothrift
-	go build -i -o cadence-client main.go
 
 test: bins
 	@rm -f test

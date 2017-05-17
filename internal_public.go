@@ -30,8 +30,8 @@ package cadence
 import (
 	"context"
 
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	m "go.uber.org/cadence/.gen/go/cadence"
+	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
 

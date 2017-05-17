@@ -21,9 +21,9 @@
 package cadence
 
 import (
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
 	"github.com/uber-go/tally"
+	m "go.uber.org/cadence/.gen/go/cadence"
+	s "go.uber.org/cadence/.gen/go/shared"
 )
 
 type (

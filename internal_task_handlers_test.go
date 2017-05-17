@@ -25,10 +25,10 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	m "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/common/util"
-	"github.com/uber-go/cadence-client/mocks"
+	m "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/util"
+	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 

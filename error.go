@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"go.uber.org/cadence/.gen/go/shared"
 )
 
 type (

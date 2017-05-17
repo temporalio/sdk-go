@@ -94,9 +94,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
 	})
 	expectedCalls := []string{
-		"github.com/uber-go/cadence-client/client/cadence.testActivityHello:msg1",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityHello:msg2",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityHello:msg3",
+		"go.uber.org/cadence.testActivityHello:msg1",
+		"go.uber.org/cadence.testActivityHello:msg2",
+		"go.uber.org/cadence.testActivityHello:msg3",
 	}
 
 	env.ExecuteWorkflow(workflowFn)

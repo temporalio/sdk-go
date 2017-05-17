@@ -1,12 +1,27 @@
-package: github.com/uber-go/cadence-client
+package: go.uber.org/cadence
 import:
+- package: github.com/facebookgo/clock
+- package: github.com/pborman/uuid
+  version: v1.0
+- package: github.com/stretchr/testify
+  version: v1.1.4
+  subpackages:
+  - mock
+- package: github.com/uber-go/tally
+  version: v3.0.1
 - package: github.com/uber/tchannel-go
+  version: v1.5.0
   subpackages:
   - thrift
+- package: go.uber.org/atomic
+  version: v1.2.0
 - package: go.uber.org/zap
-  version: ^1
-testImport:
-- package: github.com/golang/mock
+  version: v1.4.0
   subpackages:
-  - gomock
-- package: github.com/pborman/uuid
+  - zapcore
+- package: golang.org/x/net
+  subpackages:
+  - context
+testImport:
+- package: github.com/Sirupsen/logrus
+  version: v0.11.5

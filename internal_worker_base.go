@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/common/backoff"
+	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

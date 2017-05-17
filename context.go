@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"go.uber.org/cadence/.gen/go/shared"
 )
 
 // Context is a clone of context.Context with Done() returning Channel instead

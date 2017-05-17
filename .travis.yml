@@ -7,6 +7,7 @@ directories:
 go:
   - 1.8
 
+go_import_path: go.uber.org/cadence
 addons:
   apt:
     packages:

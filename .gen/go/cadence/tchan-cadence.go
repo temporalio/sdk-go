@@ -29,7 +29,7 @@ import (
 	athrift "github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber/tchannel-go/thrift"
 
-	"github.com/uber-go/cadence-client/.gen/go/shared"
+	"go.uber.org/cadence/.gen/go/shared"
 )
 
 var _ = shared.GoUnusedProtection__

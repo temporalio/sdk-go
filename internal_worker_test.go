@@ -32,9 +32,9 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/mocks"
+	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 
@@ -65,12 +65,12 @@ func init() {
 func TestActivityRegistrationListener(t *testing.T) {
 	require.Equal(t, 6, len(registeredActivities))
 	expectedActivities := []string{
-		"github.com/uber-go/cadence-client/client/cadence.testActivity",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityByteArgs",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityMultipleArgs",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityReturnString",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyString",
-		"github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyStruct",
+		"go.uber.org/cadence.testActivity",
+		"go.uber.org/cadence.testActivityByteArgs",
+		"go.uber.org/cadence.testActivityMultipleArgs",
+		"go.uber.org/cadence.testActivityReturnString",
+		"go.uber.org/cadence.testActivityReturnEmptyString",
+		"go.uber.org/cadence.testActivityReturnEmptyStruct",
 	}
 	sort.Strings(expectedActivities)
 	expected := strings.Join(expectedActivities, ",")
@@ -82,8 +82,8 @@ func TestActivityRegistrationListener(t *testing.T) {
 func TestWorkflowRegistrationListener(t *testing.T) {
 	require.Equal(t, 2, len(registeredWorkflows))
 	expectedWorkflows := []string{
-		"github.com/uber-go/cadence-client/client/cadence.sampleWorkflowExecute",
-		"github.com/uber-go/cadence-client/client/cadence.testReplayWorkflow",
+		"go.uber.org/cadence.sampleWorkflowExecute",
+		"go.uber.org/cadence.testReplayWorkflow",
 	}
 	sort.Strings(expectedWorkflows)
 	expected := strings.Join(expectedWorkflows, ",")
@@ -134,7 +134,7 @@ func TestDecisionTaskHandler(t *testing.T) {
 		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
 	}
 
-	workflowType := "github.com/uber-go/cadence-client/client/cadence.testReplayWorkflow"
+	workflowType := "go.uber.org/cadence.testReplayWorkflow"
 	workflowID := "testID"
 	runID := "testRunID"
 
@@ -180,8 +180,8 @@ func TestCreateWorker(t *testing.T) {
 
 	workflowID := "w1"
 	runID := "r1"
-	activityType := "github.com/uber-go/cadence-client/client/cadence.testActivity"
-	workflowType := "github.com/uber-go/cadence-client/client/cadence.sampleWorkflowExecute"
+	activityType := "go.uber.org/cadence.testActivity"
+	workflowType := "go.uber.org/cadence.sampleWorkflowExecute"
 	activityID := "a1"
 	taskList := "tl1"
 	var startedEventID int64 = 10
@@ -401,18 +401,18 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, "testActivityNoArgsAndNoResult").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnString")
+	f = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityReturnString")
 	err = f.Get(ctx, &rString)
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, "testActivity", rString, rString)
 
-	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyString")
+	f = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityReturnEmptyString")
 	var r2sString string
 	err = f.Get(ctx, &r2String)
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, "", r2sString)
 
-	f = ExecuteActivity(ctx, "github.com/uber-go/cadence-client/client/cadence.testActivityReturnEmptyStruct")
+	f = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityReturnEmptyStruct")
 	err = f.Get(ctx, &r2Struct)
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, testActivityResult{}, r2Struct)

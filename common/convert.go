@@ -21,7 +21,7 @@
 package common
 
 import (
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	s "go.uber.org/cadence/.gen/go/shared"
 )
 
 // Int32Ptr makes a copy and returns the pointer to an int32.

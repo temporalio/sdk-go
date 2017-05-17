@@ -27,10 +27,10 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/common/backoff"
-	"github.com/uber-go/cadence-client/mocks"
+	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/backoff"
+	"go.uber.org/cadence/mocks"
 )
 
 func TestActivityHeartbeat(t *testing.T) {

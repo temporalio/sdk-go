@@ -30,13 +30,13 @@ import (
 	"reflect"
 	"time"
 
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
-	"github.com/uber-go/cadence-client/common/backoff"
-	"github.com/uber-go/cadence-client/common/metrics"
-	"github.com/uber-go/cadence-client/common/util"
 	"github.com/uber-go/tally"
+	m "go.uber.org/cadence/.gen/go/cadence"
+	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/backoff"
+	"go.uber.org/cadence/common/metrics"
+	"go.uber.org/cadence/common/util"
 	"go.uber.org/zap"
 )
 

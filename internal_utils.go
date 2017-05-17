@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
-	"github.com/uber-go/cadence-client/common"
 	"github.com/uber/tchannel-go"
+	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
 	"golang.org/x/net/context"
 )
 

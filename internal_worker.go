@@ -33,8 +33,8 @@ import (
 	"strings"
 	"sync"
 
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
 	"github.com/uber-go/tally"
+	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

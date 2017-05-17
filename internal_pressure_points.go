@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"time"
 
-	m "github.com/uber-go/cadence-client/.gen/go/cadence"
+	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/zap"
 )
 

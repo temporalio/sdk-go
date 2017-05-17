@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/uber-go/cadence-client/common"
+	"go.uber.org/cadence/common"
 	"go.uber.org/zap"
 )
 

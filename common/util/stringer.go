@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"reflect"
 
-	s "github.com/uber-go/cadence-client/.gen/go/shared"
+	s "go.uber.org/cadence/.gen/go/shared"
 )
 
 func anyToString(d interface{}) string {
