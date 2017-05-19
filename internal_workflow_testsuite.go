@@ -29,12 +29,12 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
-	"github.com/stretchr/testify/mock"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/mock"
 	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
@@ -67,7 +67,7 @@ type (
 	}
 
 	activityExecutorWrapper struct {
-		activity
+		*activityExecutor
 		env *testWorkflowEnvironmentImpl
 	}
 
@@ -82,6 +82,7 @@ type (
 		overrodeActivities         map[string]interface{} // map of registered-fnName -> fakeActivityFn
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
+		mock          *mock.Mock
 		service       m.TChanWorkflowService
 		workerOptions WorkerOptions
 		logger        *zap.Logger
@@ -287,7 +288,7 @@ func (env *testWorkflowEnvironmentImpl) overrideActivity(activityFn, fakeActivit
 
 	// verify signature of registeredActivityFn and fakeActivityFn are the same.
 	if actualFnType != fakeFnType {
-		panic("activityFn and fakeActivityFn have different func signature")
+		panic(fmt.Sprintf("override activity failed, expected %v, but got %v.", actualFnType, fakeFnType))
 	}
 
 	fnName := getFunctionName(activityFn)
@@ -601,7 +602,114 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 			a.env.onActivityStartedListener(&activityInfo, ctx, EncodedValues(input))
 		}, false)
 	}
-	return a.activity.Execute(ctx, input)
+
+	// get mock returns if mock is available
+	mockRet := a.getMockReturn(ctx, input)
+	if mockRet == nil {
+		// no mock
+		return a.activityExecutor.Execute(ctx, input)
+	}
+
+	return a.executeMock(ctx, input, mockRet)
+}
+
+func (a *activityExecutorWrapper) getMockReturn(ctx context.Context, input []byte) mock.Arguments {
+	if a.env.mock == nil {
+		// no mock
+		return nil
+	}
+
+	// check if we have mock setup for this activity
+	fnType := reflect.TypeOf(a.fn)
+	reflectArgs, err := getHostEnvironment().decodeArgs(fnType, input)
+	if err != nil {
+		panic(err)
+	}
+	realArgs := []interface{}{}
+	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+		realArgs = append(realArgs, ctx)
+	}
+	for _, arg := range reflectArgs {
+		realArgs = append(realArgs, arg.Interface())
+	}
+	found, _ := a.env.mock.FindExpectedCall(a.name, realArgs...)
+
+	if found < 0 {
+		// mock not setup for this activity
+		return nil
+	}
+
+	return a.env.mock.MethodCalled(a.name, realArgs...)
+}
+
+func (a *activityExecutorWrapper) executeMock(ctx context.Context, input []byte, mockRet mock.Arguments) ([]byte, error) {
+	fnName := a.name
+	mockRetLen := len(mockRet)
+	if mockRetLen == 0 {
+		panic(fmt.Sprintf("mock of %v has no returns", fnName))
+	}
+
+	fnType := reflect.TypeOf(a.fn)
+	// check if mock returns function which must match to the actual activity.
+	mockFn := mockRet.Get(0)
+	mockFnType := reflect.TypeOf(mockFn)
+	if mockFnType != nil && mockFnType.Kind() == reflect.Func {
+		if mockFnType != fnType {
+			panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
+				fnName, fnType, mockFnType))
+		}
+		// we found a mock function that matches to actual activity, so call that mockFn
+		ae := &activityExecutor{name: fnName, fn: mockFn}
+		return ae.Execute(ctx, input)
+	}
+
+	// check if mockRet have same types as activity's return types
+	if mockRetLen != fnType.NumOut() {
+		panic(fmt.Sprintf("mock of %v has incorrect number of returns, expected %d, but actual is %d",
+			fnName, fnType.NumOut(), mockRetLen))
+	}
+	// we already verified activity function either has 1 return value (error) or 2 return values (result, error)
+	var retErr error
+	mockErr := mockRet[mockRetLen-1] // last mock return must be error
+	if mockErr == nil {
+		retErr = nil
+	} else if err, ok := mockErr.(error); ok {
+		retErr = err
+	} else {
+		panic(fmt.Sprintf("mock of %v has incorrect return type, expected error, but actual is %T (%v)",
+			fnName, mockErr, mockErr))
+	}
+
+	switch mockRetLen {
+	case 1:
+		return nil, retErr
+	case 2:
+		expectedType := fnType.Out(0)
+		mockResult := mockRet[0]
+		if mockResult == nil {
+			switch expectedType.Kind() {
+			case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Array:
+				// these are supported nil-able types. (reflect.Chan, reflect.Func are nil-able, but not supported)
+				return nil, retErr
+			default:
+				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
+					fnName, expectedType, mockResult, mockResult))
+			}
+		} else {
+			if !reflect.TypeOf(mockResult).AssignableTo(expectedType) {
+				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
+					fnName, expectedType, mockResult, mockResult))
+			}
+			result, encodeErr := getHostEnvironment().encodeArg(mockResult)
+			if encodeErr != nil {
+				panic(fmt.Sprintf("encode result from mock of %v failed: %v", fnName, encodeErr))
+			}
+			return result, retErr
+		}
+	default:
+		// this will never happen, panic just in case
+		panic("activity should either have 1 return value (error) or 2 return values (result, error)")
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string) ActivityTaskHandler {
@@ -629,7 +737,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 				// activity is registered to a specific taskList, so ignore it from the global registered activities.
 				continue
 			}
-			activities = append(activities, env.wrapActivity(a))
+			activities = append(activities, env.wrapActivity(a.(*activityExecutor)))
 		}
 	}
 
@@ -644,14 +752,14 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	return taskHandler
 }
 
-func (env *testWorkflowEnvironmentImpl) wrapActivity(a activity) *activityExecutorWrapper {
-	fnName := a.ActivityType().Name
+func (env *testWorkflowEnvironmentImpl) wrapActivity(ae *activityExecutor) *activityExecutorWrapper {
+	fnName := ae.name
 	if overrideFn, ok := env.overrodeActivities[fnName]; ok {
 		// override activity
-		a = &activityExecutor{name: fnName, fn: overrideFn}
+		ae = &activityExecutor{name: fnName, fn: overrideFn}
 	}
 
-	activityWrapper := &activityExecutorWrapper{activity: a, env: env}
+	activityWrapper := &activityExecutorWrapper{activityExecutor: ae, env: env}
 	return activityWrapper
 }
 

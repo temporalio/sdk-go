@@ -28,10 +28,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/cadence/mock"
 	"go.uber.org/zap"
 )
-
-const testTaskList = "test-task-list"
 
 type WorkflowTestSuiteUnitTest struct {
 	suite.Suite
@@ -70,6 +69,38 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityOverride() {
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal("fake_world", result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
+	mockActivity := func(ctx context.Context, msg string) (string, error) {
+		return "mock_" + msg, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Once()
+
+	env.ExecuteWorkflow(testWorkflowHello)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("mock_world", result)
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockValues() {
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("mock_value", nil).Once()
+
+	env.ExecuteWorkflow(testWorkflowHello)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("mock_value", result)
+	env.AssertExpectations(s.T())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {

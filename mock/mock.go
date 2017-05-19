@@ -1,3 +1,31 @@
+// Copyright (c) 2017 Uber Technologies, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+/*************************************************************************************
+Q: Why cadence needs a copy of testify mock?
+A: WorkflowTestSuite needs a minor change to testify mock to support its use case. We
+put up a pull request for the changes we need to testify library: https://github.com/stretchr/testify/pull/439
+Before that pull request is merged, we need a copy of that mock so we can make progress.
+Once the pull request get merged, we can remove this copy.
+**************************************************************************************/
+
 // Copyright (c) 2012 - 2013 Mat Ryer and Tyler Bunnell
 //
 // Please consider promoting this project if you find it useful.
@@ -236,7 +264,7 @@ func (m *Mock) On(methodName string, arguments ...interface{}) *Call {
 // 	Recording and responding to activity
 // */
 
-func (m *Mock) findExpectedCall(method string, arguments ...interface{}) (int, *Call) {
+func (m *Mock) FindExpectedCall(method string, arguments ...interface{}) (int, *Call) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	for i, call := range m.ExpectedCalls {
@@ -311,8 +339,14 @@ func (m *Mock) Called(arguments ...interface{}) Arguments {
 	parts := strings.Split(functionPath, ".")
 	functionName := parts[len(parts)-1]
 
-	found, call := m.findExpectedCall(functionName, arguments...)
+	return m.MethodCalled(functionName, arguments...)
+}
 
+// MethodCalled tells the mock object that a method with specified name has been called, and gets an array of arguments
+// to return. Panics if the call is unexpected (i.e. not preceded by appropriate .On .Return() calls)
+// If Call.WaitFor is set, blocks until the channel is closed or receives a message.
+func (m *Mock) MethodCalled(functionName string, arguments ...interface{}) Arguments {
+	found, call := m.FindExpectedCall(functionName, arguments...)
 	if found < 0 {
 		// we have to fail here - because we don't know what to do
 		// as the return arguments.  This is because:
