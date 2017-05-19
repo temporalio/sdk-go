@@ -156,11 +156,14 @@ func (bw *baseWorker) execute(routineID int) {
 		}
 
 		err := bw.options.taskPoller.PollAndProcessSingleTask()
-		if err != nil {
-			bw.logger.Info("Poll failed with Error", zap.Int(tagRoutineID, routineID), zap.Error(err))
-			bw.retrier.Failed()
-		} else {
+		if err == nil {
 			bw.retrier.Succeeded()
+		} else if isClientSideError(err) {
+			bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+			// This doesn't count against server failures.
+		} else {
+			bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+			bw.retrier.Failed()
 		}
 
 		select {

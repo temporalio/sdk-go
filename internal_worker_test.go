@@ -189,12 +189,16 @@ func TestCreateWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	activityTask := &s.PollForActivityTaskResponse{
-		TaskToken:         []byte("taskToken1"),
-		WorkflowExecution: &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
-		ActivityType:      &s.ActivityType{Name: &activityType},
-		StartedEventId:    &startedEventID,
-		Input:             input,
-		ActivityId:        &activityID,
+		TaskToken:                     []byte("taskToken1"),
+		WorkflowExecution:             &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
+		ActivityType:                  &s.ActivityType{Name: &activityType},
+		StartedEventId:                &startedEventID,
+		Input:                         input,
+		ActivityId:                    &activityID,
+		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(2),
+		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
+		StartToCloseTimeoutSeconds:    common.Int32Ptr(2),
 	}
 	decisionTask := &s.PollForDecisionTaskResponse{
 		TaskToken:              []byte("taskToken1"),

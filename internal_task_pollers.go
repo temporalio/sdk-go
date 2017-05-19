@@ -100,6 +100,15 @@ func isServiceTransientError(err error) bool {
 	return true
 }
 
+func isClientSideError(err error) bool {
+	// If an activity execution exceeds deadline.
+	if err == context.DeadlineExceeded {
+		return true
+	}
+
+	return false
+}
+
 func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService,
 	domain string, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{

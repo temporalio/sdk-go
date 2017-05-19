@@ -653,10 +653,14 @@ func newTestActivityTask(workflowID, runID, activityID, activityType string, inp
 			WorkflowId: common.StringPtr(workflowID),
 			RunId:      common.StringPtr(runID),
 		},
-		ActivityId:   common.StringPtr(activityID),
-		TaskToken:    []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
-		ActivityType: &shared.ActivityType{Name: common.StringPtr(activityType)},
-		Input:        input,
+		ActivityId:                    common.StringPtr(activityID),
+		TaskToken:                     []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
+		ActivityType:                  &shared.ActivityType{Name: common.StringPtr(activityType)},
+		Input:                         input,
+		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(60),
+		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
+		StartToCloseTimeoutSeconds:    common.Int32Ptr(60),
 	}
 	return task
 }
