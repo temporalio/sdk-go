@@ -129,6 +129,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			},
 			WorkflowType: WorkflowType{Name: "workflow-type-not-specified"},
 			TaskListName: defaultTestTaskList,
+
+			ExecutionStartToCloseTimeoutSeconds: 1,
+			TaskStartToCloseTimeoutSeconds:      1,
 		},
 
 		locker:              &sync.Mutex{},
@@ -507,8 +510,13 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
-	activityInfo := &activityInfo{getStringID(env.nextID())}
-
+	var activityID string
+	if parameters.ActivityID == nil || *parameters.ActivityID == "" {
+		activityID = getStringID(env.nextID())
+	} else {
+		activityID = *parameters.ActivityID
+	}
+	activityInfo := &activityInfo{activityID: activityID}
 	task := newTestActivityTask(
 		defaultTestWorkflowID,
 		defaultTestRunID,

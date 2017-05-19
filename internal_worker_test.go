@@ -349,12 +349,6 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, testActivityNoContextArg, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityNoError, 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
-
-	err = ExecuteActivity(ctx, testActivityNoArgsAndNoResult).Get(ctx, nil)
-	require.NoError(w.t, err, err)
-
 	f := ExecuteActivity(ctx, testActivityReturnByteArray)
 	var r []byte
 	err = f.Get(ctx, &r)
@@ -387,22 +381,16 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.Equal(w.t, testActivityResult{}, r2Struct)
 
 	// By names.
-	err = ExecuteActivity(ctx, "testActivityByteArgs", input).Get(ctx, nil)
+	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityByteArgs", input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
+	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityNoResult", 2, "test").Get(ctx, nil)
+	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityNoResult", 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityNoContextArg", 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
-
-	err = ExecuteActivity(ctx, "testActivityNoError", 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
-
-	err = ExecuteActivity(ctx, "testActivityNoArgsAndNoResult").Get(ctx, nil)
+	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityNoContextArg", 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
 	f = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityReturnString")
@@ -432,16 +420,6 @@ func testActivityNoResult(ctx context.Context, arg1 int, arg2 string) error {
 // test testActivityNoContextArg
 func testActivityNoContextArg(arg1 int, arg2 string) error {
 	return nil
-}
-
-// test testActivityNoError
-func testActivityNoError(arg1 int, arg2 string) {
-	return
-}
-
-// test testActivityNoError
-func testActivityNoArgsAndNoResult() {
-	return
 }
 
 // test testActivityReturnByteArray
@@ -476,49 +454,17 @@ func testActivityReturnEmptyStruct() (testActivityResult, error) {
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
-	w := newWorkflowDefinition(&activitiesCallingOptionsWorkflow{t: t})
-	ctx := &mockWorkflowEnvironment{}
-	workflowComplete := make(chan struct{}, 1)
-
-	cbProcessor := newAsyncTestCallbackProcessor(w.OnDecisionTaskStarted)
-
-	ctx.On("RegisterCancel", mock.Anything).Return().Run(func(args mock.Arguments) {}).Once()
-	ctx.On("WorkflowInfo").Return(&WorkflowInfo{TaskListName: "t", Domain: "d"}).Once()
-
-	ctx.On("ExecuteActivity", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		params := args.Get(0).(executeActivityParameters)
-		var r []byte
-		if strings.Contains(params.ActivityType.Name, "testActivityReturnByteArray") {
-			r = testEncodeFunctionResult([]byte("testActivity"))
-		} else if strings.Contains(params.ActivityType.Name, "testActivityReturnInt") {
-			r = testEncodeFunctionResult(5)
-		} else if strings.Contains(params.ActivityType.Name, "testActivityReturnString") {
-			r = testEncodeFunctionResult("testActivity")
-		} else if strings.Contains(params.ActivityType.Name, "testActivityReturnEmptyString") ||
-			strings.Contains(params.ActivityType.Name, "testActivityReturnEmptyStruct") {
-			r = nil
-		} else {
-			r = testEncodeFunctionResult([]byte("test"))
-		}
-		callback := args.Get(1).(resultHandler)
-		cbProcessor.Add(callback, r, nil)
-	}).Times(20)
-
-	ctx.On("Complete", mock.Anything, mock.Anything).Return().Run(func(args mock.Arguments) {
-		if args.Get(1) != nil {
-			err := args.Get(1).(ErrorWithDetails)
-			var details []byte
-			err.Details(&details)
-			fmt.Printf("ErrorWithDetails: %v, Stack: %v \n", err.Reason(), string(details))
-		}
-		workflowComplete <- struct{}{}
-	}).Once()
-
-	w.Execute(ctx, []byte(""))
-	w.OnDecisionTaskStarted()
-	c := cbProcessor.ProcessOrWait(workflowComplete)
-	require.True(t, c, "Workflow failed to complete")
-	ctx.AssertExpectations(t)
+	ts := &WorkflowTestSuite{}
+	ts.RegisterActivity(testActivityNoResult)
+	ts.RegisterActivity(testActivityNoContextArg)
+	ts.RegisterActivity(testActivityReturnByteArray)
+	ts.RegisterActivity(testActivityReturnInt)
+	ts.RegisterActivity(testActivityByteArgs)
+	env := ts.NewTestWorkflowEnvironment()
+	w := &activitiesCallingOptionsWorkflow{t: t}
+	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 }
 
 func testWorkflowSample(ctx Context, input []byte) (result []byte, err error) {
