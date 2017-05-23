@@ -721,8 +721,7 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 			ath.logger.Error("Activity panic.",
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
-			panicErr := newPanicError(p, st)
-			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
+			err = newPanicError(p, st) // Fail decision on panic
 		}
 	}()
 
