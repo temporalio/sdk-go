@@ -52,6 +52,7 @@ type (
 	workflowEnvironment interface {
 		asyncActivityClient
 		workflowTimerClient
+		SideEffect(f func() ([]byte, error), callback resultHandler)
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
 		RegisterCancel(handler func())

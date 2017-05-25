@@ -31,9 +31,6 @@ import (
 )
 
 type (
-	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
-	EncodedValue []byte
-
 	// EncodedValues is a type alias used to encapsulate/extract encoded arguments from workflow/activity.
 	EncodedValues []byte
 
@@ -57,13 +54,8 @@ type (
 )
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
-func (b EncodedValue) Get(valuePtr interface{}) error {
-	return getHostEnvironment().decodeArg(b, valuePtr)
-}
-
-// Get extract values from encoded data to desired value type. valuePtrs are pointers to the actual value types.
-func (b EncodedValues) Get(valuePtrs ...interface{}) error {
-	return getHostEnvironment().decode(b, valuePtrs)
+func (b EncodedValues) Get(valuePtr ...interface{}) error {
+	return getHostEnvironment().decode(b, valuePtr)
 }
 
 func (s *WorkflowTestSuite) initIfNotDoneYet() {

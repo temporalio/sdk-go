@@ -843,5 +843,9 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType
 	}
 }
 
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
+	callback(f())
+}
+
 // make sure interface is implemented
 var _ workflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)

@@ -92,16 +92,19 @@ type (
 		eventsHandler     *workflowExecutionEventHandlerImpl
 		currentIndex      int
 		historyEventsSize int
+		next              []*s.HistoryEvent
 	}
 )
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
-	return &history{
+	result := &history{
 		workflowTask:      task,
 		eventsHandler:     eventsHandler,
 		currentIndex:      0,
 		historyEventsSize: len(task.task.History.Events),
 	}
+	result.next, _ = result.nextDecisionEvents()
+	return result
 }
 
 // Get workflow start attributes.
@@ -169,13 +172,22 @@ func isDecisionEvent(eventType s.EventType) bool {
 // B_Complete happened concurrent to execution of the decision(2), where C_Schedule is a result made
 // by execution of decision(2).
 // To maintain determinism the concurrent decisions are moved to the one after the decisions made by current decision.
-func (eh *history) NextDecisionEvents() []*s.HistoryEvent {
+// markers result value returns marker events that currently running decision produced. They are used to
+// implement SideEffect method execution without blocking on decision roundtrip.
+func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.HistoryEvent) {
+	result = eh.next
+	if len(result) > 0 {
+		eh.next, markers = eh.nextDecisionEvents()
+	}
+	return result, markers
+}
+
+func (eh *history) nextDecisionEvents() (reorderedEvents []*s.HistoryEvent, markers []*s.HistoryEvent) {
 	if eh.currentIndex == eh.historyEventsSize {
-		return []*s.HistoryEvent{}
+		return []*s.HistoryEvent{}, []*s.HistoryEvent{}
 	}
 
 	// Process events
-	reorderedEvents := []*s.HistoryEvent{}
 	history := eh.workflowTask.task.History
 
 	decisionStartToCompletionEvents := []*s.HistoryEvent{}
@@ -203,13 +215,15 @@ OrderEvents:
 
 		case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut:
 		// Skip
-
 		default:
 			if concurrentToDecision {
 				decisionStartToCompletionEvents = append(decisionStartToCompletionEvents, event)
 			} else {
 				if isDecisionEvent(event.GetEventType()) {
 					lastDecisionIndex = len(decisionCompletionToStartEvents)
+				}
+				if event.GetEventType() == s.EventType_MarkerRecorded {
+					markers = append(markers, event)
 				}
 				decisionCompletionToStartEvents = append(decisionCompletionToStartEvents, event)
 			}
@@ -234,7 +248,7 @@ OrderEvents:
 	if decisionStartedEvent != nil {
 		reorderedEvents = append(reorderedEvents, decisionStartedEvent)
 	}
-	return reorderedEvents
+	return reorderedEvents, markers
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -326,10 +340,17 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	// Process events
 ProcessEvents:
 	for {
-		reorderedEvents := reorderedHistory.NextDecisionEvents()
+		reorderedEvents, markers := reorderedHistory.NextDecisionEvents()
 
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
+		}
+		// Markers are from the events that are produced from the current decision
+		for _, m := range markers {
+			_, err := eventHandler.ProcessEvent(m, true, false)
+			if err != nil {
+				return nil, "", err
+			}
 		}
 		isInReplay := reorderedEvents[0].GetEventId() < reorderedHistory.LastNonReplayedID()
 		for i, event := range reorderedEvents {

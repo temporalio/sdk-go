@@ -23,6 +23,8 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"time"
@@ -56,16 +58,16 @@ type (
 		waitForCancelRequestActivities map[string]bool          // Map of activity ID to whether to wait for cancelation.
 		scheduledEventIDToActivityID   map[int64]string         // Mapping from scheduled event ID to activity ID
 		scheduledTimers                map[string]resultHandler // Map of scheduledTimers(timer ID ->) and their response handlers
-		counterID                      int32                    // To generate activity IDs
-		executeDecisions               []*m.Decision            // Decisions made during the execute of the workflow
-		completeHandler                completionHandler        // events completion handler
-		currentReplayTime              time.Time                // Indicates current replay time of the decision.
-		postEventHooks                 []func()                 // postEvent hooks that need to be executed at the end of the event.
-		cancelHandler                  func()                   // A cancel handler to be invoked on a cancel notification
+		sideEffectResult               map[int32][]byte
+		counterID                      int32             // To generate activity IDs
+		executeDecisions               []*m.Decision     // Decisions made during the execute of the workflow
+		completeHandler                completionHandler // events completion handler
+		currentReplayTime              time.Time         // Indicates current replay time of the decision.
+		postEventHooks                 []func()          // postEvent hooks that need to be executed at the end of the event.
+		cancelHandler                  func()            // A cancel handler to be invoked on a cancel notification
 		logger                         *zap.Logger
 		isReplay                       bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay          bool // flag to indicate if workflow should enable logging in replay mode
-		isWorkflowCancelRequested      bool // if the workflow cancel is requested.
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -75,6 +77,8 @@ type (
 		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
 	}
 )
+
+var sideEffectMarkerName = "SideEffect"
 
 func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
 	return func(c zapcore.Core) zapcore.Core {
@@ -104,6 +108,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		scheduledEventIDToActivityID:   make(map[int64]string),
 		scheduledTimers:                make(map[string]resultHandler),
 		executeDecisions:               make([]*m.Decision, 0),
+		sideEffectResult:               make(map[int32][]byte),
 		completeHandler:                completeHandler,
 		postEventHooks:                 []func(){},
 		enableLoggingInReplay:          enableLoggingInReplay,
@@ -154,9 +159,13 @@ func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
 }
 
 func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
-	activityID := wc.counterID
+	return fmt.Sprintf("%d", wc.GenerateSequence())
+}
+
+func (wc *workflowEnvironmentImpl) GenerateSequence() int32 {
+	result := wc.counterID
 	wc.counterID++
-	return fmt.Sprintf("%d", activityID)
+	return result
 }
 
 func (wc *workflowEnvironmentImpl) SwapExecuteDecisions(decisions []*m.Decision) []*m.Decision {
@@ -205,11 +214,6 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	handler, ok := wc.scheduledActivities[activityID]
 	if !ok {
 		wc.logger.Debug("RequestCancelActivity failed because the activity ID doesn't exist.",
-			zap.String(tagActivityID, activityID))
-		return
-	}
-	if wc.isWorkflowCancelRequested {
-		wc.logger.Debug("RequestCancelActivity is not sent because workflow has cancel requested.",
 			zap.String(tagActivityID, activityID))
 		return
 	}
@@ -269,11 +273,6 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 		wc.logger.Debug("RequestCancelTimer failed, TimerID not exists.", zap.String(tagTimerID, timerID))
 		return
 	}
-	if wc.isWorkflowCancelRequested {
-		wc.logger.Debug("RequestCancelTimer is not sent because workflow has cancel requested.", zap.String(tagTimerID, timerID))
-		return
-	}
-
 	cancelTimerAttr := &m.CancelTimerDecisionAttributes{TimerId: common.StringPtr(timerID)}
 	decision := wc.CreateNewDecision(m.DecisionType_CancelTimer)
 	decision.CancelTimerDecisionAttributes = cancelTimerAttr
@@ -290,6 +289,55 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 
 func (wc *workflowEnvironmentImpl) addPostEventHooks(hook func()) {
 	wc.postEventHooks = append(wc.postEventHooks, hook)
+}
+
+func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
+	sideEffectID := wc.GenerateSequence()
+	var details []byte
+	var result []byte
+	if wc.isReplay {
+		var ok bool
+		result, ok = wc.sideEffectResult[sideEffectID]
+		if !ok {
+			keys := make([]int32, 0, len(wc.sideEffectResult))
+			for k := range wc.sideEffectResult {
+				keys = append(keys, k)
+			}
+			panic(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
+				sideEffectID, keys))
+		}
+		wc.logger.Debug("SideEffect returning already caclulated result.",
+			zap.Int32(tagSideEffectID, sideEffectID))
+		details = result
+	} else {
+		var err error
+		result, err = f()
+		if err != nil {
+			callback(result, err)
+			return
+		}
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		if err := enc.Encode(sideEffectID); err != nil {
+			callback(nil, fmt.Errorf("failure encoding sideEffectID: %v", err))
+			return
+		}
+		if err := enc.Encode(result); err != nil {
+			callback(nil, fmt.Errorf("failure encoding side effect result: %v", err))
+			return
+		}
+		details = buf.Bytes()
+	}
+	recordMarker := &m.RecordMarkerDecisionAttributes{
+		MarkerName: common.StringPtr(sideEffectMarkerName),
+		Details:    details, // Keep
+	}
+	decision := wc.CreateNewDecision(m.DecisionType_RecordMarker)
+	decision.RecordMarkerDecisionAttributes = recordMarker
+	wc.executeDecisions = append(wc.executeDecisions, decision)
+
+	callback(result, nil)
+	wc.logger.Debug("SideEffect Marker added", zap.Int32(tagSideEffectID, sideEffectID))
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
@@ -391,9 +439,16 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case m.EventType_RequestCancelExternalWorkflowExecutionFailed:
 	case m.EventType_WorkflowExecutionContinuedAsNew:
 		// No Operation.
-
+	case m.EventType_MarkerRecorded:
+		err := weh.handleMarkerRecorded(event.GetEventId(), event.MarkerRecordedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
 	default:
-		return nil, fmt.Errorf("missing event handler for event type: %v", event)
+		weh.logger.Error("unknown event type",
+			zap.Int64(tagEventID, event.GetEventId()),
+			zap.String(tagEventType, string(event.GetEventType())))
+		// Do not fail to be forward compatible with new events
 	}
 
 	// Invoke any pending post event hooks that have been added while processing the event.
@@ -560,5 +615,27 @@ func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelRequested(
 	attributes *m.WorkflowExecutionCancelRequestedEventAttributes) {
 	weh.cancelHandler()
-	weh.isWorkflowCancelRequested = true
+}
+
+// Currently handles only side effect markers
+func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
+	eventID int64,
+	attributes *m.MarkerRecordedEventAttributes,
+) error {
+	if attributes.GetMarkerName() != sideEffectMarkerName {
+		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
+			attributes.GetMarkerName(), eventID)
+	}
+	dec := gob.NewDecoder(bytes.NewBuffer(attributes.GetDetails()))
+	var sideEffectID int32
+
+	if err := dec.Decode(&sideEffectID); err != nil {
+		return fmt.Errorf("failure decodeing sideEffectID: %v", err)
+	}
+	var result []byte
+	if err := dec.Decode(&result); err != nil {
+		return fmt.Errorf("failure decoding side effect result: %v", err)
+	}
+	weh.sideEffectResult[sideEffectID] = result
+	return nil
 }

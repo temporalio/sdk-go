@@ -165,14 +165,6 @@ func EnableVerboseLogging(enable bool) {
 	enableVerboseLogging = enable
 }
 
-// newDecodeFuture creates a new future as well as associated Settable that is used to set its value.
-// fn - the decoded value needs to be validated against a function.
-func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
-	impl := &decodeFutureImpl{
-		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
-	return impl, impl
-}
-
 // WithTestTags - is used for internal cadence use to pass any test tags.
 // TODO: Build the tags on top of the context and pass it around instead of map of maps.
 func WithTestTags(ctx context.Context, testTags map[string]map[string]string) context.Context {

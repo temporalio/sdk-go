@@ -92,6 +92,9 @@ type (
 		ID    string
 		RunID string
 	}
+
+	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
+	EncodedValue []byte
 )
 
 // RegisterWorkflow - registers a workflow function with the framework.
@@ -330,4 +333,59 @@ func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ctx1
+}
+
+// Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
+func (b EncodedValue) Get(valuePtr interface{}) error {
+	return getHostEnvironment().decodeArg(b, valuePtr)
+}
+
+// SideEffect executes provided function once, records its result into the workflow history and doesn't
+// reexecute it on replay returning recorded result instead. It can be seen as an "inline" activity.
+// Use it only for short nondeterministic code snippets like getting random value or generating UUID.
+// The only way to fail SideEffect is to panic which causes decision task failure. The decision task after timeout is
+// rescheduled and reexecuted giving SideEffect another chance to succeed.
+// Be careful to not return any data from SideEffect function any other way than through its recorded return value.
+// For example this code is BROKEN:
+//
+// var executed bool
+// cadence.SideEffect(func(ctx cadence.Context) interface{} {
+//        executed = true
+//        return nil
+// })
+// if executed {
+//        ....
+// } else {
+//        ....
+// }
+// On replay the function is not executed, the executed flag is not set to true
+// and the workflow takes a different path breaking the determinism.
+//
+// Here is the correct way to use SideEffect:
+//
+// encodedRandom := SideEffect(func(ctx cadence.Context) interface{} {
+//       return rand.Intn(100)
+// })
+// var random int
+// encodedRandom.Get(&random)
+// if random < 50 {
+//        ....
+// } else {
+//        ....
+// }
+func SideEffect(ctx Context, f func(ctx Context) interface{}) EncodedValue {
+	future, settable := NewFuture(ctx)
+	wrapperFunc := func() ([]byte, error) {
+		r := f(ctx)
+		return getHostEnvironment().encodeArg(r)
+	}
+	resultCallback := func(result []byte, err error) {
+		settable.Set(EncodedValue(result), err)
+	}
+	getWorkflowEnvironment(ctx).SideEffect(wrapperFunc, resultCallback)
+	var encoded EncodedValue
+	if err := future.Get(ctx, &encoded); err != nil {
+		panic(err)
+	}
+	return encoded
 }
