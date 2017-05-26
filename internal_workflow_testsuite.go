@@ -93,6 +93,7 @@ type (
 		workflowDef           workflowDefinition
 		counterID             int
 		workflowCancelHandler func()
+		signalHandler         func(name string, input []byte)
 
 		locker               *sync.Mutex
 		scheduledActivities  map[string]*activityHandle
@@ -815,8 +816,12 @@ func (env *testWorkflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return env.workflowInfo
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterCancel(handler func()) {
+func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input []byte)) {
+	env.signalHandler = handler
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID, runID string) error {

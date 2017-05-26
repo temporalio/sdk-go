@@ -35,6 +35,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	defaultSignalChannelSize = 100000 // really large buffering size(100K)
+)
+
 type (
 	syncWorkflowDefinition struct {
 		workflow        workflow
@@ -96,14 +100,14 @@ type (
 		buffer          []interface{}       // buffered messages
 		blockedSends    []valueCallbackPair // puts waiting when buffer is full.
 		blockedReceives []receiveCallback   // receives waiting when no messages are available.
-		closed          bool                // true if channel is closed
+		closed          bool                // true if channel is closed.
+		recValue        *interface{}        // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 	}
 
 	// Single case statement of the Select
 	selectCase struct {
-		channel                 *channelImpl                    // Channel of this case.
-		receiveFunc             *func(v interface{})            // function to call when channel has a message. nil for send case.
-		receiveWithMoreFlagFunc *func(v interface{}, more bool) // function to call when channel has a message. nil for send case.
+		channel     *channelImpl                // Channel of this case.
+		receiveFunc *func(c Channel, more bool) // function to call when channel has a message. nil for send case.
 
 		sendFunc   *func()         // function to call when channel accepted a message. nil for receive case.
 		sendValue  *interface{}    // value to send to the channel. Used only for send case.
@@ -190,7 +194,7 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
-	_, more := f.channel.ReceiveWithMoreFlag(ctx)
+	more := f.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
 	}
@@ -301,30 +305,45 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 	activityOptions := getActivityOptions(d.rootCtx)
 	activityOptions.OriginalTaskListName = wInfo.TaskListName
 
-	// There is a inter dependency, before we call Execute() we can have a cancel request since
-	// dispatcher executes code on decision task started, we might not have cancel handler created.
-	// WithCancel -> creates channel -> needs dispatcher -> dispatcher needs a root function with context.
-	// We use cancelRequested to remember if the cancel request came in.
-
 	d.dispatcher = newDispatcher(d.rootCtx, func(ctx Context) {
-		ctx, d.cancel = WithCancel(ctx)
-		if d.cancelRequested {
-			d.cancel()
-		}
+		d.rootCtx, d.cancel = WithCancel(ctx)
 		r := &workflowResult{}
-		r.workflowResult, r.error = d.workflow.Execute(ctx, input)
+
+		// We want to execute the user workflow definition from the first decision task started,
+		// so they can see everything before that. Here we would have all initialization done, hence
+		// we are yielding.
+		state := getState(d.rootCtx)
+		state.yield("yield before executing to setup state")
+
+		r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 		rpp := getWorkflowResultPointerPointer(ctx)
 		*rpp = r
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterCancel(func() {
+	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
 		// it doesn't do anything new, the context remains cancelled.
-		if d.cancel != nil {
-			d.cancel()
-		}
-		d.cancelRequested = true
+		d.cancel()
 	})
+
+	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result []byte) {
+		eo := getWorkflowEnvOptions(d.rootCtx)
+		// We don't want this code to be blocked ever, using sendAsync().
+		ch := eo.getSignalChannel(d.rootCtx, name).(*channelImpl)
+		ok := ch.SendAsync(result)
+		if !ok {
+			panic(fmt.Sprintf("Exceeded channel buffer size for signal: %v", name))
+		}
+	})
+
+	// There is a inter dependency, before we call Execute() we can have a cancel request since
+	// dispatcher executes code on decision task started, we might not have cancel handler created.
+	//  (1) WithCancel -> creates channel -> needs dispatcher -> dispatcher needs a root function with context.
+	//  (2) Signals before first decision start needs to setup channels with data and needs the context with co-routine state.
+	//  (3) ...
+	// So all the events, that need to be executed before first decision task need a context with with co-routine state
+	// setup. So we call execute here so we get the root context created.
+	executeDispatcher(d.rootCtx, d.dispatcher)
 }
 
 func (d *syncWorkflowDefinition) OnDecisionTaskStarted() {
@@ -358,12 +377,23 @@ func getDispatcher(ctx Context) dispatcher {
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
 // if root workflow function returned
 func executeDispatcher(ctx Context, dispatcher dispatcher) {
+	checkUnhandledSigFn := func(ctx Context) {
+		us := getWorkflowEnvOptions(ctx).getUnhandledSignals()
+		if len(us) > 0 {
+			getWorkflowEnvironment(ctx).GetLogger().Warn("Workflow has unhandled signals",
+				zap.Strings("SignalNames", us))
+			// TODO: We don't have a metrics added to workflow environment yet,
+			// this need to be reported as a metric.
+		}
+	}
+
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
 		env := getWorkflowEnvironment(ctx)
 		env.GetLogger().Error("Dispatcher panic.",
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
+		checkUnhandledSigFn(ctx)
 		env.Complete(nil, NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())))
 		return
 	}
@@ -372,7 +402,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 		// Result is not set, so workflow is still executing
 		return
 	}
-	// Cannot cast nil values from interface{} to interface
+	checkUnhandledSigFn(ctx)
 	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, rp.error)
 }
 
@@ -388,12 +418,7 @@ func getState(ctx Context) *coroutineState {
 	return s.(*coroutineState)
 }
 
-func (c *channelImpl) Receive(ctx Context) (v interface{}) {
-	v, _ = c.ReceiveWithMoreFlag(ctx)
-	return v
-}
-
-func (c *channelImpl) ReceiveWithMoreFlag(ctx Context) (value interface{}, more bool) {
+func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
@@ -405,29 +430,38 @@ func (c *channelImpl) ReceiveWithMoreFlag(ctx Context) (value interface{}, more 
 	}
 	v, ok, more := c.receiveAsyncImpl(callback)
 	if ok || !more {
-		return v, more
+		c.assignValue(v, valuePtr)
+		return more
 	}
 	for {
 		if hasResult {
 			state.unblocked()
-			return result, more
+			c.assignValue(result, valuePtr)
+			return more
 		}
 		state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
 	}
 }
 
-func (c *channelImpl) ReceiveAsync() (v interface{}, ok bool) {
-	v, ok, _ = c.ReceiveAsyncWithMoreFlag()
-	return v, ok
+func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
+	ok, _ = c.ReceiveAsyncWithMoreFlag(valuePtr)
+	return ok
 }
 
-func (c *channelImpl) ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) {
-	return c.receiveAsyncImpl(nil)
+func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) {
+	v, ok, more := c.receiveAsyncImpl(nil)
+	c.assignValue(v, valuePtr)
+	return ok, more
 }
 
 // ok = true means that value was received
 // more = true means that channel is not closed and more deliveries are possible
 func (c *channelImpl) receiveAsyncImpl(callback receiveCallback) (v interface{}, ok bool, more bool) {
+	if c.recValue != nil {
+		r := *c.recValue
+		c.recValue = nil
+		return r, true, true
+	}
 	if len(c.buffer) > 0 {
 		r := c.buffer[0]
 		c.buffer = c.buffer[1:]
@@ -513,6 +547,14 @@ func (c *channelImpl) Close() {
 	for i := 0; i < len(c.blockedSends); i++ {
 		b := c.blockedSends[i]
 		b.callback()
+	}
+}
+
+// Takes a value and assigns that 'to' value.
+func (c *channelImpl) assignValue(from interface{}, to interface{}) {
+	err := decodeAndAssignValue(from, to)
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -741,13 +783,8 @@ func (d *dispatcherImpl) StackTrace() string {
 	return result
 }
 
-func (s *selectorImpl) AddReceive(c Channel, f func(v interface{})) Selector {
+func (s *selectorImpl) AddReceive(c Channel, f func(c Channel, more bool)) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), receiveFunc: &f})
-	return s
-}
-
-func (s *selectorImpl) AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector {
-	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), receiveWithMoreFlagFunc: &f})
 	return s
 }
 
@@ -775,35 +812,21 @@ func (s *selectorImpl) Select(ctx Context) {
 	for _, pair := range s.cases {
 		if pair.receiveFunc != nil {
 			f := *pair.receiveFunc
+			c := pair.channel
 			callback := func(v interface{}, more bool) bool {
 				if readyBranch != nil {
 					return false
 				}
 				readyBranch = func() {
-					f(v)
-				}
-				return true
-			}
-
-			v, ok, more := pair.channel.receiveAsyncImpl(callback)
-			if ok || !more {
-				f(v)
-				return
-			}
-		} else if pair.receiveWithMoreFlagFunc != nil {
-			f := *pair.receiveWithMoreFlagFunc
-			callback := func(v interface{}, more bool) bool {
-				if readyBranch != nil {
-					return false
-				}
-				readyBranch = func() {
-					f(v, more)
+					c.recValue = &v
+					f(c, more)
 				}
 				return true
 			}
 			v, ok, more := pair.channel.receiveAsyncImpl(callback)
 			if ok || !more {
-				f(v, more)
+				c.recValue = &v
+				f(c, more)
 				return
 			}
 		} else if pair.sendFunc != nil {
@@ -904,7 +927,8 @@ func getWorkflowEnvOptions(ctx Context) *wfEnvironmentOptions {
 
 func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	if valCtx := getWorkflowEnvOptions(ctx); valCtx == nil {
-		return WithValue(ctx, workflowEnvOptionsContextKey, &wfEnvironmentOptions{})
+		return WithValue(ctx, workflowEnvOptionsContextKey, &wfEnvironmentOptions{
+			signalChannels: make(map[string]Channel)})
 	}
 	return ctx
 }
@@ -916,6 +940,31 @@ type wfEnvironmentOptions struct {
 	executionStartToCloseTimeoutSeconds *int32
 	taskStartToCloseTimeoutSeconds      *int32
 	domain                              *string
+	signalChannels                      map[string]Channel
+}
+
+// getSignalChannel finds the assosciated channel for the signal.
+func (w *wfEnvironmentOptions) getSignalChannel(ctx Context, signalName string) Channel {
+	if ch, ok := w.signalChannels[signalName]; ok {
+		return ch
+	}
+	ch := NewBufferedChannel(ctx, defaultSignalChannelSize)
+	w.signalChannels[signalName] = ch
+	return ch
+}
+
+// getUnhandledSignals checks if there are any signal channels that have data to be consumed.
+func (w *wfEnvironmentOptions) getUnhandledSignals() []string {
+	unhandledSignals := []string{}
+	for k, c := range w.signalChannels {
+		ch := c.(*channelImpl)
+		v, ok, _ := ch.receiveAsyncImpl(nil)
+		if ok {
+			unhandledSignals = append(unhandledSignals, k)
+			ch.recValue = &v
+		}
+	}
+	return unhandledSignals
 }
 
 // decodeFutureImpl
@@ -925,7 +974,7 @@ type decodeFutureImpl struct {
 }
 
 func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
-	_, more := d.futureImpl.channel.ReceiveWithMoreFlag(ctx)
+	more := d.futureImpl.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
 	}
@@ -945,6 +994,23 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return err
 	}
 	return d.futureImpl.err
+}
+
+func decodeAndAssignValue(from interface{}, toValuePtr interface{}) error {
+	if toValuePtr == nil {
+		return nil
+	}
+	if rf := reflect.ValueOf(toValuePtr); rf.Type().Kind() != reflect.Ptr {
+		return errors.New("value parameter provided is not a pointer")
+	}
+	if data, ok := from.([]byte); ok {
+		if err := getHostEnvironment().decodeArg(data, toValuePtr); err != nil {
+			return err
+		}
+	} else if fv := reflect.ValueOf(from); fv.IsValid() {
+		reflect.ValueOf(toValuePtr).Elem().Set(fv)
+	}
+	return nil
 }
 
 // newDecodeFuture creates a new future as well as associated Settable that is used to set its value.

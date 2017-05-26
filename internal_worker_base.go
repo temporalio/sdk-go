@@ -55,9 +55,10 @@ type (
 		SideEffect(f func() ([]byte, error), callback resultHandler)
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
-		RegisterCancel(handler func())
+		RegisterCancelHandler(handler func())
 		RequestCancelWorkflow(domainName, workflowID, runID string) error
 		GetLogger() *zap.Logger
+		RegisterSignalHandler(handler func(name string, input []byte))
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

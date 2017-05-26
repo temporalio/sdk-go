@@ -113,6 +113,31 @@ func (wc *workflowClient) StartWorkflow(
 	return executionInfo, nil
 }
 
+// SignalWorkflow signals a workflow in execution.
+func (wc *workflowClient) SignalWorkflow(workflowID string, runID string, signalName string, arg interface{}) error {
+	input, err := getHostEnvironment().encodeArg(arg)
+	if err != nil {
+		return err
+	}
+	request := &s.SignalWorkflowExecutionRequest{
+		Domain: common.StringPtr(wc.domain),
+		WorkflowExecution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      common.StringPtr(runID),
+		},
+		SignalName: common.StringPtr(signalName),
+		Input:      input,
+		Identity:   common.StringPtr(wc.identity),
+	}
+
+	return backoff.Retry(
+		func() error {
+			ctx, cancel := newTChannelContext()
+			defer cancel()
+			return wc.workflowService.SignalWorkflowExecution(ctx, request)
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+}
+
 // CancelWorkflow cancels a workflow in execution.
 func (wc *workflowClient) CancelWorkflow(workflowID string, runID string) error {
 	request := &s.RequestCancelWorkflowExecutionRequest{

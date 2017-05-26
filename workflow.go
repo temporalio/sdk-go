@@ -38,10 +38,13 @@ type (
 	// Channel must be used instead of native go channel by workflow code.
 	// Use Context.NewChannel method to create an instance.
 	Channel interface {
-		Receive(ctx Context) (v interface{})
-		ReceiveWithMoreFlag(ctx Context) (v interface{}, more bool)    // more is false when channel is closed
-		ReceiveAsync() (v interface{}, ok bool)                        // ok is true when value was returned
-		ReceiveAsyncWithMoreFlag() (v interface{}, ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
+		// Blocks until it gets a value. when it gets a value assigns to the provided pointer.
+		// Example:
+		//   var v string
+		//   c.Receive(ctx, &v)
+		Receive(ctx Context, valuePtr interface{}) (more bool)              // more is false when channel is closed
+		ReceiveAsync(valuePtr interface{}) (ok bool)                        // ok is true when value was returned
+		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
 		Send(ctx Context, v interface{})
 		SendAsync(v interface{}) (ok bool) // ok when value was sent
 		Close()                            // prohibit sends
@@ -50,8 +53,7 @@ type (
 	// Selector must be used instead of native go select by workflow code
 	// Use Context.NewSelector method to create an instance.
 	Selector interface {
-		AddReceive(c Channel, f func(v interface{})) Selector
-		AddReceiveWithMoreFlag(c Channel, f func(v interface{}, more bool)) Selector
+		AddReceive(c Channel, f func(c Channel, more bool)) Selector
 		AddSend(c Channel, v interface{}, f func()) Selector
 		AddFuture(future Future, f func(f Future)) Selector
 		AddDefault(f func())
@@ -219,7 +221,7 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 		if ctx.Done() == nil {
 			return // not cancellable.
 		}
-		if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
+		if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
 			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
 		}
 	})
@@ -274,7 +276,7 @@ func NewTimer(ctx Context, d time.Duration) Future {
 			}
 			// We will cancel the timer either it is explicit cancellation
 			// (or) we are closed.
-			ctx.Done().Receive(ctx)
+			ctx.Done().Receive(ctx, nil)
 			getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
 		})
 	}
@@ -333,6 +335,11 @@ func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
 	return ctx1
+}
+
+// GetSignalChannel returns channel corresponding to the signal name.
+func GetSignalChannel(ctx Context, signalName string) Channel {
+	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.

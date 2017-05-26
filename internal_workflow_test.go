@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
+	"strings"
 )
 
 type WorkflowUnitTest struct {
@@ -121,10 +122,10 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 		}
 	})
 
-	c1.Receive(ctx)
+	c1.Receive(ctx, nil)
 	// Use selector to test it
 	selected := false
-	NewSelector(ctx).AddReceiveWithMoreFlag(c2, func(v interface{}, more bool) {
+	NewSelector(ctx).AddReceive(c2, func(c Channel, more bool) {
 		if !more {
 			panic("more should be true")
 		}
@@ -374,7 +375,7 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 }
 
 func cancelWorkflowTest(ctx Context) (string, error) {
-	if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
+	if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
 		return "Cancelled.", ctx.Err()
 	}
 	return "Completed.", nil
@@ -411,7 +412,7 @@ func cancelWorkflowAfterActivityTest(ctx Context) ([]byte, error) {
 		return nil, err2
 	}
 
-	if ctx.Done().Receive(ctx); ctx.Err() == ErrCanceled {
+	if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
 		return []byte("Cancelled."), ctx.Err()
 	}
 	return []byte("Completed."), nil
@@ -424,4 +425,91 @@ func (s *WorkflowUnitTest) Test_CancelWorkflowAfterActivity() {
 	}, time.Hour)
 	env.ExecuteWorkflow(cancelWorkflowAfterActivityTest)
 	s.True(env.IsWorkflowCompleted())
+}
+
+func signalWorkflowTest(ctx Context) ([]byte, error) {
+	// read multiple times.
+	var result string
+	ch := GetSignalChannel(ctx, "testSig1")
+	var v string
+	ch.Receive(ctx, &v)
+	result += v
+	ch.Receive(ctx, &v)
+	result += v
+
+	// Read on a selector.
+	ch2 := GetSignalChannel(ctx, "testSig2")
+	s := NewSelector(ctx)
+	s.AddReceive(ch2, func(c Channel, more bool) {
+		c.Receive(ctx, &v)
+		result += v
+	})
+	s.Select(ctx)
+	s.Select(ctx)
+	s.Select(ctx)
+
+	// Read on a selector inside the callback, multiple times.
+	ch2 = GetSignalChannel(ctx, "testSig2")
+	s = NewSelector(ctx)
+	s.AddReceive(ch2, func(c Channel, more bool) {
+		for i := 0; i < 4; i++ {
+			c.Receive(ctx, &v)
+			result += v
+		}
+	})
+	s.Select(ctx)
+
+	// Check un handled signals.
+	list := getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	if len(list) != 1 || list[0] != "testSig3" {
+		panic("expecting one unhandled signal")
+	}
+	ch3 := GetSignalChannel(ctx, "testSig3")
+	ch3.Receive(ctx, &v)
+	result += v
+	list = getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	if len(list) != 0 {
+		panic("expecting no unhandled signals")
+	}
+	return []byte(result), nil
+}
+
+func (s *WorkflowUnitTest) Test_SignalWorkflow() {
+	expected := []string{
+		"Sig1Value1;",
+		"Sig1Value2;",
+		"Sig2Value1;",
+		"Sig2Value2;",
+		"Sig2Value3;",
+		"Sig2Value4;",
+		"Sig2Value5;",
+		"Sig2Value6;",
+		"Sig2Value7;",
+		"Sig3Value1;",
+	}
+	env := s.NewTestWorkflowEnvironment()
+
+	// Setup signals.
+	for i := 0; i < 2; i++ {
+		msg := expected[i]
+		env.RegisterDelayedCallback(func() {
+			env.SignalWorkflow("testSig1", msg)
+		}, time.Second)
+	}
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("testSig3", expected[9])
+	}, time.Hour)
+	for i := 2; i < 9; i++ {
+		msg := expected[i]
+		env.RegisterDelayedCallback(func() {
+			env.SignalWorkflow("testSig2", msg)
+		}, time.Hour)
+	}
+
+	env.ExecuteWorkflow(signalWorkflowTest)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result []byte
+	env.GetWorkflowResult(&result)
+	s.EqualValues(strings.Join(expected, ""), string(result))
 }

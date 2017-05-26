@@ -42,6 +42,15 @@ type (
 		//	- WorkflowExecutionAlreadyStartedError
 		StartWorkflow(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WorkflowExecution, error)
 
+		// SignalWorkflow sends a signals to a workflow in execution
+		// - workflow ID of the workflow.
+		// - runID can be optional if not specified it will pick the latest execution of that workflow ID.
+		// - signalName name to identify the signal.
+		// The errors it can return:
+		//	- EntityNotExistsError
+		//	- InternalServiceError
+		SignalWorkflow(workflowID string, runID string, signalName string, arg interface{}) error
+
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
 		// - runID can be optional if not specified it will pick the latest execution of that workflow ID.

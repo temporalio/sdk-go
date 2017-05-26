@@ -59,12 +59,13 @@ type (
 		scheduledEventIDToActivityID   map[int64]string         // Mapping from scheduled event ID to activity ID
 		scheduledTimers                map[string]resultHandler // Map of scheduledTimers(timer ID ->) and their response handlers
 		sideEffectResult               map[int32][]byte
-		counterID                      int32             // To generate activity IDs
-		executeDecisions               []*m.Decision     // Decisions made during the execute of the workflow
-		completeHandler                completionHandler // events completion handler
-		currentReplayTime              time.Time         // Indicates current replay time of the decision.
-		postEventHooks                 []func()          // postEvent hooks that need to be executed at the end of the event.
-		cancelHandler                  func()            // A cancel handler to be invoked on a cancel notification
+		counterID                      int32                           // To generate activity IDs
+		executeDecisions               []*m.Decision                   // Decisions made during the execute of the workflow
+		completeHandler                completionHandler               // events completion handler
+		currentReplayTime              time.Time                       // Indicates current replay time of the decision.
+		postEventHooks                 []func()                        // postEvent hooks that need to be executed at the end of the event.
+		cancelHandler                  func()                          // A cancel handler to be invoked on a cancel notification
+		signalHandler                  func(name string, input []byte) // A signal handler to be invoked on a signal event
 		logger                         *zap.Logger
 		isReplay                       bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay          bool // flag to indicate if workflow should enable logging in replay mode
@@ -150,8 +151,12 @@ func (wc *workflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID,
 	return nil
 }
 
-func (wc *workflowEnvironmentImpl) RegisterCancel(handler func()) {
+func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wc.cancelHandler = handler
+}
+
+func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input []byte)) {
+	wc.signalHandler = handler
 }
 
 func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
@@ -439,6 +444,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case m.EventType_RequestCancelExternalWorkflowExecutionFailed:
 	case m.EventType_WorkflowExecutionContinuedAsNew:
 		// No Operation.
+
+	case m.EventType_WorkflowExecutionSignaled:
+		weh.handleWorkflowExecutionSignaled(event.WorkflowExecutionSignaledEventAttributes)
+
 	case m.EventType_MarkerRecorded:
 		err := weh.handleMarkerRecorded(event.GetEventId(), event.MarkerRecordedEventAttributes)
 		if err != nil {
@@ -638,4 +647,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	}
 	weh.sideEffectResult[sideEffectID] = result
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
+	attributes *m.WorkflowExecutionSignaledEventAttributes) {
+	weh.signalHandler(attributes.GetSignalName(), attributes.GetInput())
 }

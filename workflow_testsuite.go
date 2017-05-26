@@ -276,6 +276,15 @@ func (t *TestWorkflowEnvironment) CancelWorkflow() {
 		t.impl.workflowInfo.WorkflowExecution.RunID)
 }
 
+// SignalWorkflow requests signal (through workflow Context) to the currently running test workflow.
+func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
+	data, err := t.impl.testSuite.hostEnv.encodeArg(input)
+	if err != nil {
+		panic(err)
+	}
+	t.impl.signalHandler(name, data)
+}
+
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. You can use this API to make some event (like activity completion,
