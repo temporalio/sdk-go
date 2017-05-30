@@ -95,7 +95,8 @@ var GoRuntimeMetrics = map[MetricName]MetricType{
 	GcPauseMsTimer:       Timer,
 }
 
-// Service names for all service who emit m3 Please keep them in sync with the {Counter,Timer,Gauge}Names below.  Order matters
+// Service names for all service who emit metric.
+// Please keep them in sync with the {Counter,Timer,Gauge}Names below.  Order matters
 const (
 	Frontend = iota
 	NumServices
@@ -183,7 +184,7 @@ var TimerNames = [NumServices]map[int]string{
 // GaugeNames is gauge names for metrics
 var GaugeNames = [NumServices]map[int]string{}
 
-// Frontend operation tag values as seen by the M3 backend
+// Frontend operation tag values as seen by the metric backend
 const (
 	CreateShardOperationTagValue                  = "CreateShard"
 	GetShardOperationTagValue                     = "GetShard"

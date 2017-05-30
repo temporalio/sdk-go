@@ -271,7 +271,7 @@ type activityFunc func(ctx context.Context, input []byte) ([]byte, error)
 type hostEnv interface {
 	RegisterWorkflow(wf interface{}) error
 	RegisterActivity(af interface{}) error
-	// TODO: (Siva) This encoder should be pluggable.
+	// TODO: This encoder should be pluggable.
 	Encoder() encoding
 	RegisterFnType(fnType reflect.Type) error
 }
@@ -454,7 +454,7 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 		}
 	}
 	// Register return types.
-	// TODO: (Siva) We need register all concrete implementations of error, Either
+	// TODO: We need register all concrete implementations of error, Either
 	// through pre-registry (or) at the time conversion.
 	for i := 0; i < fnType.NumOut(); i++ {
 		err := th.registerType(fnType.Out(i))
