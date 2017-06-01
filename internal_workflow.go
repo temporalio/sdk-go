@@ -201,7 +201,7 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 	if !f.ready {
 		panic("not ready")
 	}
-	if value == nil {
+	if f.err != nil || f.value == nil || value == nil {
 		return f.err
 	}
 	rf := reflect.ValueOf(value)
@@ -981,7 +981,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 	if !d.futureImpl.ready {
 		panic("not ready")
 	}
-	if value == nil {
+	if d.futureImpl.err != nil || d.futureImpl.value == nil || value == nil {
 		return d.futureImpl.err
 	}
 	rf := reflect.ValueOf(value)
