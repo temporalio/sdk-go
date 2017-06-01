@@ -52,9 +52,11 @@ type (
 		Close()
 	}
 
+	workflowHistoryIterator func(nextToken []byte) (*s.History, []byte, error)
 	// workflowTask wraps a decision task.
 	workflowTask struct {
-		task *s.PollForDecisionTaskResponse
+		task     *s.PollForDecisionTaskResponse
+		iterator workflowHistoryIterator
 	}
 
 	// activityTask wraps a activity task.
@@ -90,6 +92,8 @@ type (
 	history struct {
 		workflowTask      *workflowTask
 		eventsHandler     *workflowExecutionEventHandlerImpl
+		loadedEvents      []*s.HistoryEvent
+		nextPageToken     []byte
 		currentIndex      int
 		historyEventsSize int
 		next              []*s.HistoryEvent
@@ -100,10 +104,12 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 	result := &history{
 		workflowTask:      task,
 		eventsHandler:     eventsHandler,
+		loadedEvents:      task.task.GetHistory().GetEvents(),
+		nextPageToken:     task.task.GetNextPageToken(),
 		currentIndex:      0,
 		historyEventsSize: len(task.task.History.Events),
 	}
-	result.next, _ = result.nextDecisionEvents()
+
 	return result
 }
 
@@ -174,21 +180,27 @@ func isDecisionEvent(eventType s.EventType) bool {
 // To maintain determinism the concurrent decisions are moved to the one after the decisions made by current decision.
 // markers result value returns marker events that currently running decision produced. They are used to
 // implement SideEffect method execution without blocking on decision roundtrip.
-func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.HistoryEvent) {
+func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.HistoryEvent, err error) {
+	if eh.next == nil {
+		eh.next, _, err = eh.nextDecisionEvents()
+		if err != nil {
+			return result, markers, err
+		}
+	}
+
 	result = eh.next
 	if len(result) > 0 {
-		eh.next, markers = eh.nextDecisionEvents()
+		eh.next, markers, err = eh.nextDecisionEvents()
 	}
-	return result, markers
+	return result, markers, err
 }
 
-func (eh *history) nextDecisionEvents() (reorderedEvents []*s.HistoryEvent, markers []*s.HistoryEvent) {
-	if eh.currentIndex == eh.historyEventsSize {
-		return []*s.HistoryEvent{}, []*s.HistoryEvent{}
+func (eh *history) nextDecisionEvents() (reorderedEvents []*s.HistoryEvent, markers []*s.HistoryEvent, err error) {
+	if eh.currentIndex == len(eh.loadedEvents) && eh.nextPageToken == nil {
+		return []*s.HistoryEvent{}, []*s.HistoryEvent{}, nil
 	}
 
 	// Process events
-	history := eh.workflowTask.task.History
 
 	decisionStartToCompletionEvents := []*s.HistoryEvent{}
 	decisionCompletionToStartEvents := []*s.HistoryEvent{}
@@ -197,8 +209,22 @@ func (eh *history) nextDecisionEvents() (reorderedEvents []*s.HistoryEvent, mark
 	lastDecisionIndex := -1
 
 OrderEvents:
-	for ; eh.currentIndex < eh.historyEventsSize; eh.currentIndex++ {
-		event := history.Events[eh.currentIndex]
+	for {
+		// load more history events if needed
+		for eh.currentIndex == len(eh.loadedEvents) {
+			if eh.nextPageToken == nil {
+				break OrderEvents
+			}
+			historyPage, token, err1 := eh.workflowTask.iterator(eh.nextPageToken)
+			if err1 != nil {
+				err = err1
+				return
+			}
+			eh.nextPageToken = token
+			eh.loadedEvents = append(eh.loadedEvents, historyPage.GetEvents()...)
+		}
+
+		event := eh.loadedEvents[eh.currentIndex]
 		switch event.GetEventType() {
 		case s.EventType_DecisionTaskStarted:
 			if !eh.IsNextDecisionFailed() {
@@ -228,6 +254,7 @@ OrderEvents:
 				decisionCompletionToStartEvents = append(decisionCompletionToStartEvents, event)
 			}
 		}
+		eh.currentIndex++
 	}
 
 	// Reorder events to correspond to the order that decider sees them.
@@ -248,7 +275,7 @@ OrderEvents:
 	if decisionStartedEvent != nil {
 		reorderedEvents = append(reorderedEvents, decisionStartedEvent)
 	}
-	return reorderedEvents, markers
+	return reorderedEvents, markers, nil
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -340,7 +367,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	// Process events
 ProcessEvents:
 	for {
-		reorderedEvents, markers := reorderedHistory.NextDecisionEvents()
+		reorderedEvents, markers, err := reorderedHistory.NextDecisionEvents()
+		if err != nil {
+			return nil, "", err
+		}
 
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
