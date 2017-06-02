@@ -57,6 +57,7 @@ type (
 		Complete(result []byte, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelWorkflow(domainName, workflowID, runID string) error
+		ExecuteChildWorkflow(options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
 		RegisterSignalHandler(handler func(name string, input []byte))
 	}

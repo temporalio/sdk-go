@@ -253,7 +253,7 @@ func (e *panicError) panicError() {}
 type continueAsNewError struct {
 	wfn     interface{}
 	args    []interface{}
-	options *wfEnvironmentOptions
+	options *workflowOptions
 }
 
 // Error from error interface

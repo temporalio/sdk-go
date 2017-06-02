@@ -49,6 +49,13 @@ type (
 		workflowDefinition workflowDefinition
 	}
 
+	childWorkflowHandle struct {
+		resultCallback      resultHandler
+		startedCallback     func(r WorkflowExecution, e error)
+		waitForCancellation bool
+		workflowExecution   *WorkflowExecution
+	}
+
 	// workflowEnvironmentImpl an implementation of workflowEnvironment represents a environment for workflow execution.
 	workflowEnvironmentImpl struct {
 		workflowInfo              *WorkflowInfo
@@ -59,6 +66,7 @@ type (
 		scheduledEventIDToActivityID   map[int64]string         // Mapping from scheduled event ID to activity ID
 		scheduledTimers                map[string]resultHandler // Map of scheduledTimers(timer ID ->) and their response handlers
 		sideEffectResult               map[int32][]byte
+		scheduledChildWorkflows        map[string]*childWorkflowHandle // Map of scheduledChildWorkflows
 		counterID                      int32                           // To generate activity IDs
 		executeDecisions               []*m.Decision                   // Decisions made during the execute of the workflow
 		completeHandler                completionHandler               // events completion handler
@@ -110,6 +118,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		scheduledTimers:                make(map[string]resultHandler),
 		executeDecisions:               make([]*m.Decision, 0),
 		sideEffectResult:               make(map[int32][]byte),
+		scheduledChildWorkflows:        make(map[string]*childWorkflowHandle),
 		completeHandler:                completeHandler,
 		postEventHooks:                 []func(){},
 		enableLoggingInReplay:          enableLoggingInReplay,
@@ -148,11 +157,51 @@ func (wc *workflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID,
 	decision.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
 
 	wc.executeDecisions = append(wc.executeDecisions, decision)
+
+	childWorkflowHandle, ok := wc.scheduledChildWorkflows[workflowID]
+	if ok && childWorkflowHandle.workflowExecution != nil &&
+		childWorkflowHandle.workflowExecution.RunID == runID &&
+		!childWorkflowHandle.waitForCancellation {
+		delete(wc.scheduledChildWorkflows, workflowID)
+		wc.addPostEventHooks(func() {
+			childWorkflowHandle.resultCallback(nil, NewCanceledError())
+		})
+	}
 	return nil
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wc.cancelHandler = handler
+}
+
+func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
+	options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+	if options.workflowID == "" {
+		options.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+	}
+
+	attributes := m.NewStartChildWorkflowExecutionDecisionAttributes()
+
+	attributes.Domain = options.domain
+	attributes.TaskList = &m.TaskList{Name: options.taskListName}
+	attributes.WorkflowId = common.StringPtr(options.workflowID)
+	attributes.ExecutionStartToCloseTimeoutSeconds = options.executionStartToCloseTimeoutSeconds
+	attributes.TaskStartToCloseTimeoutSeconds = options.taskStartToCloseTimeoutSeconds
+	attributes.Input = options.input
+	attributes.WorkflowType = workflowTypePtr(*options.workflowType)
+	attributes.ChildPolicy = options.childPolicy.toThriftChildPolicyPtr()
+
+	decision := wc.CreateNewDecision(m.DecisionType_StartChildWorkflowExecution)
+	decision.StartChildWorkflowExecutionDecisionAttributes = attributes
+
+	wc.scheduledChildWorkflows[options.workflowID] = &childWorkflowHandle{
+		resultCallback:      callback,
+		startedCallback:     startedHandler,
+		waitForCancellation: options.waitForCancellation,
+	}
+	wc.executeDecisions = append(wc.executeDecisions, decision)
+
+	return nil
 }
 
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input []byte)) {
@@ -231,6 +280,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.executeDecisions = append(wc.executeDecisions, decision)
 
 	if wait, ok := wc.waitForCancelRequestActivities[activityID]; ok && !wait {
+		delete(wc.scheduledActivities, activityID)
 		wc.addPostEventHooks(func() {
 			handler(nil, NewCanceledError())
 		})
@@ -441,7 +491,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case m.EventType_RequestCancelExternalWorkflowExecutionInitiated:
 		// No Operation.
+	case m.EventType_ExternalWorkflowExecutionCancelRequested:
+		// No Operation.
 	case m.EventType_RequestCancelExternalWorkflowExecutionFailed:
+		// No Operation.
 	case m.EventType_WorkflowExecutionContinuedAsNew:
 		// No Operation.
 
@@ -453,10 +506,47 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		if err != nil {
 			return nil, err
 		}
+	case m.EventType_StartChildWorkflowExecutionInitiated:
+		// No Operation.
+	case m.EventType_StartChildWorkflowExecutionFailed:
+		err := weh.handleStartChildWorkflowExecutionFailed(event.StartChildWorkflowExecutionFailedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionStarted:
+		err := weh.handleChildWorkflowExecutionStarted(event.ChildWorkflowExecutionStartedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionCompleted:
+		err := weh.handleChildWorkflowExecutionCompleted(event.ChildWorkflowExecutionCompletedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionFailed:
+		err := weh.handleChildWorkflowExecutionFailed(event.ChildWorkflowExecutionFailedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionCanceled:
+		err := weh.handleChildWorkflowExecutionCanceled(event.ChildWorkflowExecutionCanceledEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionTimedOut:
+		err := weh.handleChildWorkflowExecutionTimedOut(event.ChildWorkflowExecutionTimedOutEventAttributes)
+		if err != nil {
+			return nil, err
+		}
+	case m.EventType_ChildWorkflowExecutionTerminated:
+		err := weh.handleChildWorkflowExecutionTerminated(event.ChildWorkflowExecutionTerminatedEventAttributes)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		weh.logger.Error("unknown event type",
 			zap.Int64(tagEventID, event.GetEventId()),
-			zap.String(tagEventType, string(event.GetEventType())))
+			zap.String(tagEventType, event.GetEventType().String()))
 		// Do not fail to be forward compatible with new events
 	}
 
@@ -652,4 +742,116 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
 	attributes *m.WorkflowExecutionSignaledEventAttributes) {
 	weh.signalHandler(attributes.GetSignalName(), attributes.GetInput())
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionInitiated(
+	attributes *m.StartChildWorkflowExecutionInitiatedEventAttributes) error {
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(
+	attributes *m.StartChildWorkflowExecutionFailedEventAttributes) error {
+	childWorkflowID := attributes.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+	err := fmt.Errorf("ChildWorkflowFailed: %v", attributes.GetCause())
+	childWorkflowHandle.resultCallback(nil, err)
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(
+	attributes *m.ChildWorkflowExecutionStartedEventAttributes) error {
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+
+	childWorkflowExecution := WorkflowExecution{
+		ID:    childWorkflowID,
+		RunID: attributes.WorkflowExecution.GetRunId(),
+	}
+
+	childWorkflowHandle.workflowExecution = &childWorkflowExecution
+	childWorkflowHandle.startedCallback(childWorkflowExecution, nil)
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCompleted(
+	attributes *m.ChildWorkflowExecutionCompletedEventAttributes) error {
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+
+	childWorkflowHandle.resultCallback(attributes.GetResult_(), nil)
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed(
+	attributes *m.ChildWorkflowExecutionFailedEventAttributes) error {
+
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+
+	err := NewErrorWithDetails(attributes.GetReason(), attributes.GetDetails())
+	childWorkflowHandle.resultCallback(nil, err)
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCanceled(
+	attributes *m.ChildWorkflowExecutionCanceledEventAttributes) error {
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		// this could happen if waitForCancellation is false
+		return nil
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+	err := NewCanceledError(attributes.GetDetails())
+
+	childWorkflowHandle.resultCallback(nil, err)
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedOut(
+	attributes *m.ChildWorkflowExecutionTimedOutEventAttributes) error {
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+	err := NewTimeoutError(attributes.GetTimeoutType())
+
+	childWorkflowHandle.resultCallback(nil, err)
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTerminated(
+	attributes *m.ChildWorkflowExecutionTerminatedEventAttributes) error {
+	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
+	childWorkflowHandle, ok := weh.scheduledChildWorkflows[childWorkflowID]
+	if !ok {
+		return fmt.Errorf("unable to find child workflow callback: %v", attributes)
+	}
+	delete(weh.scheduledChildWorkflows, childWorkflowID)
+	err := errors.New("terminated")
+	childWorkflowHandle.resultCallback(nil, err)
+
+	return nil
 }
