@@ -46,7 +46,7 @@ const (
 )
 
 type (
-	timerHandle struct {
+	testTimerHandle struct {
 		callback       resultHandler
 		timer          *clock.Timer
 		wallTimer      *clock.Timer
@@ -56,12 +56,12 @@ type (
 		timerID        int
 	}
 
-	activityHandle struct {
+	testActivityHandle struct {
 		callback     resultHandler
 		activityType string
 	}
 
-	callbackHandle struct {
+	testCallbackHandle struct {
 		callback          func()
 		startDecisionTask bool // start a new decision task after callback() is handled.
 	}
@@ -96,8 +96,8 @@ type (
 		signalHandler         func(name string, input []byte)
 
 		locker               *sync.Mutex
-		scheduledActivities  map[string]*activityHandle
-		scheduledTimers      map[string]*timerHandle
+		scheduledActivities  map[string]*testActivityHandle
+		scheduledTimers      map[string]*testTimerHandle
 		runningActivityCount atomic.Int32
 
 		onActivityStartedListener   func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)
@@ -108,7 +108,7 @@ type (
 		onTimerFiredListener        func(timerID string)
 		onTimerCancelledListener    func(timerID string)
 
-		callbackChannel chan callbackHandle
+		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
 		isTestCompleted bool
 		testResult      EncodedValue
@@ -137,9 +137,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		},
 
 		locker:              &sync.Mutex{},
-		scheduledActivities: make(map[string]*activityHandle),
-		scheduledTimers:     make(map[string]*timerHandle),
-		callbackChannel:     make(chan callbackHandle, 1000),
+		scheduledActivities: make(map[string]*testActivityHandle),
+		scheduledTimers:     make(map[string]*testTimerHandle),
+		callbackChannel:     make(chan testCallbackHandle, 1000),
 		testTimeout:         time.Second * 3,
 	}
 
@@ -345,7 +345,7 @@ func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayD
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) processCallback(c callbackHandle) {
+func (env *testWorkflowEnvironmentImpl) processCallback(c testCallbackHandle) {
 	c.callback()
 	if c.startDecisionTask && !env.isTestCompleted {
 		env.workflowDef.OnDecisionTaskStarted() // this will execute dispatcher
@@ -358,7 +358,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	}
 
 	// find next timer
-	var nextTimer *timerHandle
+	var nextTimer *testTimerHandle
 	for _, t := range env.scheduledTimers {
 		if nextTimer == nil {
 			nextTimer = t
@@ -369,7 +369,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	}
 
 	// function to fire timer
-	fireTimer := func(th *timerHandle) {
+	fireTimer := func(th *testTimerHandle) {
 		skipDuration := th.mockTimeToFire.Sub(env.mockClock.Now())
 		env.logger.Debug("Auto fire timer",
 			zap.Int(tagTimerID, th.timerID),
@@ -421,7 +421,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 }
 
 func (env *testWorkflowEnvironmentImpl) postCallback(cb func(), startDecisionTask bool) {
-	env.callbackChannel <- callbackHandle{callback: cb, startDecisionTask: startDecisionTask}
+	env.callbackChannel <- testCallbackHandle{callback: cb, startDecisionTask: startDecisionTask}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID string) {
@@ -523,7 +523,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	)
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName)
-	activityHandle := &activityHandle{callback: callback, activityType: parameters.ActivityType.Name}
+	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
 	// locker is needed to prevent race condition between dispatcher loop goroutinue and activity worker goroutinues.
 	// The activity workers could call into Heartbeat which by default is mocked in this test suite. The mock needs to
@@ -796,7 +796,7 @@ func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback resul
 			}
 		}, true)
 	})
-	env.scheduledTimers[timerInfo.timerID] = &timerHandle{
+	env.scheduledTimers[timerInfo.timerID] = &testTimerHandle{
 		callback:       callback,
 		timer:          timer,
 		mockTimeToFire: env.mockClock.Now().Add(d),
