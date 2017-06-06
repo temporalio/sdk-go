@@ -17,10 +17,6 @@ PROGS = cadence-client
 TEST_ARG ?= -race -v -timeout 5m
 BUILD := ./build
 
-LIBRARY_VERSION=v0.1.0
-GIT_SHA=`git rev-parse HEAD`
-OUT_VERSION_FILE=./version.go
-
 export PATH := $(GOPATH)/bin:$(PATH)
 
 THRIFT_GEN=$(GOPATH)/bin/thrift-gen
