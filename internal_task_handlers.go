@@ -151,6 +151,7 @@ func isDecisionEvent(eventType s.EventType) bool {
 	case s.EventType_WorkflowExecutionCompleted,
 		s.EventType_WorkflowExecutionFailed,
 		s.EventType_WorkflowExecutionCanceled,
+		s.EventType_WorkflowExecutionContinuedAsNew,
 		s.EventType_ActivityTaskScheduled,
 		s.EventType_ActivityTaskCancelRequested,
 		s.EventType_TimerStarted,
@@ -240,7 +241,7 @@ OrderEvents:
 		case s.EventType_DecisionTaskCompleted:
 			concurrentToDecision = false
 
-		case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut:
+		case s.EventType_DecisionTaskScheduled, s.EventType_DecisionTaskTimedOut, s.EventType_DecisionTaskFailed:
 		// Skip
 		default:
 			if concurrentToDecision {
@@ -430,14 +431,10 @@ ProcessEvents:
 		wth.logger.Error("Unable to read workflow start attributes.", zap.Error(err))
 		return nil, "", err
 	}
-	eventDecisions, err := wth.completeWorkflow(
-		isWorkflowCompleted, completionResult, failure, startAttributes)
-	if err != nil {
-		wth.logger.Error("Complete workflow failed.", zap.Error(err))
-		return nil, "", err
-	}
-	if len(eventDecisions) > 0 {
-		decisions = append(decisions, eventDecisions...)
+
+	closeDecision := wth.completeWorkflow(isWorkflowCompleted, completionResult, failure, startAttributes)
+	if closeDecision != nil {
+		decisions = append(decisions, closeDecision)
 		if wth.metricsScope != nil {
 			wth.metricsScope.Counter(metrics.WorkflowsCompletionTotalCounter).Inc(1)
 			elapsed := time.Now().Sub(startTime)
@@ -452,6 +449,17 @@ ProcessEvents:
 		Identity:  common.StringPtr(wth.identity),
 		// ExecutionContext:
 	}
+
+	if enableVerboseLogging {
+		var buf bytes.Buffer
+		for i, d := range decisions {
+			buf.WriteString(fmt.Sprintf("%v: %v\n", i, util.DecisionToString(d)))
+		}
+		wth.logger.Debug("new_decisions",
+			zap.Int("DecisionCount", len(decisions)),
+			zap.String("Decisions", buf.String()))
+	}
+
 	if emitStack {
 		stackTrace = eventHandler.StackTrace()
 	}
@@ -592,13 +600,20 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		if e.GetEventType() != s.EventType_WorkflowExecutionCanceled {
 			return false
 		}
-		eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
-		decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
 		if strictMode {
+			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
+			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
 			if bytes.Compare(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) != 0 {
 				return false
 			}
 		}
+		return true
+
+	case s.DecisionType_ContinueAsNewWorkflowExecution:
+		if e.GetEventType() != s.EventType_WorkflowExecutionContinuedAsNew {
+			return false
+		}
+
 		return true
 
 	case s.DecisionType_StartChildWorkflowExecution:
@@ -624,44 +639,40 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	completionResult []byte,
 	err error,
 	startAttributes *s.WorkflowExecutionStartedEventAttributes,
-) ([]*s.Decision, error) {
-	decisions := []*s.Decision{}
+) *s.Decision {
+	var decision *s.Decision
 	if canceledErr, ok := err.(*canceledError); ok {
 		// Workflow cancelled
-		cancelDecision := createNewDecision(s.DecisionType_CancelWorkflowExecution)
-		cancelDecision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
+		decision = createNewDecision(s.DecisionType_CancelWorkflowExecution)
+		decision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
 			Details: canceledErr.details,
 		}
-		decisions = append(decisions, cancelDecision)
 	} else if contErr, ok := err.(*continueAsNewError); ok {
 		// Continue as new error.
-		continueAsNewDecision := createNewDecision(s.DecisionType_ContinueAsNewWorkflowExecution)
-		continueAsNewDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
+		decision = createNewDecision(s.DecisionType_ContinueAsNewWorkflowExecution)
+		decision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
 			WorkflowType: workflowTypePtr(*contErr.options.workflowType),
 			Input:        contErr.options.input,
 			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.options.taskListName}),
 			ExecutionStartToCloseTimeoutSeconds: contErr.options.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.options.taskStartToCloseTimeoutSeconds,
 		}
-		decisions = append(decisions, continueAsNewDecision)
 	} else if err != nil {
 		// Workflow failures
-		failDecision := createNewDecision(s.DecisionType_FailWorkflowExecution)
+		decision = createNewDecision(s.DecisionType_FailWorkflowExecution)
 		reason, details := getErrorDetails(err)
-		failDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
+		decision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
 			Reason:  common.StringPtr(reason),
 			Details: details,
 		}
-		decisions = append(decisions, failDecision)
 	} else if isWorkflowCompleted {
 		// Workflow completion
-		completeDecision := createNewDecision(s.DecisionType_CompleteWorkflowExecution)
-		completeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
+		decision = createNewDecision(s.DecisionType_CompleteWorkflowExecution)
+		decision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
 			Result_: completionResult,
 		}
-		decisions = append(decisions, completeDecision)
 	}
-	return decisions, nil
+	return decision
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEvent, isInReplay bool) error {

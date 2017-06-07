@@ -22,10 +22,10 @@ package cadence
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"fmt"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -201,7 +201,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.Contains(err.Error(), "nondeterministic")
 }
 
-func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityTask() {
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
 	testEvents := []*s.HistoryEvent{
@@ -226,13 +226,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityTask() {
 	t.NoError(err)
 	t.NotNil(response)
 	//t.printAllDecisions(response.GetDecisions())
-	t.Equal(3, len(response.GetDecisions()))
-	t.Equal(s.DecisionType_ScheduleActivityTask, response.GetDecisions()[0].GetDecisionType())
-	t.NotNil(response.GetDecisions()[0].GetScheduleActivityTaskDecisionAttributes())
-	t.Equal(s.DecisionType_RequestCancelActivityTask, response.GetDecisions()[1].GetDecisionType())
-	t.NotNil(response.GetDecisions()[1].GetRequestCancelActivityTaskDecisionAttributes())
-	t.Equal(s.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[2].GetDecisionType())
-	t.NotNil(response.GetDecisions()[2].GetCompleteWorkflowExecutionDecisionAttributes())
+	t.Equal(1, len(response.GetDecisions()))
+	t.Equal(s.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[0].GetDecisionType())
+	t.NotNil(response.GetDecisions()[0].GetCompleteWorkflowExecutionDecisionAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
