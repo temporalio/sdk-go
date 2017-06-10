@@ -163,6 +163,36 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 	}
 }
 
+// OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
+// You must call Return() with appropriate parameters on the returned *mock.Call instance. The supplied parameters to
+// the Return() call should either be a function that has exact same signature as the mocked workflow, or it should be
+// mock values with the same types as the mocked workflow function returns.
+// Example: assume the workflow you want to mock has function signature as:
+//   func MyChildWorkflow(ctx cadence.Context, msg string) (string, error)
+// You can mock it by return a function with exact same signature:
+//   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return(func(ctx cadence.Context, msg string) (string, error) {
+//      // your mock function implementation
+//      return "", nil
+//   })
+// OR return mock values with same types as workflow function's return types:
+//   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
+func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *mock.Call {
+	fType := reflect.TypeOf(workflow)
+	switch fType.Kind() {
+	case reflect.Func:
+		fnType := reflect.TypeOf(workflow)
+		if err := validateFnFormat(fnType, true); err != nil {
+			panic(err)
+		}
+		return t.Mock.On(getFunctionName(workflow), args...)
+
+	case reflect.String:
+		return t.Mock.On(workflow.(string), args...)
+	default:
+		panic("activity must be function or string")
+	}
+}
+
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
 func (t *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
@@ -174,6 +204,12 @@ func (t *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args .
 // actual activity should have been invoked.
 func (t *TestWorkflowEnvironment) OverrideActivity(activityFn, fakeActivityFn interface{}) {
 	t.impl.overrideActivity(activityFn, fakeActivityFn)
+}
+
+// OverrideWorkflow overrides an actual workflow with a fake workflow. The fake workflow will be invoked in place where the
+// actual workflow should have been invoked.
+func (t *TestWorkflowEnvironment) OverrideWorkflow(workflowFn, fakeWorkflowFn interface{}) {
+	t.impl.overrideWorkflow(workflowFn, fakeWorkflowFn)
 }
 
 // Now returns the current workflow time (a.k.a cadence.Now() time) of this TestWorkflowEnvironment.
@@ -210,10 +246,10 @@ func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 	return t
 }
 
-// SetOnActivityCancelledListener sets a listener that will be called after an activity is cancelled.
-func (t *TestWorkflowEnvironment) SetOnActivityCancelledListener(
+// SetOnActivityCanceledListener sets a listener that will be called after an activity is canceled.
+func (t *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
-	t.impl.onActivityCancelledListener = listener
+	t.impl.onActivityCanceledListener = listener
 	return t
 }
 
@@ -221,6 +257,27 @@ func (t *TestWorkflowEnvironment) SetOnActivityCancelledListener(
 func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details EncodedValues)) *TestWorkflowEnvironment {
 	t.impl.onActivityHeartbeatListener = listener
+	return t
+}
+
+// SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
+func (t *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
+	listener func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues)) *TestWorkflowEnvironment {
+	t.impl.onChildWorkflowStartedListener = listener
+	return t
+}
+
+// SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
+func (t *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
+	listener func(workflowInfo *WorkflowInfo, result EncodedValue, err error)) *TestWorkflowEnvironment {
+	t.impl.onChildWorkflowCompletedListener = listener
+	return t
+}
+
+// SetOnChildWorkflowCanceledListener sets a listener that will be called when a child workflow is canceled.
+func (t *TestWorkflowEnvironment) SetOnChildWorkflowCanceledListener(
+	listener func(workflowInfo *WorkflowInfo)) *TestWorkflowEnvironment {
+	t.impl.onChildWorkflowCanceledListener = listener
 	return t
 }
 
@@ -271,18 +328,12 @@ func (t *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result inte
 
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (t *TestWorkflowEnvironment) CancelWorkflow() {
-	t.impl.RequestCancelWorkflow("test-domain",
-		t.impl.workflowInfo.WorkflowExecution.ID,
-		t.impl.workflowInfo.WorkflowExecution.RunID)
+	t.impl.cancelWorkflow()
 }
 
 // SignalWorkflow requests signal (through workflow Context) to the currently running test workflow.
 func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
-	data, err := t.impl.testSuite.hostEnv.encodeArg(input)
-	if err != nil {
-		panic(err)
-	}
-	t.impl.signalHandler(name, data)
+	t.impl.signalWorkflow(name, input)
 }
 
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When

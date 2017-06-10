@@ -46,6 +46,8 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
+	s.RegisterWorkflow(testWorkflowHello)
+	s.RegisterWorkflow(testWorkflowHeartbeat)
 	s.RegisterActivity(testActivityHello)
 	s.RegisterActivity(testActivityHeartbeat)
 }
@@ -281,9 +283,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	})
 	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result EncodedValue, err error) {
 		completedActivityID = activityInfo.ActivityID
+		fmt.Printf("OnActivityCompletedListener %+v", activityInfo)
 	})
-	env.SetOnActivityCancelledListener(func(activityInfo *ActivityInfo) {
+	env.SetOnActivityCanceledListener(func(activityInfo *ActivityInfo) {
 		cancelledActivityID = activityInfo.ActivityID
+		fmt.Printf("OnActivityCanceledListener %+v", activityInfo)
 	})
 	env.ExecuteWorkflow(workflowFn)
 
@@ -387,6 +391,22 @@ func testActivityHello(ctx context.Context, msg string) (string, error) {
 	return "hello" + "_" + msg, nil
 }
 
+func testWorkflowHeartbeat(ctx Context, msg string, waitTime time.Duration) (string, error) {
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+
+	var result string
+	err := ExecuteActivity(ctx, testActivityHeartbeat, msg, waitTime).Get(ctx, &result)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
 func testActivityHeartbeat(ctx context.Context, msg string, waitTime time.Duration) (string, error) {
 	GetActivityLogger(ctx).Info("testActivityHeartbeat start",
 		zap.String("msg", msg), zap.Duration("waitTime", waitTime))
@@ -438,4 +458,181 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.Nil(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_activity hello_world", actualResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancel() {
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			ExecutionStartToCloseTimeout: time.Minute,
+			WaitForCancellation:          true,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		ctx1, cancel1 := WithCancel(ctx)
+		ctx2, cancel2 := WithCancel(ctx)
+		f1 := ExecuteChildWorkflow(ctx1, testWorkflowHeartbeat, "fast", time.Millisecond)
+		f2 := ExecuteChildWorkflow(ctx2, testWorkflowHeartbeat, "slow", time.Hour)
+
+		NewSelector(ctx).AddFuture(f1, func(f Future) {
+			cancel2()
+		}).AddFuture(f2, func(f Future) {
+			cancel1()
+		}).Select(ctx)
+
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Override() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+		var heartbeatWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHeartbeat, "slow", time.Hour).Get(ctx, &heartbeatWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult + " " + heartbeatWorkflowResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.OverrideActivity(testActivityHello, func(ctx context.Context, msg string) (string, error) {
+		return "fake_" + msg, nil
+	})
+	env.OverrideWorkflow(testWorkflowHeartbeat, func(ctx Context, msg string, waitTime time.Duration) (string, error) {
+		return "fake_heartbeat", nil
+	})
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("fake_activity fake_world fake_heartbeat", actualResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+		var heartbeatWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHeartbeat, "slow", time.Hour).Get(ctx, &heartbeatWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult + " " + heartbeatWorkflowResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("mock_msg", nil)
+	env.OnWorkflow(testWorkflowHeartbeat, mock.Anything, mock.Anything, mock.Anything).
+		Return("mock_heartbeat", nil)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("mock_msg mock_msg mock_heartbeat", actualResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	var childWorkflowName, childWorkflowResult string
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues) {
+		childWorkflowName = workflowInfo.WorkflowType.Name
+	})
+	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result EncodedValue, err error) {
+		s.NoError(err)
+		s.NoError(result.Get(&childWorkflowResult))
+	})
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_activity hello_world", actualResult)
+	s.Equal("hello_world", childWorkflowResult)
+	s.Equal(getFunctionName(testWorkflowHello), childWorkflowName)
 }
