@@ -475,9 +475,9 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	isChild, isDone := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID)
+	isChild, decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID)
 	require.False(t, isChild)
-	require.False(t, isDone)
+	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeExternalWorkflow, workflowID))
 	require.Equal(t, decisionStateCreated, d.getState())
 
@@ -506,9 +506,9 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	isChild, isDone := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID)
+	isChild, decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID)
 	require.False(t, isChild)
-	require.False(t, isDone)
+	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeExternalWorkflow, workflowID))
 	require.Equal(t, decisionStateCreated, d.getState())
 

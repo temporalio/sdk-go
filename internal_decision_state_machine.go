@@ -53,12 +53,16 @@ type (
 		handleInitiatedEvent()
 
 		handleDecisionSent()
+
+		setData(data interface{})
+		getData() interface{}
 	}
 
 	decisionStateMachineBase struct {
 		id      decisionID
 		state   decisionState
 		history []string
+		data    interface{}
 	}
 
 	activityDecisionStateMachine struct {
@@ -226,12 +230,9 @@ func newNaiveDecisionStateMachine(decisionType decisionType, id string, decision
 	}
 }
 
-func newMarkerDecisionStateMachine(id string, data []byte) *markerDecisionStateMachine {
+func newMarkerDecisionStateMachine(id string, attributes *s.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
 	d := createNewDecision(s.DecisionType_RecordMarker)
-	d.RecordMarkerDecisionAttributes = &s.RecordMarkerDecisionAttributes{
-		MarkerName: common.StringPtr(sideEffectMarkerName),
-		Details:    data,
-	}
+	d.RecordMarkerDecisionAttributes = attributes
 	return &markerDecisionStateMachine{
 		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
 	}
@@ -257,6 +258,14 @@ func (d *decisionStateMachineBase) isDone() bool {
 	return d.state == decisionStateCompleted || d.state == decisionStateCompletedAfterCancellationDecisionSent
 }
 
+func (d *decisionStateMachineBase) setData(data interface{}) {
+	d.data = data
+}
+
+func (d *decisionStateMachineBase) getData() interface{} {
+	return d.data
+}
+
 func (d *decisionStateMachineBase) moveState(newState decisionState, event string) {
 	d.history = append(d.history, event)
 	d.state = newState
@@ -265,7 +274,7 @@ func (d *decisionStateMachineBase) moveState(newState decisionState, event strin
 
 func (d *decisionStateMachineBase) failStateTransition(event string) {
 	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic decider code
-	panic(fmt.Sprintf("failStateTransition: attempt to %v, %v", event, d))
+	panic(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
 }
 
 func (d *decisionStateMachineBase) handleDecisionSent() {
@@ -610,16 +619,17 @@ func (h *decisionsHelper) scheduleActivityTask(attributes *s.ScheduleActivityTas
 	return decision
 }
 
-func (h *decisionsHelper) requestCancelActivityTask(activityID string) bool {
+func (h *decisionsHelper) requestCancelActivityTask(activityID string) decisionStateMachine {
 	id := makeDecisionID(decisionTypeActivity, activityID)
 	decision := h.getDecision(id)
 	decision.cancel()
-	return decision.isDone()
+	return decision
 }
 
-func (h *decisionsHelper) handleActivityTaskClosed(activityID string) {
+func (h *decisionsHelper) handleActivityTaskClosed(activityID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
 	decision.handleCompletionEvent()
+	return decision
 }
 
 func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, activityID string) {
@@ -633,10 +643,10 @@ func (h *decisionsHelper) handleActivityTaskCancelRequested(activityID string) {
 	decision.handleCancelInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleActivityTaskCanceled(activityID string) bool {
+func (h *decisionsHelper) handleActivityTaskCanceled(activityID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
 	decision.handleCanceledEvent()
-	return decision.isDone()
+	return decision
 }
 
 func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID string) {
@@ -668,15 +678,20 @@ func (h *decisionsHelper) getActivityID(event *s.HistoryEvent) string {
 
 func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
-	decision := newMarkerDecisionStateMachine(markerID, data)
+	attributes := &s.RecordMarkerDecisionAttributes{
+		MarkerName: common.StringPtr(sideEffectMarkerName),
+		Details:    data,
+	}
+	decision := newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
 	return decision
 }
 
-func (h *decisionsHelper) handleSideEffectMarkerRecorded(sideEffectID int32) {
+func (h *decisionsHelper) handleSideEffectMarkerRecorded(sideEffectID int32) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	decision := h.getDecision(makeDecisionID(decisionTypeMarker, markerID))
 	decision.handleCompletionEvent()
+	return decision
 }
 
 func (h *decisionsHelper) startChildWorkflowExecution(attributes *s.StartChildWorkflowExecutionDecisionAttributes) decisionStateMachine {
@@ -690,18 +705,19 @@ func (h *decisionsHelper) handleStartChildWorkflowExecutionInitiated(workflowID 
 	decision.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleStartChildWorkflowExecutionFailed(workflowID string) {
+func (h *decisionsHelper) handleStartChildWorkflowExecutionFailed(workflowID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeChildWorkflow, workflowID))
 	decision.handleInitiationFailedEvent()
+	return decision
 }
 
-func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflowID, runID string) (isChild, isDone bool) {
+func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflowID, runID string) (bool, decisionStateMachine) {
 	decision, ok := h.decisions[makeDecisionID(decisionTypeChildWorkflow, workflowID)]
 	if ok {
 		// this is for child workflow
 		decision.(*childWorkflowDecisionStateMachine).runID = runID
 		decision.cancel()
-		return true, decision.isDone()
+		return true, decision
 	}
 
 	// this is for external non-child workflow
@@ -713,7 +729,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflo
 	decision = newCancelExternalWorkflowStateMachine(attributes)
 	h.addDecision(decision)
 
-	return false, false
+	return false, decision
 }
 
 func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionInitiated(workflowID string) {
@@ -756,15 +772,16 @@ func (h *decisionsHelper) startTimer(attributes *s.StartTimerDecisionAttributes)
 	return decision
 }
 
-func (h *decisionsHelper) cancelTimer(timerID string) bool {
+func (h *decisionsHelper) cancelTimer(timerID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeTimer, timerID))
 	decision.cancel()
-	return decision.isDone()
+	return decision
 }
 
-func (h *decisionsHelper) handleTimerClosed(timerID string) {
+func (h *decisionsHelper) handleTimerClosed(timerID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeTimer, timerID))
 	decision.handleCompletionEvent()
+	return decision
 }
 
 func (h *decisionsHelper) handleTimerStarted(timerID string) {
@@ -782,19 +799,22 @@ func (h *decisionsHelper) handleCancelTimerFailed(timerID string) {
 	decision.handleCancelFailedEvent()
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionStarted(workflowID string) {
+func (h *decisionsHelper) handleChildWorkflowExecutionStarted(workflowID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeChildWorkflow, workflowID))
 	decision.handleStartedEvent()
+	return decision
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionClosed(workflowID string) {
+func (h *decisionsHelper) handleChildWorkflowExecutionClosed(workflowID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeChildWorkflow, workflowID))
 	decision.handleCompletionEvent()
+	return decision
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionCanceled(workflowID string) {
+func (h *decisionsHelper) handleChildWorkflowExecutionCanceled(workflowID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeChildWorkflow, workflowID))
 	decision.handleCanceledEvent()
+	return decision
 }
 
 func (h *decisionsHelper) getDecisions(markAsSent bool) []*s.Decision {

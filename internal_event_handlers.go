@@ -74,9 +74,6 @@ type (
 		workflowDefinitionFactory workflowDefinitionFactory
 
 		decisionsHelper  *decisionsHelper
-		activities       map[string]*scheduledActivity
-		timers           map[string]*scheduledTimer
-		childWorkflows   map[string]*scheduledChildWorkflow
 		sideEffectResult map[int32][]byte
 
 		counterID         int32     // To generate sequence IDs for activity/timer etc.
@@ -125,9 +122,6 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		workflowInfo:              workflowInfo,
 		workflowDefinitionFactory: workflowDefinitionFactory,
 		decisionsHelper:           newDecisionsHelper(),
-		activities:                make(map[string]*scheduledActivity),
-		timers:                    make(map[string]*scheduledTimer),
-		childWorkflows:            make(map[string]*scheduledChildWorkflow),
 		sideEffectResult:          make(map[int32][]byte),
 		completeHandler:           completeHandler,
 		enableLoggingInReplay:     enableLoggingInReplay,
@@ -181,14 +175,14 @@ func (wc *workflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID,
 		return errors.New("need a valid workflow ID, provided empty")
 	}
 
-	isChild, isDone := wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID)
+	isChild, decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID)
 	if isChild {
 		// this is for child workflow
-		childWorkflow := wc.getUnhandledChildWorkflow(workflowID)
-		if childWorkflow == nil {
+		childWorkflow := decision.getData().(*scheduledChildWorkflow)
+		if childWorkflow.handled {
 			return nil
 		}
-		if childWorkflow.workflowExecution != nil && (isDone || !childWorkflow.waitForCancellation) {
+		if childWorkflow.workflowExecution != nil && (decision.isDone() || !childWorkflow.waitForCancellation) {
 			childWorkflow.handle(nil, ErrCanceled)
 		}
 	}
@@ -217,12 +211,12 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowType = workflowTypePtr(*options.workflowType)
 	attributes.ChildPolicy = options.childPolicy.toThriftChildPolicyPtr()
 
-	wc.decisionsHelper.startChildWorkflowExecution(attributes)
-	wc.childWorkflows[options.workflowID] = &scheduledChildWorkflow{
+	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
+	decision.setData(&scheduledChildWorkflow{
 		resultCallback:      callback,
 		startedCallback:     startedHandler,
 		waitForCancellation: options.waitForCancellation,
-	}
+	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
 		zap.String(tagChildWorkflowID, options.workflowID),
@@ -271,11 +265,11 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToStartTimeoutSeconds)
 	scheduleTaskAttr.HeartbeatTimeoutSeconds = common.Int32Ptr(parameters.HeartbeatTimeoutSeconds)
 
-	wc.decisionsHelper.scheduleActivityTask(scheduleTaskAttr)
-	wc.activities[activityID] = &scheduledActivity{
+	decision := wc.decisionsHelper.scheduleActivityTask(scheduleTaskAttr)
+	decision.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
-	}
+	})
 
 	wc.logger.Debug("ExectueActivity",
 		zap.String(tagActivityID, activityID),
@@ -285,13 +279,13 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
-	isDone := wc.decisionsHelper.requestCancelActivityTask(activityID)
-	activity := wc.getUnhandledActivity(activityID)
-	if activity == nil {
+	decision := wc.decisionsHelper.requestCancelActivityTask(activityID)
+	activity := decision.getData().(*scheduledActivity)
+	if activity.handled {
 		return
 	}
 
-	if isDone || !activity.waitForCancelRequest {
+	if decision.isDone() || !activity.waitForCancelRequest {
 		activity.handle(nil, ErrCanceled)
 	}
 
@@ -321,10 +315,8 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 	startTimerAttr.TimerId = common.StringPtr(timerID)
 	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ptr(int64(d.Seconds()))
 
-	wc.decisionsHelper.startTimer(startTimerAttr)
-	wc.timers[timerID] = &scheduledTimer{
-		callback: callback,
-	}
+	decision := wc.decisionsHelper.startTimer(startTimerAttr)
+	decision.setData(&scheduledTimer{callback: callback})
 
 	wc.logger.Debug("NewTimer",
 		zap.String(tagTimerID, startTimerAttr.GetTimerId()),
@@ -334,9 +326,9 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
-	wc.decisionsHelper.cancelTimer(timerID)
-	timer := wc.getUnhandledTimer(timerID)
-	if timer == nil {
+	decision := wc.decisionsHelper.cancelTimer(timerID)
+	timer := decision.getData().(*scheduledTimer)
+	if timer.handled {
 		return
 	}
 	timer.handle(nil, ErrCanceled)
@@ -385,40 +377,6 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 
 	callback(result, nil)
 	wc.logger.Debug("SideEffect Marker added", zap.Int32(tagSideEffectID, sideEffectID))
-}
-
-func (wc *workflowEnvironmentImpl) getUnhandledActivity(activityID string) *scheduledActivity {
-	activity, ok := wc.activities[activityID]
-	if !ok {
-		// we don't delete scheduled activity from the map, so we don't expect this to happen.
-		panic(fmt.Sprintf("unable to find scheduled ActivityID=%v", activityID))
-	}
-	if activity.handled {
-		return nil
-	}
-	return activity
-}
-
-func (wc *workflowEnvironmentImpl) getUnhandledTimer(timerID string) *scheduledTimer {
-	timer, ok := wc.timers[timerID]
-	if !ok {
-		panic(fmt.Sprintf("unable to find scheduled TimerID=%v", timerID))
-	}
-	if timer.handled {
-		return nil
-	}
-	return timer
-}
-
-func (wc *workflowEnvironmentImpl) getUnhandledChildWorkflow(childWorkflowID string) *scheduledChildWorkflow {
-	childWorkflow, ok := wc.childWorkflows[childWorkflowID]
-	if !ok {
-		panic(fmt.Sprintf("unable to find scheduled ChildWorkflowID=%v", childWorkflowID))
-	}
-	if childWorkflow.handled {
-		return nil
-	}
-	return childWorkflow
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
@@ -594,9 +552,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event *m.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
-	weh.decisionsHelper.handleActivityTaskClosed(activityID)
-	activity := weh.getUnhandledActivity(activityID)
-	if activity == nil {
+	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
+	activity := decision.getData().(*scheduledActivity)
+	if activity.handled {
 		return nil
 	}
 	activity.handle(event.GetActivityTaskCompletedEventAttributes().GetResult_(), nil)
@@ -606,9 +564,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event 
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *m.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
-	weh.decisionsHelper.handleActivityTaskClosed(activityID)
-	activity := weh.getUnhandledActivity(activityID)
-	if activity == nil {
+	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
+	activity := decision.getData().(*scheduledActivity)
+	if activity.handled {
 		return nil
 	}
 
@@ -620,9 +578,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *m.
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *m.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
-	weh.decisionsHelper.handleActivityTaskClosed(activityID)
-	activity := weh.getUnhandledActivity(activityID)
-	if activity == nil {
+	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
+	activity := decision.getData().(*scheduledActivity)
+	if activity.handled {
 		return nil
 	}
 
@@ -640,13 +598,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *m.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
-	isDone := weh.decisionsHelper.handleActivityTaskCanceled(activityID)
-	activity := weh.getUnhandledActivity(activityID)
-	if activity == nil {
+	decision := weh.decisionsHelper.handleActivityTaskCanceled(activityID)
+	activity := decision.getData().(*scheduledActivity)
+	if activity.handled {
 		return nil
 	}
 
-	if isDone || !activity.waitForCancelRequest {
+	if decision.isDone() || !activity.waitForCancelRequest {
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
 		err := NewCanceledError(event.GetActivityTaskCanceledEventAttributes().GetDetails())
 		activity.handle(nil, err)
@@ -657,9 +615,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 
 func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(event *m.HistoryEvent) {
 	timerID := event.GetTimerFiredEventAttributes().GetTimerId()
-	weh.decisionsHelper.handleTimerClosed(timerID)
-	timer := weh.getUnhandledTimer(timerID)
-	if timer == nil {
+	decision := weh.decisionsHelper.handleTimerClosed(timerID)
+	timer := decision.getData().(*scheduledTimer)
+	if timer.handled {
 		return
 	}
 
@@ -702,9 +660,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
 func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *m.HistoryEvent) error {
 	attributes := event.GetStartChildWorkflowExecutionFailedEventAttributes()
 	childWorkflowID := attributes.GetWorkflowId()
-	weh.decisionsHelper.handleStartChildWorkflowExecutionFailed(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleStartChildWorkflowExecutionFailed(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 
@@ -717,9 +675,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionStartedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionStarted(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionStarted(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 
@@ -737,9 +695,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarte
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCompleted(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionCompletedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 	childWorkflow.handle(attributes.GetResult_(), nil)
@@ -750,9 +708,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionComple
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionFailedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 
@@ -765,9 +723,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCanceled(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionCanceledEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionCanceled(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionCanceled(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 	err := NewCanceledError(attributes.GetDetails())
@@ -778,9 +736,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedOut(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionTimedOutEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 	err := NewTimeoutError(attributes.GetTimeoutType())
@@ -792,9 +750,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTerminated(event *m.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionTerminatedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
-	weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
-	childWorkflow := weh.getUnhandledChildWorkflow(childWorkflowID)
-	if childWorkflow == nil {
+	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
+	childWorkflow := decision.getData().(*scheduledChildWorkflow)
+	if childWorkflow.handled {
 		return nil
 	}
 	err := errors.New("terminated")
