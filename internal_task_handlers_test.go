@@ -177,13 +177,12 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
-	// Schedule an activity and see if we complete workflow.
 	taskList := "taskList"
 	testEvents := []*s.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{
 			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("some_random_activity")},
+			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 	}
@@ -191,12 +190,19 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	params := workerExecutionParameters{
 		TaskList: taskList,
 		Identity: "test-id-1",
-		Logger:   t.logger,
+		Logger:   zap.NewNop(),
 	}
 	taskHandler := newWorkflowTaskHandler(testWorkflowDefinitionFactory, testDomain, params, nil)
 	response, _, err := taskHandler.ProcessWorkflowTask(task, false)
 
-	t.NotNil(err)
+	// there should be no error as the history events matched the decisions.
+	t.NoError(err)
+	t.NotNil(response)
+
+	// now change the history event so it does not match to decision produced via replay
+	testEvents[1].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	response, _, err = taskHandler.ProcessWorkflowTask(task, false)
+	t.Error(err)
 	t.Nil(response)
 	t.Contains(err.Error(), "nondeterministic")
 }
