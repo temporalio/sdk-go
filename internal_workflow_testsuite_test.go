@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -635,4 +636,77 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 	s.Equal("hello_activity hello_world", actualResult)
 	s.Equal("hello_world", childWorkflowResult)
 	s.Equal(getFunctionName(testWorkflowHello), childWorkflowName)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
+	expected := []string{
+		"child: activity completed",
+		"parent: 1m timer fired",
+		"parent: 10m timer fired",
+		"child: 1h timer fired",
+		"parent: child completed",
+	}
+
+	var history []string
+	mutex := sync.Mutex{}
+	addHistory := func(event string) {
+		mutex.Lock()
+		history = append(history, event)
+		mutex.Unlock()
+	}
+	childWorkflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Hour)
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		f1 := ExecuteActivity(ctx, testActivityHello, "from child workflow")
+
+		selector := NewSelector(ctx)
+		selector.AddFuture(t1, func(f Future) {
+			addHistory("child: 1h timer fired")
+		}).AddFuture(f1, func(f Future) {
+			addHistory("child: activity completed")
+		})
+
+		selector.Select(ctx)
+		selector.Select(ctx)
+
+		t1.Get(ctx, nil)
+		f1.Get(ctx, nil)
+
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Minute)
+		t2 := NewTimer(ctx, time.Minute*10)
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		f1 := ExecuteChildWorkflow(ctx, childWorkflowFn)
+
+		selector := NewSelector(ctx)
+		selector.AddFuture(f1, func(f Future) {
+			addHistory("parent: child completed")
+		}).AddFuture(t1, func(f Future) {
+			addHistory("parent: 1m timer fired")
+		}).AddFuture(t2, func(f Future) {
+			addHistory("parent: 10m timer fired")
+		})
+
+		selector.Select(ctx)
+		selector.Select(ctx)
+		selector.Select(ctx)
+
+		return nil
+	}
+
+	s.RegisterWorkflow(workflowFn)
+	s.RegisterWorkflow(childWorkflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.Equal(expected, history)
 }
