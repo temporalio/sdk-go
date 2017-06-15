@@ -36,6 +36,10 @@ import (
 var _ Client = (*workflowClient)(nil)
 var _ DomainClient = (*domainClient)(nil)
 
+const (
+	defaultDecisionTaskTimeoutInSecs = 20
+)
+
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
@@ -70,6 +74,23 @@ func (wc *workflowClient) StartWorkflow(
 		workflowID = uuid.NewRandom().String()
 	}
 
+	if options.TaskList == "" {
+		return nil, errors.New("missing TaskList")
+	}
+
+	executionTimeout := int32(options.ExecutionStartToCloseTimeout.Seconds())
+	if executionTimeout <= 0 {
+		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
+	}
+
+	decisionTaskTimeout := int32(options.DecisionTaskStartToCloseTimeout.Seconds())
+	if decisionTaskTimeout < 0 {
+		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
+	}
+	if decisionTaskTimeout == 0 {
+		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
+	}
+
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkerFunction(workflowFunc, args)
 	if err != nil {
@@ -83,8 +104,8 @@ func (wc *workflowClient) StartWorkflow(
 		WorkflowType: workflowTypePtr(*workflowType),
 		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
 		Input:        input,
-		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(options.ExecutionStartToCloseTimeoutSeconds),
-		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(options.DecisionTaskStartToCloseTimeoutSeconds),
+		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
+		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
 		Identity:                            common.StringPtr(wc.identity)}
 
 	var response *s.StartWorkflowExecutionResponse

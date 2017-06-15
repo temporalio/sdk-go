@@ -21,6 +21,8 @@
 package cadence
 
 import (
+	"time"
+
 	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	s "go.uber.org/cadence/.gen/go/shared"
@@ -121,10 +123,26 @@ type (
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions struct {
-		ID                                     string
-		TaskList                               string
-		ExecutionStartToCloseTimeoutSeconds    int32
-		DecisionTaskStartToCloseTimeoutSeconds int32
+		// ID - The business identifier of the workflow execution.
+		// Optional: defaulted to a uuid.
+		ID string
+
+		// TaskList - The decisions of the workflow are scheduled on this queue.
+		// This is also the default task list on which activities are scheduled. The workflow author can choose
+		// to override this using activity options.
+		// Mandatory: No default.
+		TaskList string
+
+		// ExecutionStartToCloseTimeout - The time out for duration of workflow execution.
+		// The resolution is seconds.
+		// Mandatory: No default.
+		ExecutionStartToCloseTimeout time.Duration
+
+		// DecisionTaskStartToCloseTimeout - The time out for processing decision task from the time the worker
+		// pulled this task.
+		// The resolution is seconds.
+		// Optional: defaulted to 20 secs.
+		DecisionTaskStartToCloseTimeout time.Duration
 	}
 
 	// DomainClient is the client for managing operations on the domain.

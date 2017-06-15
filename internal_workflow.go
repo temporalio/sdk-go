@@ -964,13 +964,13 @@ func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
 		p.taskListName = common.StringPtr(info.TaskListName)
 	}
 	if p.taskStartToCloseTimeoutSeconds == nil || *p.taskStartToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("missing or negative StartToCloseTimeoutSeconds")
+		return nil, errors.New("missing or negative DecisionTaskStartToCloseTimeout")
 	}
 	if *p.taskStartToCloseTimeoutSeconds == 0 {
-		p.taskStartToCloseTimeoutSeconds = common.Int32Ptr(10) // default to 10s for decision task timeout
+		p.taskStartToCloseTimeoutSeconds = common.Int32Ptr(defaultDecisionTaskTimeoutInSecs)
 	}
 	if p.executionStartToCloseTimeoutSeconds == nil || *p.executionStartToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeoutSeconds")
+		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
 	}
 
 	return p, nil

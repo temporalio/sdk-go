@@ -732,12 +732,12 @@ func (aw *aggregatedWorker) Stop() {
 func newAggregatedWorker(
 	service m.TChanWorkflowService,
 	domain string,
-	groupName string,
+	taskList string,
 	options WorkerOptions,
 ) (worker Worker) {
 	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
-		TaskList:                  groupName,
+		TaskList:                  taskList,
 		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
 		Identity:                  wOptions.Identity,
 		MetricsScope:              wOptions.MetricsScope,
@@ -749,7 +749,7 @@ func newAggregatedWorker(
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
-		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: groupName},
+		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
