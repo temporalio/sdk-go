@@ -380,6 +380,28 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, testActivityResult{}, r2Struct)
 
+	f = ExecuteActivity(ctx, testActivityReturnNilStructPtr)
+	var rStructPtr *testActivityResult
+	err = f.Get(ctx, &rStructPtr)
+	require.NoError(w.t, err, err)
+	require.True(w.t, rStructPtr == nil)
+
+	f = ExecuteActivity(ctx, testActivityReturnStructPtr)
+	err = f.Get(ctx, &rStructPtr)
+	require.NoError(w.t, err, err)
+	require.Equal(w.t, *rStructPtr, testActivityResult{Index: 10})
+
+	f = ExecuteActivity(ctx, testActivityReturnNilStructPtrPtr)
+	var rStruct2Ptr **testActivityResult
+	err = f.Get(ctx, &rStruct2Ptr)
+	require.NoError(w.t, err, err)
+	require.True(w.t, rStruct2Ptr == nil)
+
+	f = ExecuteActivity(ctx, testActivityReturnStructPtrPtr)
+	err = f.Get(ctx, &rStruct2Ptr)
+	require.NoError(w.t, err, err)
+	require.True(w.t, **rStruct2Ptr == testActivityResult{Index: 10})
+
 	// By names.
 	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityByteArgs", input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
@@ -444,13 +466,28 @@ func testActivityReturnEmptyString() (string, error) {
 	return "", nil
 }
 
-type testActivityResult struct{}
+type testActivityResult struct {
+	Index int
+}
 
 // testActivityReturnEmptyStruct
 func testActivityReturnEmptyStruct() (testActivityResult, error) {
 	// Return is mocked to retrun nil from server.
 	// expect to convert it to appropriate default value.
 	return testActivityResult{}, nil
+}
+func testActivityReturnNilStructPtr() (*testActivityResult, error) {
+	return nil, nil
+}
+func testActivityReturnStructPtr() (*testActivityResult, error) {
+	return &testActivityResult{Index: 10}, nil
+}
+func testActivityReturnNilStructPtrPtr() (**testActivityResult, error) {
+	return nil, nil
+}
+func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
+	r := &testActivityResult{Index: 10}
+	return &r, nil
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
@@ -460,6 +497,10 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 	ts.RegisterActivity(testActivityReturnByteArray)
 	ts.RegisterActivity(testActivityReturnInt)
 	ts.RegisterActivity(testActivityByteArgs)
+	ts.RegisterActivity(testActivityReturnNilStructPtr)
+	ts.RegisterActivity(testActivityReturnStructPtr)
+	ts.RegisterActivity(testActivityReturnNilStructPtrPtr)
+	ts.RegisterActivity(testActivityReturnStructPtrPtr)
 	env := ts.NewTestWorkflowEnvironment()
 	w := &activitiesCallingOptionsWorkflow{t: t}
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})

@@ -239,10 +239,12 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value) ([]byt
 
 	// Parse result
 	if resultSize > 1 {
-		r := values[0].Interface()
-		result, err = getHostEnvironment().encodeArg(r)
-		if err != nil {
-			return nil, err
+		retValue := values[0]
+		if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+			result, err = getHostEnvironment().encodeArg(retValue.Interface())
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
