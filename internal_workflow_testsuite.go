@@ -437,6 +437,8 @@ func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayD
 }
 
 func (c *testCallbackHandle) processCallback() {
+	c.env.locker.Lock()
+	defer c.env.locker.Unlock()
 	c.callback()
 	if c.startDecisionTask {
 		c.env.startDecisionTask()
@@ -617,15 +619,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
-	// locker is needed to prevent race condition between dispatcher loop goroutinue and activity worker goroutinues.
-	// The activity workers could call into Heartbeat which by default is mocked in this test suite. The mock needs to
-	// access s.activities map, that could cause data race warning.
-	env.locker.Lock()
 	env.activities[activityInfo.activityID] = activityHandle
-	env.locker.Unlock()
-
 	env.runningCount.Inc()
-
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	go func() {
 		result, err := taskHandler.Execute(task)
