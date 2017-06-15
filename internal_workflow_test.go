@@ -173,11 +173,9 @@ func TestWorkflowPanic(t *testing.T) {
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NotNil(t, env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(ErrorWithDetails)
-	require.EqualValues(t, "simulated", resultErr.Reason())
-	var details []byte
-	resultErr.Details(&details)
-	require.Contains(t, string(details), "cadence.splitJoinActivityWorkflow")
+	resultErr := env.GetWorkflowError().(PanicError)
+	require.EqualValues(t, "simulated", resultErr.Error())
+	require.Contains(t, resultErr.StackTrace(), "cadence.splitJoinActivityWorkflow")
 }
 
 func testClockWorkflow(ctx Context) (time.Time, error) {

@@ -427,7 +427,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
 		checkUnhandledSigFn(ctx)
-		env.Complete(nil, NewErrorWithDetails(panicErr.Error(), []byte(panicErr.StackTrace())))
+		env.Complete(nil, panicErr)
 		return
 	}
 	rp := *getWorkflowResultPointerPointer(ctx)
