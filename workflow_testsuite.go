@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/cadence/mock"
+	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 

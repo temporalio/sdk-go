@@ -4,7 +4,7 @@ import:
 - package: github.com/pborman/uuid
   version: v1.0
 - package: github.com/stretchr/testify
-  version: v1.1.4
+  version: e964b172ca7f4c322ee4c39ea605ff53fab44f79
   subpackages:
   - mock
 - package: github.com/uber-go/tally

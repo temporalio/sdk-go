@@ -29,12 +29,12 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
-	"go.uber.org/cadence/mock"
 	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
@@ -734,7 +734,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	return w.workflowExecutor.Execute(ctx, input)
 }
 
-func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) mock.Arguments {
+func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock.Arguments) {
 	if m.mock == nil {
 		// no mock
 		return nil
@@ -756,12 +756,15 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) mock.Argument
 	for _, arg := range reflectArgs {
 		realArgs = append(realArgs, arg.Interface())
 	}
-	found, _ := m.mock.FindExpectedCall(m.name, realArgs...)
 
-	if found < 0 {
-		// mock call not found
-		return nil
-	}
+	// There is no way to check if a mock call is expected or not. A pull request to add it was rejected. See PR:
+	// https://github.com/stretchr/testify/pull/453. We could try to call the mock method, and if the call is not
+	// expected, the mock.MethodCalled() will panic, which we would catch and just return nil from this method.
+	defer func() {
+		if p := recover(); p != nil {
+			retArgs = nil
+		}
+	}()
 
 	return m.mock.MethodCalled(m.name, realArgs...)
 }
