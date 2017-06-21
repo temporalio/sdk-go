@@ -432,7 +432,7 @@ ProcessEvents:
 		return nil, "", err
 	}
 
-	if _, ok := failure.(PanicError); ok {
+	if _, ok := failure.(*PanicError); ok {
 		// Timeout the Decision instead of failing workflow.
 		// TODO: Pump this stack trace on to workflow history for debuggability by exposing decision type fail to client.
 		return nil, "", failure
@@ -647,13 +647,13 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	startAttributes *s.WorkflowExecutionStartedEventAttributes,
 ) *s.Decision {
 	var decision *s.Decision
-	if canceledErr, ok := err.(*canceledError); ok {
+	if canceledErr, ok := err.(*CanceledError); ok {
 		// Workflow cancelled
 		decision = createNewDecision(s.DecisionType_CancelWorkflowExecution)
 		decision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
 			Details: canceledErr.details,
 		}
-	} else if contErr, ok := err.(*continueAsNewError); ok {
+	} else if contErr, ok := err.(*ContinueAsNewError); ok {
 		// Continue as new error.
 		decision = createNewDecision(s.DecisionType_ContinueAsNewWorkflowExecution)
 		decision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
@@ -735,7 +735,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 	err := recordActivityHeartbeat(i.service, i.identity, i.taskToken, details, i.retryPolicy)
 
 	switch err.(type) {
-	case CanceledError:
+	case *CanceledError:
 		// We are asked to cancel. inform the activity about cancellation through context.
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()

@@ -365,7 +365,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 	}
 
 	reason, details := getErrorDetails(err)
-	if _, ok := err.(CanceledError); ok || err == context.Canceled {
+	if _, ok := err.(*CanceledError); ok || err == context.Canceled {
 		return &s.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
 			Details:   details,

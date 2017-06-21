@@ -532,7 +532,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-func runAndCatchPanic(f func()) (err PanicError) {
+func runAndCatchPanic(f func()) (err *PanicError) {
 	// panic handler
 	defer func() {
 		if p := recover(); p != nil {

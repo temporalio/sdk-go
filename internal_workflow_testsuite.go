@@ -344,7 +344,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	case *shared.RespondActivityTaskCanceledRequest:
 		return nil, NewCanceledError(request.Details)
 	case *shared.RespondActivityTaskFailedRequest:
-		return nil, NewErrorWithDetails(*request.Reason, request.Details)
+		return nil, constructError(request.GetReason(), request.Details)
 	case *shared.RespondActivityTaskCompletedRequest:
 		return EncodedValue(request.Result_), nil
 	default:
@@ -557,12 +557,20 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
+	if _, ok := err.(*CanceledError); ok && env.workflowCancelHandler != nil {
+		env.workflowCancelHandler()
+	}
+
 	env.isTestCompleted = true
 	env.testResult = EncodedValue(result)
-	env.testError = err
 
-	if err == ErrCanceled && env.workflowCancelHandler != nil {
-		env.workflowCancelHandler()
+	if err != nil {
+		switch err := err.(type) {
+		case *CanceledError, *ContinueAsNewError, *TimeoutError:
+			env.testError = err
+		default:
+			env.testError = constructError(getErrorDetails(err))
+		}
 	}
 
 	close(env.doneChannel)
@@ -668,7 +676,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		err = NewCanceledError(request.Details)
 		activityHandle.callback(nil, err)
 	case *shared.RespondActivityTaskFailedRequest:
-		err = NewErrorWithDetails(*request.Reason, request.Details)
+		err = constructError(*request.Reason, request.Details)
 		activityHandle.callback(nil, err)
 	case *shared.RespondActivityTaskCompletedRequest:
 		blob = request.Result_

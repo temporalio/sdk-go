@@ -248,7 +248,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 //  - f - Either a activity name or a function that is getting scheduled.
 //  - args - The arguments that need to be passed to the function represented by 'f'.
 //  - If the activity failed to complete then the future get error would indicate the failure
-// and it can be one of ErrorWithDetails, TimeoutError, CanceledError.
+// and it can be one of CustomError, TimeoutError, CanceledError, PanicError, GenericError.
 //  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
 // error CanceledError.
 // - returns Future with activity result or failure
@@ -296,7 +296,7 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 //  - f - Either a workflow name or a workflow function that is getting scheduled.
 //  - args - The arguments that need to be passed to the child workflow function represented by 'f'.
 //  - If the child workflow failed to complete then the future get error would indicate the failure
-// and it can be one of ErrorWithDetails, TimeoutError, CanceledError.
+// and it can be one of CustomError, TimeoutError, CanceledError, GenericError.
 //  - You can also cancel the pending child workflow using context(WithCancel(ctx)) and that will fail the workflow with
 // error CanceledError.
 // - returns ChildWorkflowFuture

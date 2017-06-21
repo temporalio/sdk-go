@@ -24,13 +24,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
-	"strings"
 )
 
 type WorkflowUnitTest struct {
@@ -173,7 +173,7 @@ func TestWorkflowPanic(t *testing.T) {
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NotNil(t, env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(PanicError)
+	resultErr := env.GetWorkflowError().(*PanicError)
 	require.EqualValues(t, "simulated", resultErr.Error())
 	require.Contains(t, resultErr.StackTrace(), "cadence.splitJoinActivityWorkflow")
 }
@@ -218,7 +218,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 	err2 := t2.Get(ctx2, nil)
 
 	require.Error(w.t, err2)
-	_, isCancelErr := err2.(CanceledError)
+	_, isCancelErr := err2.(*CanceledError)
 	require.True(w.t, isCancelErr)
 
 	// Sleep 1 sec
@@ -232,7 +232,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 	err4 := Sleep(ctx4, 1)
 
 	require.Error(w.t, err4)
-	_, isCancelErr = err4.(CanceledError)
+	_, isCancelErr = err4.(*CanceledError)
 	require.True(w.t, isCancelErr)
 
 	return []byte("workflow-completed"), nil
@@ -283,7 +283,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 	var res2 string
 	err2 := f.Get(ctx, &res2)
 	require.NotNil(w.t, err2)
-	_, ok := err2.(CanceledError)
+	_, ok := err2.(*CanceledError)
 	require.True(w.t, ok)
 	return []byte("workflow-completed"), nil
 }
@@ -365,7 +365,7 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	env.ExecuteWorkflow(continueAsNewWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(*continueAsNewError)
+	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.options.workflowType.Name)
 	s.EqualValues(1, *resultErr.options.executionStartToCloseTimeoutSeconds)
 	s.EqualValues(1, *resultErr.options.taskStartToCloseTimeoutSeconds)

@@ -571,7 +571,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *m.
 	}
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
-	err := NewErrorWithDetails(*attributes.Reason, attributes.Details)
+	err := constructError(*attributes.Reason, attributes.Details)
 	activity.handle(nil, err)
 	return nil
 }
@@ -714,7 +714,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		return nil
 	}
 
-	err := NewErrorWithDetails(attributes.GetReason(), attributes.GetDetails())
+	err := constructError(attributes.GetReason(), attributes.GetDetails())
 	childWorkflow.handle(nil, err)
 
 	return nil

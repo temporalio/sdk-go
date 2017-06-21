@@ -268,7 +268,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 		}).Select(ctx)
 
 		err := f2.Get(ctx, nil) // verify slow activity is cancelled
-		if _, ok := err.(CanceledError); !ok {
+		if _, ok := err.(*CanceledError); !ok {
 			return err
 		}
 		return nil
@@ -368,7 +368,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
-	_, ok := env.GetWorkflowError().(CanceledError)
+	_, ok := env.GetWorkflowError().(*CanceledError)
 	s.True(ok)
 }
 

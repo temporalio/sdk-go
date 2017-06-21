@@ -114,20 +114,40 @@ func workflowExecutionPtr(t WorkflowExecution) *s.WorkflowExecution {
 
 // getErrorDetails gets reason and details.
 func getErrorDetails(err error) (string, []byte) {
-	var details []byte
-	if wErr, ok := err.(ErrorWithDetails); ok {
-		wErr.Details(&details)
-		return wErr.Reason(), details
+	switch err := err.(type) {
+	case *CustomError:
+		return err.Reason(), err.details
+	case *CanceledError:
+		return errReasonCanceled, err.details
+	case *PanicError:
+		data, gobErr := getHostEnvironment().encodeArgs([]interface{}{err.Error(), err.StackTrace()})
+		if gobErr != nil {
+			panic(gobErr)
+		}
+		return errReasonPanic, data
+	default:
+		// will be convert to GenericError when receiving from server.
+		return errReasonGeneric, []byte(err.Error())
 	}
-	if wErr, ok := err.(CanceledError); ok {
-		wErr.Details(&details)
-		return "canceled", details
-	}
-	if wErr, ok := err.(PanicError); ok {
-		return err.Error(), []byte(wErr.StackTrace())
-	}
+}
 
-	return err.Error(), []byte("")
+// constructError construct error from reason and details sending down from server.
+func constructError(reason string, details []byte) error {
+	switch reason {
+	case errReasonPanic:
+		// panic error
+		var msg, st string
+		details := EncodedValues(details)
+		details.Get(&msg, &st)
+		return newPanicError(msg, st)
+	case errReasonGeneric:
+		// errors created other than using NewCustomError() API.
+		return &GenericError{err: string(details)}
+	case errReasonCanceled:
+		return NewCanceledError(details)
+	default:
+		return NewCustomError(reason, details)
+	}
 }
 
 // AwaitWaitGroup calls Wait on the given wait

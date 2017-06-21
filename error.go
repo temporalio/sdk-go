@@ -23,102 +23,155 @@ package cadence
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"strings"
 
 	"go.uber.org/cadence/.gen/go/shared"
 )
 
+/*
+Below are the possible cases that activity could fail:
+1) *CustomError: (this should be the most common one)
+	If activity implementation returns *CustomError by using NewCustomError() API, workflow code would receive *CustomError.
+	The err would contain a Reason and Details. The reason is what activity specified to NewCustomError(), which workflow
+	code could check to determine what kind of error it was and take actions based on the reason. The details is encoded
+	[]byte which workflow code could extract strong typed data. Workflow code needs to know what the types of the encoded
+	details are before extracting them.
+2) *GenericError:
+	If activity implementation returns errors other than from NewCustomError() API, workflow code would receive *GenericError.
+	Use err.Error() to get the string representation of the actual error.
+3) *CanceledError:
+	If activity was canceled, workflow code will receive instance of *CanceledError. When activity cancels itself by
+	returning NewCancelError() it would supply optional details which could be extracted by workflow code.
+4) *TimeoutError:
+	If activity was timed out (several timeout types), workflow code will receive instance of *TimeoutError. The err contains
+	details about what type of timeout it was.
+5) *PanicError:
+	If activity code panic while executing, cadence activity worker will report it as activity failure to cadence server.
+	The cadence client library will present that failure as *PanicError to workflow code. The err contains a string
+	representation of the panic message and the call stack when panic was happen.
+
+Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
+
+_, err := cadence.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
+if err != nil {
+	switch err := err.(type) {
+	case *CustomError:
+		// handle activity errors (created via NewCustomError() API)
+		switch err.Reason() {
+		case cadence.CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
+			var detailMsg string // assuming activity return error by NewCustomError(CustomErrReasonA, "string details")
+			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
+			// handle CustomErrReasonA
+		case CustomErrReasonB:
+			// handle CustomErrReasonB
+		default:
+			// newer version of activity could return new errors that workflow was not aware of.
+		}
+	case *cadence.GenericError:
+		// handle generic error (errors created other than using NewCustomError() API)
+	case *cadence.CanceledError:
+		// handle cancellation
+	case *cadence.TimeoutError:
+		// handle timeout, could check timeout type by err.TimeoutType()
+	case *cadence.PanicError:
+		// handle panic
+	}
+}
+
+Errors from child workflow should be handled in a similar way, except that there should be no *PanicError from child workflow.
+When panic happen in workflow implementation code, cadence client library catches that panic and causing the decision timeout.
+That decision task will be retried at a later time (with exponential backoff retry intervals).
+*/
+
 type (
-	// Marker functions are used to ensure that interfaces never implement each other.
-	// For example without marker an implementation of ErrorWithDetails matches
-	// CanceledError interface as well.
-
-	// ErrorWithDetails to return from Workflow and activity implementations.
-	ErrorWithDetails interface {
-		error
-		Reason() string
-		Details(d ...interface{}) // Extracts details into passed pointers
-		errorWithDetails()        // interface marker
+	// CustomError returned from workflow and activity implementations with reason and optional details.
+	CustomError struct {
+		reason  string
+		details []byte
 	}
 
-	// TimeoutError returned when activity or child workflow timed out
-	TimeoutError interface {
-		error
-		TimeoutType() shared.TimeoutType
-		Details(d ...interface{}) // Present only for HEARTBEAT TimeoutType
-		timeoutError()            // interface marker
+	// GenericError returned from workflow/workflow when the implementations return errors other than from NewCustomError() API.
+	GenericError struct {
+		err string
 	}
 
-	// CanceledError returned when operation was canceled
-	CanceledError interface {
-		error
-		Details(d ...interface{}) // Extracts details into passed pointers
-		canceledError()           // interface marker
+	// TimeoutError returned when activity or child workflow timed out.
+	TimeoutError struct {
+		timeoutType shared.TimeoutType
+		details     []byte
 	}
 
-	// PanicError contains information about panicked workflow
-	PanicError interface {
-		error
-		Value(v interface{}) // Value passed to panic call
-		StackTrace() string  // Stack trace of a panicked coroutine
-		panicError()         // interface marker
+	// CanceledError returned when operation was canceled.
+	CanceledError struct {
+		details []byte
 	}
 
-	// ContinueAsNewError contains information about how to continue the
-	// current workflow as a fresh one.
-	ContinueAsNewError interface {
-		error
-		continueAsNewError() // interface marker
+	// PanicError contains information about panicked workflow/activity.
+	PanicError struct {
+		value      string
+		stackTrace string
+	}
+
+	// ContinueAsNewError contains information about how to continue the workflow as new.
+	ContinueAsNewError struct {
+		wfn     interface{}
+		args    []interface{}
+		options *workflowOptions
 	}
 )
 
-var _ ErrorWithDetails = (*errorWithDetails)(nil)
-var _ CanceledError = (*canceledError)(nil)
-var _ TimeoutError = (*timeoutError)(nil)
-var _ PanicError = (*panicError)(nil)
-var _ ContinueAsNewError = (*continueAsNewError)(nil)
+const (
+	errReasonPanic    = "cadenceInternal:Panic"
+	errReasonGeneric  = "cadenceInternal:Generic"
+	errReasonCanceled = "cadenceInternal:Canceled"
+)
 
-// ErrActivityResultPending is returned from activity's Execute method to indicate the activity is not completed when
-// Execute method returns. activity will be completed asynchronously when Client.CompleteActivity() is called.
-var ErrActivityResultPending = errors.New("not error: do not autocomplete, " +
-	"using Client.CompleteActivity() to complete")
+// ErrActivityResultPending is returned from activity's implementation to indicate the activity is not completed when
+// activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
+// activity require human interaction (like approve an expense report), the activity could return ErrActivityResultPending
+// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
+// that could report the activity completed event to cadence server via Client.CompleteActivity() API.
+var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
-// NewErrorWithDetails creates ErrorWithDetails instance
-// Create standard error through errors.New or fmt.Errorf() if no details are provided
-func NewErrorWithDetails(reason string, details ...interface{}) ErrorWithDetails {
+// NewCustomError create new instance of *CustomError with reason and optional details.
+func NewCustomError(reason string, details ...interface{}) *CustomError {
+	if strings.HasPrefix(reason, "cadenceInternal:") {
+		panic("'cadenceInternal:' is reserved prefix, please use different reason")
+	}
+
 	data, err := getHostEnvironment().encodeArgs(details)
 	if err != nil {
 		panic(err)
 	}
-	return &errorWithDetails{reason: reason, details: data}
+	return &CustomError{reason: reason, details: data}
 }
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType shared.TimeoutType) TimeoutError {
-	return &timeoutError{timeoutType: timeoutType}
+func NewTimeoutError(timeoutType shared.TimeoutType) *TimeoutError {
+	return &TimeoutError{timeoutType: timeoutType}
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewHeartbeatTimeoutError(details ...interface{}) TimeoutError {
+func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
 	data, err := getHostEnvironment().encodeArgs(details)
 	if err != nil {
 		panic(err)
 	}
-	return &timeoutError{timeoutType: shared.TimeoutType_HEARTBEAT, details: data}
+	return &TimeoutError{timeoutType: shared.TimeoutType_HEARTBEAT, details: data}
 }
 
 // NewCanceledError creates CanceledError instance
-func NewCanceledError(details ...interface{}) CanceledError {
+func NewCanceledError(details ...interface{}) *CanceledError {
 	data, err := getHostEnvironment().encodeArgs(details)
 	if err != nil {
 		panic(err)
 	}
-	return &canceledError{details: data}
+	return &CanceledError{details: data}
 }
 
 // NewContinueAsNewError creates ContinueAsNewError instance
@@ -133,7 +186,7 @@ func NewCanceledError(details ...interface{}) CanceledError {
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) ContinueAsNewError {
+func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkerFunction(wfn, args)
 	if err != nil {
@@ -155,111 +208,75 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) Co
 
 	options.workflowType = workflowType
 	options.input = input
-	return &continueAsNewError{wfn: wfn, args: args, options: options}
-}
-
-// errorWithDetails implements ErrorWithDetails
-type errorWithDetails struct {
-	reason  string
-	details []byte
+	return &ContinueAsNewError{wfn: wfn, args: args, options: options}
 }
 
 // Error from error interface
-func (e *errorWithDetails) Error() string {
+func (e *CustomError) Error() string {
 	return e.reason
 }
 
-// Reason is from ErrorWithDetails interface
-func (e *errorWithDetails) Reason() string {
+// Reason gets the reason of this custom error
+func (e *CustomError) Reason() string {
 	return e.reason
 }
 
-// Details is from ErrorWithDetails interface
-func (e *errorWithDetails) Details(d ...interface{}) {
+// Details extracts strong typed detail data of this custom error
+func (e *CustomError) Details(d ...interface{}) {
 	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
 }
 
-// errorWithDetails is from ErrorWithDetails interface
-func (e *errorWithDetails) errorWithDetails() {}
-
-// timeoutError implements TimeoutError
-type timeoutError struct {
-	timeoutType shared.TimeoutType
-	details     []byte
+// Error from error interface
+func (e *GenericError) Error() string {
+	return e.err
 }
 
 // Error from error interface
-func (e *timeoutError) Error() string {
+func (e *TimeoutError) Error() string {
 	return fmt.Sprintf("TimeoutType: %v", e.timeoutType)
 }
 
-func (e *timeoutError) TimeoutType() shared.TimeoutType {
+// TimeoutType return timeout type of this error
+func (e *TimeoutError) TimeoutType() shared.TimeoutType {
 	return e.timeoutType
 }
 
-// Details is from TimeoutError interface
-func (e *timeoutError) Details(d ...interface{}) {
+// Details extracts strong typed detail data of this error
+func (e *TimeoutError) Details(d ...interface{}) {
 	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
-
-}
-
-func (e *timeoutError) timeoutError() {}
-
-type canceledError struct {
-	details []byte
 }
 
 // Error from error interface
-func (e *canceledError) Error() string {
+func (e *CanceledError) Error() string {
 	return "CanceledError"
 }
 
-// Details is from CanceledError interface
-func (e *canceledError) Details(d ...interface{}) {
+// Details extracts strong typed detail data of this error.
+func (e *CanceledError) Details(d ...interface{}) {
 	if err := getHostEnvironment().decode(e.details, d); err != nil {
 		panic(err)
 	}
 }
 
-func (e *canceledError) canceledError() {}
-
-type panicError struct {
-	value      interface{}
-	stackTrace string
-}
-
-func newPanicError(value interface{}, stackTrace string) PanicError {
-	return &panicError{value: value, stackTrace: stackTrace}
-}
-
-func (e *panicError) Error() string {
-	return fmt.Sprintf("%v", e.value)
-}
-
-func (e *panicError) Value(v interface{}) {
-	reflect.ValueOf(v).Elem().Set(reflect.ValueOf(e.value))
-}
-
-func (e *panicError) StackTrace() string {
-	return e.stackTrace
-}
-
-func (e *panicError) panicError() {}
-
-type continueAsNewError struct {
-	wfn     interface{}
-	args    []interface{}
-	options *workflowOptions
+func newPanicError(value interface{}, stackTrace string) *PanicError {
+	return &PanicError{value: fmt.Sprintf("%v", value), stackTrace: stackTrace}
 }
 
 // Error from error interface
-func (e *continueAsNewError) Error() string {
-	return "ContinueAsNew"
+func (e *PanicError) Error() string {
+	return e.value
 }
 
-// continueAsNewError is from continueAsNewError interface
-func (e *continueAsNewError) continueAsNewError() {}
+// StackTrace return stack trace of the panic
+func (e *PanicError) StackTrace() string {
+	return e.stackTrace
+}
+
+// Error from error interface
+func (e *ContinueAsNewError) Error() string {
+	return "ContinueAsNew"
+}
