@@ -17,6 +17,8 @@ or
 go get go.uber.org/cadence
 ```
 
+See [samples](https://github.com/samarabbas/cadence-samples) to get started
+
 ### Activity
 
 Activity is the implementation of a particular task in the business logic. 
