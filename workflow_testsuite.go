@@ -51,6 +51,15 @@ type (
 	TestActivityEnviornment struct {
 		impl *testWorkflowEnvironmentImpl
 	}
+
+	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
+	MockCallWrapper struct {
+		call *mock.Call
+		env  *TestWorkflowEnvironment
+
+		runFn        func(args mock.Arguments)
+		waitDuration time.Duration
+	}
 )
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
@@ -117,7 +126,14 @@ func (s *WorkflowTestSuite) RegisterActivity(activityFn interface{}) {
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
 // with Debug level logging enabled.
 func (s *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
+	s.initIfNotDoneYet()
 	s.logger = logger
+}
+
+// GetLogger gets the logger for this WorkflowTestSuite.
+func (s *WorkflowTestSuite) GetLogger() *zap.Logger {
+	s.initIfNotDoneYet()
+	return s.logger
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
@@ -134,7 +150,7 @@ func (t *TestActivityEnviornment) SetWorkerOption(options WorkerOptions) *TestAc
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
-// You must call Return() with appropriate parameters on the returned *mock.Call instance. The supplied parameters to
+// You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
 // mock values with the same types as the mocked activity function returns.
 // Example: assume the activity you want to mock has function signature as:
@@ -146,25 +162,28 @@ func (t *TestActivityEnviornment) SetWorkerOption(options WorkerOptions) *TestAc
 //   })
 // OR return mock values with same types as activity function's return types:
 //   t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
-func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *mock.Call {
+func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(activity)
+	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
 		fnType := reflect.TypeOf(activity)
 		if err := validateFnFormat(fnType, false); err != nil {
 			panic(err)
 		}
-		return t.Mock.On(getFunctionName(activity), args...)
+		call = t.Mock.On(getFunctionName(activity), args...)
 
 	case reflect.String:
-		return t.Mock.On(activity.(string), args...)
+		call = t.Mock.On(activity.(string), args...)
 	default:
 		panic("activity must be function or string")
 	}
+
+	return t.wrapCall(call)
 }
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
-// You must call Return() with appropriate parameters on the returned *mock.Call instance. The supplied parameters to
+// You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked workflow, or it should be
 // mock values with the same types as the mocked workflow function returns.
 // Example: assume the workflow you want to mock has function signature as:
@@ -176,21 +195,66 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 //   })
 // OR return mock values with same types as workflow function's return types:
 //   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
-func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *mock.Call {
+func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(workflow)
+	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
 		fnType := reflect.TypeOf(workflow)
 		if err := validateFnFormat(fnType, true); err != nil {
 			panic(err)
 		}
-		return t.Mock.On(getFunctionName(workflow), args...)
-
+		call = t.Mock.On(getFunctionName(workflow), args...)
 	case reflect.String:
-		return t.Mock.On(workflow.(string), args...)
+		call = t.Mock.On(workflow.(string), args...)
 	default:
 		panic("activity must be function or string")
 	}
+
+	return t.wrapCall(call)
+}
+
+func (t *TestWorkflowEnvironment) wrapCall(call *mock.Call) *MockCallWrapper {
+	callWrapper := &MockCallWrapper{call: call, env: t}
+	call.Run(func(args mock.Arguments) {
+		t.impl.runBeforeMockCallReturns(callWrapper, args)
+	})
+	return callWrapper
+}
+
+// Once indicates that that the mock should only return the value once.
+func (c *MockCallWrapper) Once() *MockCallWrapper {
+	return c.Times(1)
+}
+
+// Twice indicates that that the mock should only return the value twice.
+func (c *MockCallWrapper) Twice() *MockCallWrapper {
+	return c.Times(2)
+}
+
+// Times indicates that that the mock should only return the indicated number of times.
+func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
+	c.call.Times(i)
+	return c
+}
+
+// Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
+// takes a pointer to a struct and sets properties in such struct.
+func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
+	c.runFn = fn
+	return c
+}
+
+// After sets how long to wait on workflow's clock before the mock call returns.
+func (c *MockCallWrapper) After(d time.Duration) *MockCallWrapper {
+	c.waitDuration = d
+	return c
+}
+
+// Return specifies the return arguments for the expectation.
+func (c *MockCallWrapper) Return(returnArguments ...interface{}) *MockCallWrapper {
+	c.call.Return(returnArguments...)
+	return c
 }
 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and

@@ -710,3 +710,203 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 	s.NoError(env.GetWorkflowError())
 	s.Equal(expected, history)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
+	workflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Hour)
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		f1 := ExecuteActivity(ctx, testActivityHello, "mock_delay")
+
+		NewSelector(ctx).AddFuture(t1, func(f Future) {
+			// timer fired
+		}).AddFuture(f1, func(f Future) {
+			// activity completed
+		}).Select(ctx)
+
+		// either t1 or f1 is ready.
+		if f1.IsReady() {
+			return nil
+		}
+
+		// activity takes too long
+		return errors.New("activity takes too long")
+	}
+
+	// no delay to the mock call, workflow should return no error
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 10 minutes, which is shorter than the 1 hour timer, so workflow should return no error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Minute*10).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 2 hours, which is longer than the 1 hour timer, and workflow should return error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour*2).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// no mock
+	env = s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
+	workflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Hour)
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		f1 := ExecuteChildWorkflow(ctx, testWorkflowHello)
+
+		NewSelector(ctx).AddFuture(t1, func(f Future) {
+			// timer fired
+		}).AddFuture(f1, func(f Future) {
+			// child workflow completed
+		}).Select(ctx)
+
+		// either t1 or f1 is ready.
+		if f1.IsReady() {
+			return nil
+		}
+
+		// child workflow takes too long
+		return errors.New("child workflow takes too long")
+	}
+
+	// no delay to the mock call, workflow should return no error
+	env := s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 10 minutes, which is shorter than the 1 hour timer, so workflow should return no error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).After(time.Minute*10).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 2 hours, which is longer than the 1 hour timer, and workflow should return error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).After(time.Hour*2).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// no mock
+	env = s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_MockPanic() {
+	// mock panic, verify that the panic won't be swallowed by our panic handler to detect unexpected mock call.
+	oldLogger := s.GetLogger()
+	s.SetLogger(zap.NewNop()) // use no-op logger to avoid noisy logging by panic
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).
+		Return("hello_mock_panic", nil).
+		Run(func(args mock.Arguments) {
+			panic("mock-panic")
+		})
+	env.ExecuteWorkflow(testWorkflowHello)
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	s.Contains(err.Error(), "mock-panic")
+	env.AssertExpectations(s.T())
+	s.SetLogger(oldLogger) // restore original logger
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
+	childWorkflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Hour)
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		f1 := ExecuteChildWorkflow(ctx, testWorkflowHello)
+
+		NewSelector(ctx).AddFuture(t1, func(f Future) {
+			// timer fired
+		}).AddFuture(f1, func(f Future) {
+			// child workflow completed
+		}).Select(ctx)
+
+		// either t1 or f1 is ready.
+		if f1.IsReady() {
+			return nil
+		}
+
+		// child workflow takes too long
+		return errors.New("child workflow takes too long")
+	}
+
+	workflowFn := func(ctx Context) error {
+		t1 := NewTimer(ctx, time.Hour)
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		f1 := ExecuteChildWorkflow(ctx, childWorkflowFn) // execute child workflow which in turn execute another child workflow
+
+		NewSelector(ctx).AddFuture(t1, func(f Future) {
+			// timer fired
+		}).AddFuture(f1, func(f Future) {
+			// child workflow completed
+		}).Select(ctx)
+
+		// either t1 or f1 is ready.
+		if f1.IsReady() {
+			return f1.Get(ctx, nil)
+		}
+
+		// child workflow takes too long
+		return errors.New("child workflow takes too long")
+	}
+
+	s.RegisterWorkflow(childWorkflowFn)
+
+	// no delay to the mock call, workflow should return no error
+	env := s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 10 minutes, which is shorter than the 1 hour timer, so workflow should return no error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).After(time.Minute*10).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// delay 2 hours, which is longer than the 1 hour timer, and workflow should return error.
+	env = s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything).After(time.Hour*2).Return("hello_mock_delayed", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// no mock
+	env = s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
