@@ -137,15 +137,19 @@ func (wc *workflowClient) StartWorkflow(
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *workflowClient) SignalWorkflow(workflowID string, runID string, signalName string, arg interface{}) error {
-	input, err := getHostEnvironment().encodeArg(arg)
-	if err != nil {
-		return err
+	var input []byte
+	if arg != nil {
+		var err error
+		if input, err = getHostEnvironment().encodeArg(arg); err != nil {
+			return err
+		}
 	}
+
 	request := &s.SignalWorkflowExecutionRequest{
 		Domain: common.StringPtr(wc.domain),
 		WorkflowExecution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
-			RunId:      common.StringPtr(runID),
+			RunId:      getRunID(runID),
 		},
 		SignalName: common.StringPtr(signalName),
 		Input:      input,
@@ -166,7 +170,7 @@ func (wc *workflowClient) CancelWorkflow(workflowID string, runID string) error 
 		Domain: common.StringPtr(wc.domain),
 		WorkflowExecution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
-			RunId:      common.StringPtr(runID),
+			RunId:      getRunID(runID),
 		},
 		Identity: common.StringPtr(wc.identity),
 	}
@@ -187,7 +191,7 @@ func (wc *workflowClient) TerminateWorkflow(workflowID string, runID string, rea
 		Domain: common.StringPtr(wc.domain),
 		WorkflowExecution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
-			RunId:      common.StringPtr(runID),
+			RunId:      getRunID(runID),
 		},
 		Reason:   common.StringPtr(reason),
 		Identity: common.StringPtr(wc.identity),
@@ -215,7 +219,7 @@ GetHistoryLoop:
 			Domain: common.StringPtr(wc.domain),
 			Execution: &s.WorkflowExecution{
 				WorkflowId: common.StringPtr(workflowID),
-				RunId:      common.StringPtr(runID),
+				RunId:      getRunID(runID),
 			},
 			NextPageToken: nextPageToken,
 		}
@@ -382,4 +386,12 @@ func (dc *domainClient) Update(name string, domainInfo *s.UpdateDomainInfo, doma
 			_, err := dc.workflowService.UpdateDomain(ctx, request)
 			return err
 		}, serviceOperationRetryPolicy, isServiceTransientError)
+}
+
+func getRunID(runID string) *string {
+	if runID == "" {
+		// Cadence Server will pick current runID if provided empty.
+		return nil
+	}
+	return common.StringPtr(runID)
 }

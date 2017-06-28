@@ -46,7 +46,7 @@ type (
 
 		// SignalWorkflow sends a signals to a workflow in execution
 		// - workflow ID of the workflow.
-		// - runID can be optional if not specified it will pick the latest execution of that workflow ID.
+		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
 		//	- EntityNotExistsError
@@ -55,7 +55,7 @@ type (
 
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
-		// - runID can be optional if not specified it will pick the latest execution of that workflow ID.
+		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- BadRequestError
@@ -64,7 +64,8 @@ type (
 
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
-		// If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
+		// - workflow ID of the workflow.
+		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- BadRequestError
@@ -72,6 +73,8 @@ type (
 		TerminateWorkflow(workflowID string, runID string, reason string, details []byte) error
 
 		// GetWorkflowHistory gets history of a particular workflow.
+		// - workflow ID of the workflow.
+		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- BadRequestError
