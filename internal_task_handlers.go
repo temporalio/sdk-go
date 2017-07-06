@@ -57,11 +57,10 @@ type (
 		Close()
 	}
 
-	workflowHistoryIterator func(nextToken []byte) (*s.History, []byte, error)
 	// workflowTask wraps a decision task.
 	workflowTask struct {
 		task     *s.PollForDecisionTaskResponse
-		iterator workflowHistoryIterator
+		iterator WorkflowHistoryIterator
 	}
 
 	// activityTask wraps a activity task.
@@ -222,6 +221,10 @@ OrderEvents:
 			if eh.nextPageToken == nil {
 				break OrderEvents
 			}
+			if eh.workflowTask.iterator == nil {
+				err = errors.New("iterator is not provided for processing continuous page token")
+				return
+			}
 			historyPage, token, err1 := eh.workflowTask.iterator(eh.nextPageToken)
 			if err1 != nil {
 				err = err1
@@ -302,6 +305,7 @@ func newWorkflowTaskHandler(factory workflowDefinitionFactory, domain string,
 // ProcessWorkflowTask processes each all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
+	itr WorkflowHistoryIterator,
 	emitStack bool,
 ) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
 	currentTime := time.Now()
@@ -364,7 +368,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	eventHandler := newWorkflowExecutionEventHandler(
 		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger, wth.enableLoggingInReplay)
 	defer eventHandler.Close()
-	reorderedHistory := newHistory(&workflowTask{task: task}, eventHandler.(*workflowExecutionEventHandlerImpl))
+	reorderedHistory := newHistory(&workflowTask{task: task, iterator: itr}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
 	replayDecisions := []*s.Decision{}
 	respondEvents := []*s.HistoryEvent{}

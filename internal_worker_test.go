@@ -146,7 +146,7 @@ func TestDecisionTaskHandler(t *testing.T) {
 	}
 
 	r := NewWorkflowTaskHandler(testDomain, "identity", logger)
-	_, stackTrace, err := r.ProcessWorkflowTask(task, true)
+	_, stackTrace, err := r.ProcessWorkflowTask(task, nil, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, stackTrace, stackTrace)
 	require.Contains(t, stackTrace, "cadence.(*decodeFutureImpl).Get")

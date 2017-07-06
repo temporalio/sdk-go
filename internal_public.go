@@ -36,10 +36,16 @@ import (
 )
 
 type (
+	// WorkflowHistoryIterator - To fetch history given a continuation token.
+	WorkflowHistoryIterator func(nextToken []byte) (*s.History, []byte, error)
+
 	// WorkflowTaskHandler represents decision task handlers.
 	WorkflowTaskHandler interface {
 		// Process the workflow task
-		ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
+		ProcessWorkflowTask(
+			task *s.PollForDecisionTaskResponse,
+			itr WorkflowHistoryIterator,
+			emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.
