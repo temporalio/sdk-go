@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -38,6 +39,10 @@ import (
 	"go.uber.org/cadence/common/metrics"
 	"go.uber.org/cadence/common/util"
 	"go.uber.org/zap"
+)
+
+const (
+	defaultHeartBeatIntervalInSec = 10 * 60
 )
 
 // interfaces
@@ -724,31 +729,104 @@ func newActivityTaskHandler(activities []activity,
 }
 
 type cadenceInvoker struct {
-	identity      string
-	service       m.TChanWorkflowService
-	taskToken     []byte
-	cancelHandler func()
-	retryPolicy   backoff.RetryPolicy
+	sync.Mutex
+	identity              string
+	service               m.TChanWorkflowService
+	taskToken             []byte
+	cancelHandler         func()
+	retryPolicy           backoff.RetryPolicy
+	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
+	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
+	lastDetailsToReport   *[]byte
+	closeCh               chan struct{}
 }
 
 func (i *cadenceInvoker) Heartbeat(details []byte) error {
+	i.Lock()
+	defer i.Unlock()
+
+	if i.hbBatchEndTimer != nil {
+		// If we have started batching window, keep track of last reported progress.
+		i.lastDetailsToReport = &details
+		return nil
+	}
+
+	isActivityCancelled, err := i.internalHeartBeat(details)
+
+	// If the activity is cancelled, the activity can ignore the cancellation and do its work
+	// and complete. Our cancellation is co-operative, so we will try to heartbeat.
+	if err == nil || isActivityCancelled {
+		// We have successfully sent heartbeat, start next batching window.
+		i.lastDetailsToReport = nil
+
+		// Create timer to fire before the threshold to report.
+		deadlineToTrigger := i.heartBeatTimeoutInSec
+		if deadlineToTrigger <= 0 {
+			// If we don't have any heartbeat timeout configured.
+			deadlineToTrigger = defaultHeartBeatIntervalInSec
+		}
+
+		// We set a deadline at 80% of the timeout.
+		duration := time.Duration(0.8*float32(deadlineToTrigger)) * time.Second
+		i.hbBatchEndTimer = time.NewTimer(duration)
+
+		go func() {
+			select {
+			case <-i.hbBatchEndTimer.C:
+				// We are close to deadline.
+			case <-i.closeCh:
+				// We got closed.
+				return
+			}
+
+			// We close the batch and report the progress.
+			var detailsToReport *[]byte
+
+			i.Lock()
+			detailsToReport = i.lastDetailsToReport
+			i.hbBatchEndTimer.Stop()
+			i.hbBatchEndTimer = nil
+			i.Unlock()
+
+			if detailsToReport != nil {
+				i.Heartbeat(*detailsToReport)
+			}
+		}()
+	}
+
+	return err
+}
+
+func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
+	isActivityCancelled := false
 	err := recordActivityHeartbeat(i.service, i.identity, i.taskToken, details, i.retryPolicy)
 
 	switch err.(type) {
 	case *CanceledError:
 		// We are asked to cancel. inform the activity about cancellation through context.
-		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
+		isActivityCancelled = true
 
 	case *s.EntityNotExistsError:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
+		isActivityCancelled = true
 	}
 
 	// We don't want to bubble temporary errors to the user.
 	// This error won't be return to user check RecordActivityHeartbeat().
-	return err
+	return isActivityCancelled, err
+}
+
+func (i *cadenceInvoker) Close() {
+	i.Lock()
+	defer i.Unlock()
+
+	close(i.closeCh)
+	if i.hbBatchEndTimer != nil {
+		i.hbBatchEndTimer.Stop()
+	}
 }
 
 func newServiceInvoker(
@@ -756,13 +834,16 @@ func newServiceInvoker(
 	identity string,
 	service m.TChanWorkflowService,
 	cancelHandler func(),
+	heartBeatTimeoutInSec int32,
 ) ServiceInvoker {
 	return &cadenceInvoker{
-		taskToken:     taskToken,
-		identity:      identity,
-		service:       service,
-		cancelHandler: cancelHandler,
-		retryPolicy:   serviceOperationRetryPolicy,
+		taskToken:             taskToken,
+		identity:              identity,
+		service:               service,
+		cancelHandler:         cancelHandler,
+		retryPolicy:           serviceOperationRetryPolicy,
+		heartBeatTimeoutInSec: heartBeatTimeoutInSec,
+		closeCh:               make(chan struct{}),
 	}
 }
 
@@ -786,7 +867,8 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 		rootCtx = context.Background()
 	}
 	canCtx, cancel := context.WithCancel(rootCtx)
-	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel)
+	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds())
+	defer invoker.Close()
 	ctx := WithActivityTask(canCtx, t, invoker, ath.logger)
 	activityType := *t.GetActivityType()
 	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]

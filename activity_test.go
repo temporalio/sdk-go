@@ -36,7 +36,7 @@ import (
 func TestActivityHeartbeat(t *testing.T) {
 	service := new(mocks.TChanWorkflowService)
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
 	service.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
@@ -52,7 +52,7 @@ func TestActivityHeartbeat_InternalError(t *testing.T) {
 
 	service := new(mocks.TChanWorkflowService)
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
 	invoker.(*cadenceInvoker).retryPolicy = p
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
@@ -67,7 +67,7 @@ func TestActivityHeartbeat_InternalError(t *testing.T) {
 func TestActivityHeartbeat_CancelRequested(t *testing.T) {
 	service := new(mocks.TChanWorkflowService)
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -83,7 +83,7 @@ func TestActivityHeartbeat_CancelRequested(t *testing.T) {
 func TestActivityHeartbeat_EntityNotExist(t *testing.T) {
 	service := new(mocks.TChanWorkflowService)
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -94,4 +94,89 @@ func TestActivityHeartbeat_EntityNotExist(t *testing.T) {
 	RecordActivityHeartbeat(ctx, "testDetails")
 	<-ctx.Done()
 	require.Equal(t, ctx.Err(), context.Canceled)
+}
+
+func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
+	service := new(mocks.TChanWorkflowService)
+	ctx, cancel := context.WithCancel(context.Background())
+	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 2)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	// Multiple calls but only one call is made.
+	service.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Once()
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	invoker.Close()
+	service.AssertExpectations(t)
+
+	// No HB timeout configured.
+	service2 := new(mocks.TChanWorkflowService)
+	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker2,
+		logger:         getLogger()})
+	service2.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Once()
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	invoker2.Close()
+	service2.AssertExpectations(t)
+
+	// simulate batch picks before expiry.
+	waitCh := make(chan struct{})
+	service3 := new(mocks.TChanWorkflowService)
+	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker3,
+		logger:         getLogger()})
+	service3.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Once()
+	service3.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Run(func(arg mock.Arguments) {
+		request := arg.Get(1).(*s.RecordActivityTaskHeartbeatRequest)
+		ev := EncodedValues(request.GetDetails())
+		var progress string
+		err := ev.Get(&progress)
+		if err != nil {
+			panic(err)
+		}
+		require.Equal(t, "testDetails-expected", progress)
+		waitCh <- struct{}{}
+	}).Once()
+
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails2")
+	RecordActivityHeartbeat(ctx, "testDetails3")
+	RecordActivityHeartbeat(ctx, "testDetails-expected")
+	<-waitCh
+	invoker3.Close()
+	service3.AssertExpectations(t)
+
+	// simulate batch picks before expiry, with out any progress specified.
+	waitCh2 := make(chan struct{})
+	service4 := new(mocks.TChanWorkflowService)
+	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker4,
+		logger:         getLogger()})
+	service4.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Once()
+	service4.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).
+		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Run(func(arg mock.Arguments) {
+		request := arg.Get(1).(*s.RecordActivityTaskHeartbeatRequest)
+		require.Nil(t, request.GetDetails())
+		waitCh2 <- struct{}{}
+	}).Once()
+
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	<-waitCh2
+	invoker4.Close()
+	service4.AssertExpectations(t)
 }
