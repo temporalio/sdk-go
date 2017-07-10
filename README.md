@@ -23,9 +23,9 @@ See [samples](https://github.com/samarabbas/cadence-samples) to get started
 
 Activity is the implementation of a particular task in the business logic. 
 
-Activities are implemented as functions. Data can be passed directly to an activity via function parameters. The parameters can be either basic types or structs, with the only requirement being that the parameters need to be serializable. Even though it is not required, we recommand that the first parameter of an activity function is of type `context.Context`, in order to allow the activity to interact with other framework methods. The function must return an `error` value, and can optionally return a result value. The result value can be either a basic type or a struct with the only requirement being that the it is serializable.
+Activities are implemented as functions. Data can be passed directly to an activity via function parameters. The parameters can be either basic types or structs, with the only requirement being that the parameters need to be serializable. Even though it is not required, we recommand that the first parameter of an activity function is of type `context.Context`, in order to allow the activity to interact with other framework methods. The function must return an `error` value, and can optionally return a result value. The result value can be either a basic type or a struct with the only requirement being that it is serializable.
 
-The values passed to activities through invocation parameters or returned throughthe result value is recorded in the execution history. The entire execution history is transfered from the Cadence service to workflow workers with every event that the workflow logic needs to process. A large execution history can thus adversily impact the performance of your workflow. Therefore be mindful of the amount of data you transfer via activity invocation parameters or return values. Other than that no additional limitations exist on activity implementations.
+The values passed to activities through invocation parameters or returned through the result value is recorded in the execution history. The entire execution history is transfered from the Cadence service to workflow workers with every event that the workflow logic needs to process. A large execution history can thus adversily impact the performance of your workflow. Therefore be mindful of the amount of data you transfer via activity invocation parameters or return values. Other than that no additional limitations exist on activity implementations.
 
 In order to make the activity visible to the worker process hosting it, the activity needs to be registered via a call to `cadence.RegisterActivity`.
 
@@ -69,7 +69,7 @@ Workflow functions need to execute deterministically. Therefore, here is a list 
 * Don’t use any synchronization primitives as they can cause blockage and there is no possibility of races when running under dispatcher.
 * Don’t change workflow code when there are open workflows using it. Cadence is going to provide versioning mechanism to deal with deploying code changes without breaking existing workflows.
 * Don’t perform any IO or service calls as they are not usually deterministic. Use activities for that.
-* Don’t access configuration APIs directly from workflow as change in configuration affects workflow execution path. Either return configuration from an activity or use `cadence.SideEffect` to load it.
+* Don’t access configuration APIs directly from a workflow as changes in configuration will affect the workflow execution path. Either return configuration from an activity or use `cadence.SideEffect` to load it.
 
 In order to make the workflow visible to the worker process hosting it, the workflow needs to be registered via a call to **cadence.RegisterWorkflow**.
 
@@ -132,6 +132,7 @@ import (
 
 var HostPort = "127.0.0.1:7933"
 var Domain = "SimpleDomain"
+var TaskListName = "SimpleWorker"
 var ClientName = "SimpleWorker"
 var CadenceService = "CadenceServiceFrontend"
 
@@ -168,8 +169,8 @@ func buildCadenceClient() t.TChanWorkflowService {
 }
 
 func startWorker(logger *zap.Logger, client t.TChanWorkflowService) {
-    // TaskListName - identifies set of client workflows, activities and workers.
-    // it could be your group or client or application name.
+	// TaskListName - identifies set of client workflows, activities and workers.
+	// it could be your group or client or application name.
 	workerOptions := cadence.WorkerOptions{
 		Logger:       logger,
 		MetricsScope: tally.NewTestScope(TaskListName, map[string]string{}),
