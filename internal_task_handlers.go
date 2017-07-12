@@ -481,17 +481,61 @@ ProcessEvents:
 	return taskCompletionRequest, stackTrace, nil
 }
 
+func isVersionMarkerDecision(d *s.Decision) bool {
+	if d.GetDecisionType() == s.DecisionType_RecordMarker &&
+		d.RecordMarkerDecisionAttributes.GetMarkerName() == versionMarkerName {
+		return true
+	}
+	return false
+}
+
+func isVersionMarkerEvent(e *s.HistoryEvent) bool {
+	if e.GetEventType() == s.EventType_MarkerRecorded &&
+		e.MarkerRecordedEventAttributes.GetMarkerName() == versionMarkerName {
+		return true
+	}
+	return false
+}
+
 func matchReplayWithHistory(replayDecisions []*s.Decision, historyEvents []*s.HistoryEvent) error {
-	for i := 0; i < len(historyEvents); i++ {
-		e := historyEvents[i]
-		if i >= len(replayDecisions) {
+	di := 0
+	hi := 0
+	hSize := len(historyEvents)
+	dSize := len(replayDecisions)
+matchLoop:
+	for hi < hSize || di < dSize {
+		var e *s.HistoryEvent
+		if hi < hSize {
+			e = historyEvents[hi]
+		}
+		if isVersionMarkerEvent(e) {
+			hi++
+			continue matchLoop
+		}
+
+		var d *s.Decision
+		if di < dSize {
+			d = replayDecisions[di]
+		}
+		if isVersionMarkerDecision(d) {
+			di++
+			continue matchLoop
+		}
+		if d == nil {
 			return fmt.Errorf("nondeterministic workflow: missing replay decision for %s", util.HistoryEventToString(e))
 		}
-		d := replayDecisions[i]
+
+		if e == nil {
+			return fmt.Errorf("nondeterministic workflow: extra replay decision for %s", util.DecisionToString(d))
+		}
+
 		if !isDecisionMatchEvent(d, e, false) {
 			return fmt.Errorf("nondeterministic workflow: history event is %s, replay decision is %s",
 				util.HistoryEventToString(e), util.DecisionToString(d))
 		}
+
+		di++
+		hi++
 	}
 	return nil
 }

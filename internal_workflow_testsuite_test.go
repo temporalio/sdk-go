@@ -910,3 +910,34 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
+	oldActivity := func(ctx context.Context, msg string) (string, error) {
+		return "hello" + "_" + msg, nil
+	}
+	newActivity := func(ctx context.Context, msg string) (string, error) {
+		return "hello" + "_" + msg, nil
+	}
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var f Future
+		v := GetVersion(ctx, "test_change_id", DefaultVersion, 2)
+		if v == DefaultVersion {
+			f = ExecuteActivity(ctx, oldActivity, "ols_msg")
+		} else {
+			f = ExecuteActivity(ctx, newActivity, "new_msg")
+		}
+		err := f.Get(ctx, nil) // wait for result
+		return err
+	}
+
+	s.RegisterActivity(oldActivity)
+	s.RegisterActivity(newActivity)
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(newActivity, mock.Anything, "new_msg").Return("hell new_mock_msg", nil).Once()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+}

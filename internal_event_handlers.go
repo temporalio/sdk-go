@@ -23,8 +23,6 @@ package cadence
 // All code in this file is private to the package.
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"time"
@@ -75,6 +73,7 @@ type (
 
 		decisionsHelper  *decisionsHelper
 		sideEffectResult map[int32][]byte
+		changeVersions   map[string]Version
 
 		counterID         int32     // To generate sequence IDs for activity/timer etc.
 		currentReplayTime time.Time // Indicates current replay time of the decision.
@@ -95,8 +94,6 @@ type (
 		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
 	}
 )
-
-var sideEffectMarkerName = "SideEffect"
 
 func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
 	return func(c zapcore.Core) zapcore.Core {
@@ -123,6 +120,7 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		workflowDefinitionFactory: workflowDefinitionFactory,
 		decisionsHelper:           newDecisionsHelper(),
 		sideEffectResult:          make(map[int32][]byte),
+		changeVersions:            make(map[string]Version),
 		completeHandler:           completeHandler,
 		enableLoggingInReplay:     enableLoggingInReplay,
 	}
@@ -335,6 +333,40 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 	wc.logger.Debug("RequestCancelTimer", zap.String(tagTimerID, timerID))
 }
 
+func validateVersion(changeID string, version, minSupported, maxSupported Version) {
+	if version < minSupported {
+		panic(fmt.Sprintf("Workflow code removed support of version %v. "+
+			"for \"%v\" changeID. The oldest supported version is %v",
+			version, changeID, minSupported))
+	}
+	if version > maxSupported {
+		panic(fmt.Sprintf("Workflow code is too old to support version %v "+
+			"for \"%v\" changeID. The maximum supported version is %v",
+			version, changeID, maxSupported))
+	}
+}
+
+func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
+	if version, ok := wc.changeVersions[changeID]; ok {
+		validateVersion(changeID, version, minSupported, maxSupported)
+		return version
+	}
+
+	var version Version
+	if wc.isReplay {
+		// GetVersion for changeID is called first time in replay mode, use DefaultVersion
+		version = DefaultVersion
+	} else {
+		// GetVersion for changeID is called first time (non-replay mode), we need to generate a marker decision for it.
+		version = maxSupported
+		wc.decisionsHelper.recordVersionMarker(changeID, version)
+	}
+
+	validateVersion(changeID, version, minSupported, maxSupported)
+	wc.changeVersions[changeID] = version
+	return version
+}
+
 func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
 	sideEffectID := wc.GenerateSequence()
 	var details []byte
@@ -360,17 +392,11 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 			callback(result, err)
 			return
 		}
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		if err := enc.Encode(sideEffectID); err != nil {
+		details, err = getHostEnvironment().encodeArgs([]interface{}{sideEffectID, result})
+		if err != nil {
 			callback(nil, fmt.Errorf("failure encoding sideEffectID: %v", err))
 			return
 		}
-		if err := enc.Encode(result); err != nil {
-			callback(nil, fmt.Errorf("failure encoding side effect result: %v", err))
-			return
-		}
-		details = buf.Bytes()
 	}
 
 	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, details)
@@ -628,28 +654,28 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelReque
 	weh.cancelHandler()
 }
 
-// Currently handles only side effect markers
 func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
 	attributes *m.MarkerRecordedEventAttributes,
 ) error {
-	if attributes.GetMarkerName() != sideEffectMarkerName {
+	encodedValues := EncodedValues(attributes.GetDetails())
+	switch attributes.GetMarkerName() {
+	case sideEffectMarkerName:
+		var sideEffectID int32
+		var result []byte
+		encodedValues.Get(&sideEffectID, &result)
+		weh.sideEffectResult[sideEffectID] = result
+		return nil
+	case versionMarkerName:
+		var changeID string
+		var version Version
+		encodedValues.Get(&changeID, &version)
+		weh.changeVersions[changeID] = version
+		return nil
+	default:
 		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
 			attributes.GetMarkerName(), eventID)
 	}
-	dec := gob.NewDecoder(bytes.NewBuffer(attributes.GetDetails()))
-	var sideEffectID int32
-
-	if err := dec.Decode(&sideEffectID); err != nil {
-		return fmt.Errorf("failure decodeing sideEffectID: %v", err)
-	}
-	var result []byte
-	if err := dec.Decode(&result); err != nil {
-		return fmt.Errorf("failure decoding side effect result: %v", err)
-	}
-	weh.decisionsHelper.handleSideEffectMarkerRecorded(sideEffectID)
-	weh.sideEffectResult[sideEffectID] = result
-	return nil
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(

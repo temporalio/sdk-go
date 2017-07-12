@@ -108,6 +108,9 @@ type (
 	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
 	EncodedValue []byte
 
+	// Version represents a change version. See GetVersion call.
+	Version int
+
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
 	ChildWorkflowOptions struct {
 		// Domain of the child workflow.
@@ -539,4 +542,58 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) EncodedValue {
 		panic(err)
 	}
 	return encoded
+}
+
+// DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
+const DefaultVersion Version = -1
+
+// GetVersion is used to safely perform backwards incompatible changes to workflow definitions.
+// It is not allowed to update workflow code while there are workflows running as it is going to break
+// determinism. The solution is to have both old code that is used to replay existing workflows
+// as well as the new one that is used when it is executed for the first time.
+// GetVersion returns maxSupported version when is executed for the first time. This version is recorded into the
+// workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
+// returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
+// For example initially workflow has the following code:
+// err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+// it should be updated to
+// err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+// The backwards compatible way to execute the update is
+// v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
+// if v  == DefaultVersion {
+//     err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+// } else {
+//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+// }
+//
+// Then bar has to be changed to baz:
+//
+// v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
+// if v  == DefaultVersion {
+//     err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+// } else if v == 1 {
+//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+// } else {
+//     err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+// }
+//
+// Later when there are no workflows running DefaultVersion the correspondent branch can be removed:
+//
+// v :=  GetVersion(ctx, "fooChange", 1, 2)
+// if v == 1 {
+//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+// } else {
+//     err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+// }
+//
+// Currently there is no supported way to completely remove GetVersion call after it was introduced.
+// Keep it even if single branch is left:
+//
+// GetVersion(ctx, "fooChange", 2, 2)
+// err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//
+// It is necessary as GetVersion performs validation of a version against a workflow history and fails decisions if
+// a workflow code is not compatible with it.
+func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
+	return getWorkflowEnvironment(ctx).GetVersion(changeID, minSupported, maxSupported)
 }

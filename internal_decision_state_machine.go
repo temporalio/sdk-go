@@ -138,6 +138,11 @@ const (
 	eventCanceled         string = "handleCanceledEvent"
 )
 
+const (
+	sideEffectMarkerName = "SideEffect"
+	versionMarkerName    = "Version"
+)
+
 func (d decisionState) String() string {
 	switch d {
 	case decisionStateCreated:
@@ -674,6 +679,23 @@ func (h *decisionsHelper) getActivityID(event *s.HistoryEvent) string {
 		panic(fmt.Sprintf("unable to find activity ID for the event %v", util.HistoryEventToString(event)))
 	}
 	return activityID
+}
+
+func (h *decisionsHelper) recordVersionMarker(changeID string, version Version) decisionStateMachine {
+	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
+	details, err := getHostEnvironment().encodeArgs([]interface{}{changeID, version})
+	if err != nil {
+		panic(err)
+	}
+
+	recordMarker := &s.RecordMarkerDecisionAttributes{
+		MarkerName: common.StringPtr(versionMarkerName),
+		Details:    details, // Keep
+	}
+
+	decision := newMarkerDecisionStateMachine(markerID, recordMarker)
+	h.addDecision(decision)
+	return decision
 }
 
 func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte) decisionStateMachine {

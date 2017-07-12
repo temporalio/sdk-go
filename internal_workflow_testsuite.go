@@ -142,8 +142,9 @@ type (
 		*testWorkflowEnvironmentShared
 		parentEnv *testWorkflowEnvironmentImpl
 
-		workflowInfo *WorkflowInfo
-		workflowDef  workflowDefinition
+		workflowInfo   *WorkflowInfo
+		workflowDef    workflowDefinition
+		changeVersions map[string]Version
 
 		workflowCancelHandler func()
 		signalHandler         func(name string, input []byte)
@@ -184,6 +185,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			ExecutionStartToCloseTimeoutSeconds: 1,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
+
+		changeVersions: make(map[string]Version),
 
 		doneChannel: make(chan struct{}),
 	}
@@ -1084,6 +1087,15 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(options workflowOpt
 
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
 	callback(f())
+}
+
+func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
+	if version, ok := env.changeVersions[changeID]; ok {
+		validateVersion(changeID, version, minSupported, maxSupported)
+		return version
+	}
+	env.changeVersions[changeID] = maxSupported
+	return maxSupported
 }
 
 func (env *testWorkflowEnvironmentImpl) nextID() int {
