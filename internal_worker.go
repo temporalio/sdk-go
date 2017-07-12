@@ -199,6 +199,10 @@ func (ww *workflowWorker) Start() error {
 	return nil // TODO: propagate error
 }
 
+func (ww *workflowWorker) Run() {
+	ww.worker.Run()
+}
+
 // Shutdown the worker.
 func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
@@ -256,6 +260,11 @@ func newActivityTaskWorker(
 func (aw *activityWorker) Start() error {
 	aw.worker.Start()
 	return nil // TODO: propagate errors
+}
+
+// Run the worker.
+func (aw *activityWorker) Run() {
+	aw.worker.Run()
 }
 
 // Shutdown the worker.
@@ -701,6 +710,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 type aggregatedWorker struct {
 	workflowWorker Worker
 	activityWorker Worker
+	logger         *zap.Logger
 }
 
 func (aw *aggregatedWorker) Start() error {
@@ -717,6 +727,13 @@ func (aw *aggregatedWorker) Start() error {
 		}
 	}
 	return nil
+}
+
+func (aw *aggregatedWorker) Run() {
+	aw.Start()
+	d := <-getKillSignal()
+	aw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
+	aw.Stop()
 }
 
 func (aw *aggregatedWorker) Stop() {
@@ -801,7 +818,11 @@ func newAggregatedWorker(
 			logger.Warn("Activity worker is enabled but no activity is registered. Use cadence.RegisterActivity() to register your activity.")
 		}
 	}
-	return &aggregatedWorker{workflowWorker: workflowWorker, activityWorker: activityWorker}
+	return &aggregatedWorker{
+		workflowWorker: workflowWorker,
+		activityWorker: activityWorker,
+		logger:         logger,
+	}
 }
 
 func (th *hostEnvImpl) newRegisteredWorkflowFactory() workflowFactory {

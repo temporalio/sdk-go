@@ -119,16 +119,22 @@ func (bw *baseWorker) Start() {
 	if bw.isWorkerStarted {
 		return
 	}
-	// Add the total number of routines to the wait group
-	bw.shutdownWG.Add(bw.options.routineCount)
 
 	// Launch the routines to do work
 	for i := 0; i < bw.options.routineCount; i++ {
+		bw.shutdownWG.Add(1)
 		go bw.execute(i)
 	}
 
 	bw.isWorkerStarted = true
 	bw.logger.Info("Started Worker", zap.Int("RoutineCount", bw.options.routineCount))
+}
+
+func (bw *baseWorker) Run() {
+	bw.Start()
+	d := <-getKillSignal()
+	bw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
+	bw.Stop()
 }
 
 // Shutdown is a blocking call and cleans up all the resources assosciated with worker.
@@ -141,7 +147,7 @@ func (bw *baseWorker) Stop() {
 	// TODO: The poll is longer than the 10 seconds, we probably need some way to hard terminate the
 	// poll routines as well.
 
-	if success := awaitWaitGroup(&bw.shutdownWG, 10*time.Second); !success {
+	if success := awaitWaitGroup(&bw.shutdownWG, 2*time.Second); !success {
 		bw.logger.Info("Worker timed out on waiting for shutdown.")
 	}
 }
@@ -149,25 +155,27 @@ func (bw *baseWorker) Stop() {
 // execute handler wraps call to process a task.
 func (bw *baseWorker) execute(routineID int) {
 	for {
-		// Check if we have to backoff.
-		// TODO: Check if this is needed concurrent retires (or) per connection retrier.
-		bw.retrier.Throttle()
+		ch := make(chan struct{})
+		go func(ch chan struct{}) {
+			defer close(ch)
+			// Check if we have to backoff.
+			// TODO: Check if this is needed concurrent retires (or) per connection retrier.
+			bw.retrier.Throttle()
 
-		// Check if we are rate limited
-		if !bw.rateLimiter.Consume(1, time.Millisecond) {
-			continue
-		}
-
-		err := bw.options.taskPoller.PollAndProcessSingleTask()
-		if err == nil {
-			bw.retrier.Succeeded()
-		} else if isClientSideError(err) {
-			bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
-			// This doesn't count against server failures.
-		} else {
-			bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
-			bw.retrier.Failed()
-		}
+			// Check if we are rate limited
+			if bw.rateLimiter.Consume(1, time.Millisecond) {
+				err := bw.options.taskPoller.PollAndProcessSingleTask()
+				if err == nil {
+					bw.retrier.Succeeded()
+				} else if isClientSideError(err) {
+					bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					// This doesn't count against server failures.
+				} else {
+					bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					bw.retrier.Failed()
+				}
+			}
+		}(ch)
 
 		select {
 		// Shutdown the Routine.
@@ -177,7 +185,7 @@ func (bw *baseWorker) execute(routineID int) {
 			return
 
 		// We have work to do.
-		default:
+		case <-ch:
 		}
 	}
 }
