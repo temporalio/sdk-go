@@ -23,5 +23,5 @@ import:
   subpackages:
   - context
 testImport:
-- package: github.com/Sirupsen/logrus
+- package: github.com/sirupsen/logrus
   version: v0.11.5

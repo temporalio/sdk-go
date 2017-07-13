@@ -23,7 +23,7 @@ package cadence
 import (
 	"testing"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	m "go.uber.org/cadence/.gen/go/shared"

@@ -145,8 +145,8 @@ func (bw *baseWorker) Stop() {
 	}
 	close(bw.shutdownCh)
 
-	// TODO: The poll is longer than the 10 seconds, we probably need some way to hard terminate the
-	// poll routines as well.
+	// TODO: The poll is longer than wait time, we need some way to hard terminate the
+	// poll routines.
 
 	if success := awaitWaitGroup(&bw.shutdownWG, 2*time.Second); !success {
 		bw.logger.Info("Worker timed out on waiting for shutdown.")
