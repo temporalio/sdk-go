@@ -888,8 +888,8 @@ func (s *selectorImpl) Select(ctx Context) {
 				if readyBranch != nil {
 					return false
 				}
-				p.futureFunc = nil
 				readyBranch = func() {
+					p.futureFunc = nil
 					f(p.future)
 				}
 				return true

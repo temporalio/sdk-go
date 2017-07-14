@@ -1034,3 +1034,52 @@ func TestDecodeFutureChain(t *testing.T) {
 	}
 	require.EqualValues(t, expected, history)
 }
+
+func TestSelectFuture_WithBatchSets(t *testing.T) {
+	var history []string
+	d := newDispatcher(background, func(ctx Context) {
+		future1, settable1 := NewFuture(ctx)
+		future2, settable2 := NewFuture(ctx)
+		future3, settable3 := NewFuture(ctx)
+
+		s := NewSelector(ctx)
+		s.
+			AddFuture(future1, func(f Future) {
+				var v string
+				err := f.Get(ctx, &v)
+				assert.Nil(t, err)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddFuture(future2, func(f Future) {
+				var v string
+				err := f.Get(ctx, &v)
+				assert.Nil(t, err)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			}).
+			AddFuture(future3, func(f Future) {
+				var v string
+				err := f.Get(ctx, &v)
+				assert.Nil(t, err)
+				history = append(history, fmt.Sprintf("c3-%v", v))
+			})
+
+		settable2.Set("two", nil)
+		s.Select(ctx)
+		settable3.Set("three", nil)
+		settable1.Set("one", nil)
+		s.Select(ctx)
+		s.Select(ctx)
+	})
+	err := d.ExecuteUntilAllBlocked()
+	if err != nil {
+		require.NoError(t, err, err.StackTrace())
+	}
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"c2-two",
+		"c1-one",
+		"c3-three",
+	}
+	require.EqualValues(t, expected, history)
+}
