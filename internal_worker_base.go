@@ -128,13 +128,17 @@ func (bw *baseWorker) Start() {
 	}
 
 	bw.isWorkerStarted = true
-	bw.logger.Info("Started Worker", zap.Int("RoutineCount", bw.options.routineCount))
+	traceLog(func() {
+		bw.logger.Info("Started Worker", zap.Int("RoutineCount", bw.options.routineCount))
+	})
 }
 
 func (bw *baseWorker) Run() {
 	bw.Start()
 	d := <-getKillSignal()
-	bw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
+	traceLog(func() {
+		bw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
+	})
 	bw.Stop()
 }
 
@@ -149,7 +153,9 @@ func (bw *baseWorker) Stop() {
 	// poll routines.
 
 	if success := awaitWaitGroup(&bw.shutdownWG, 2*time.Second); !success {
-		bw.logger.Info("Worker timed out on waiting for shutdown.")
+		traceLog(func() {
+			bw.logger.Info("Worker timed out on waiting for shutdown.")
+		})
 	}
 }
 
@@ -169,10 +175,14 @@ func (bw *baseWorker) execute(routineID int) {
 				if err == nil {
 					bw.retrier.Succeeded()
 				} else if isClientSideError(err) {
-					bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					traceLog(func() {
+						bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					})
 					// This doesn't count against server failures.
 				} else {
-					bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					traceLog(func() {
+						bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
+					})
 					bw.retrier.Failed()
 				}
 			}
@@ -181,7 +191,9 @@ func (bw *baseWorker) execute(routineID int) {
 		select {
 		// Shutdown the Routine.
 		case <-bw.shutdownCh:
-			bw.logger.Info("Worker shutting down.", zap.Int(tagRoutineID, routineID))
+			traceLog(func() {
+				bw.logger.Info("Worker shutting down.", zap.Int(tagRoutineID, routineID))
+			})
 			bw.shutdownWG.Done()
 			return
 

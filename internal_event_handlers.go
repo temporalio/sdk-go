@@ -415,11 +415,11 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 
 	weh.isReplay = isReplay
-	if enableVerboseLogging {
+	traceLog(func() {
 		weh.logger.Debug("ProcessEvent",
 			zap.Int64(tagEventID, event.GetEventId()),
 			zap.String(tagEventType, event.GetEventType().String()))
-	}
+	})
 
 	switch event.GetEventType() {
 	case m.EventType_WorkflowExecutionStarted:

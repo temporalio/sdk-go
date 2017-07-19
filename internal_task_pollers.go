@@ -140,7 +140,9 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	}
 	if workflowTask.task == nil {
 		// We didn't have task, poll might have time out.
-		wtp.logger.Debug("Workflow task unavailable")
+		traceLog(func() {
+			wtp.logger.Debug("Workflow task unavailable")
+		})
 		return nil
 	}
 
@@ -165,7 +167,9 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 			defer cancel()
 			err1 := wtp.service.RespondDecisionTaskCompleted(ctx, completedRequest)
 			if err1 != nil {
-				wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
+				traceLog(func() {
+					wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
+				})
 			}
 			return err1
 		}, serviceOperationRetryPolicy, isServiceTransientError)
@@ -186,9 +190,9 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		}
 	}()
 
-	if enableVerboseLogging {
+	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
-	}
+	})
 	request := &s.PollForDecisionTaskRequest{
 		Domain:   common.StringPtr(wtp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
@@ -254,9 +258,9 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		}
 	}()
 
-	if enableVerboseLogging {
+	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
-	}
+	})
 	request := &s.PollForActivityTaskRequest{
 		Domain:   common.StringPtr(atp.domain),
 		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),
@@ -294,7 +298,9 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	}
 	if activityTask.task == nil {
 		// We didn't have task, poll might have time out.
-		atp.logger.Debug("Activity task unavailable")
+		traceLog(func() {
+			atp.logger.Debug("Activity task unavailable")
+		})
 		return nil
 	}
 
@@ -306,7 +312,9 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 
 	reportErr := reportActivityComplete(atp.service, request, atp.metricsScope)
 	if reportErr != nil {
-		atp.logger.Debug("reportActivityComplete failed", zap.Error(reportErr))
+		traceLog(func() {
+			atp.logger.Debug("reportActivityComplete failed", zap.Error(reportErr))
+		})
 	}
 
 	return reportErr

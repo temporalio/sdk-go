@@ -231,6 +231,7 @@ func newActivityTaskWorker(
 	service m.TChanWorkflowService,
 	domain string,
 	workerParams workerExecutionParameters) (worker Worker) {
+	ensureRequiredParams(&workerParams)
 
 	poller := newActivityTaskPoller(
 		taskHandler,
@@ -726,6 +727,7 @@ func (aw *aggregatedWorker) Start() error {
 			return err
 		}
 	}
+	aw.logger.Info("Started Worker")
 	return nil
 }
 
@@ -743,6 +745,7 @@ func (aw *aggregatedWorker) Stop() {
 	if !isInterfaceNil(aw.activityWorker) {
 		aw.activityWorker.Stop()
 	}
+	aw.logger.Info("Stopped Worker")
 }
 
 // aggregatedWorker returns an instance to manage the workers.

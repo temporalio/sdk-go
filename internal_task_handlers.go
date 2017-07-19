@@ -336,11 +336,13 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		return nil, "", errors.New("nil TaskList in WorkflowExecutionStarted event")
 	}
 
-	wth.logger.Debug("Processing new workflow task.",
-		zap.String(tagWorkflowType, task.GetWorkflowType().GetName()),
-		zap.String(tagWorkflowID, task.GetWorkflowExecution().GetWorkflowId()),
-		zap.String(tagRunID, task.GetWorkflowExecution().GetRunId()),
-		zap.Int64("PreviousStartedEventId", task.GetPreviousStartedEventId()))
+	traceLog(func() {
+		wth.logger.Debug("Processing new workflow task.",
+			zap.String(tagWorkflowType, task.GetWorkflowType().GetName()),
+			zap.String(tagWorkflowID, task.GetWorkflowExecution().GetWorkflowId()),
+			zap.String(tagRunID, task.GetWorkflowExecution().GetRunId()),
+			zap.Int64("PreviousStartedEventId", task.GetPreviousStartedEventId()))
+	})
 
 	// Setup workflow Info
 	workflowInfo := &WorkflowInfo{
@@ -465,7 +467,7 @@ ProcessEvents:
 		// ExecutionContext:
 	}
 
-	if enableVerboseLogging {
+	traceLog(func() {
 		var buf bytes.Buffer
 		for i, d := range decisions {
 			buf.WriteString(fmt.Sprintf("%v: %v\n", i, util.DecisionToString(d)))
@@ -473,7 +475,7 @@ ProcessEvents:
 		wth.logger.Debug("new_decisions",
 			zap.Int("DecisionCount", len(decisions)),
 			zap.String("Decisions", buf.String()))
-	}
+	})
 
 	if emitStack {
 		stackTrace = eventHandler.StackTrace()
@@ -905,10 +907,12 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 		}
 	}()
 
-	ath.logger.Debug("Processing new activity task",
-		zap.String(tagWorkflowID, t.GetWorkflowExecution().GetWorkflowId()),
-		zap.String(tagRunID, t.GetWorkflowExecution().GetRunId()),
-		zap.String(tagActivityType, t.GetActivityType().GetName()))
+	traceLog(func() {
+		ath.logger.Debug("Processing new activity task",
+			zap.String(tagWorkflowID, t.GetWorkflowExecution().GetWorkflowId()),
+			zap.String(tagRunID, t.GetWorkflowExecution().GetRunId()),
+			zap.String(tagActivityType, t.GetActivityType().GetName()))
+	})
 
 	rootCtx := ath.userContext
 	if rootCtx == nil {
@@ -992,4 +996,12 @@ func recordActivityHeartbeat(
 	}
 
 	return heartbeatErr
+}
+
+// This enables verbose logging in the client library.
+// check Cadence.EnableVerboseLogging()
+func traceLog(fn func()) {
+	if enableVerboseLogging {
+		fn()
+	}
 }
