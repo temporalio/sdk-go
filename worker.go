@@ -46,14 +46,15 @@ type (
 	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this host can have.
 		// The zero value of this uses the default value.
-		// default: defaultMaxConcurrentActivityExecutionSize(10k)
+		// default: defaultMaxConcurrentActivityExecutionSize(1k)
 		MaxConcurrentActivityExecutionSize int
 
 		// Optional: Sets the rate limiting on number of activities that can be executed per second.
 		// This can be used to protect down stream services from flooding.
 		// The zero value of this uses the default value.
 		// default: defaultMaxActivityExecutionRate(100k)
-		MaxActivityExecutionRate float32
+		// Warning: activity's StartToCloseTimeout starts ticking even if a task is blocked due to rate limiting.
+		MaxActivityExecutionsPerSecond float32
 
 		// Optional: if the activities need auto heart beating for those activities
 		// by the framework

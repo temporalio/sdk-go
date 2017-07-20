@@ -79,11 +79,13 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		routineCount    int
-		taskPoller      taskPoller
-		workflowService m.TChanWorkflowService
-		identity        string
-		workerType      string
+		pollerCount       int
+		maxConcurrentTask int
+		maxTaskRps        float32
+		taskWorker        taskPoller
+		workflowService   m.TChanWorkflowService
+		identity          string
+		workerType        string
 	}
 
 	// baseWorker that wraps worker activities.
@@ -92,9 +94,13 @@ type (
 		isWorkerStarted bool
 		shutdownCh      chan struct{}              // Channel used to shut down the go routines.
 		shutdownWG      sync.WaitGroup             // The WaitGroup for shutting down existing routines.
-		rateLimiter     common.TokenBucket         // Poll rate limiter
+		pollRateLimiter common.TokenBucket         // Poll rate limiter
+		taskRateLimiter common.TokenBucket         // Task rate limiter
 		retrier         *backoff.ConcurrentRetrier // Service errors back off retrier
 		logger          *zap.Logger
+
+		pollerRequestCh chan struct{}
+		taskQueueCh     chan interface{}
 	}
 )
 
@@ -106,12 +112,21 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 }
 
 func newBaseWorker(options baseWorkerOptions, logger *zap.Logger) *baseWorker {
+	maxRpsInt := int(options.maxTaskRps)
+	if maxRpsInt < 1 {
+		// TokenBucket implementation does not support RPS < 1. Will need to update TokenBucket
+		maxRpsInt = 1
+	}
 	return &baseWorker{
-		options:     options,
-		shutdownCh:  make(chan struct{}),
-		rateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
-		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:      logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		options:         options,
+		shutdownCh:      make(chan struct{}),
+		pollRateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
+		taskRateLimiter: common.NewTokenBucket(maxRpsInt, common.NewRealTimeSource()),
+		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+
+		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
+		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 	}
 }
 
@@ -121,16 +136,117 @@ func (bw *baseWorker) Start() {
 		return
 	}
 
-	// Launch the routines to do work
-	for i := 0; i < bw.options.routineCount; i++ {
+	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.shutdownWG.Add(1)
-		go bw.execute(i)
+		go bw.runPoller()
 	}
+	bw.shutdownWG.Add(1)
+	go bw.runTaskDispatcher()
 
 	bw.isWorkerStarted = true
 	traceLog(func() {
-		bw.logger.Info("Started Worker", zap.Int("RoutineCount", bw.options.routineCount))
+		bw.logger.Info("Started Worker",
+			zap.Int("PollerCount", bw.options.pollerCount),
+			zap.Int("MaxConcurrentTask", bw.options.maxConcurrentTask),
+			zap.Float32("MaxTaskRps", bw.options.maxTaskRps),
+		)
 	})
+}
+
+func (bw *baseWorker) isShutdown() bool {
+	select {
+	case <-bw.shutdownCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (bw *baseWorker) runPoller() {
+	defer bw.shutdownWG.Done()
+
+	for {
+		select {
+		case <-bw.shutdownCh:
+			return
+		case <-bw.pollerRequestCh:
+			ch := make(chan struct{})
+			go func(ch chan struct{}) {
+				bw.pollTask()
+				close(ch)
+			}(ch)
+
+			// block until previous poll completed or return immediately when shutdown
+			select {
+			case <-bw.shutdownCh:
+				return
+			case <-ch:
+			}
+		}
+	}
+}
+
+func (bw *baseWorker) runTaskDispatcher() {
+	defer bw.shutdownWG.Done()
+
+	for i := 0; i < bw.options.maxConcurrentTask; i++ {
+		bw.pollerRequestCh <- struct{}{}
+	}
+
+	for {
+		// wait for new task or shutdown
+		select {
+		case <-bw.shutdownCh:
+			return
+		case task := <-bw.taskQueueCh:
+			// block until taskRateLimiter satisfied
+			for !bw.taskRateLimiter.Consume(1, time.Millisecond*100) {
+				if bw.isShutdown() {
+					return
+				}
+			}
+			go bw.processTask(task)
+		}
+	}
+}
+
+func (bw *baseWorker) pollTask() {
+	var err error
+	var task interface{}
+	bw.retrier.Throttle()
+	if bw.pollRateLimiter.Consume(1, time.Millisecond*100) {
+		task, err = bw.options.taskWorker.PollTask()
+		if err != nil {
+			bw.retrier.Failed()
+			if enableVerboseLogging {
+				bw.logger.Debug("Failed to poll for task.", zap.Error(err))
+			}
+		} else {
+			bw.retrier.Succeeded()
+		}
+	} else {
+		// if rate limiter fails, we need to back off.
+		bw.retrier.Failed()
+	}
+
+	if task != nil {
+		bw.taskQueueCh <- task
+	} else {
+		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new pool
+	}
+}
+
+func (bw *baseWorker) processTask(task interface{}) {
+	err := bw.options.taskWorker.ProcessTask(task)
+	if err != nil {
+		if isClientSideError(err) {
+			bw.logger.Info("Task processing failed with client side error", zap.Error(err))
+		} else {
+			bw.logger.Info("Task processing failed with error", zap.Error(err))
+		}
+	}
+
+	bw.pollerRequestCh <- struct{}{}
 }
 
 func (bw *baseWorker) Run() {
@@ -156,49 +272,5 @@ func (bw *baseWorker) Stop() {
 		traceLog(func() {
 			bw.logger.Info("Worker timed out on waiting for shutdown.")
 		})
-	}
-}
-
-// execute handler wraps call to process a task.
-func (bw *baseWorker) execute(routineID int) {
-	for {
-		ch := make(chan struct{})
-		go func(ch chan struct{}) {
-			defer close(ch)
-			// Check if we have to backoff.
-			// TODO: Check if this is needed concurrent retires (or) per connection retrier.
-			bw.retrier.Throttle()
-
-			// Check if we are rate limited
-			if bw.rateLimiter.Consume(1, time.Millisecond) {
-				err := bw.options.taskPoller.PollAndProcessSingleTask()
-				if err == nil {
-					bw.retrier.Succeeded()
-				} else if isClientSideError(err) {
-					traceLog(func() {
-						bw.logger.Info("Poll and processing failed with client side error", zap.Int(tagRoutineID, routineID), zap.Error(err))
-					})
-					// This doesn't count against server failures.
-				} else {
-					traceLog(func() {
-						bw.logger.Info("Poll and processing task failed with error", zap.Int(tagRoutineID, routineID), zap.Error(err))
-					})
-					bw.retrier.Failed()
-				}
-			}
-		}(ch)
-
-		select {
-		// Shutdown the Routine.
-		case <-bw.shutdownCh:
-			traceLog(func() {
-				bw.logger.Info("Worker shutting down.", zap.Int(tagRoutineID, routineID))
-			})
-			bw.shutdownWG.Done()
-			return
-
-		// We have work to do.
-		case <-ch:
-		}
 	}
 }

@@ -48,9 +48,12 @@ var (
 )
 
 type (
-	// taskPoller interface to poll for a single task
+	// taskPoller interface to poll and process for task
 	taskPoller interface {
-		PollAndProcessSingleTask() error
+		// PollTask polls for one new task
+		PollTask() (interface{}, error)
+		// ProcessTask processes a task
+		ProcessTask(interface{}) error
 	}
 
 	// workflowTaskPoller implements polling/processing a workflow task
@@ -122,8 +125,8 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkf
 	}
 }
 
-// PollAndProcessSingleTask process one single task
-func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
+// PollTask polls a new task
+func (wtp *workflowTaskPoller) PollTask() (interface{}, error) {
 	startTime := time.Now()
 	defer func() {
 		deltaTime := time.Now().Sub(startTime)
@@ -136,8 +139,14 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 	// Get the task.
 	workflowTask, err := wtp.poll()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return workflowTask, nil
+}
+
+// ProcessTask processes a task
+func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
+	workflowTask := task.(*workflowTask)
 	if workflowTask.task == nil {
 		// We didn't have task, poll might have time out.
 		traceLog(func() {
@@ -178,6 +187,7 @@ func (wtp *workflowTaskPoller) PollAndProcessSingleTask() error {
 		return err
 	}
 	return nil
+
 }
 
 // Poll for a single workflow task from the service
@@ -280,8 +290,8 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 	return &activityTask{task: response}, nil
 }
 
-// PollAndProcessSingleTask process one single activity task
-func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
+// PollTask polls a new task
+func (atp *activityTaskPoller) PollTask() (interface{}, error) {
 	startTime := time.Now()
 	defer func() {
 		deltaTime := time.Now().Sub(startTime)
@@ -294,8 +304,14 @@ func (atp *activityTaskPoller) PollAndProcessSingleTask() error {
 	// Get the task.
 	activityTask, err := atp.poll()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return activityTask, nil
+}
+
+// ProcessTask processes a new task
+func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
+	activityTask := task.(*activityTask)
 	if activityTask.task == nil {
 		// We didn't have task, poll might have time out.
 		traceLog(func() {
