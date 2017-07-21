@@ -274,7 +274,8 @@ OrderEvents:
 
 	// First are events that correspond to the previous task decisions
 	if lastDecisionIndex >= 0 {
-		reorderedEvents = decisionCompletionToStartEvents[:lastDecisionIndex+1]
+		// Make a copy of the slice.
+		reorderedEvents = append(reorderedEvents, decisionCompletionToStartEvents[:lastDecisionIndex+1]...)
 	}
 	// Second are events that were added during previous task execution
 	reorderedEvents = append(reorderedEvents, decisionStartToCompletionEvents...)
