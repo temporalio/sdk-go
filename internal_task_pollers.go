@@ -24,6 +24,8 @@ package cadence
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -156,7 +158,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	// Process the task.
-	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.iterator, false)
+	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.getHistoryPageFunc, false)
 	if err != nil {
 		return err
 	}
@@ -221,16 +223,26 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	}
 
 	execution := response.GetWorkflowExecution()
-	iterator := func(nextPageToken []byte) (*s.History, []byte, error) {
+	iterator := newGetHistoryPageFunc(wtp.service, wtp.domain, execution, math.MaxInt64)
+	task := &workflowTask{task: response, getHistoryPageFunc: iterator}
+	return task, nil
+}
+
+func newGetHistoryPageFunc(
+	service m.TChanWorkflowService,
+	domain string,
+	execution *s.WorkflowExecution,
+	atDecisionTaskCompletedEventID int64) func(nextPageToken []byte) (*s.History, []byte, error) {
+	return func(nextPageToken []byte) (*s.History, []byte, error) {
 		var resp *s.GetWorkflowExecutionHistoryResponse
-		err = backoff.Retry(
+		err := backoff.Retry(
 			func() error {
 				ctx, cancel := newTChannelContext()
 				defer cancel()
 
 				var err1 error
-				resp, err1 = wtp.service.GetWorkflowExecutionHistory(ctx, &s.GetWorkflowExecutionHistoryRequest{
-					Domain:        common.StringPtr(wtp.domain),
+				resp, err1 = service.GetWorkflowExecutionHistory(ctx, &s.GetWorkflowExecutionHistoryRequest{
+					Domain:        common.StringPtr(domain),
 					Execution:     execution,
 					NextPageToken: nextPageToken,
 				})
@@ -239,11 +251,21 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return resp.GetHistory(), resp.GetNextPageToken(), nil
+		h := resp.GetHistory()
+		size := len(h.Events)
+		if size > 0 && atDecisionTaskCompletedEventID > 0 {
+			if h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
+				first := h.Events[0].GetEventId() // eventIds start from 1
+				h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
+				if h.Events[len(h.Events)-1].GetEventType() != s.EventType_DecisionTaskCompleted {
+					return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
+						"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
+				}
+			}
+			return h, nil, nil
+		}
+		return h, resp.GetNextPageToken(), nil
 	}
-
-	task := &workflowTask{task: response, iterator: iterator}
-	return task, nil
 }
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkflowService,

@@ -24,7 +24,9 @@ import (
 	"context"
 
 	"github.com/uber-go/tally"
+
 	m "go.uber.org/cadence/.gen/go/cadence"
+	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
 
@@ -107,4 +109,15 @@ func NewWorker(
 	options WorkerOptions,
 ) Worker {
 	return newAggregatedWorker(service, domain, taskList, options)
+}
+
+// GetWorkflowStackTrace returns a stack trace of all goroutines of a workflow given its current history.
+// It requires workflow function that was used to create the history to be registered
+// through RegisterWorkflow.
+// Use Client.GetWorkflowStackTrace to get a stack trace given workflowID and runID.
+func GetWorkflowStackTrace(h *s.History) (string, error) {
+	getHistoryPage := func(nextPageToken []byte) (*s.History, []byte, error) {
+		return h, nil, nil
+	}
+	return getWorkflowStackTraceImpl("unknown", "unknown", getHistoryPage)
 }

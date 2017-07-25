@@ -36,15 +36,15 @@ import (
 )
 
 type (
-	// WorkflowHistoryIterator - To fetch history given a continuation token.
-	WorkflowHistoryIterator func(nextToken []byte) (*s.History, []byte, error)
+	// GetHistoryPage - Fetches a history page given a continuation token.
+	GetHistoryPage func(nextToken []byte) (*s.History, []byte, error)
 
 	// WorkflowTaskHandler represents decision task handlers.
 	WorkflowTaskHandler interface {
 		// Process the workflow task
 		ProcessWorkflowTask(
 			task *s.PollForDecisionTaskResponse,
-			itr WorkflowHistoryIterator,
+			getHistoryPage GetHistoryPage,
 			emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
 	}
 
