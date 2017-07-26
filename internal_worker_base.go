@@ -23,14 +23,15 @@ package cadence
 // All code in this file is private to the package.
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	m "go.uber.org/cadence/.gen/go/cadence"
-	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -79,25 +80,28 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerCount       int
-		maxConcurrentTask int
-		maxTaskRps        float32
-		taskWorker        taskPoller
-		workflowService   m.TChanWorkflowService
-		identity          string
-		workerType        string
+		pollerCount                int
+		maxConcurrentTask          int
+		maxTaskRate                int
+		maxTaskRateRefreshDuration time.Duration
+		taskWorker                 taskPoller
+		workflowService            m.TChanWorkflowService
+		identity                   string
+		workerType                 string
 	}
 
 	// baseWorker that wraps worker activities.
 	baseWorker struct {
-		options         baseWorkerOptions
-		isWorkerStarted bool
-		shutdownCh      chan struct{}              // Channel used to shut down the go routines.
-		shutdownWG      sync.WaitGroup             // The WaitGroup for shutting down existing routines.
-		pollRateLimiter common.TokenBucket         // Poll rate limiter
-		taskRateLimiter common.TokenBucket         // Task rate limiter
-		retrier         *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger          *zap.Logger
+		options              baseWorkerOptions
+		isWorkerStarted      bool
+		shutdownCh           chan struct{}  // Channel used to shut down the go routines.
+		shutdownWG           sync.WaitGroup // The WaitGroup for shutting down existing routines.
+		pollLimiter          *rate.Limiter
+		taskLimiter          *rate.Limiter
+		limiterContext       context.Context
+		limiterContextCancel func()
+		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
+		logger               *zap.Logger
 
 		pollerRequestCh chan struct{}
 		taskQueueCh     chan interface{}
@@ -112,21 +116,20 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 }
 
 func newBaseWorker(options baseWorkerOptions, logger *zap.Logger) *baseWorker {
-	maxRpsInt := int(options.maxTaskRps)
-	if maxRpsInt < 1 {
-		// TokenBucket implementation does not support RPS < 1. Will need to update TokenBucket
-		maxRpsInt = 1
-	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &baseWorker{
-		options:         options,
-		shutdownCh:      make(chan struct{}),
-		pollRateLimiter: common.NewTokenBucket(1000, common.NewRealTimeSource()),
-		taskRateLimiter: common.NewTokenBucket(maxRpsInt, common.NewRealTimeSource()),
-		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		options:     options,
+		shutdownCh:  make(chan struct{}),
+		pollLimiter: rate.NewLimiter(rate.Every(time.Millisecond*100), 100),
+		taskLimiter: rate.NewLimiter(rate.Every(options.maxTaskRateRefreshDuration), options.maxTaskRate),
+		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:      logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
 
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+
+		limiterContext:       ctx,
+		limiterContextCancel: cancel,
 	}
 }
 
@@ -148,7 +151,8 @@ func (bw *baseWorker) Start() {
 		bw.logger.Info("Started Worker",
 			zap.Int("PollerCount", bw.options.pollerCount),
 			zap.Int("MaxConcurrentTask", bw.options.maxConcurrentTask),
-			zap.Float32("MaxTaskRps", bw.options.maxTaskRps),
+			zap.Int("MaxTaskRate", bw.options.maxTaskRate),
+			zap.Duration("MaxTaskRateRefreshDuration", bw.options.maxTaskRateRefreshDuration),
 		)
 	})
 }
@@ -200,7 +204,7 @@ func (bw *baseWorker) runTaskDispatcher() {
 			return
 		case task := <-bw.taskQueueCh:
 			// block until taskRateLimiter satisfied
-			for !bw.taskRateLimiter.Consume(1, time.Millisecond*100) {
+			if bw.taskLimiter.Wait(bw.limiterContext) != nil {
 				if bw.isShutdown() {
 					return
 				}
@@ -214,7 +218,7 @@ func (bw *baseWorker) pollTask() {
 	var err error
 	var task interface{}
 	bw.retrier.Throttle()
-	if bw.pollRateLimiter.Consume(1, time.Millisecond*100) {
+	if bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
 		if err != nil {
 			bw.retrier.Failed()
@@ -224,9 +228,6 @@ func (bw *baseWorker) pollTask() {
 		} else {
 			bw.retrier.Succeeded()
 		}
-	} else {
-		// if rate limiter fails, we need to back off.
-		bw.retrier.Failed()
 	}
 
 	if task != nil {
@@ -264,6 +265,7 @@ func (bw *baseWorker) Stop() {
 		return
 	}
 	close(bw.shutdownCh)
+	bw.limiterContextCancel()
 
 	// TODO: The poll is longer than wait time, we need some way to hard terminate the
 	// poll routines.

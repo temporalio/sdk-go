@@ -1,5 +1,5 @@
-hash: 255fb9a0334149646b182eb77534fdc2cb789d6d3ffcbc5112f7c58b5ecac9d7
-updated: 2017-07-12T16:36:33.501949707-07:00
+hash: b083beef2a3193f4371a70eacebe06d9485a0b52e89112475a81f36e4c440aad
+updated: 2017-07-24T17:32:58.662863691-07:00
 imports:
 - name: github.com/apache/thrift
   version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
@@ -12,7 +12,7 @@ imports:
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/opentracing/opentracing-go
-  version: aaf6cd9717693889e097bc6df95358a0600a34f1
+  version: 1949ddbfd147afd4d964a9f00b24eb291e0e7c38
   subpackages:
   - ext
   - log
@@ -57,13 +57,17 @@ imports:
   - internal/multierror
   - zapcore
 - name: golang.org/x/net
-  version: f01ecb60fe3835d80d9a0b7b2bf24b228c89260e
+  version: 5d0d7096b5f2ef7ba83f319c07ef63989a1c6f91
   subpackages:
   - context
+- name: golang.org/x/time
+  version: 8be79e1e0910c292df4e79c241bb7e8f7e725959
+  subpackages:
+  - rate
 testImports:
 - name: github.com/sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: golang.org/x/sys
-  version: abf9c25f54453410d0c6668e519582a9e1115027
+  version: d4feaf1a7e61e1d9e79e6c4e76c6349e9cab0a03
   subpackages:
   - unix

@@ -22,6 +22,9 @@ import:
 - package: golang.org/x/net
   subpackages:
   - context
+- package: golang.org/x/time
+  subpackages:
+  - rate
 testImport:
 - package: github.com/sirupsen/logrus
   version: v0.11.5
