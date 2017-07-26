@@ -253,14 +253,13 @@ func newGetHistoryPageFunc(
 		}
 		h := resp.GetHistory()
 		size := len(h.Events)
-		if size > 0 && atDecisionTaskCompletedEventID > 0 {
-			if h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
-				first := h.Events[0].GetEventId() // eventIds start from 1
-				h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-				if h.Events[len(h.Events)-1].GetEventType() != s.EventType_DecisionTaskCompleted {
-					return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
-						"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
-				}
+		if size > 0 && atDecisionTaskCompletedEventID > 0 &&
+			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
+			first := h.Events[0].GetEventId() // eventIds start from 1
+			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
+			if h.Events[len(h.Events)-1].GetEventType() != s.EventType_DecisionTaskCompleted {
+				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
+					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
 			}
 			return h, nil, nil
 		}

@@ -299,7 +299,7 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 	}
 	response, stackTrace, err := taskHandler.ProcessWorkflowTask(task, getHistoryPage, true)
 	if err == nil && response != nil && len(response.GetDecisions()) > 0 && len(stackTrace) == 0 {
-		lastDecision := response.GetDecisions()[0]
+		lastDecision := response.GetDecisions()[len(response.GetDecisions())-1]
 		if lastDecision.GetDecisionType() == s.DecisionType_FailWorkflowExecution {
 			return "", fmt.Errorf("Cannot get stack trace dump for failed worklfow: %s",
 				lastDecision.GetFailWorkflowExecutionDecisionAttributes().GetDetails())
