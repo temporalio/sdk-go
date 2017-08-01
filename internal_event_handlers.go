@@ -27,8 +27,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -85,6 +87,8 @@ type (
 		logger                *zap.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
+
+		metricsScope tally.Scope
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -114,7 +118,7 @@ func (c *replayAwareZapCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefinitionFactory workflowDefinitionFactory,
-	completeHandler completionHandler, logger *zap.Logger, enableLoggingInReplay bool) workflowExecutionEventHandler {
+	completeHandler completionHandler, logger *zap.Logger, enableLoggingInReplay bool, scope tally.Scope) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:              workflowInfo,
 		workflowDefinitionFactory: workflowDefinitionFactory,
@@ -129,6 +133,10 @@ func newWorkflowExecutionEventHandler(workflowInfo *WorkflowInfo, workflowDefini
 		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.ID},
 		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.RunID},
 	).WithOptions(zap.WrapCore(wrapLogger(&context.isReplay, &context.enableLoggingInReplay)))
+
+	if scope != nil {
+		context.metricsScope = metrics.WrapScope(&context.isReplay, scope, context)
+	}
 
 	return &workflowExecutionEventHandlerImpl{context, nil}
 }
@@ -229,6 +237,10 @@ func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name strin
 
 func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
 	return wc.logger
+}
+
+func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
+	return wc.metricsScope
 }
 
 func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {

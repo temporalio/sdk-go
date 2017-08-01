@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uber-go/tally"
 	"go.uber.org/cadence/common"
 	"go.uber.org/zap"
 )
@@ -364,6 +365,11 @@ func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 // GetLogger returns a logger to be used in workflow's context
 func GetLogger(ctx Context) *zap.Logger {
 	return getWorkflowEnvironment(ctx).GetLogger()
+}
+
+// GetMetricsScope returns a metrics scope to be used in workflow's context
+func GetMetricsScope(ctx Context) tally.Scope {
+	return getWorkflowEnvironment(ctx).GetMetricsScope()
 }
 
 // Now returns the current time when the decision is started or replayed.

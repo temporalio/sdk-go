@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
@@ -61,6 +62,7 @@ type (
 		RequestCancelWorkflow(domainName, workflowID, runID string) error
 		ExecuteChildWorkflow(options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
+		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input []byte))
 	}
 

@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -76,6 +77,7 @@ type (
 		activityType      ActivityType
 		serviceInvoker    ServiceInvoker
 		logger            *zap.Logger
+		metricsScope      tally.Scope
 	}
 )
 

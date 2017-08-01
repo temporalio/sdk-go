@@ -30,6 +30,7 @@ import (
 
 	"github.com/facebookgo/clock"
 	"github.com/stretchr/testify/mock"
+	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
 	m "go.uber.org/cadence/.gen/go/cadence"
@@ -112,6 +113,7 @@ type (
 		service       m.TChanWorkflowService
 		workerOptions WorkerOptions
 		logger        *zap.Logger
+		metricsScope  tally.Scope
 		mockClock     *clock.Mock
 		wallClock     clock.Clock
 
@@ -165,6 +167,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
 			logger:          s.logger,
+			metricsScope:    s.scope,
 			mockClock:       clock.NewMock(),
 			wallClock:       clock.New(),
 			timers:          make(map[string]*testTimerHandle),
@@ -194,6 +197,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	if env.logger == nil {
 		logger, _ := zap.NewDevelopment()
 		env.logger = logger
+	}
+	if env.metricsScope == nil {
+		env.metricsScope = tally.NoopScope
 	}
 
 	// setup mock service
@@ -226,6 +232,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 	if env.workerOptions.Logger == nil {
 		env.workerOptions.Logger = env.logger
+	}
+	if env.workerOptions.MetricsScope == nil {
+		env.workerOptions.MetricsScope = env.metricsScope
 	}
 
 	return env
@@ -632,6 +641,10 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
 	return env.logger
 }
 
+func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
+	return env.workerOptions.MetricsScope
+}
+
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
 	var activityID string
 	if parameters.ActivityID == nil || *parameters.ActivityID == "" {
@@ -951,7 +964,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		TaskList:     taskList,
 		Identity:     wOptions.Identity,
 		MetricsScope: wOptions.MetricsScope,
-		Logger:       env.logger,
+		Logger:       wOptions.Logger,
 		UserContext:  wOptions.BackgroundActivityContext,
 	}
 	ensureRequiredParams(&params)

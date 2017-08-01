@@ -154,6 +154,10 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger = logger
 		params.Logger.Info("No logger configured for cadence worker. Created default one.")
 	}
+
+	if params.MetricsScope == nil {
+		params.MetricsScope = tally.NoopScope
+	}
 }
 
 func newWorkflowWorkerInternal(

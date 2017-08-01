@@ -24,6 +24,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/zap"
@@ -80,6 +81,12 @@ func GetActivityLogger(ctx context.Context) *zap.Logger {
 	return env.logger
 }
 
+// GetActivityMetricsScope returns a metrics scope that can be used in activity
+func GetActivityMetricsScope(ctx context.Context) tally.Scope {
+	env := getActivityEnv(ctx)
+	return env.metricsScope
+}
+
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
 // If the activity is either cancelled (or) workflow/activity doesn't exist then we would cancel
 // the context with error context.Canceled.
@@ -121,6 +128,7 @@ func WithActivityTask(
 	task *shared.PollForActivityTaskResponse,
 	invoker ServiceInvoker,
 	logger *zap.Logger,
+	scope tally.Scope,
 ) context.Context {
 	// TODO: Add activity start to close timeout to activity task and use it as the deadline
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
@@ -131,7 +139,8 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: *task.WorkflowExecution.RunId,
 			ID:    *task.WorkflowExecution.WorkflowId},
-		logger: logger,
+		logger:       logger,
+		metricsScope: scope,
 	})
 }
 

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +38,7 @@ type (
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
 		logger  *zap.Logger
+		scope   tally.Scope
 		hostEnv *hostEnvImpl
 		locker  sync.Mutex
 	}
@@ -134,6 +136,13 @@ func (s *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
 func (s *WorkflowTestSuite) GetLogger() *zap.Logger {
 	s.initIfNotDoneYet()
 	return s.logger
+}
+
+// SetMetricsScope sets the metrics scope for this WorkflowTestSuite. If you don't set scope, test suite will use
+// tally.NoopScope
+func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
+	s.initIfNotDoneYet()
+	s.scope = scope
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
