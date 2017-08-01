@@ -36,6 +36,8 @@ import (
 
 	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -160,6 +162,34 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	}
 }
 
+// verifyDomainExist does a DescribeDomain operation on the specified domain with backoff/retry
+// It returns an error, if the server returns an EntityNotExist or BadRequest error
+// On any other transient error, this method will just return success
+func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap.Logger) error {
+
+	descDomainOp := func() error {
+		ctx, cancel := newTChannelContext()
+		defer cancel()
+		_, err := client.DescribeDomain(ctx, &shared.DescribeDomainRequest{Name: &domain})
+		if err != nil {
+			if _, ok := err.(*shared.EntityNotExistsError); ok {
+				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
+				return err
+			}
+			if _, ok := err.(*shared.BadRequestError); ok {
+				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
+				return err
+			}
+			// on any other error, just return true
+			logger.Warn("unable to verify if domain exist", zap.String("domain", domain), zap.Error(err))
+		}
+		return nil
+	}
+
+	// exponential backoff retry for upto a minute
+	return backoff.Retry(descDomainOp, serviceOperationRetryPolicy, isServiceTransientError)
+}
+
 func newWorkflowWorkerInternal(
 	factory workflowDefinitionFactory,
 	service m.TChanWorkflowService,
@@ -214,12 +244,21 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
+	err := verifyDomainExist(ww.workflowService, ww.domain, ww.worker.logger)
+	if err != nil {
+		return err
+	}
 	ww.worker.Start()
 	return nil // TODO: propagate error
 }
 
-func (ww *workflowWorker) Run() {
+func (ww *workflowWorker) Run() error {
+	err := verifyDomainExist(ww.workflowService, ww.domain, ww.worker.logger)
+	if err != nil {
+		return err
+	}
 	ww.worker.Run()
+	return nil
 }
 
 // Shutdown the worker.
@@ -281,13 +320,22 @@ func newActivityTaskWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
+	err := verifyDomainExist(aw.workflowService, aw.domain, aw.worker.logger)
+	if err != nil {
+		return err
+	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
 
 // Run the worker.
-func (aw *activityWorker) Run() {
+func (aw *activityWorker) Run() error {
+	err := verifyDomainExist(aw.workflowService, aw.domain, aw.worker.logger)
+	if err != nil {
+		return err
+	}
 	aw.worker.Run()
+	return nil
 }
 
 // Shutdown the worker.
@@ -753,11 +801,14 @@ func (aw *aggregatedWorker) Start() error {
 	return nil
 }
 
-func (aw *aggregatedWorker) Run() {
-	aw.Start()
+func (aw *aggregatedWorker) Run() error {
+	if err := aw.Start(); err != nil {
+		return err
+	}
 	d := <-getKillSignal()
 	aw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
 	aw.Stop()
+	return nil
 }
 
 func (aw *aggregatedWorker) Stop() {

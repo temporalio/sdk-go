@@ -205,6 +205,41 @@ func TestCreateWorkerRun(t *testing.T) {
 	service.AssertExpectations(t)
 }
 
+func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
+
+	testCases := []struct {
+		domainErr  error
+		isErrFatal bool
+	}{
+		{s.NewEntityNotExistsError(), true},
+		{s.NewBadRequestError(), true},
+		{s.NewInternalServiceError(), false},
+		{errors.New("unknown"), false},
+	}
+
+	for _, tc := range testCases {
+		service := new(mocks.TChanWorkflowService)
+		service.On("DescribeDomain", mock.Anything, mock.Anything).Return(nil, tc.domainErr)
+		worker := createWorker(t, service)
+		if tc.isErrFatal {
+			err := worker.Start()
+			assert.Error(t, err, "worker.start() MUST fail when domain is invalid")
+			errC := make(chan error)
+			go func() { errC <- worker.Run() }()
+			select {
+			case e := <-errC:
+				assert.Error(t, e, "worker.Run() MUST fail when domain is invalid")
+			case <-time.After(time.Second):
+				assert.Fail(t, "worker.Run() MUST fail when domain is invalid")
+			}
+			continue
+		}
+		err := worker.Start()
+		assert.NoError(t, err, "worker.Start() failed unexpectedly")
+		worker.Stop()
+	}
+}
+
 func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 	//logger := getLogger()
 
@@ -246,7 +281,15 @@ func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 			},
 		},
 	}
+	domainStatus := s.DomainStatus_REGISTERED
+	domainDesc := &s.DescribeDomainResponse{
+		DomainInfo: &s.DomainInfo{
+			Name:   &domain,
+			Status: &domainStatus,
+		},
+	}
 	// mocks
+	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(domainDesc, nil)
 	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(activityTask, nil)
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(decisionTask, nil)

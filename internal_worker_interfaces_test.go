@@ -129,7 +129,16 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Create service endpoint
 	service := new(mocks.TChanWorkflowService)
 
+	domainStatus := m.DomainStatus_REGISTERED
+	domainDesc := &m.DescribeDomainResponse{
+		DomainInfo: &m.DomainInfo{
+			Name:   &domain,
+			Status: &domainStatus,
+		},
+	}
+
 	// mocks
+	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(domainDesc, nil)
 	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
 	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
