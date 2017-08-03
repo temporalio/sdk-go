@@ -159,6 +159,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 
 	if params.MetricsScope == nil {
 		params.MetricsScope = tally.NoopScope
+		params.Logger.Info("No metrics scope configured for cadence worker. Use NoopScope as default.")
 	}
 }
 
@@ -845,6 +846,10 @@ func newAggregatedWorker(
 	}
 
 	ensureRequiredParams(&workerParams)
+	tags := map[string]string{
+		tagDomain: domain,
+	}
+	workerParams.MetricsScope = workerParams.MetricsScope.Tagged(tags)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},

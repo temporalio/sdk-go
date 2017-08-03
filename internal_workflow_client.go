@@ -131,7 +131,7 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	if wc.metricsScope != nil {
-		wc.metricsScope.Counter(metrics.WorkflowsStartTotalCounter).Inc(1)
+		wc.metricsScope.Counter(metrics.WorkflowStartCounter).Inc(1)
 	}
 
 	executionInfo := &WorkflowExecution{
@@ -256,6 +256,7 @@ func (wc *workflowClient) GetWorkflowStackTrace(workflowID string, runID string,
 		wc.domain,
 		&s.WorkflowExecution{WorkflowId: common.StringPtr(workflowID), RunId: common.StringPtr(runID)},
 		atDecisionTaskCompletedEventID,
+		wc.metricsScope,
 	)
 	return getWorkflowStackTraceImpl(workflowID, runID, getHistoryPage)
 }

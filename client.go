@@ -200,6 +200,9 @@ func NewClient(service m.TChanWorkflowService, domain string, options *ClientOpt
 	if options != nil {
 		metricScope = options.MetricsScope
 	}
+	if metricScope == nil {
+		metricScope = tally.NoopScope
+	}
 	return &workflowClient{
 		workflowService: service,
 		domain:          domain,

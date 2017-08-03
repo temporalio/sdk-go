@@ -118,7 +118,6 @@ func NewWorkflowTaskHandler(domain string, identity string, logger *zap.Logger) 
 		Identity: identity,
 		Logger:   logger,
 	}
-	ensureRequiredParams(&params)
 	return newWorkflowTaskHandler(
 		getWorkflowDefinitionFactory(newRegisteredWorkflowFactory()),
 		domain,

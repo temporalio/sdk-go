@@ -34,6 +34,7 @@ import (
 
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/cadence/common/metrics"
 	"go.uber.org/zap"
 )
 
@@ -410,33 +411,26 @@ func getDispatcher(ctx Context) dispatcher {
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
 // if root workflow function returned
 func executeDispatcher(ctx Context, dispatcher dispatcher) {
-	checkUnhandledSigFn := func(ctx Context) {
-		us := getWorkflowEnvOptions(ctx).getUnhandledSignals()
-		if len(us) > 0 {
-			getWorkflowEnvironment(ctx).GetLogger().Warn("Workflow has unhandled signals",
-				zap.Strings("SignalNames", us))
-			// TODO: We don't have a metrics added to workflow environment yet,
-			// this need to be reported as a metric.
-		}
-	}
-
+	env := getWorkflowEnvironment(ctx)
 	panicErr := dispatcher.ExecuteUntilAllBlocked()
 	if panicErr != nil {
-		env := getWorkflowEnvironment(ctx)
-		env.GetLogger().Error("Dispatcher panic.",
-			zap.String("PanicError", panicErr.Error()),
-			zap.String("PanicStack", panicErr.StackTrace()))
-		checkUnhandledSigFn(ctx)
 		env.Complete(nil, panicErr)
 		return
 	}
+
 	rp := *getWorkflowResultPointerPointer(ctx)
 	if rp == nil {
 		// Result is not set, so workflow is still executing
 		return
 	}
-	checkUnhandledSigFn(ctx)
-	getWorkflowEnvironment(ctx).Complete(rp.workflowResult, rp.error)
+
+	us := getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	if len(us) > 0 {
+		env.GetLogger().Warn("Workflow has unhandled signals", zap.Strings("SignalNames", us))
+		env.GetMetricsScope().Counter(metrics.UnhandledSignalsCounter).Inc(1)
+	}
+
+	env.Complete(rp.workflowResult, rp.error)
 }
 
 // For troubleshooting stack pretty printing only.
