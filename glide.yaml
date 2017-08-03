@@ -10,7 +10,7 @@ import:
 - package: github.com/uber-go/tally
   version: v3.0.1
 - package: github.com/uber/tchannel-go
-  version: v1.5.0
+  version: 2d75494d3a0ffabbd00bc2cb71ed039d94def186
   subpackages:
   - thrift
 - package: go.uber.org/atomic

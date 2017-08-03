@@ -1,5 +1,5 @@
-hash: b083beef2a3193f4371a70eacebe06d9485a0b52e89112475a81f36e4c440aad
-updated: 2017-07-24T17:32:58.662863691-07:00
+hash: 83b878a2b672cfaaab82821a2724388eb68efd618f5efd57ff3a22a5d4ff147e
+updated: 2017-08-02T14:28:20.937636695-07:00
 imports:
 - name: github.com/apache/thrift
   version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
@@ -36,13 +36,14 @@ imports:
 - name: github.com/uber-go/tally
   version: e9b601813b0be4771b1b3995390567b67ab2b3fc
 - name: github.com/uber/tchannel-go
-  version: 0b7f160817553b0bacb5b108dd84a5022dbdd1c4
+  version: 2d75494d3a0ffabbd00bc2cb71ed039d94def186
   subpackages:
   - internal/argreader
   - relay
   - thrift
   - thrift/gen-go/meta
   - tnet
+  - tos
   - trand
   - typed
 - name: go.uber.org/atomic
@@ -57,9 +58,14 @@ imports:
   - internal/multierror
   - zapcore
 - name: golang.org/x/net
-  version: 5d0d7096b5f2ef7ba83f319c07ef63989a1c6f91
+  version: 054b33e6527139ad5b1ec2f6232c3b175bd9a30c
   subpackages:
+  - bpf
   - context
+  - internal/iana
+  - internal/socket
+  - ipv4
+  - ipv6
 - name: golang.org/x/time
   version: 8be79e1e0910c292df4e79c241bb7e8f7e725959
   subpackages:
