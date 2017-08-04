@@ -273,18 +273,6 @@ func (t *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args .
 	t.impl.executeWorkflow(workflowFn, args...)
 }
 
-// OverrideActivity overrides an actual activity with a fake activity. The fake activity will be invoked in place where the
-// actual activity should have been invoked.
-func (t *TestWorkflowEnvironment) OverrideActivity(activityFn, fakeActivityFn interface{}) {
-	t.impl.overrideActivity(activityFn, fakeActivityFn)
-}
-
-// OverrideWorkflow overrides an actual workflow with a fake workflow. The fake workflow will be invoked in place where the
-// actual workflow should have been invoked.
-func (t *TestWorkflowEnvironment) OverrideWorkflow(workflowFn, fakeWorkflowFn interface{}) {
-	t.impl.overrideWorkflow(workflowFn, fakeWorkflowFn)
-}
-
 // Now returns the current workflow time (a.k.a cadence.Now() time) of this TestWorkflowEnvironment.
 func (t *TestWorkflowEnvironment) Now() time.Time {
 	return t.impl.Now()

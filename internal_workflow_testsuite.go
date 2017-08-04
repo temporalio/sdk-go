@@ -105,8 +105,6 @@ type (
 		locker    sync.Mutex
 		testSuite *WorkflowTestSuite
 
-		overrodeWorkflows          map[string]interface{} // map of registered-fnName -> fakeWorkflowFn
-		overrodeActivities         map[string]interface{} // map of registered-fnName -> fakeActivityFn
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock          *mock.Mock
@@ -162,8 +160,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	env := &testWorkflowEnvironmentImpl{
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
 			testSuite:                  s,
-			overrodeWorkflows:          make(map[string]interface{}),
-			overrodeActivities:         make(map[string]interface{}),
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
 			logger:          s.logger,
@@ -365,35 +361,6 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		// will never happen
 		return nil, fmt.Errorf("unsupported respond type %T", result)
 	}
-}
-
-func validateOverrideFunction(fn, fakeFn interface{}, isWorkflow bool) {
-	// verify both functions are valid workflow func
-	actualFnType := reflect.TypeOf(fn)
-	if err := validateFnFormat(actualFnType, isWorkflow); err != nil {
-		panic(err)
-	}
-	fakeFnType := reflect.TypeOf(fakeFn)
-	if err := validateFnFormat(fakeFnType, isWorkflow); err != nil {
-		panic(err)
-	}
-
-	// verify function signatures are the same.
-	if actualFnType != fakeFnType {
-		panic(fmt.Sprintf("override failed, expected %v, but got %v.", actualFnType, fakeFnType))
-	}
-}
-
-func (env *testWorkflowEnvironmentImpl) overrideActivity(activityFn, fakeActivityFn interface{}) {
-	validateOverrideFunction(activityFn, fakeActivityFn, false)
-	fnName := getFunctionName(activityFn)
-	env.overrodeActivities[fnName] = fakeActivityFn
-}
-
-func (env *testWorkflowEnvironmentImpl) overrideWorkflow(workflowFn, fakeWorkflowFn interface{}) {
-	validateOverrideFunction(workflowFn, fakeWorkflowFn, true)
-	fnName := getFunctionName(workflowFn)
-	env.overrodeWorkflows[fnName] = fakeWorkflowFn
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {
@@ -776,11 +743,6 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 		return m.executeMock(ctx, input, mockRet)
 	}
 
-	if fakeFn, ok := a.env.overrodeActivities[a.name]; ok {
-		executor := &activityExecutor{name: a.name, fn: fakeFn}
-		return executor.Execute(ctx, input)
-	}
-
 	return a.activityExecutor.Execute(ctx, input)
 }
 
@@ -824,12 +786,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		return m.executeMock(ctx, input, mockRet)
 	}
 
-	if fakeFn, ok := env.overrodeWorkflows[w.name]; ok {
-		executor := &workflowExecutor{name: w.name, fn: fakeFn}
-		return executor.Execute(ctx, input)
-	}
-
-	// no mock, no override, so call the actual workflow
+	// no mock, so call the actual workflow
 	return w.workflowExecutor.Execute(ctx, input)
 }
 

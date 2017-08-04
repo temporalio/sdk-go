@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
@@ -146,7 +147,7 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 
 func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
-	env.OverrideActivity(testAct, func(ctx context.Context) (string, error) {
+	env.OnActivity(testAct, mock.Anything).Return(func(ctx context.Context) (string, error) {
 		activityID := GetActivityInfo(ctx).ActivityID
 		switch activityID {
 		case "id1":
@@ -156,10 +157,11 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 		default:
 			panic(fmt.Sprintf("Unexpected activityID: %v", activityID))
 		}
-	})
+	}).Twice()
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal("Hello Flow!", result)
