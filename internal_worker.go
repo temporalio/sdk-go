@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -87,7 +88,7 @@ type (
 		activityRegistry    activityRegistry
 		workflowService     m.TChanWorkflowService
 		domain              string
-		poller              *activityTaskPoller
+		poller              taskPoller
 		worker              *baseWorker
 		identity            string
 	}
@@ -187,6 +188,10 @@ func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap
 		return nil
 	}
 
+	if len(domain) == 0 {
+		return errors.New("domain cannot be empty")
+	}
+
 	// exponential backoff retry for upto a minute
 	return backoff.Retry(descDomainOp, serviceOperationRetryPolicy, isServiceTransientError)
 }
@@ -240,6 +245,7 @@ func newWorkflowTaskWorkerInternal(
 		poller:              poller,
 		worker:              worker,
 		identity:            params.Identity,
+		domain:              domain,
 	}
 }
 
@@ -316,6 +322,7 @@ func newActivityTaskWorker(
 		worker:              base,
 		poller:              poller,
 		identity:            workerParams.Identity,
+		domain:              domain,
 	}
 }
 
