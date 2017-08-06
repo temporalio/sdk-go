@@ -827,6 +827,52 @@ func TestGobEncoding(t *testing.T) {
 	}
 }
 
+var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
+var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
+var thriftEncodingTests = []encodingTest{
+	{&thriftEncoding{}, []interface{}{&testWorkflowID1}},
+	{&thriftEncoding{}, []interface{}{&testWorkflowID1, &testWorkflowID2}},
+	{&thriftEncoding{}, []interface{}{&testWorkflowID1, &testWorkflowID2, &testWorkflowID1}},
+}
+
+func TestThriftEncoding(t *testing.T) {
+	// Success tests.
+	for _, et := range thriftEncodingTests {
+		data, err := et.encoding.Marshal(et.input)
+		require.NoError(t, err)
+
+		var result []interface{}
+		for _, v := range et.input {
+			arg := reflect.New(reflect.ValueOf(v).Type()).Interface()
+			result = append(result, arg)
+		}
+		err = et.encoding.Unmarshal(data, result)
+		require.NoError(t, err)
+
+		for i := 0; i < len(et.input); i++ {
+			vat := reflect.ValueOf(result[i]).Elem().Interface()
+			require.Equal(t, et.input[i], vat)
+		}
+	}
+
+	// Failure tests.
+	enc := &thriftEncoding{}
+	_, err := enc.Marshal([]interface{}{testWorkflowID1})
+	require.Contains(t, err.Error(), "pointer to thrift.TStruct type is required")
+
+	err = enc.Unmarshal([]byte("dummy"), []interface{}{testWorkflowID1})
+	require.Contains(t, err.Error(), "pointer to pointer thrift.TStruct type is required")
+
+	err = enc.Unmarshal([]byte("dummy"), []interface{}{&testWorkflowID1})
+	require.Contains(t, err.Error(), "pointer to pointer thrift.TStruct type is required")
+
+	_, err = enc.Marshal([]interface{}{testWorkflowID1, &testWorkflowID2})
+	require.Contains(t, err.Error(), "pointer to thrift.TStruct type is required")
+
+	err = enc.Unmarshal([]byte("dummy"), []interface{}{testWorkflowID1, &testWorkflowID2})
+	require.Contains(t, err.Error(), "pointer to pointer thrift.TStruct type is required")
+}
+
 // Encode function result.
 func testEncodeFunctionResult(r interface{}) []byte {
 	result, err := getHostEnvironment().encodeArg(r)

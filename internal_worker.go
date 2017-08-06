@@ -35,9 +35,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -372,6 +374,7 @@ type hostEnvImpl struct {
 	workflowFuncMap                  map[string]interface{}
 	activityFuncMap                  map[string]interface{}
 	encoding                         gobEncoding
+	tEncoding                        thriftEncoding
 	activityRegistrationInterceptors []interceptorFn
 	workflowRegistrationInterceptors []interceptorFn
 }
@@ -472,6 +475,11 @@ func (th *hostEnvImpl) Encoder() encoding {
 	return th.encoding
 }
 
+// Get thrift encoder.
+func (th *hostEnvImpl) ThriftEncoder() encoding {
+	return th.tEncoding
+}
+
 // Register all function args and return types with encoder.
 func (th *hostEnvImpl) RegisterFnType(fnType reflect.Type) error {
 	return th.registerEncodingTypes(fnType)
@@ -536,7 +544,7 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 
 	// Register arguments.
 	for i := 0; i < fnType.NumIn(); i++ {
-		err := th.registerType(fnType.In(i))
+		err := th.registerType(fnType.In(i), th.Encoder())
 		if err != nil {
 			return err
 		}
@@ -545,7 +553,7 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 	// TODO: We need register all concrete implementations of error, Either
 	// through pre-registry (or) at the time conversion.
 	for i := 0; i < fnType.NumOut(); i++ {
-		err := th.registerType(fnType.Out(i))
+		err := th.registerType(fnType.Out(i), th.Encoder())
 		if err != nil {
 			return err
 		}
@@ -554,20 +562,59 @@ func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
 	return nil
 }
 
-func (th *hostEnvImpl) registerValue(v interface{}) error {
-	rType := reflect.Indirect(reflect.ValueOf(v)).Type()
-	return th.registerType(rType)
+func (th *hostEnvImpl) registerValue(v interface{}, encoder encoding) error {
+	if val := reflect.ValueOf(v); val.IsValid() {
+		if val.Kind() == reflect.Ptr && val.IsNil() {
+			return nil
+		}
+		rType := reflect.Indirect(val).Type()
+		return th.registerType(rType, encoder)
+	}
+	return nil
 }
 
 // register type with our encoder.
-func (th *hostEnvImpl) registerType(t reflect.Type) error {
+func (th *hostEnvImpl) registerType(t reflect.Type, encoder encoding) error {
 	// Interfaces cannot be registered, their implementations should be
 	// https://golang.org/pkg/encoding/gob/#Register
 	if t.Kind() == reflect.Interface || t.Kind() == reflect.Ptr {
 		return nil
 	}
 	arg := reflect.Zero(t).Interface()
-	return th.Encoder().Register(arg)
+	return encoder.Register(arg)
+}
+
+func (th *hostEnvImpl) isUseThriftEncoding(objs []interface{}) bool {
+	// NOTE: our criteria to use which encoder is simple if all the types are serializable using thrift then we use
+	// thrift encoder. For everything else we default to gob.
+
+	if len(objs) == 0 {
+		return false
+	}
+
+	for i := 0; i < len(objs); i++ {
+		if !isThriftType(objs[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (th *hostEnvImpl) isUseThriftDecoding(objs []interface{}) bool {
+	// NOTE: our criteria to use which encoder is simple if all the types are de-serializable using thrift then we use
+	// thrift decoder. For everything else we default to gob.
+
+	if len(objs) == 0 {
+		return false
+	}
+
+	for i := 0; i < len(objs); i++ {
+		rVal := reflect.ValueOf(objs[i])
+		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {
+			return false
+		}
+	}
+	return true
 }
 
 // Validate function parameters.
@@ -625,14 +672,21 @@ func (th *hostEnvImpl) encode(r []interface{}) ([]byte, error) {
 		return r[0].([]byte), nil
 	}
 
+	var encoder encoding
+	if th.isUseThriftEncoding(r) {
+		encoder = th.ThriftEncoder()
+	} else {
+		encoder = th.Encoder()
+	}
+
 	for _, v := range r {
-		err := th.registerValue(v)
+		err := th.registerValue(v, encoder)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	data, err := getHostEnvironment().Encoder().Marshal(r)
+	data, err := encoder.Marshal(r)
 	if err != nil {
 		return nil, err
 	}
@@ -646,14 +700,21 @@ func (th *hostEnvImpl) decode(data []byte, to []interface{}) error {
 		return nil
 	}
 
+	var encoder encoding
+	if th.isUseThriftDecoding(to) {
+		encoder = th.ThriftEncoder()
+	} else {
+		encoder = th.Encoder()
+	}
+
 	for _, v := range to {
-		err := th.registerValue(v)
+		err := th.registerValue(v, encoder)
 		if err != nil {
 			return err
 		}
 	}
 
-	if err := getHostEnvironment().Encoder().Unmarshal(data, to); err != nil {
+	if err := encoder.Unmarshal(data, to); err != nil {
 		return err
 	}
 	return nil
@@ -1018,6 +1079,61 @@ func (g gobEncoding) Unmarshal(data []byte, objs []interface{}) error {
 				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
 		}
 	}
+	return nil
+}
+
+func isThriftType(v interface{}) bool {
+	// NOTE: Thrift serialization works only if the values are pointers.
+	// Thrift has a validation that it meets thift.TStruct which has Read/Write pointer receivers.
+
+	if reflect.ValueOf(v).Kind() != reflect.Ptr {
+		return false
+	}
+	t := reflect.TypeOf((*thrift.TStruct)(nil)).Elem()
+	return reflect.TypeOf(v).Implements(t)
+}
+
+// thriftEncoding encapsulates thrift serializer/de-serializer.
+type thriftEncoding struct{}
+
+// Register implements the encoding interface
+func (g thriftEncoding) Register(obj interface{}) error {
+	return nil
+}
+
+// Marshal encodes an array of thrift into bytes
+func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
+	tlist := []thrift.TStruct{}
+	for i := 0; i < len(objs); i++ {
+		if !isThriftType(objs[i]) {
+			return nil, fmt.Errorf("pointer to thrift.TStruct type is required for %v argument", i+1)
+		}
+		t := reflect.ValueOf(objs[i]).Interface().(thrift.TStruct)
+		tlist = append(tlist, t)
+	}
+	return common.TListSerialize(tlist)
+}
+
+// Unmarshal decodes an array of thrift into bytes
+func (g thriftEncoding) Unmarshal(data []byte, objs []interface{}) error {
+	tlist := []thrift.TStruct{}
+	for i := 0; i < len(objs); i++ {
+		rVal := reflect.ValueOf(objs[i])
+		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {
+			return fmt.Errorf("pointer to pointer thrift.TStruct type is required for %v argument", i+1)
+		}
+		t := reflect.New(rVal.Elem().Type().Elem()).Interface().(thrift.TStruct)
+		tlist = append(tlist, t)
+	}
+
+	if err := common.TListDeserialize(tlist, data); err != nil {
+		return err
+	}
+
+	for i := 0; i < len(tlist); i++ {
+		reflect.ValueOf(objs[i]).Elem().Set(reflect.ValueOf(tlist[i]))
+	}
+
 	return nil
 }
 

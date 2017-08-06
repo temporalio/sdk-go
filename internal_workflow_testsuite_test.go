@@ -30,6 +30,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common"
 	"go.uber.org/zap"
 )
 
@@ -883,4 +885,49 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 	s.True(env.IsWorkflowCompleted())
 	s.Nil(env.GetWorkflowError())
 	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
+	actualValues := []string{}
+	retVal := &shared.WorkflowExecution{WorkflowId: common.StringPtr("retwID2"), RunId: common.StringPtr("retrID2")}
+
+	// Passing one argument
+	activitySingleFn := func(ctx context.Context, wf *shared.WorkflowExecution) (*shared.WorkflowExecution, error) {
+		actualValues = append(actualValues, wf.GetWorkflowId())
+		actualValues = append(actualValues, wf.GetRunId())
+		return retVal, nil
+	}
+
+	input := &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID1"), RunId: common.StringPtr("rID1")}
+	env := s.NewTestActivityEnvironment()
+	blob, err := env.ExecuteActivity(activitySingleFn, input)
+	s.NoError(err)
+	var ret *shared.WorkflowExecution
+	blob.Get(&ret)
+	s.Equal(retVal, ret)
+
+	// Passing more than one argument
+	activityDoubleArgFn := func(ctx context.Context, wf *shared.WorkflowExecution, t *shared.WorkflowType) (*shared.WorkflowExecution, error) {
+		actualValues = append(actualValues, wf.GetWorkflowId())
+		actualValues = append(actualValues, wf.GetRunId())
+		actualValues = append(actualValues, t.GetName())
+		return retVal, nil
+	}
+
+	input = &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID2"), RunId: common.StringPtr("rID3")}
+	wt := &shared.WorkflowType{Name: common.StringPtr("wType")}
+	env = s.NewTestActivityEnvironment()
+	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
+	s.NoError(err)
+	blob.Get(&ret)
+	s.Equal(retVal, ret)
+
+	expectedValues := []string{
+		"wID1",
+		"rID1",
+		"wID2",
+		"rID3",
+		"wType",
+	}
+	s.EqualValues(expectedValues, actualValues)
 }
