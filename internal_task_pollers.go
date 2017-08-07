@@ -117,7 +117,7 @@ func isClientSideError(err error) bool {
 func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService,
 	domain string, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		service:      service,
+		service:      metrics.NewWorkflowServiceWrapper(service, params.MetricsScope),
 		domain:       domain,
 		taskListName: params.TaskList,
 		identity:     params.Identity,
@@ -272,7 +272,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkf
 	domain string, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		taskHandler:  taskHandler,
-		service:      service,
+		service:      metrics.NewWorkflowServiceWrapper(service, params.MetricsScope),
 		domain:       domain,
 		taskListName: params.TaskList,
 		identity:     params.Identity,

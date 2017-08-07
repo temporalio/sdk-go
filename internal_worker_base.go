@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	m "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -87,7 +86,6 @@ type (
 		maxTaskRate                int
 		maxTaskRateRefreshDuration time.Duration
 		taskWorker                 taskPoller
-		workflowService            m.TChanWorkflowService
 		identity                   string
 		workerType                 string
 	}

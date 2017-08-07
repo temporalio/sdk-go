@@ -26,6 +26,7 @@ import (
 	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/cadence"
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/common/metrics"
 )
 
 type (
@@ -204,7 +205,7 @@ func NewClient(service m.TChanWorkflowService, domain string, options *ClientOpt
 		metricScope = tally.NoopScope
 	}
 	return &workflowClient{
-		workflowService: service,
+		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
 		domain:          domain,
 		metricsScope:    metricScope,
 		identity:        identity,
@@ -223,8 +224,11 @@ func NewDomainClient(service m.TChanWorkflowService, options *ClientOptions) Dom
 	if options != nil {
 		metricScope = options.MetricsScope
 	}
+	if metricScope == nil {
+		metricScope = tally.NoopScope
+	}
 	return &domainClient{
-		workflowService: service,
+		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
 		metricsScope:    metricScope,
 		identity:        identity,
 	}
