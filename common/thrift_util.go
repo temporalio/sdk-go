@@ -21,8 +21,6 @@
 package common
 
 import (
-	"fmt"
-
 	"github.com/apache/thrift/lib/go/thrift"
 )
 
@@ -40,21 +38,14 @@ func TListSerialize(ts []thrift.TStruct) (b []byte, err error) {
 	t := thrift.NewTSerializer()
 	t.Transport.Reset()
 
-	if e := t.Protocol.WriteListBegin(thrift.STRING, len(ts)); e != nil {
-		err = thrift.PrependError("error writing list begin: ", e)
-		return
-	}
+	// NOTE: we don't write any markers as thrift by design being a streaming protocol doesn't
+	// recommend writing length.
 
 	for _, v := range ts {
 		if e := v.Write(t.Protocol); e != nil {
 			err = thrift.PrependError("error writing TStruct: ", e)
 			return
 		}
-	}
-
-	if e := t.Protocol.WriteListEnd(); e != nil {
-		err = thrift.PrependError("error writing list end: ", e)
-		return
 	}
 
 	if err = t.Protocol.Flush(); err != nil {
@@ -82,26 +73,11 @@ func TListDeserialize(ts []thrift.TStruct, b []byte) (err error) {
 		return
 	}
 
-	_, size, e := t.Protocol.ReadListBegin()
-	if e != nil {
-		err = thrift.PrependError("error reading list begin: ", e)
-		return
-	}
-
-	if len(ts) != size {
-		return fmt.Errorf("Number of types to deserialize mismath %v != %v", len(ts), size)
-	}
-
-	for i := 0; i < size; i++ {
+	for i := 0; i < len(ts); i++ {
 		if e := ts[i].Read(t.Protocol); e != nil {
 			err = thrift.PrependError("error reading TStruct: ", e)
 			return
 		}
-	}
-
-	if e := t.Protocol.ReadListEnd(); e != nil {
-		err = thrift.PrependError("error reading list end: ", e)
-		return
 	}
 
 	return
