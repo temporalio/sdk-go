@@ -159,6 +159,11 @@ const (
 	ChildWorkflowPolicyAbandon ChildWorkflowPolicy = 2
 )
 
+// RegisterWorkflowOptions consists of options for registering a workflow
+type RegisterWorkflowOptions struct {
+	Name string
+}
+
 // RegisterWorkflow - registers a workflow function with the framework.
 // A workflow takes a cadence context and input and returns a (result, error) or just error.
 // Examples:
@@ -169,8 +174,25 @@ const (
 // Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 // This method calls panic if workflowFunc doesn't comply with the expected format.
 func RegisterWorkflow(workflowFunc interface{}) {
+	RegisterWorkflowWithOptions(workflowFunc, RegisterWorkflowOptions{})
+}
+
+// RegisterWorkflowWithOptions registers the workflow function with options
+// The user can use options to provide an external name for the workflow or leave it empty if no
+// external name is required. This can be used as
+// client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{})
+// client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
+// A workflow takes a cadence context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleWorkflow(ctx cadence.Context, input []byte) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int, arg2 string) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context) (result []byte, err error)
+//	func sampleWorkflow(ctx cadence.Context, arg1 int) (result string, err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+// This method calls panic if workflowFunc doesn't comply with the expected format.
+func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflowOptions) {
 	thImpl := getHostEnvironment()
-	err := thImpl.RegisterWorkflow(workflowFunc)
+	err := thImpl.RegisterWorkflowWithOptions(workflowFunc, opts)
 	if err != nil {
 		panic(err)
 	}

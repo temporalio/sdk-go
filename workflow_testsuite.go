@@ -49,8 +49,8 @@ type (
 		impl *testWorkflowEnvironmentImpl
 	}
 
-	// TestActivityEnviornment is the environment that you use to test activity
-	TestActivityEnviornment struct {
+	// TestActivityEnvironment is the environment that you use to test activity
+	TestActivityEnvironment struct {
 		impl *testWorkflowEnvironmentImpl
 	}
 
@@ -64,96 +64,53 @@ type (
 	}
 )
 
+func newWorkflowTestSuite() *WorkflowTestSuite {
+	return &WorkflowTestSuite{hostEnv: getHostEnvironment()}
+}
+
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
 func (b EncodedValues) Get(valuePtr ...interface{}) error {
 	return getHostEnvironment().decode(b, valuePtr)
 }
 
-func (s *WorkflowTestSuite) initIfNotDoneYet() {
-	if s.hostEnv != nil {
-		return
-	}
-	s.locker.Lock()
-	if s.hostEnv == nil {
-		s.hostEnv = &hostEnvImpl{
-			workflowFuncMap: make(map[string]interface{}),
-			activityFuncMap: make(map[string]interface{}),
-			encoding:        gobEncoding{},
-		}
-	}
-	s.locker.Unlock()
-}
-
 // NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. You can use the returned TestWorkflowEnvironment
 // to run your workflow in the test environment.
 func (s *WorkflowTestSuite) NewTestWorkflowEnvironment() *TestWorkflowEnvironment {
-	s.initIfNotDoneYet()
 	return &TestWorkflowEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
-// NewTestActivityEnvironment creates a new instance of TestActivityEnviornment. You can use the returned TestActivityEnviornment
+// NewTestActivityEnvironment creates a new instance of TestActivityEnvironment. You can use the returned TestActivityEnvironment
 // to run your activity in the test environment.
-func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnviornment {
-	s.initIfNotDoneYet()
-	return &TestActivityEnviornment{impl: newTestWorkflowEnvironmentImpl(s)}
-}
-
-// RegisterWorkflow registers a workflow that could be used by tests of this WorkflowTestSuite instance. All workflow registered
-// via cadence.RegisterWorkflow() are still valid and will be available to all tests of all instance of WorkflowTestSuite.
-// In the context of unit tests, workflow registration is only required if you are invoking workflow by name.
-func (s *WorkflowTestSuite) RegisterWorkflow(workflowFn interface{}) {
-	s.initIfNotDoneYet()
-	err := s.hostEnv.RegisterWorkflow(workflowFn)
-	if err != nil {
-		panic(err)
-	}
-}
-
-// RegisterActivity registers an activity to this WorkflowTestSuite instance. Activities registered here will be available
-// and only available to all tests of this WorkflowTestSuite instance. Activities registered via cadence.RegisterActivity()
-// are still valid and will be available to all tests of all instances of WorkflowTestSuite.
-func (s *WorkflowTestSuite) RegisterActivity(activityFn interface{}) {
-	s.initIfNotDoneYet()
-	fnName := getFunctionName(activityFn)
-	_, ok := s.hostEnv.activityFuncMap[fnName]
-	if !ok {
-		// activity not registered yet, register now
-		err := s.hostEnv.RegisterActivity(activityFn)
-		if err != nil {
-			panic(err)
-		}
-	}
+func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnvironment {
+	return &TestActivityEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
 // with Debug level logging enabled.
 func (s *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
-	s.initIfNotDoneYet()
 	s.logger = logger
 }
 
 // GetLogger gets the logger for this WorkflowTestSuite.
 func (s *WorkflowTestSuite) GetLogger() *zap.Logger {
-	s.initIfNotDoneYet()
 	return s.logger
 }
 
 // SetMetricsScope sets the metrics scope for this WorkflowTestSuite. If you don't set scope, test suite will use
 // tally.NoopScope
 func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
-	s.initIfNotDoneYet()
 	s.scope = scope
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use EncodedValue.Get() to extract strong typed result value.
-func (t *TestActivityEnviornment) ExecuteActivity(activityFn interface{}, args ...interface{}) (EncodedValue, error) {
+func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (EncodedValue, error) {
 	return t.impl.executeActivity(activityFn, args...)
 }
 
-// SetWorkerOption sets the WorkerOptions that will be use by TestActivityEnviornment. TestActivityEnviornment will
+// SetWorkerOption sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
 // use options set by SetIdentity(), SetMetrics(), and WithActivityContext() on the WorkerOptions. Other options are ignored.
-func (t *TestActivityEnviornment) SetWorkerOption(options WorkerOptions) *TestActivityEnviornment {
+func (t *TestActivityEnvironment) SetWorkerOption(options WorkerOptions) *TestActivityEnvironment {
 	t.impl.workerOptions = options
 	return t
 }
@@ -408,6 +365,8 @@ func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // SetActivityTaskList set the affinity between activity and tasklist. By default, activity can be invoked by any tasklist
 // in this test environment. You can use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
-func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
-	t.impl.setActivityTaskList(tasklist, activityFn...)
+func (t *TestWorkflowEnvironment) SetActivityTaskList(
+	tasklist string, ao RegisterActivityOptions, activityFn ...interface{},
+) {
+	t.impl.setActivityTaskList(tasklist, ao, activityFn...)
 }

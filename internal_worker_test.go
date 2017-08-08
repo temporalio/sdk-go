@@ -46,55 +46,85 @@ var registeredActivities []string
 var registeredWorkflows []string
 
 func init() {
-	RegisterWorkflow(sampleWorkflowExecute)
-	AddWorkflowRegistrationInterceptor(func(workflowName string, workflow interface{}) (string, interface{}) {
-		registeredWorkflows = append(registeredWorkflows, workflowName)
-		return workflowName, workflow
-	})
-	RegisterWorkflow(testReplayWorkflow)
+	registerWithSample(getHostEnvironment())
+}
 
-	RegisterActivity(testActivity)
-	RegisterActivity(testActivityByteArgs)
-	AddActivityRegistrationInterceptor(func(activityName string, activity interface{}) (string, interface{}) {
-		registeredActivities = append(registeredActivities, activityName)
-		return activityName, activity
-	})
-	RegisterActivity(testActivityMultipleArgs)
-	RegisterActivity(testActivityReturnString)
-	RegisterActivity(testActivityReturnEmptyString)
-	RegisterActivity(testActivityReturnEmptyStruct)
+func registerWithSample(hostEnv *hostEnvImpl) {
+	hostEnv.RegisterWorkflowWithOptions(
+		sampleWorkflowExecute,
+		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
+	)
+	hostEnv.AddWorkflowRegistrationInterceptor(
+		func(workflowName string, workflow interface{}) (string, interface{}) {
+			registeredWorkflows = append(registeredWorkflows, workflowName)
+			return workflowName, workflow
+		},
+	)
+	hostEnv.RegisterWorkflow(testReplayWorkflow)
+
+	hostEnv.RegisterActivityWithOptions(
+		testActivity,
+		RegisterActivityOptions{Name: "testActivity"},
+	)
+	hostEnv.RegisterActivity(testActivityByteArgs)
+	hostEnv.AddActivityRegistrationInterceptor(
+		func(activityName string, activity interface{}) (string, interface{}) {
+			registeredActivities = append(registeredActivities, activityName)
+			return activityName, activity
+		},
+	)
+	hostEnv.RegisterActivityWithOptions(
+		testActivityMultipleArgs,
+		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
+	)
+	hostEnv.RegisterActivity(testActivityReturnString)
+	hostEnv.RegisterActivity(testActivityReturnEmptyString)
+	hostEnv.RegisterActivity(testActivityReturnEmptyStruct)
+
+	hostEnv.RegisterActivity(testActivityNoResult)
+	hostEnv.RegisterActivity(testActivityNoContextArg)
+	hostEnv.RegisterActivity(testActivityReturnByteArray)
+	hostEnv.RegisterActivity(testActivityReturnInt)
+	hostEnv.RegisterActivity(testActivityReturnNilStructPtr)
+	hostEnv.RegisterActivity(testActivityReturnStructPtr)
+	hostEnv.RegisterActivity(testActivityReturnNilStructPtrPtr)
+	hostEnv.RegisterActivity(testActivityReturnStructPtrPtr)
 }
 
 func TestActivityRegistrationListener(t *testing.T) {
-	require.Equal(t, 7, len(registeredActivities))
 	expectedActivities := []string{
-		"go.uber.org/cadence.testActivity",
+		"testActivity",
+		"testActivityMultipleArgs",
 		"go.uber.org/cadence.testActivityByteArgs",
-		"go.uber.org/cadence.testActivityMultipleArgs",
 		"go.uber.org/cadence.testActivityReturnString",
 		"go.uber.org/cadence.testActivityReturnEmptyString",
 		"go.uber.org/cadence.testActivityReturnEmptyStruct",
-		"go.uber.org/cadence.stackTraceActivity", // from internal_task_handlers_test.go
+		"go.uber.org/cadence.testActivityNoResult",
+		"go.uber.org/cadence.testActivityNoContextArg",
+		"go.uber.org/cadence.testActivityReturnByteArray",
+		"go.uber.org/cadence.testActivityReturnInt",
+		"go.uber.org/cadence.testActivityReturnNilStructPtr",
+		"go.uber.org/cadence.testActivityReturnStructPtr",
+		"go.uber.org/cadence.testActivityReturnNilStructPtrPtr",
+		"go.uber.org/cadence.testActivityReturnStructPtrPtr",
 	}
-	sort.Strings(expectedActivities)
-	expected := strings.Join(expectedActivities, ",")
 	sort.Strings(registeredActivities)
 	registered := strings.Join(registeredActivities, ",")
-	require.Equal(t, expected, registered)
+	for _, a := range expectedActivities {
+		require.Contains(t, registered, a)
+	}
 }
 
 func TestWorkflowRegistrationListener(t *testing.T) {
-	require.Equal(t, 3, len(registeredWorkflows))
 	expectedWorkflows := []string{
-		"go.uber.org/cadence.sampleWorkflowExecute",
+		"sampleWorkflowExecute",
 		"go.uber.org/cadence.testReplayWorkflow",
-		"go.uber.org/cadence.stackTraceWorkflow", // from internal_task_handlers_test.go
 	}
-	sort.Strings(expectedWorkflows)
-	expected := strings.Join(expectedWorkflows, ",")
 	sort.Strings(registeredWorkflows)
 	registered := strings.Join(registeredWorkflows, ",")
-	require.Equal(t, expected, registered)
+	for _, w := range expectedWorkflows {
+		require.Contains(t, registered, w)
+	}
 }
 
 func getLogger() *zap.Logger {
@@ -150,7 +180,11 @@ func TestDecisionTaskHandler(t *testing.T) {
 		PreviousStartedEventId: common.Int64Ptr(5),
 	}
 
-	r := NewWorkflowTaskHandler(testDomain, "identity", logger)
+	params := workerExecutionParameters{
+		Identity: "identity",
+		Logger:   logger,
+	}
+	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
 	_, stackTrace, err := r.ProcessWorkflowTask(task, nil, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, stackTrace, stackTrace)
@@ -205,6 +239,16 @@ func TestCreateWorkerRun(t *testing.T) {
 	service.AssertExpectations(t)
 }
 
+func TestNoActivitiesOrWorkflows(t *testing.T) {
+	service := new(mocks.TChanWorkflowService)
+	w := createWorker(t, service)
+	aw := w.(*aggregatedWorker)
+	aw.hostEnv = newHostEnvironment()
+	assert.Empty(t, aw.hostEnv.getRegisteredActivities())
+	assert.Empty(t, aw.hostEnv.getRegisteredWorkflowTypes())
+	assert.NoError(t, aw.Start())
+}
+
 func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
 
 	testCases := []struct {
@@ -247,13 +291,22 @@ func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 
 	workflowID := "w1"
 	runID := "r1"
-	activityType := "go.uber.org/cadence.testActivity"
-	workflowType := "go.uber.org/cadence.sampleWorkflowExecute"
+	activityType := "testActivity"
+	workflowType := "sampleWorkflowExecute"
 	activityID := "a1"
 	taskList := "tl1"
 	var startedEventID int64 = 10
 	input, err := getHostEnvironment().encodeArgs([]interface{}{})
 	require.NoError(t, err)
+	domainStatus := s.DomainStatus_REGISTERED
+	domainDesc := &s.DescribeDomainResponse{
+		DomainInfo: &s.DomainInfo{
+			Name:   &domain,
+			Status: &domainStatus,
+		},
+	}
+	// mocks
+	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(domainDesc, nil)
 
 	activityTask := &s.PollForActivityTaskResponse{
 		TaskToken:                     []byte("taskToken1"),
@@ -267,6 +320,9 @@ func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
 		StartToCloseTimeoutSeconds:    common.Int32Ptr(2),
 	}
+	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(activityTask, nil)
+	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+
 	decisionTask := &s.PollForDecisionTaskResponse{
 		TaskToken:              []byte("taskToken1"),
 		WorkflowExecution:      &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
@@ -281,17 +337,6 @@ func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 			},
 		},
 	}
-	domainStatus := s.DomainStatus_REGISTERED
-	domainDesc := &s.DescribeDomainResponse{
-		DomainInfo: &s.DomainInfo{
-			Name:   &domain,
-			Status: &domainStatus,
-		},
-	}
-	// mocks
-	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(domainDesc, nil)
-	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(activityTask, nil)
-	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(decisionTask, nil)
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 
@@ -477,7 +522,7 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityByteArgs", input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
+	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
 	err = ExecuteActivity(ctx, "go.uber.org/cadence.testActivityNoResult", 2, "test").Get(ctx, nil)
@@ -562,16 +607,7 @@ func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
-	ts := &WorkflowTestSuite{}
-	ts.RegisterActivity(testActivityNoResult)
-	ts.RegisterActivity(testActivityNoContextArg)
-	ts.RegisterActivity(testActivityReturnByteArray)
-	ts.RegisterActivity(testActivityReturnInt)
-	ts.RegisterActivity(testActivityByteArgs)
-	ts.RegisterActivity(testActivityReturnNilStructPtr)
-	ts.RegisterActivity(testActivityReturnStructPtr)
-	ts.RegisterActivity(testActivityReturnNilStructPtrPtr)
-	ts.RegisterActivity(testActivityReturnStructPtrPtr)
+	ts := newWorkflowTestSuite()
 	env := ts.NewTestWorkflowEnvironment()
 	w := &activitiesCallingOptionsWorkflow{t: t}
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})

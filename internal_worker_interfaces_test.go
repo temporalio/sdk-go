@@ -54,44 +54,37 @@ type (
 	}
 )
 
-// Workflow methods.
-func (wf helloWorldWorkflow) WorkflowType() m.WorkflowType {
-	workflowName := "HelloWorld_Workflow"
-	return m.WorkflowType{Name: &workflowName}
-}
-
-func (wf helloWorldWorkflow) StackTrace() string {
-	return ""
-}
-
-func (wf helloWorldWorkflow) Close() {
-
-}
-
-func (wf helloWorldWorkflow) OnDecisionTaskStarted() {
-
-}
-
-func (wf helloWorldWorkflow) Execute(env workflowEnvironment, input []byte) {
+func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 	activityName := "Greeter_Activity"
-	activityParameters := executeActivityParameters{
-		TaskListName: "taskList",
-		ActivityType: ActivityType{activityName},
-		Input:        nil,
+	ao := ActivityOptions{
+		TaskList:               "taskList",
+		ActivityID:             "0",
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
 	}
-	a := env.ExecuteActivity(activityParameters, func(result []byte, err error) {
-		if err != nil {
-			if _, ok := err.(*CanceledError); !ok {
-				env.Complete(nil, err)
-				return
-			}
-		}
-		fmt.Println("Hello " + string(result) + "!")
-		env.Complete(result, nil)
-	})
-	if wf.cancelActivity {
-		env.RequestCancelActivity(a.activityID)
+	ctx = WithActivityOptions(ctx, ao)
+	var result []byte
+	err := ExecuteActivity(ctx, activityName).Get(ctx, &result)
+	if err == nil {
+		fmt.Println("Result", result)
 	}
+	return err
+}
+
+func helloWorldWorkflowCancelFunc(ctx Context, input []byte) error {
+	activityName := "Greeter_Activity"
+	ao := ActivityOptions{
+		TaskList:               "taskList",
+		ActivityID:             "0",
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	ExecuteActivity(ctx, activityName)
+	getWorkflowEnvironment(ctx).RequestCancelActivity("0")
+	return nil
 }
 
 // Greeter activity methods
@@ -99,13 +92,18 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	activityName := "Greeter_Activity"
 	return ActivityType{Name: activityName}
 }
+
 func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	return []byte("World"), nil
 }
 
-// testWorkflowDefinitionFactory
-func testWorkflowDefinitionFactory(workflowType WorkflowType) (workflowDefinition, error) {
-	return &helloWorldWorkflow{}, nil
+func (ga greeterActivity) GetFunction() interface{} {
+	return ga.Execute
+}
+
+// Greeter activity func
+func greeterActivityFunc(ctx context.Context, input []byte) ([]byte, error) {
+	return []byte("Hello world"), nil
 }
 
 // Test suite.
@@ -145,8 +143,9 @@ func (s *InterfacesTestSuite) TestInterface() {
 	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
 	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
 
+	env := getHostEnvironment()
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(testWorkflowDefinitionFactory, service, domain, workflowExecutionParameters, nil)
+	workflowWorker := newWorkflowWorker(service, domain, workflowExecutionParameters, nil, env)
 	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
@@ -158,7 +157,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker([]activity{&greeterActivity{}}, service, domain, activityExecutionParameters, nil)
+	activityWorker := newActivityWorker(service, domain, activityExecutionParameters, nil, env)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 

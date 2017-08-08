@@ -65,7 +65,6 @@ func (ac testActivityExecutionContext) RecordActivityHeartbeat(details []byte) e
 
 // Sample Workflow task handler
 type sampleWorkflowTaskHandler struct {
-	factory workflowDefinitionFactory
 }
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
@@ -77,25 +76,19 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	}, "", nil
 }
 
-func (wth sampleWorkflowTaskHandler) LoadWorkflowThroughReplay(task *workflowTask) (workflowDefinition, error) {
-	return &helloWorldWorkflow{}, nil
-}
-
-func newSampleWorkflowTaskHandler(factory workflowDefinitionFactory) *sampleWorkflowTaskHandler {
-	return &sampleWorkflowTaskHandler{factory: factory}
+func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
+	return &sampleWorkflowTaskHandler{}
 }
 
 // Sample ActivityTaskHandler
 type sampleActivityTaskHandler struct {
-	activityRegistry map[m.ActivityType]*activity
 }
 
-func newSampleActivityTaskHandler(activityRegistry map[m.ActivityType]*activity) *sampleActivityTaskHandler {
-	return &sampleActivityTaskHandler{activityRegistry: activityRegistry}
+func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
+	return &sampleActivityTaskHandler{}
 }
 
 func (ath sampleActivityTaskHandler) Execute(task *m.PollForActivityTaskResponse) (interface{}, error) {
-	//activityImplementation := *ath.activityRegistry[*activityTask.task.ActivityType]
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
@@ -132,7 +125,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	s.NoError(err)
 
 	// Process task and respond to the service.
-	taskHandler := newSampleWorkflowTaskHandler(testWorkflowDefinitionFactory)
+	taskHandler := newSampleWorkflowTaskHandler()
 	completionRequest, _, err := taskHandler.ProcessWorkflowTask(response, nil, false)
 	s.NoError(err)
 
@@ -153,8 +146,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
-	activationRegistry := make(map[m.ActivityType]*activity)
-	taskHandler := newSampleActivityTaskHandler(activationRegistry)
+	taskHandler := newSampleActivityTaskHandler()
 	request, err := taskHandler.Execute(response)
 	s.NoError(err)
 	switch request.(type) {

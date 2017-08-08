@@ -41,15 +41,16 @@ type WorkflowUnitTest struct {
 }
 
 func (s *WorkflowUnitTest) SetupSuite() {
+	s.hostEnv = getHostEnvironment()
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
-	s.RegisterActivity(testAct)
-	s.RegisterActivity(getGreetingActivity)
-	s.RegisterActivity(getNameActivity)
-	s.RegisterActivity(sayGreetingActivity)
+	RegisterActivity(testAct)
+	RegisterActivity(getGreetingActivity)
+	RegisterActivity(getNameActivity)
+	RegisterActivity(sayGreetingActivity)
 }
 
 func TestWorkflowUnitTest(t *testing.T) {
@@ -147,6 +148,7 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 
 func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
+	registerWithSample(env.impl.getHostEnv())
 	env.OnActivity(testAct, mock.Anything).Return(func(ctx context.Context) (string, error) {
 		activityID := GetActivityInfo(ctx).ActivityID
 		switch activityID {
@@ -168,9 +170,8 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 }
 
 func TestWorkflowPanic(t *testing.T) {
-	ts := &WorkflowTestSuite{}
+	ts := newWorkflowTestSuite()
 	ts.SetLogger(zap.NewNop()) // this test simulate panic, use nop logger to avoid logging noise
-	ts.RegisterActivity(testAct)
 	env := ts.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
@@ -241,7 +242,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, e
 }
 
 func TestTimerWorkflow(t *testing.T) {
-	ts := &WorkflowTestSuite{}
+	ts := newWorkflowTestSuite()
 	env := ts.NewTestWorkflowEnvironment()
 	w := &testTimerWorkflow{t: t}
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
@@ -291,8 +292,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result 
 }
 
 func TestActivityCancellation(t *testing.T) {
-	ts := &WorkflowTestSuite{}
-	ts.RegisterActivity(testAct)
+	ts := newWorkflowTestSuite()
 	env := ts.NewTestWorkflowEnvironment()
 	w := &testActivityCancelWorkflow{t: t}
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})

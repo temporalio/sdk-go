@@ -47,7 +47,7 @@ func Test_ActivityError(t *testing.T) {
 	errorActivityFn := func(i int) error {
 		return errs[i][0]
 	}
-	s := &WorkflowTestSuite{}
+	s := newWorkflowTestSuite()
 	for i := 0; i < len(errs); i++ {
 		env := s.NewTestActivityEnvironment()
 		_, err := env.ExecuteActivity(errorActivityFn, i)
@@ -61,7 +61,7 @@ func Test_ActivityPanic(t *testing.T) {
 	panicActivityFn := func() error {
 		panic("panic-blabla")
 	}
-	s := &WorkflowTestSuite{}
+	s := newWorkflowTestSuite()
 	s.SetLogger(zap.NewNop())
 	env := s.NewTestActivityEnvironment()
 	_, err := env.ExecuteActivity(panicActivityFn)
@@ -76,7 +76,7 @@ func Test_WorkflowError(t *testing.T) {
 	errorWorkflowFn := func(ctx Context, i int) error {
 		return errs[i][0]
 	}
-	s := &WorkflowTestSuite{}
+	s := newWorkflowTestSuite()
 	for i := 0; i < len(errs); i++ {
 		wfEnv := s.NewTestWorkflowEnvironment()
 		wfEnv.ExecuteWorkflow(errorWorkflowFn, i)

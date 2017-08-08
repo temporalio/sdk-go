@@ -273,8 +273,6 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 	if startWorkflowEvent == nil {
 		return "", errors.New("First event is not WorkflowExecutionStarted")
 	}
-	registeredWorkflowFactory := newRegisteredWorkflowFactory()
-	workflowDefinitionFactory := getWorkflowDefinitionFactory(registeredWorkflowFactory)
 	logger, err := zap.NewDevelopment()
 	if err != nil {
 		return "", err
@@ -289,7 +287,7 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 		UserContext:               context.Background(),
 	}
 	var maxInt64 int64 = math.MaxInt64
-	taskHandler := newWorkflowTaskHandler(workflowDefinitionFactory, "unknown", workerParams, nil)
+	taskHandler := newWorkflowTaskHandler("unknown", workerParams, nil, getHostEnvironment())
 	task := &s.PollForDecisionTaskResponse{
 		History:                firstPage,
 		PreviousStartedEventId: &maxInt64,

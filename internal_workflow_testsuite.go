@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -257,21 +258,32 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(optio
 	return childEnv
 }
 
-func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
+func (env *testWorkflowEnvironmentImpl) setActivityTaskList(
+	tasklist string,
+	ao RegisterActivityOptions,
+	activityFns ...interface{},
+) {
 	for _, activityFn := range activityFns {
-		env.testSuite.RegisterActivity(activityFn)
+		env.getHostEnv().RegisterActivityWithOptions(activityFn, ao)
 		fnName := getFunctionName(activityFn)
-		taskListActivity, ok := env.taskListSpecificActivities[fnName]
-		if !ok {
-			taskListActivity = &taskListSpecificActivity{fn: activityFn, taskLists: make(map[string]struct{})}
-			env.taskListSpecificActivities[fnName] = taskListActivity
-		}
-		taskListActivity.taskLists[tasklist] = struct{}{}
+		env.addToActivityTaskList(tasklist, fnName, activityFn)
 	}
 }
 
+func (env *testWorkflowEnvironmentImpl) addToActivityTaskList(
+	tasklist string,
+	fnName string,
+	activityFn interface{},
+) {
+	taskListActivity, ok := env.taskListSpecificActivities[fnName]
+	if !ok {
+		taskListActivity = &taskListSpecificActivity{fn: activityFn, taskLists: make(map[string]struct{})}
+		env.taskListSpecificActivities[fnName] = taskListActivity
+	}
+	taskListActivity.taskLists[tasklist] = struct{}{}
+}
+
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, args ...interface{}) {
-	s := env.testSuite
 	var workflowType string
 	fnType := reflect.TypeOf(workflowFn)
 	switch fnType.Kind() {
@@ -280,39 +292,24 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	case reflect.Func:
 		// auto register workflow if it is not already registered
 		fnName := getFunctionName(workflowFn)
-		if _, ok := s.hostEnv.getWorkflowFn(fnName); !ok {
-			s.RegisterWorkflow(workflowFn)
+		if _, ok := env.getHostEnv().getWorkflowFn(fnName); !ok {
+			env.getHostEnv().RegisterWorkflow(workflowFn)
 		}
 		workflowType = getFunctionName(workflowFn)
 	default:
 		panic("unsupported workflowFn")
 	}
 
-	input, err := s.hostEnv.encodeArgs(args)
+	input, err := env.getHostEnv().encodeArgs(args)
 	if err != nil {
 		panic(err)
 	}
 	env.executeWorkflowInternal(workflowType, input)
 }
 
-func (env *testWorkflowEnvironmentImpl) workflowFactory(workflowType WorkflowType) (workflow, error) {
-	factory := env.testSuite.hostEnv.newRegisteredWorkflowFactory()
-	wf, err := factory(workflowType)
-	if err != nil {
-		factory = getHostEnvironment().newRegisteredWorkflowFactory()
-		wf, err = factory(workflowType)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &workflowExecutorWrapper{workflowExecutor: wf.(*workflowExecutor), env: env}, nil
-}
-
 func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType string, input []byte) {
 	env.workflowInfo.WorkflowType.Name = workflowType
-	factory := getWorkflowDefinitionFactory(env.workflowFactory)
-	workflowDefinition, err := factory(env.workflowInfo.WorkflowType)
+	workflowDefinition, err := env.getWorkflowDefinition(env.workflowInfo.WorkflowType)
 	if err != nil {
 		panic(err)
 	}
@@ -326,11 +323,27 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType str
 	env.startMainLoop()
 }
 
+func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+	hostEnv := env.getHostEnv()
+	wf, ok := hostEnv.getWorkflowFn(wt.Name)
+	if !ok {
+		supported := strings.Join(hostEnv.getRegisteredWorkflowTypes(), ", ")
+		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
+	}
+	wd := &workflowExecutorWrapper{
+		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
+		env:              env,
+	}
+	return newWorkflowDefinition(wd), nil
+}
+
 func (env *testWorkflowEnvironmentImpl) executeActivity(
-	activityFn interface{}, args ...interface{}) (EncodedValue, error) {
+	activityFn interface{},
+	args ...interface{},
+) (EncodedValue, error) {
 	fnName := getFunctionName(activityFn)
 
-	input, err := getHostEnvironment().encodeArgs(args)
+	input, err := env.getHostEnv().encodeArgs(args)
 	if err != nil {
 		panic(err)
 	}
@@ -344,7 +357,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	)
 
 	// ensure activityFn is registered to defaultTestTaskList
-	env.testSuite.RegisterActivity(activityFn)
+	env.getHostEnv().RegisterActivity(activityFn)
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
 	result, err := taskHandler.Execute(task)
 	if err != nil {
@@ -583,7 +596,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	var data []byte
 	if result != nil {
 		var encodeErr error
-		data, encodeErr = getHostEnvironment().encodeArg(result)
+		data, encodeErr = env.getHostEnv().encodeArg(result)
 		if encodeErr != nil {
 			return encodeErr
 		}
@@ -602,6 +615,10 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	}, false /* do not auto schedule decision task, because activity might be still pending */)
 
 	return nil
+}
+
+func (env *testWorkflowEnvironmentImpl) getHostEnv() *hostEnvImpl {
+	return env.testSuite.hostEnv
 }
 
 func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
@@ -926,33 +943,42 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	}
 	ensureRequiredParams(&params)
 
-	var activities []activity
 	for fnName, tasklistActivity := range env.taskListSpecificActivities {
 		if _, ok := tasklistActivity.taskLists[taskList]; ok {
 			ae := &activityExecutor{name: fnName, fn: tasklistActivity.fn}
-			activities = append(activities, &activityExecutorWrapper{activityExecutor: ae, env: env})
+			env.getHostEnv().addActivity(
+				fnName,
+				&activityExecutorWrapper{activityExecutor: ae, env: env},
+			)
 		}
 	}
 
-	addActivities := func(registeredActivities []activity) {
-		for _, a := range registeredActivities {
-			fnName := a.ActivityType().Name
-			if _, ok := env.taskListSpecificActivities[fnName]; ok {
-				// activity is registered to a specific taskList, so ignore it from the global registered activities.
-				continue
-			}
-			activities = append(activities, &activityExecutorWrapper{activityExecutor: a.(*activityExecutor), env: env})
-		}
-	}
-
-	addActivities(env.testSuite.hostEnv.getRegisteredActivities())
-	addActivities(getHostEnvironment().getRegisteredActivities())
-
-	if len(activities) == 0 {
+	if len(env.getHostEnv().getRegisteredActivities()) == 0 {
 		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
 	}
 
-	taskHandler := newActivityTaskHandler(activities, env.service, params)
+	for _, a := range env.getHostEnv().getRegisteredActivities() {
+		fnName := a.ActivityType().Name
+		if _, ok := env.taskListSpecificActivities[fnName]; ok {
+			// activity is registered to a specific taskList, so ignore it from the global registered activities.
+			continue
+		}
+		var ae *activityExecutor
+		switch v := a.(type) {
+		case *activityExecutor:
+			ae = v
+		case *activityExecutorWrapper:
+			ae = v.activityExecutor
+		default:
+			ae = &activityExecutor{name: v.ActivityType().Name, fn: v.GetFunction()}
+		}
+		env.getHostEnv().addActivity(
+			fnName,
+			&activityExecutorWrapper{activityExecutor: ae, env: env},
+		)
+	}
+
+	taskHandler := newActivityTaskHandler(env.service, params, env.getHostEnv())
 	return taskHandler
 }
 
@@ -1097,7 +1123,7 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflow() {
 }
 
 func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interface{}) {
-	data, err := env.testSuite.hostEnv.encodeArg(input)
+	data, err := env.getHostEnv().encodeArg(input)
 	if err != nil {
 		panic(err)
 	}

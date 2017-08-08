@@ -75,23 +75,23 @@ type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
 		domain                string
-		workflowDefFactory    workflowDefinitionFactory
 		metricsScope          tally.Scope
 		ppMgr                 pressurePointMgr
 		logger                *zap.Logger
 		identity              string
 		enableLoggingInReplay bool
+		hostEnv               *hostEnvImpl
 	}
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
-		taskListName    string
-		identity        string
-		implementations map[ActivityType]activity
-		service         m.TChanWorkflowService
-		metricsScope    tally.Scope
-		logger          *zap.Logger
-		userContext     context.Context
+		taskListName string
+		identity     string
+		service      m.TChanWorkflowService
+		metricsScope tally.Scope
+		logger       *zap.Logger
+		userContext  context.Context
+		hostEnv      *hostEnvImpl
 	}
 
 	// history wrapper method to help information about events.
@@ -292,17 +292,21 @@ OrderEvents:
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(factory workflowDefinitionFactory, domain string,
-	params workerExecutionParameters, ppMgr pressurePointMgr) WorkflowTaskHandler {
+func newWorkflowTaskHandler(
+	domain string,
+	params workerExecutionParameters,
+	ppMgr pressurePointMgr,
+	hostEnv *hostEnvImpl,
+) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		workflowDefFactory:    factory,
 		domain:                domain,
 		logger:                params.Logger,
 		ppMgr:                 ppMgr,
 		metricsScope:          params.MetricsScope,
 		identity:              params.Identity,
 		enableLoggingInReplay: params.EnableLoggingInReplay,
+		hostEnv:               hostEnv,
 	}
 }
 
@@ -364,7 +368,13 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}
 
 	eventHandler := newWorkflowExecutionEventHandler(
-		workflowInfo, wth.workflowDefFactory, completeHandler, wth.logger, wth.enableLoggingInReplay, wth.metricsScope)
+		workflowInfo,
+		completeHandler,
+		wth.logger,
+		wth.enableLoggingInReplay,
+		wth.metricsScope,
+		wth.hostEnv,
+	)
 	defer eventHandler.Close()
 	reorderedHistory := newHistory(&workflowTask{task: task, getHistoryPageFunc: getHistoryPage}, eventHandler.(*workflowExecutionEventHandlerImpl))
 	decisions := []*s.Decision{}
@@ -770,20 +780,19 @@ func (wth *workflowTaskHandlerImpl) reportAnyMetrics(event *s.HistoryEvent, isIn
 	}
 }
 
-func newActivityTaskHandler(activities []activity,
-	service m.TChanWorkflowService, params workerExecutionParameters) ActivityTaskHandler {
-	implementations := make(map[ActivityType]activity)
-	for _, a := range activities {
-		implementations[a.ActivityType()] = a
-	}
+func newActivityTaskHandler(
+	service m.TChanWorkflowService,
+	params workerExecutionParameters,
+	env *hostEnvImpl,
+) ActivityTaskHandler {
 	return &activityTaskHandlerImpl{
-		taskListName:    params.TaskList,
-		identity:        params.Identity,
-		implementations: implementations,
-		service:         service,
-		logger:          params.Logger,
-		metricsScope:    params.MetricsScope,
-		userContext:     params.UserContext,
+		taskListName: params.TaskList,
+		identity:     params.Identity,
+		service:      service,
+		logger:       params.Logger,
+		metricsScope: params.MetricsScope,
+		userContext:  params.UserContext,
+		hostEnv:      env,
 	}
 }
 
@@ -924,7 +933,7 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 	defer invoker.Close()
 	ctx := WithActivityTask(canCtx, t, invoker, ath.logger, ath.metricsScope)
 	activityType := *t.GetActivityType()
-	activityImplementation, ok := ath.implementations[flowActivityTypeFrom(activityType)]
+	activityImplementation, ok := ath.hostEnv.lookupActivity(activityType.GetName())
 	if !ok {
 		// Couldn't find the activity implementation.
 		return nil, fmt.Errorf("No implementation for activityType=%v", activityType.GetName())

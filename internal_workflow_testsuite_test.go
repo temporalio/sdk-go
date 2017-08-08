@@ -49,10 +49,11 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
-	s.RegisterWorkflow(testWorkflowHello)
-	s.RegisterWorkflow(testWorkflowHeartbeat)
-	s.RegisterActivity(testActivityHello)
-	s.RegisterActivity(testActivityHeartbeat)
+	s.hostEnv = getHostEnvironment()
+	RegisterWorkflowWithOptions(testWorkflowHello, RegisterWorkflowOptions{Name: "testWorkflowHello"})
+	RegisterWorkflow(testWorkflowHeartbeat)
+	RegisterActivity(testActivityHello)
+	RegisterActivity(testActivityHeartbeat)
 }
 
 func TestUnitTestSuite(t *testing.T) {
@@ -644,8 +645,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 		return nil
 	}
 
-	s.RegisterWorkflow(workflowFn)
-	s.RegisterWorkflow(childWorkflowFn)
+	RegisterWorkflow(workflowFn)
+	RegisterWorkflow(childWorkflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.SetTestTimeout(time.Hour)
 
@@ -823,7 +824,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
 		return errors.New("child workflow takes too long")
 	}
 
-	s.RegisterWorkflow(childWorkflowFn)
+	RegisterWorkflow(childWorkflowFn)
 
 	// no delay to the mock call, workflow should return no error
 	env := s.NewTestWorkflowEnvironment()
@@ -876,8 +877,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		return err
 	}
 
-	s.RegisterActivity(oldActivity)
-	s.RegisterActivity(newActivity)
+	RegisterActivity(oldActivity)
+	RegisterActivity(newActivity)
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(newActivity, mock.Anything, "new_msg").Return("hell new_mock_msg", nil).Once()
 	env.ExecuteWorkflow(workflowFn)

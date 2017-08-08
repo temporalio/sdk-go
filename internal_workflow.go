@@ -579,7 +579,7 @@ func (c *channelImpl) Close() {
 
 // Takes a value and assigns that 'to' value.
 func (c *channelImpl) assignValue(from interface{}, to interface{}) {
-	err := decodeAndAssignValue(from, to)
+	err := getHostEnvironment().decodeAndAssignValue(from, to)
 	if err != nil {
 		panic(err)
 	}
@@ -1031,23 +1031,6 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return err
 	}
 	return d.futureImpl.err
-}
-
-func decodeAndAssignValue(from interface{}, toValuePtr interface{}) error {
-	if toValuePtr == nil {
-		return nil
-	}
-	if rf := reflect.ValueOf(toValuePtr); rf.Type().Kind() != reflect.Ptr {
-		return errors.New("value parameter provided is not a pointer")
-	}
-	if data, ok := from.([]byte); ok {
-		if err := getHostEnvironment().decodeArg(data, toValuePtr); err != nil {
-			return err
-		}
-	} else if fv := reflect.ValueOf(from); fv.IsValid() {
-		reflect.ValueOf(toValuePtr).Elem().Set(fv)
-	}
-	return nil
 }
 
 func (p ChildWorkflowPolicy) toThriftChildPolicyPtr() *shared.ChildPolicy {

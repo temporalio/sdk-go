@@ -43,6 +43,11 @@ type (
 		ActivityID        string
 		ActivityType      ActivityType
 	}
+
+	// RegisterActivityOptions consists of options for registering an activity
+	RegisterActivityOptions struct {
+		Name string
+	}
 )
 
 // RegisterActivity - register a activity function with the framework.
@@ -57,8 +62,27 @@ type (
 // Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 // This method calls panic if activityFunc doesn't comply with the expected format.
 func RegisterActivity(activityFunc interface{}) {
+	RegisterActivityWithOptions(activityFunc, RegisterActivityOptions{})
+}
+
+// RegisterActivityWithOptions registers the activity function with options
+// The user can use options to provide an external name for the activity or leave it empty if no
+// external name is required. This can be used as
+// client.RegisterActivity(barActivity, RegisterActivityOptions{})
+// client.RegisterActivity(barActivity, RegisterActivityOptions{Name: "barExternal"})
+// A activity takes a context and input and returns a (result, error) or just error.
+// Examples:
+//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
+//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
+//	func sampleActivity(ctx context.Context) (err error)
+//	func sampleActivity() (result string, err error)
+//	func sampleActivity(arg1 bool) (result int, err error)
+//	func sampleActivity(arg1 bool) (err error)
+// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+// This method calls panic if activityFunc doesn't comply with the expected format.
+func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivityOptions) {
 	thImpl := getHostEnvironment()
-	err := thImpl.RegisterActivity(activityFunc)
+	err := thImpl.RegisterActivityWithOptions(activityFunc, opts)
 	if err != nil {
 		panic(err)
 	}
