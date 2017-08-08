@@ -23,7 +23,6 @@ package cadence
 import (
 	"context"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -37,10 +36,8 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger  *zap.Logger
-		scope   tally.Scope
-		hostEnv *hostEnvImpl
-		locker  sync.Mutex
+		logger *zap.Logger
+		scope  tally.Scope
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -63,10 +60,6 @@ type (
 		waitDuration time.Duration
 	}
 )
-
-func newWorkflowTestSuite() *WorkflowTestSuite {
-	return &WorkflowTestSuite{hostEnv: getHostEnvironment()}
-}
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
 func (b EncodedValues) Get(valuePtr ...interface{}) error {
@@ -365,8 +358,6 @@ func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // SetActivityTaskList set the affinity between activity and tasklist. By default, activity can be invoked by any tasklist
 // in this test environment. You can use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
-func (t *TestWorkflowEnvironment) SetActivityTaskList(
-	tasklist string, ao RegisterActivityOptions, activityFn ...interface{},
-) {
-	t.impl.setActivityTaskList(tasklist, ao, activityFn...)
+func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
+	t.impl.setActivityTaskList(tasklist, activityFn...)
 }

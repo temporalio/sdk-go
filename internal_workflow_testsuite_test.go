@@ -49,7 +49,6 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
-	s.hostEnv = getHostEnvironment()
 	RegisterWorkflowWithOptions(testWorkflowHello, RegisterWorkflowOptions{Name: "testWorkflowHello"})
 	RegisterWorkflow(testWorkflowHeartbeat)
 	RegisterActivity(testActivityHello)

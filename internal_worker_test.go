@@ -41,27 +41,40 @@ import (
 	"go.uber.org/zap"
 )
 
-// Used to test registration listeners
-var registeredActivities []string
-var registeredWorkflows []string
-
 func init() {
-	registerWithSample(getHostEnvironment())
-}
-
-func registerWithSample(hostEnv *hostEnvImpl) {
-	hostEnv.RegisterWorkflowWithOptions(
+	RegisterWorkflowWithOptions(
 		sampleWorkflowExecute,
 		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
 	)
-	hostEnv.AddWorkflowRegistrationInterceptor(
-		func(workflowName string, workflow interface{}) (string, interface{}) {
-			registeredWorkflows = append(registeredWorkflows, workflowName)
-			return workflowName, workflow
-		},
-	)
-	hostEnv.RegisterWorkflow(testReplayWorkflow)
+	RegisterWorkflow(testReplayWorkflow)
 
+	RegisterActivityWithOptions(
+		testActivity,
+		RegisterActivityOptions{Name: "testActivity"},
+	)
+	RegisterActivity(testActivityByteArgs)
+	RegisterActivityWithOptions(
+		testActivityMultipleArgs,
+		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
+	)
+	RegisterActivity(testActivityReturnString)
+	RegisterActivity(testActivityReturnEmptyString)
+	RegisterActivity(testActivityReturnEmptyStruct)
+
+	RegisterActivity(testActivityNoResult)
+	RegisterActivity(testActivityNoContextArg)
+	RegisterActivity(testActivityReturnByteArray)
+	RegisterActivity(testActivityReturnInt)
+	RegisterActivity(testActivityReturnNilStructPtr)
+	RegisterActivity(testActivityReturnStructPtr)
+	RegisterActivity(testActivityReturnNilStructPtrPtr)
+	RegisterActivity(testActivityReturnStructPtrPtr)
+}
+
+func TestActivityRegistrationListener(t *testing.T) {
+	// Used to test registration listeners
+	var registeredActivities []string
+	hostEnv := newHostEnvironment()
 	hostEnv.RegisterActivityWithOptions(
 		testActivity,
 		RegisterActivityOptions{Name: "testActivity"},
@@ -77,54 +90,39 @@ func registerWithSample(hostEnv *hostEnvImpl) {
 		testActivityMultipleArgs,
 		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
 	)
-	hostEnv.RegisterActivity(testActivityReturnString)
-	hostEnv.RegisterActivity(testActivityReturnEmptyString)
-	hostEnv.RegisterActivity(testActivityReturnEmptyStruct)
 
-	hostEnv.RegisterActivity(testActivityNoResult)
-	hostEnv.RegisterActivity(testActivityNoContextArg)
-	hostEnv.RegisterActivity(testActivityReturnByteArray)
-	hostEnv.RegisterActivity(testActivityReturnInt)
-	hostEnv.RegisterActivity(testActivityReturnNilStructPtr)
-	hostEnv.RegisterActivity(testActivityReturnStructPtr)
-	hostEnv.RegisterActivity(testActivityReturnNilStructPtrPtr)
-	hostEnv.RegisterActivity(testActivityReturnStructPtrPtr)
-}
-
-func TestActivityRegistrationListener(t *testing.T) {
 	expectedActivities := []string{
 		"testActivity",
 		"testActivityMultipleArgs",
 		"go.uber.org/cadence.testActivityByteArgs",
-		"go.uber.org/cadence.testActivityReturnString",
-		"go.uber.org/cadence.testActivityReturnEmptyString",
-		"go.uber.org/cadence.testActivityReturnEmptyStruct",
-		"go.uber.org/cadence.testActivityNoResult",
-		"go.uber.org/cadence.testActivityNoContextArg",
-		"go.uber.org/cadence.testActivityReturnByteArray",
-		"go.uber.org/cadence.testActivityReturnInt",
-		"go.uber.org/cadence.testActivityReturnNilStructPtr",
-		"go.uber.org/cadence.testActivityReturnStructPtr",
-		"go.uber.org/cadence.testActivityReturnNilStructPtrPtr",
-		"go.uber.org/cadence.testActivityReturnStructPtrPtr",
 	}
 	sort.Strings(registeredActivities)
-	registered := strings.Join(registeredActivities, ",")
-	for _, a := range expectedActivities {
-		require.Contains(t, registered, a)
-	}
+	sort.Strings(expectedActivities)
+	require.Equal(t, strings.Join(expectedActivities, ","), strings.Join(registeredActivities, ","))
 }
 
 func TestWorkflowRegistrationListener(t *testing.T) {
+	var registeredWorkflows []string
+	hostEnv := newHostEnvironment()
+	hostEnv.RegisterWorkflowWithOptions(
+		sampleWorkflowExecute,
+		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
+	)
+	hostEnv.AddWorkflowRegistrationInterceptor(
+		func(workflowName string, workflow interface{}) (string, interface{}) {
+			registeredWorkflows = append(registeredWorkflows, workflowName)
+			return workflowName, workflow
+		},
+	)
+	hostEnv.RegisterWorkflow(testReplayWorkflow)
+
 	expectedWorkflows := []string{
 		"sampleWorkflowExecute",
 		"go.uber.org/cadence.testReplayWorkflow",
 	}
 	sort.Strings(registeredWorkflows)
-	registered := strings.Join(registeredWorkflows, ",")
-	for _, w := range expectedWorkflows {
-		require.Contains(t, registered, w)
-	}
+	sort.Strings(expectedWorkflows)
+	require.Equal(t, strings.Join(expectedWorkflows, ","), strings.Join(registeredWorkflows, ","))
 }
 
 func getLogger() *zap.Logger {
@@ -607,7 +605,7 @@ func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
-	ts := newWorkflowTestSuite()
+	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	w := &activitiesCallingOptionsWorkflow{t: t}
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
