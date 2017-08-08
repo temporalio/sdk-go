@@ -29,6 +29,7 @@ import (
 
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/common/backoff"
+	"go.uber.org/cadence/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
@@ -102,6 +103,7 @@ type (
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
 		logger               *zap.Logger
+		metricsScope         tally.Scope
 
 		pollerRequestCh chan struct{}
 		taskQueueCh     chan interface{}
@@ -115,16 +117,16 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger *zap.Logger) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &baseWorker{
-		options:     options,
-		shutdownCh:  make(chan struct{}),
-		pollLimiter: rate.NewLimiter(rate.Every(time.Millisecond*100), 100),
-		taskLimiter: rate.NewLimiter(rate.Every(options.maxTaskRateRefreshDuration), options.maxTaskRate),
-		retrier:     backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:      logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
-
+		options:         options,
+		shutdownCh:      make(chan struct{}),
+		pollLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*100), 100),
+		taskLimiter:     rate.NewLimiter(rate.Every(options.maxTaskRateRefreshDuration), options.maxTaskRate),
+		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 
@@ -138,6 +140,8 @@ func (bw *baseWorker) Start() {
 	if bw.isWorkerStarted {
 		return
 	}
+
+	bw.metricsScope.Counter(metrics.WorkerStartCounter).Inc(1)
 
 	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.shutdownWG.Add(1)
@@ -168,6 +172,7 @@ func (bw *baseWorker) isShutdown() bool {
 
 func (bw *baseWorker) runPoller() {
 	defer bw.shutdownWG.Done()
+	bw.metricsScope.Counter(metrics.PollerStartCounter).Inc(1)
 
 	for {
 		select {

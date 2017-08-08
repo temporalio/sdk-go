@@ -64,6 +64,9 @@ const (
 
 	UnhandledSignalsCounter = "unhandled-signals"
 
+	WorkerStartCounter = "worker-start"
+	PollerStartCounter = "poller-start"
+
 	CadenceRequest        = "cadence-request"
 	CadenceError          = "cadence-error"
 	CadenceLatency        = "cadence-latency"
