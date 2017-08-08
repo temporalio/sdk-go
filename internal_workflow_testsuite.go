@@ -335,12 +335,18 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		panic(err)
 	}
 
+	params := executeActivityParameters{
+		ActivityType: ActivityType{Name: fnName},
+		Input:        input,
+		ScheduleToCloseTimeoutSeconds: 600,
+		StartToCloseTimeoutSeconds:    600,
+	}
+
 	task := newTestActivityTask(
 		defaultTestWorkflowID,
 		defaultTestRunID,
 		"0",
-		fnName,
-		input,
+		params,
 	)
 
 	// ensure activityFn is registered to defaultTestTaskList
@@ -624,8 +630,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		defaultTestWorkflowID,
 		defaultTestRunID,
 		activityInfo.activityID,
-		parameters.ActivityType.Name,
-		parameters.Input,
+		parameters,
 	)
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName)
@@ -965,7 +970,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	return taskHandler
 }
 
-func newTestActivityTask(workflowID, runID, activityID, activityType string, input []byte) *shared.PollForActivityTaskResponse {
+func newTestActivityTask(workflowID, runID, activityID string, params executeActivityParameters) *shared.PollForActivityTaskResponse {
 	task := &shared.PollForActivityTaskResponse{
 		WorkflowExecution: &shared.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
@@ -973,12 +978,12 @@ func newTestActivityTask(workflowID, runID, activityID, activityType string, inp
 		},
 		ActivityId:                    common.StringPtr(activityID),
 		TaskToken:                     []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
-		ActivityType:                  &shared.ActivityType{Name: common.StringPtr(activityType)},
-		Input:                         input,
+		ActivityType:                  &shared.ActivityType{Name: common.StringPtr(params.ActivityType.Name)},
+		Input:                         params.Input,
 		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
-		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(60),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(params.ScheduleToCloseTimeoutSeconds),
 		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
-		StartToCloseTimeoutSeconds:    common.Int32Ptr(60),
+		StartToCloseTimeoutSeconds:    common.Int32Ptr(params.StartToCloseTimeoutSeconds),
 	}
 	return task
 }
