@@ -130,7 +130,11 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 		if err := validateFnFormat(fnType, false); err != nil {
 			panic(err)
 		}
-		call = t.Mock.On(getFunctionName(activity), args...)
+		fnName := getFunctionName(activity)
+		if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
+			fnName = alias
+		}
+		call = t.Mock.On(fnName, args...)
 
 	case reflect.String:
 		call = t.Mock.On(activity.(string), args...)
@@ -163,7 +167,11 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 		if err := validateFnFormat(fnType, true); err != nil {
 			panic(err)
 		}
-		call = t.Mock.On(getFunctionName(workflow), args...)
+		fnName := getFunctionName(workflow)
+		if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
+			fnName = alias
+		}
+		call = t.Mock.On(fnName, args...)
 	case reflect.String:
 		call = t.Mock.On(workflow.(string), args...)
 	default:
