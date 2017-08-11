@@ -547,14 +547,6 @@ func (th *hostEnvImpl) lenWorkflowFns() int {
 	return len(th.workflowFuncMap)
 }
 
-func (th *hostEnvImpl) lookupActivity(fnName string) (activity, bool) {
-	lookup := fnName
-	if alias, ok := th.getActivityAlias(fnName); ok {
-		lookup = alias
-	}
-	return th.getActivity(lookup)
-}
-
 func (th *hostEnvImpl) addActivityAlias(fnName string, alias string) {
 	th.Lock()
 	defer th.Unlock()

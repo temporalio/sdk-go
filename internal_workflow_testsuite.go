@@ -277,12 +277,10 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	case reflect.String:
 		workflowType = workflowFn.(string)
 	case reflect.Func:
-		// auto register workflow if it is not already registered
-		fnName := getFunctionName(workflowFn)
-		if _, ok := getHostEnvironment().getWorkflowFn(fnName); !ok {
-			getHostEnvironment().RegisterWorkflow(workflowFn)
-		}
 		workflowType = getFunctionName(workflowFn)
+		if alias, ok := getHostEnvironment().getWorkflowAlias(workflowType); ok {
+			workflowType = alias
+		}
 	default:
 		panic("unsupported workflowFn")
 	}
@@ -350,7 +348,6 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	)
 
 	// ensure activityFn is registered to defaultTestTaskList
-	getHostEnvironment().RegisterActivity(activityFn)
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
 	result, err := taskHandler.Execute(task)
 	if err != nil {

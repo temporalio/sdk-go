@@ -209,14 +209,13 @@ func getValidatedActivityFunction(f interface{}, args []interface{}) (*ActivityT
 			return nil, nil, err
 		}
 		fnName = getFunctionName(f)
+		if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
+			fnName = alias
+		}
 
 	default:
 		return nil, nil, fmt.Errorf(
 			"Invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
-	}
-
-	if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
-		fnName = alias
 	}
 
 	input, err := getHostEnvironment().encodeArgs(args)

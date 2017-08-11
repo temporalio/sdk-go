@@ -160,28 +160,6 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	t.NotNil(response.GetDecisions()[0].GetScheduleActivityTaskDecisionAttributes())
 }
 
-func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartFailureWithFQFN() {
-	t.T().Skip()
-	// TODO (madhu): Fix this use case
-	taskList := "tl1"
-	testEvents := []*s.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
-	}
-	// Using fully qualified name string is not supported when an external name "HelloWorld_Workflow"
-	// has been provided
-	task := createWorkflowTask(testEvents, 0, "go.uber.org/cadence.helloWorldWorkflowFunc")
-	params := workerExecutionParameters{
-		TaskList: taskList,
-		Identity: "test-id-1",
-		Logger:   t.logger,
-	}
-	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	response, _, err := taskHandler.ProcessWorkflowTask(task, nil, false)
-	t.Error(err)
-	t.Contains(err.Error(), "Unable to find workflow type")
-	t.Nil(response)
-}
-
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"

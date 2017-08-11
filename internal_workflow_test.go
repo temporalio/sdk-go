@@ -41,6 +41,16 @@ type WorkflowUnitTest struct {
 }
 
 func (s *WorkflowUnitTest) SetupSuite() {
+	RegisterWorkflow(worldWorkflow)
+	RegisterWorkflow(helloWorldActivityWorkflow)
+	RegisterWorkflow(testClockWorkflow)
+	RegisterWorkflow(greetingsWorkflow)
+	RegisterWorkflow(continueAsNewWorkflowTest)
+	RegisterWorkflow(cancelWorkflowTest)
+	RegisterWorkflow(cancelWorkflowAfterActivityTest)
+	RegisterWorkflow(signalWorkflowTest)
+	RegisterWorkflow(splitJoinActivityWorkflow)
+
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -56,13 +66,13 @@ func TestWorkflowUnitTest(t *testing.T) {
 	suite.Run(t, new(WorkflowUnitTest))
 }
 
-func helloWorldWorklfow(ctx Context, input string) (result string, err error) {
+func worldWorkflow(ctx Context, input string) (result string, err error) {
 	return input + " World!", nil
 }
 
-func (s *WorkflowUnitTest) Test_HelloWorldWorkflow() {
+func (s *WorkflowUnitTest) Test_WorldWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
-	env.ExecuteWorkflow(helloWorldWorklfow, "Hello")
+	env.ExecuteWorkflow(worldWorkflow, "Hello")
 	s.True(env.IsWorkflowCompleted())
 }
 
@@ -243,6 +253,7 @@ func TestTimerWorkflow(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	w := &testTimerWorkflow{t: t}
+	RegisterWorkflow(w.Execute)
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -293,6 +304,7 @@ func TestActivityCancellation(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	w := &testActivityCancelWorkflow{t: t}
+	RegisterWorkflow(w.Execute)
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())

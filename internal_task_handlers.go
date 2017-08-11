@@ -933,10 +933,10 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 	defer invoker.Close()
 	ctx := WithActivityTask(canCtx, t, invoker, ath.logger, ath.metricsScope)
 	activityType := *t.GetActivityType()
-	activityImplementation, ok := ath.hostEnv.lookupActivity(activityType.GetName())
+	activityImplementation, ok := ath.hostEnv.getActivity(activityType.GetName())
 	if !ok {
 		// Couldn't find the activity implementation.
-		return nil, fmt.Errorf("No implementation for activityType=%v", activityType.GetName())
+		return nil, fmt.Errorf("Unable to find activityType=%v", activityType.GetName())
 	}
 
 	// panic handler

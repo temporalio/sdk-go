@@ -928,15 +928,14 @@ func getValidatedWorkerFunction(workflowFunc interface{}, args []interface{}) (*
 			return nil, nil, err
 		}
 		fnName = getFunctionName(workflowFunc)
+		if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
+			fnName = alias
+		}
 
 	default:
 		return nil, nil, fmt.Errorf(
 			"Invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
 			workflowFunc)
-	}
-
-	if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
-		fnName = alias
 	}
 
 	input, err := getHostEnvironment().encodeArgs(args)

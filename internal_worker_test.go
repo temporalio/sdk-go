@@ -608,6 +608,7 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	w := &activitiesCallingOptionsWorkflow{t: t}
+	RegisterWorkflow(w.Execute)
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())

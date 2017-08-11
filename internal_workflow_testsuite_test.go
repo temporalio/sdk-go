@@ -51,7 +51,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	}
 	RegisterWorkflowWithOptions(testWorkflowHello, RegisterWorkflowOptions{Name: "testWorkflowHello"})
 	RegisterWorkflow(testWorkflowHeartbeat)
-	RegisterActivity(testActivityHello)
+	RegisterActivityWithOptions(testActivityHello, RegisterActivityOptions{Name: "testActivityHello"})
 	RegisterActivity(testActivityHeartbeat)
 }
 
@@ -104,6 +104,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 		return nil
 	} // END of workflow code
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 
 	var activityCalls []string
@@ -113,9 +114,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
 	})
 	expectedCalls := []string{
-		"go.uber.org/cadence.testActivityHello:msg1",
-		"go.uber.org/cadence.testActivityHello:msg2",
-		"go.uber.org/cadence.testActivityHello:msg3",
+		"testActivityHello:msg1",
+		"testActivityHello:msg2",
+		"testActivityHello:msg3",
 	}
 
 	env.ExecuteWorkflow(workflowFn)
@@ -151,6 +152,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TimerWorkflow_ClockAutoFastForward() {
 		return nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 
@@ -188,6 +190,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowAutoForwardClock() {
 		return activityResult, nil
 	} // END of workflow code
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 
@@ -228,6 +231,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 		return "expected", nil
 	} // END of workflow code
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 
@@ -259,6 +263,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 		return nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, cancelledActivityID string
@@ -297,6 +302,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 		}
 		return "", errors.New("value not found from ctx")
 	}
+	RegisterActivity(activityWithUserContext)
 
 	env := s.NewTestActivityEnvironment()
 	env.SetWorkerOption(workerOptions)
@@ -340,6 +346,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 		return err
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	// Register a delayed callback using workflow timer internally. The callback will be called when workflow clock passed
 	// by the specified delay duration. The test suite enables the auto clock forwarding when workflow is blocked and no
@@ -439,6 +446,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 		return err
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -467,6 +475,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 		return helloActivityResult + " " + helloWorkflowResult, nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 
@@ -498,6 +507,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancel() {
 		return nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 
@@ -530,6 +540,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
 		return helloActivityResult + " " + helloWorkflowResult + " " + heartbeatWorkflowResult, nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("mock_msg", nil)
 	env.OnWorkflow(testWorkflowHeartbeat, mock.Anything, mock.Anything, mock.Anything).
@@ -563,6 +574,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 		return helloActivityResult + " " + helloWorkflowResult, nil
 	}
 
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	var childWorkflowName, childWorkflowResult string
 	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues) {
@@ -678,6 +690,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	}
 
 	// no delay to the mock call, workflow should return no error
+	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("hello_mock_delayed", nil).Once()
 	env.ExecuteWorkflow(workflowFn)
@@ -730,6 +743,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
 		return errors.New("child workflow takes too long")
 	}
 
+	RegisterWorkflow(workflowFn)
 	// no delay to the mock call, workflow should return no error
 	env := s.NewTestWorkflowEnvironment()
 	env.OnWorkflow(testWorkflowHello, mock.Anything).Return("hello_mock_delayed", nil).Once()
@@ -823,6 +837,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
 		return errors.New("child workflow takes too long")
 	}
 
+	RegisterWorkflow(workflowFn)
 	RegisterWorkflow(childWorkflowFn)
 
 	// no delay to the mock call, workflow should return no error
@@ -876,6 +891,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		return err
 	}
 
+	RegisterWorkflow(workflowFn)
 	RegisterActivity(oldActivity)
 	RegisterActivity(newActivity)
 	env := s.NewTestWorkflowEnvironment()
@@ -897,6 +913,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 		actualValues = append(actualValues, wf.GetRunId())
 		return retVal, nil
 	}
+	RegisterActivity(activitySingleFn)
 
 	input := &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID1"), RunId: common.StringPtr("rID1")}
 	env := s.NewTestActivityEnvironment()
@@ -913,6 +930,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 		actualValues = append(actualValues, t.GetName())
 		return retVal, nil
 	}
+	RegisterActivity(activityDoubleArgFn)
 
 	input = &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID2"), RunId: common.StringPtr("rID3")}
 	wt := &shared.WorkflowType{Name: common.StringPtr("wType")}
@@ -993,4 +1011,34 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 	s.Equal(2, len(called))
 	s.Equal("testWorkflowHello", called[0])
 	s.Equal("testWorkflowHello", called[1])
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
+	// TODO (madhu): Add this back once test workflow environment is able to handle panics gracefully
+	// Right now, the panic happens in a different goroutine and there is no way to catch it
+	s.T().Skip()
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var result string
+		fut := ExecuteActivity(ctx, "go.uber.org/cadence.testActivityHello", "friendly_name")
+		err := fut.Get(ctx, &result)
+		return err
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.False(env.IsWorkflowCompleted())
+	s.Contains(env.GetWorkflowError().Error(), "Unable to find activityType")
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFullyQualifiedName() {
+	defer func() {
+		if r := recover(); r != nil {
+			s.Contains(r.(error).Error(), "Unable to find workflow type")
+		}
+	}()
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow("go.uber.org/cadence.testWorkflowHello")
+	s.Fail("Should have panic'ed at ExecuteWorkflow")
 }
