@@ -101,10 +101,10 @@ func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args .
 	return t.impl.executeActivity(activityFn, args...)
 }
 
-// SetWorkerOption sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options set by SetIdentity(), SetMetrics(), and WithActivityContext() on the WorkerOptions. Other options are ignored.
-func (t *TestActivityEnvironment) SetWorkerOption(options WorkerOptions) *TestActivityEnvironment {
-	t.impl.workerOptions = options
+// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
+// use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
+	t.impl.setWorkerOptions(options)
 	return t
 }
 
@@ -236,10 +236,10 @@ func (t *TestWorkflowEnvironment) Now() time.Time {
 	return t.impl.Now()
 }
 
-// SetWorkerOption sets the WorkerOptions for TestWorkflowEnvironment. TestWorkflowEnvironment will use options set by
-// SetIdentity(), SetMetrics(), and WithActivityContext() on the WorkerOptions. Other options are ignored.
-func (t *TestWorkflowEnvironment) SetWorkerOption(options WorkerOptions) *TestWorkflowEnvironment {
-	t.impl.workerOptions = options
+// SetWorkerOptions sets the WorkerOptions for TestWorkflowEnvironment. TestWorkflowEnvironment will use options set by
+// use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
+	t.impl.setWorkerOptions(options)
 	return t
 }
 

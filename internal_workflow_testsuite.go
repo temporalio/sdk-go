@@ -258,6 +258,18 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(optio
 	return childEnv
 }
 
+func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
+	if len(options.Identity) > 0 {
+		env.workerOptions.Identity = options.Identity
+	}
+	if options.BackgroundActivityContext != nil {
+		env.workerOptions.BackgroundActivityContext = options.BackgroundActivityContext
+	}
+	if options.MetricsScope != nil {
+		env.workerOptions.MetricsScope = options.MetricsScope
+	}
+}
+
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
 	for _, activityFn := range activityFns {
 		fnName := getFunctionName(activityFn)

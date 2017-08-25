@@ -305,7 +305,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 	RegisterActivity(activityWithUserContext)
 
 	env := s.NewTestActivityEnvironment()
-	env.SetWorkerOption(workerOptions)
+	env.SetWorkerOptions(workerOptions)
 	blob, err := env.ExecuteActivity(activityWithUserContext, testKey)
 	s.NoError(err)
 	var value string
