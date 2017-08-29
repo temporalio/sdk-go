@@ -198,6 +198,13 @@ func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.
 
 	result = eh.next
 	if len(result) > 0 {
+		// Set replay clock.
+		lastEvent := result[len(result)-1]
+		if lastEvent.GetEventType() == s.EventType_DecisionTaskStarted {
+			ts := time.Unix(0, lastEvent.GetTimestamp())
+			eh.eventsHandler.SetCurrentReplayTime(ts)
+		}
+
 		eh.next, markers, err = eh.nextDecisionEvents()
 	}
 	return result, markers, err
@@ -240,9 +247,6 @@ OrderEvents:
 		switch event.GetEventType() {
 		case s.EventType_DecisionTaskStarted:
 			if !eh.IsNextDecisionFailed() {
-				// Set replay clock.
-				ts := time.Unix(0, event.GetTimestamp())
-				eh.eventsHandler.workflowEnvironmentImpl.SetCurrentReplayTime(ts)
 				eh.currentIndex++ // Since we already processed the current event
 				decisionStartedEvent = event
 				break OrderEvents
