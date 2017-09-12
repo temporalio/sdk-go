@@ -36,9 +36,8 @@ import (
 )
 
 const (
-	retryPollOperationInitialInterval    = time.Millisecond
-	retryPollOperationMaxInterval        = 1 * time.Second
-	retryPollOperationExpirationInterval = backoff.NoInterval // We don't ever expire
+	retryPollOperationInitialInterval = 20 * time.Millisecond
+	retryPollOperationMaxInterval     = 10 * time.Second
 )
 
 var (
@@ -113,7 +112,12 @@ type (
 func createPollRetryPolicy() backoff.RetryPolicy {
 	policy := backoff.NewExponentialRetryPolicy(retryPollOperationInitialInterval)
 	policy.SetMaximumInterval(retryPollOperationMaxInterval)
-	policy.SetExpirationInterval(retryPollOperationExpirationInterval)
+
+	// NOTE: We don't use expiration interval since we don't use retries from retrier class.
+	// We use it to calculate next backoff. We have additional layer that is built on poller
+	// in the worker layer for to add some middleware for any poll retry that includes
+	// (a) rate limiting across pollers (b) back-off across pollers when server is busy
+	policy.SetExpirationInterval(backoff.NoInterval) // We don't ever expire
 	return policy
 }
 
@@ -225,11 +229,11 @@ func (bw *baseWorker) pollTask() {
 	bw.retrier.Throttle()
 	if bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
-		if err != nil {
+		if err != nil && enableVerboseLogging {
+			bw.logger.Debug("Failed to poll for task.", zap.Error(err))
+		}
+		if err != nil && isServiceTransientError(err) {
 			bw.retrier.Failed()
-			if enableVerboseLogging {
-				bw.logger.Debug("Failed to poll for task.", zap.Error(err))
-			}
 		} else {
 			bw.retrier.Succeeded()
 		}

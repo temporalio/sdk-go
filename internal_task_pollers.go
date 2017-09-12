@@ -102,6 +102,7 @@ func isServiceTransientError(err error) bool {
 	}
 
 	// s.InternalServiceError
+	// s.ServiceBusyError
 	return true
 }
 
@@ -204,7 +205,11 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 
 	response, err := wtp.service.PollForDecisionTask(ctx, request)
 	if err != nil {
-		wtp.metricsScope.Counter(metrics.DecisionPollFailedCounter).Inc(1)
+		if isServiceTransientError(err) {
+			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
+		} else {
+			wtp.metricsScope.Counter(metrics.DecisionPollFailedCounter).Inc(1)
+		}
 		return nil, err
 	}
 
@@ -300,7 +305,11 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 
 	response, err := atp.service.PollForActivityTask(ctx, request)
 	if err != nil {
-		atp.metricsScope.Counter(metrics.ActivityPollFailedCounter).Inc(1)
+		if isServiceTransientError(err) {
+			atp.metricsScope.Counter(metrics.ActivityPollTransientFailedCounter).Inc(1)
+		} else {
+			atp.metricsScope.Counter(metrics.ActivityPollFailedCounter).Inc(1)
+		}
 		return nil, err
 	}
 	if response == nil || len(response.GetTaskToken()) == 0 {
