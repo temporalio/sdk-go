@@ -363,4 +363,41 @@ func (_m *TChanWorkflowService) UpdateDomain(ctx thrift.Context, updateRequest *
 	return r0, r1
 }
 
+// UpdateDomain provides a mock function with given fields: ctx, updateRequest
+func (_m *TChanWorkflowService) QueryWorkflow(ctx thrift.Context, queryRequest *shared.QueryWorkflowRequest) (*shared.QueryWorkflowResponse, error) {
+	ret := _m.Called(ctx, queryRequest)
+
+	var r0 *shared.QueryWorkflowResponse
+	if rf, ok := ret.Get(0).(func(thrift.Context, *shared.QueryWorkflowRequest) *shared.QueryWorkflowResponse); ok {
+		r0 = rf(ctx, queryRequest)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*shared.QueryWorkflowResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(thrift.Context, *shared.QueryWorkflowRequest) error); ok {
+		r1 = rf(ctx, queryRequest)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// RespondQueryTaskCompleted provides a mock function with given fields: ctx, completeRequest
+func (_m *TChanWorkflowService) RespondQueryTaskCompleted(ctx thrift.Context, completeRequest *shared.RespondQueryTaskCompletedRequest) error {
+	ret := _m.Called(ctx, completeRequest)
+
+	var r0 error
+	if rf, ok := ret.Get(1).(func(thrift.Context, *shared.RespondQueryTaskCompletedRequest) error); ok {
+		r0 = rf(ctx, completeRequest)
+	} else {
+		r0 = ret.Error(1)
+	}
+
+	return r0
+}
+
 var _ cadence.TChanWorkflowService = (*TChanWorkflowService)(nil)

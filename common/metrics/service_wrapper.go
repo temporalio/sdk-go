@@ -63,6 +63,8 @@ const (
 	scopeNameStartWorkflowExecution         = CadenceMetricsPrefix + "StartWorkflowExecution"
 	scopeNameTerminateWorkflowExecution     = CadenceMetricsPrefix + "TerminateWorkflowExecution"
 	scopeNameUpdateDomain                   = CadenceMetricsPrefix + "UpdateDomain"
+	scopeNameQueryWorkflow                  = CadenceMetricsPrefix + "QueryWorkflow"
+	scopeNameRespondQueryTaskCompleted      = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -97,7 +99,8 @@ func (s *operationScope) handleError(err error) {
 		case *shared.EntityNotExistsError,
 			*shared.BadRequestError,
 			*shared.DomainAlreadyExistsError,
-			*shared.WorkflowExecutionAlreadyStartedError:
+			*shared.WorkflowExecutionAlreadyStartedError,
+			*shared.QueryFailedError:
 			s.scope.Counter(CadenceInvalidRequest).Inc(1)
 		default:
 			s.scope.Counter(CadenceError).Inc(1)
@@ -229,4 +232,18 @@ func (w *workflowServiceMetricsWrapper) UpdateDomain(ctx thrift.Context, request
 	result, err := w.service.UpdateDomain(ctx, request)
 	scope.handleError(err)
 	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) QueryWorkflow(ctx thrift.Context, request *shared.QueryWorkflowRequest) (*shared.QueryWorkflowResponse, error) {
+	scope := w.getOperationScope(scopeNameQueryWorkflow)
+	result, err := w.service.QueryWorkflow(ctx, request)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) RespondQueryTaskCompleted(ctx thrift.Context, request *shared.RespondQueryTaskCompletedRequest) error {
+	scope := w.getOperationScope(scopeNameRespondQueryTaskCompleted)
+	err := w.service.RespondQueryTaskCompleted(ctx, request)
+	scope.handleError(err)
+	return err
 }
