@@ -45,7 +45,7 @@ type (
 		ProcessWorkflowTask(
 			task *s.PollForDecisionTaskResponse,
 			getHistoryPage GetHistoryPage,
-			emitStack bool) (response *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error)
+			emitStack bool) (response interface{}, stackTrace string, err error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.

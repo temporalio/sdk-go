@@ -70,7 +70,7 @@ type sampleWorkflowTaskHandler struct {
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	task *m.PollForDecisionTaskResponse,
 	getHistoryPage GetHistoryPage,
-	emitStack bool) (*m.RespondDecisionTaskCompletedRequest, string, error) {
+	emitStack bool) (interface{}, string, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
 		TaskToken: task.TaskToken,
 	}, "", nil
@@ -126,7 +126,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
-	completionRequest, _, err := taskHandler.ProcessWorkflowTask(response, nil, false)
+	request, _, err := taskHandler.ProcessWorkflowTask(response, nil, false)
+	completionRequest := request.(*m.RespondDecisionTaskCompletedRequest)
 	s.NoError(err)
 
 	err = service.RespondDecisionTaskCompleted(ctx, completionRequest)

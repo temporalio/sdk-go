@@ -296,7 +296,8 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 		WorkflowType:           startWorkflowEvent.WorkflowType,
 		NextPageToken:          taskToken,
 	}
-	response, stackTrace, err := taskHandler.ProcessWorkflowTask(task, getHistoryPage, true)
+	request, stackTrace, err := taskHandler.ProcessWorkflowTask(task, getHistoryPage, true)
+	response := request.(*s.RespondDecisionTaskCompletedRequest)
 	if err == nil && response != nil && len(response.GetDecisions()) > 0 && len(stackTrace) == 0 {
 		lastDecision := response.GetDecisions()[len(response.GetDecisions())-1]
 		if lastDecision.GetDecisionType() == s.DecisionType_FailWorkflowExecution {
@@ -385,6 +386,54 @@ func (wc *workflowClient) ListOpenWorkflow(request *s.ListOpenWorkflowExecutions
 		return nil, err
 	}
 	return response, nil
+}
+
+// QueryWorkflow queries a given workflow execution
+// workflowID and queryType are required, other parameters are optional.
+// - workflow ID of the workflow.
+// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+// - taskList can be default(empty string). If empty string then it will pick the taskList of the running execution of that workflow ID.
+// - queryType is the type of the query.
+// - args... are the optional query parameters.
+// The errors it can return:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+//  - QueryFailError
+func (wc *workflowClient) QueryWorkflow(workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error) {
+	var input []byte
+	if len(args) > 0 {
+		var err error
+		if input, err = getHostEnvironment().encodeArgs(args); err != nil {
+			return nil, err
+		}
+	}
+	request := &s.QueryWorkflowRequest{
+		Domain: common.StringPtr(wc.domain),
+		Execution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      getRunID(runID),
+		},
+		Query: &s.WorkflowQuery{
+			QueryType:  common.StringPtr(queryType),
+			QueryArgs_: input,
+		},
+	}
+
+	var resp *s.QueryWorkflowResponse
+	err := backoff.Retry(
+		func() error {
+			ctx, cancel := newTChannelContext()
+			defer cancel()
+			var err error
+			resp, err = wc.workflowService.QueryWorkflow(ctx, request)
+			return err
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+
+	return EncodedValue(resp.QueryResult_), nil
 }
 
 // Register a domain with cadence server

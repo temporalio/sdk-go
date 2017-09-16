@@ -55,6 +55,11 @@ type (
 )
 
 func helloWorldWorkflowFunc(ctx Context, input []byte) error {
+	var queryResult string
+	SetQueryHandler(ctx, "test-query", func() (string, error) {
+		return queryResult, nil
+	})
+
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{
 		TaskList:               "taskList",
@@ -65,10 +70,15 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 	}
 	ctx = WithActivityOptions(ctx, ao)
 	var result []byte
+	queryResult = "waiting-activity-result"
 	err := ExecuteActivity(ctx, activityName).Get(ctx, &result)
 	if err == nil {
+		queryResult = "done"
 		fmt.Println("Result", result)
+		return nil
 	}
+
+	queryResult = "error:" + err.Error()
 	return err
 }
 

@@ -149,6 +149,7 @@ type (
 
 		workflowCancelHandler func()
 		signalHandler         func(name string, input []byte)
+		queryHandler          func(string, []byte) ([]byte, error)
 
 		isTestCompleted bool
 		testResult      EncodedValue
@@ -1044,6 +1045,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name 
 	env.signalHandler = handler
 }
 
+func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string, []byte) ([]byte, error)) {
+	env.queryHandler = handler
+}
+
 func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID, runID string) error {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		// cancel current workflow
@@ -1127,6 +1132,18 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 	env.postCallback(func() {
 		env.signalHandler(name, data)
 	}, true)
+}
+
+func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (EncodedValue, error) {
+	data, err := getHostEnvironment().encodeArg(args)
+	if err != nil {
+		return nil, err
+	}
+	blob, err := env.queryHandler(queryType, data)
+	if err != nil {
+		return nil, err
+	}
+	return EncodedValue(blob), nil
 }
 
 // make sure interface is implemented

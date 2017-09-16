@@ -99,6 +99,8 @@ func isServiceTransientError(err error) bool {
 		return false
 	case *s.DomainAlreadyExistsError:
 		return false
+	case *s.QueryFailedError:
+		return false
 	}
 
 	// s.InternalServiceError
@@ -165,12 +167,27 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 		func() error {
 			ctx, cancel := newTChannelContext()
 			defer cancel()
-			err1 := wtp.service.RespondDecisionTaskCompleted(ctx, completedRequest)
-			if err1 != nil {
-				traceLog(func() {
-					wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
-				})
+			var err1 error
+			switch request := completedRequest.(type) {
+			case *s.RespondDecisionTaskCompletedRequest:
+				err1 = wtp.service.RespondDecisionTaskCompleted(ctx, request)
+				if err1 != nil {
+					traceLog(func() {
+						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
+					})
+				}
+			case *s.RespondQueryTaskCompletedRequest:
+				err1 = wtp.service.RespondQueryTaskCompleted(ctx, request)
+				if err1 != nil {
+					traceLog(func() {
+						wtp.logger.Debug("RespondQueryTaskCompleted failed.", zap.Error(err1))
+					})
+				}
+			default:
+				// should not happen
+				panic("unknown request type from ProcessWorkflowTask()")
 			}
+
 			return err1
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 

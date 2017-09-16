@@ -29,6 +29,10 @@ import (
 	"go.uber.org/cadence/common/metrics"
 )
 
+// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
+// stack of the workflow. The result will be a string encoded in the EncodedValue.
+const QueryTypeStackTrace string = "__stack_trace"
+
 type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -127,6 +131,26 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		ListOpenWorkflow(request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
+
+		// QueryWorkflow queries a given workflow execution and returns the query result synchronously. Parameter workflowID
+		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
+		// target workflow execution that this query will be send to. If runID is not specified (empty string), server will
+		// use the currently running execution of that workflowID. The queryType specifies the type of query you want to
+		// run. By default, cadence supports "__stack_trace" as a standard query type, which will return string value
+		// representing the call stack of the target workflow. The target workflow could also setup different query handler
+		// to handle custom query types.
+		// See comments at cadence.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details
+		// on how to setup query handler within the target workflow.
+		// - workflowID is required.
+		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		// - queryType is the type of the query.
+		// - args... are the optional query parameters.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		//  - EntityNotExistError
+		//  - QueryFailError
+		QueryWorkflow(workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error)
 	}
 
 	// ClientOptions are optional parameters for Client creation.

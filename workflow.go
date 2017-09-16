@@ -23,6 +23,7 @@ package cadence
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -624,4 +625,47 @@ const DefaultVersion Version = -1
 // a workflow code is not compatible with it.
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return getWorkflowEnvironment(ctx).GetVersion(changeID, minSupported, maxSupported)
+}
+
+// SetQueryHandler sets the query handler to handle workflow query. The queryType specify which query type this handler
+// should handle. The handler must be a function that returns 2 values. The first return value must be a serializable
+// result. The second return value must be an error. The handler function could receive any number of input parameters.
+// All the input parameter must be serializable. You should call cadence.SetQueryHandler() at the beginning of the workflow
+// code. When client calls Client.QueryWorkflow() to cadence server, a task will be generated on server that will be dispatched
+// to a workflow worker, which will replay the history events and then execute a query handler based on the query type.
+// The query handler will be invoked out of the context of the workflow, meaning that the handler must not use cadence
+// context to call any workflow blocking functions like Channel.Get() or Future.Get().
+// Example of workflow code that support query type "current_state":
+//  func MyWorkflow(ctx cadence.Context, input string) error {
+//    currentState := "started" // this could be any serializable struct
+//    err := cadence.SetQueryHandler(ctx, "current_state", func() (string, error) {
+//      return currentState, nil
+//    })
+//    if err != nil {
+//      currentState = "failed to register query handler"
+//      return err
+//    }
+//    // your normal workflow code begins here, and you update the currentState as the code makes progress.
+//    currentState = "waiting timer"
+//    err = NewTimer(ctx, time.Hour).Get(ctx, nil)
+//    if err != nil {
+//      currentState = "timer failed"
+//      return err
+//    }
+//
+//    currentState = "waiting activity"
+//    ctx = WithActivityOptions(ctx, myActivityOptions)
+//    err = ExecuteActivity(ctx, MyActivity, "my_input").Get(ctx, nil)
+//    if err != nil {
+//      currentState = "activity failed"
+//      return err
+//    }
+//    currentState = "done"
+//    return nil
+// }
+func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	if strings.HasPrefix(queryType, "__") {
+		return errors.New("queryType starts with '__' is reserved for internal use")
+	}
+	return setQueryHandler(ctx, queryType, handler)
 }

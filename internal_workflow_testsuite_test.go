@@ -895,7 +895,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 	RegisterActivity(oldActivity)
 	RegisterActivity(newActivity)
 	env := s.NewTestWorkflowEnvironment()
-	env.OnActivity(newActivity, mock.Anything, "new_msg").Return("hell new_mock_msg", nil).Once()
+	env.OnActivity(newActivity, mock.Anything, "new_msg").Return("hello new_mock_msg", nil).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -1041,4 +1041,61 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFullyQualifiedName() {
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow("go.uber.org/cadence.testWorkflowHello")
 	s.Fail("Should have panic'ed at ExecuteWorkflow")
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
+	queryType := "state"
+	stateWaitTimer, stateWaitActivity, stateDone := "wait for timer", "wait for activity", "done"
+	workflowFn := func(ctx Context) error {
+		var state string
+		err := SetQueryHandler(ctx, queryType, func() (string, error) {
+			return state, nil
+		})
+		if err != nil {
+			state = err.Error()
+			return err
+		}
+
+		state = stateWaitTimer
+		err = NewTimer(ctx, time.Hour).Get(ctx, nil)
+		if err != nil {
+			state = err.Error()
+			return err
+		}
+
+		state = stateWaitActivity
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		err = ExecuteActivity(ctx, testActivityHello, "mock_delay").Get(ctx, nil)
+		if err != nil {
+			state = err.Error()
+			return err
+		}
+
+		state = stateDone
+		return err
+	}
+
+	RegisterWorkflow(workflowFn)
+
+	env := s.NewTestWorkflowEnvironment()
+	verifyStateWithQuery := func(expected string) {
+		encodedValue, err := env.QueryWorkflow(queryType)
+		s.NoError(err)
+		var state string
+		err = encodedValue.Get(&state)
+		s.NoError(err)
+		s.Equal(expected, state)
+	}
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		verifyStateWithQuery(stateWaitTimer)
+	})
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
+		verifyStateWithQuery(stateWaitActivity)
+	})
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	verifyStateWithQuery(stateDone)
 }

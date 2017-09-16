@@ -52,6 +52,8 @@ type (
 		// Process a single event and return the assosciated decisions.
 		// Return List of decisions made, any error.
 		ProcessEvent(event *s.HistoryEvent, isReplay bool, isLast bool) ([]*s.Decision, error)
+		// ProcessQuery process a query request.
+		ProcessQuery(queryType string, queryArgs []byte) ([]byte, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -319,7 +321,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	getHistoryPage GetHistoryPage,
 	emitStack bool,
-) (result *s.RespondDecisionTaskCompletedRequest, stackTrace string, err error) {
+) (result interface{}, stackTrace string, err error) {
 	if task == nil {
 		return nil, "", errors.New("nil workflowtask provided")
 	}
@@ -439,10 +441,13 @@ ProcessEvents:
 			}
 		}
 	}
-	// check if decisions from reply matches to the history events
-	if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
-		wth.logger.Error("Replay and history mismatch.", zap.Error(err))
-		return nil, "", err
+
+	if task.Query == nil {
+		// check if decisions from reply matches to the history events
+		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
+			wth.logger.Error("Replay and history mismatch.", zap.Error(err))
+			return nil, "", err
+		}
 	}
 
 	startEvent, err := reorderedHistory.GetWorkflowStartedEvent()
@@ -482,28 +487,44 @@ ProcessEvents:
 		}
 	}
 
-	// Fill the response.
-	taskCompletionRequest := &s.RespondDecisionTaskCompletedRequest{
-		TaskToken: task.TaskToken,
-		Decisions: decisions,
-		Identity:  common.StringPtr(wth.identity),
-		// ExecutionContext:
-	}
-
-	traceLog(func() {
-		var buf bytes.Buffer
-		for i, d := range decisions {
-			buf.WriteString(fmt.Sprintf("%v: %v\n", i, util.DecisionToString(d)))
+	var completeRequest interface{}
+	if task.Query != nil {
+		// for query task
+		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.GetQueryArgs_())
+		queryTaskCompleteRequest := &s.RespondQueryTaskCompletedRequest{
+			TaskToken: task.TaskToken,
 		}
-		wth.logger.Debug("new_decisions",
-			zap.Int("DecisionCount", len(decisions)),
-			zap.String("Decisions", buf.String()))
-	})
+		if err != nil {
+			queryTaskCompleteRequest.CompletedType = s.QueryTaskCompletedTypePtr(s.QueryTaskCompletedType_FAILED)
+			queryTaskCompleteRequest.ErrorMessage = common.StringPtr(err.Error())
+		} else {
+			queryTaskCompleteRequest.CompletedType = s.QueryTaskCompletedTypePtr(s.QueryTaskCompletedType_COMPLETED)
+			queryTaskCompleteRequest.QueryResult_ = result
+		}
+		completeRequest = queryTaskCompleteRequest
+	} else {
+		// Fill the response.
+		completeRequest = &s.RespondDecisionTaskCompletedRequest{
+			TaskToken: task.TaskToken,
+			Decisions: decisions,
+			Identity:  common.StringPtr(wth.identity),
+			// ExecutionContext:
+		}
+		traceLog(func() {
+			var buf bytes.Buffer
+			for i, d := range decisions {
+				buf.WriteString(fmt.Sprintf("%v: %v\n", i, util.DecisionToString(d)))
+			}
+			wth.logger.Debug("new_decisions",
+				zap.Int("DecisionCount", len(decisions)),
+				zap.String("Decisions", buf.String()))
+		})
+	}
 
 	if emitStack {
 		stackTrace = eventHandler.StackTrace()
 	}
-	return taskCompletionRequest, stackTrace, nil
+	return completeRequest, stackTrace, nil
 }
 
 func isVersionMarkerDecision(d *s.Decision) bool {

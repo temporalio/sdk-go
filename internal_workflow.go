@@ -161,6 +161,7 @@ type (
 		childPolicy                         ChildWorkflowPolicy
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
+		queryHandlers                       map[string]func([]byte) ([]byte, error)
 	}
 
 	// decodeFutureImpl
@@ -189,6 +190,11 @@ type (
 		GetValueAndError() (v interface{}, err error)
 
 		Set(value interface{}, err error)
+	}
+
+	queryHandler struct {
+		fn        interface{}
+		queryType string
 	}
 )
 
@@ -368,6 +374,19 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 		if !ok {
 			panic(fmt.Sprintf("Exceeded channel buffer size for signal: %v", name))
 		}
+	})
+
+	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs []byte) ([]byte, error) {
+		eo := getWorkflowEnvOptions(d.rootCtx)
+		handler, ok := eo.queryHandlers[queryType]
+		if !ok {
+			keys := []string{QueryTypeStackTrace}
+			for k := range eo.queryHandlers {
+				keys = append(keys, k)
+			}
+			return nil, fmt.Errorf("unkonwn queryType %v. KnownQueryTypes=%v", queryType, keys)
+		}
+		return handler(queryArgs)
 	})
 
 	// There is a inter dependency, before we call Execute() we can have a cancel request since
@@ -984,7 +1003,9 @@ func getWorkflowEnvOptions(ctx Context) *workflowOptions {
 func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	if valCtx := getWorkflowEnvOptions(ctx); valCtx == nil {
 		return WithValue(ctx, workflowEnvOptionsContextKey, &workflowOptions{
-			signalChannels: make(map[string]Channel)})
+			signalChannels: make(map[string]Channel),
+			queryHandlers:  make(map[string]func([]byte) ([]byte, error)),
+		})
 	}
 	return ctx
 }
@@ -1057,4 +1078,87 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 	impl := &decodeFutureImpl{
 		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
 	return impl, impl
+}
+
+// setQueryHandler sets query handler for given queryType.
+func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	qh := &queryHandler{fn: handler, queryType: queryType}
+	err := qh.validateHandlerFn()
+	if err != nil {
+		return err
+	}
+
+	getWorkflowEnvOptions(ctx).queryHandlers[queryType] = qh.execute
+	return nil
+}
+
+func (h *queryHandler) validateHandlerFn() error {
+	fnType := reflect.TypeOf(h.fn)
+	if fnType.Kind() != reflect.Func {
+		return fmt.Errorf("query handler must be function but was %s", fnType.Kind())
+	}
+
+	if fnType.NumOut() != 2 {
+		return fmt.Errorf(
+			"query handler must return 2 values (serializable result and error), but found %d return values", fnType.NumOut(),
+		)
+	}
+
+	if !isValidResultType(fnType.Out(0)) {
+		return fmt.Errorf(
+			"first return value of query handler must be serializable but found: %v", fnType.Out(0).Kind(),
+		)
+	}
+	if !isError(fnType.Out(1)) {
+		return fmt.Errorf(
+			"second return value of query handler must be error but found %v", fnType.Out(fnType.NumOut()-1).Kind(),
+		)
+	}
+	return nil
+}
+
+func (h *queryHandler) execute(input []byte) (result []byte, err error) {
+	// if query handler panic, convert it to error
+	defer func() {
+		if p := recover(); p != nil {
+			result = nil
+			err = fmt.Errorf("handler for query type %s failed: %v", h.queryType, p)
+		}
+	}()
+
+	fnType := reflect.TypeOf(h.fn)
+	args := []reflect.Value{}
+
+	if fnType.NumIn() == 1 && isTypeByteSlice(fnType.In(0)) {
+		args = append(args, reflect.ValueOf(input))
+	} else {
+		decoded, err := getHostEnvironment().decodeArgs(fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %v", h.queryType, err)
+		}
+		args = append(args, decoded...)
+	}
+
+	// invoke the query handler with arguments.
+	fnValue := reflect.ValueOf(h.fn)
+	retValues := fnValue.Call(args)
+
+	// we already verified (in validateHandlerFn()) that the query handler returns 2 values
+	retValue := retValues[0]
+	if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+		result, err = getHostEnvironment().encodeArg(retValue.Interface())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	errValue := retValues[1]
+	if errValue.IsNil() {
+		return result, nil
+	}
+	err, ok := errValue.Interface().(error)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse error result as it is not of error interface: %v", errValue)
+	}
+	return result, err
 }

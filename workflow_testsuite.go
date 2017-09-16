@@ -350,9 +350,14 @@ func (t *TestWorkflowEnvironment) CancelWorkflow() {
 	t.impl.cancelWorkflow()
 }
 
-// SignalWorkflow requests signal (through workflow Context) to the currently running test workflow.
+// SignalWorkflow sends signal to the currently running test workflow.
 func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
 	t.impl.signalWorkflow(name, input)
+}
+
+// QueryWorkflow queries to the currently running test workflow and returns result synchronously.
+func (t *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (EncodedValue, error) {
+	return t.impl.queryWorkflow(queryType, args...)
 }
 
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When

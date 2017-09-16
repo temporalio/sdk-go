@@ -63,6 +63,7 @@ type (
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input []byte))
+		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
