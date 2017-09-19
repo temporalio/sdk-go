@@ -783,10 +783,7 @@ func (th *hostEnvImpl) decode(data []byte, to []interface{}) error {
 		}
 	}
 
-	if err := encoder.Unmarshal(data, to); err != nil {
-		return err
-	}
-	return nil
+	return encoder.Unmarshal(data, to)
 }
 
 // encode multiple arguments(arguments to a function).

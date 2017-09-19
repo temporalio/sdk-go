@@ -40,6 +40,8 @@ import (
 
 const (
 	defaultSignalChannelSize = 100000 // really large buffering size(100K)
+
+	panicIllegalAccessCoroutinueState = "getState: illegal access from outside of workflow context"
 )
 
 type (
@@ -461,7 +463,11 @@ func getState(ctx Context) *coroutineState {
 	if s == nil {
 		panic("getState: not workflow context")
 	}
-	return s.(*coroutineState)
+	state := s.(*coroutineState)
+	if !state.dispatcher.executing {
+		panic(panicIllegalAccessCoroutinueState)
+	}
+	return state
 }
 
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
@@ -1122,7 +1128,14 @@ func (h *queryHandler) execute(input []byte) (result []byte, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			result = nil
-			err = fmt.Errorf("handler for query type %s failed: %v", h.queryType, p)
+			st := getStackTraceRaw("query handler [panic]:", 7, 0)
+			if p == panicIllegalAccessCoroutinueState {
+				// query handler code try to access workflow functions outside of workflow context, make error message
+				// more descriptive and clear.
+				p = "query handler must not use cadence context to do things like cadence.NewChannel(), " +
+					"cadence.Go() or to call any workflow blocking functions like Channel.Get() or Future.Get()"
+			}
+			err = fmt.Errorf("query handler panic: %v, stack trace: %v", p, st)
 		}
 	}()
 
