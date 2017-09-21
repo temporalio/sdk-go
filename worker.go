@@ -22,7 +22,6 @@ package cadence
 
 import (
 	"context"
-	"time"
 
 	"github.com/uber-go/tally"
 
@@ -53,18 +52,14 @@ type (
 		// default: defaultMaxConcurrentActivityExecutionSize(1k)
 		MaxConcurrentActivityExecutionSize int
 
-		// Optional: Sets the rate limiting on number of activities that can be executed per refresh duration.
-		// This can be used to protect down stream services from flooding.
+		// Optional: Sets the rate limiting on number of activities that can be executed per second. Notice that the
+		// number is represented in float, so that you can set it to less than 1 if needed. For example, set the number
+		// to 0.1 means you want your activity to be executed once for every 10 seconds. This can be used to protect
+		// down stream services from flooding.
 		// The zero value of this uses the default value.
 		// default: defaultMaxActivityExecutionRate(100k)
 		// Warning: activity's StartToCloseTimeout starts ticking even if a task is blocked due to rate limiting.
-		MaxActivityExecutionRate int
-
-		// Optional: Sets the refresh duration for rate limit. If not specified, it uses 1s as default.
-		// Use this to fine tune your rate limiter. For example, you could set this duration to 10s with max rate set to
-		// 1 which means we rate limit the activity task to at most 1 per every 10s. You could also set this duration to
-		// 100ms with max rate set wo 10 which means rate limit to 10 activity task execution per every 100ms.
-		MaxActivityExecutionRateRefreshDuration time.Duration
+		MaxActivityExecutionPerSecond float64
 
 		// Optional: if the activities need auto heart beating for those activities
 		// by the framework

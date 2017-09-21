@@ -340,7 +340,7 @@ func createWorker(t *testing.T, service *mocks.TChanWorkflowService) Worker {
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{}
-	workerOptions.MaxActivityExecutionRate = 20
+	workerOptions.MaxActivityExecutionPerSecond = 20
 
 	// Start Worker.
 	worker := NewWorker(

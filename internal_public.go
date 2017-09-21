@@ -94,16 +94,15 @@ func NewActivityTaskWorker(
 ) Worker {
 	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
-		TaskList:                                taskList,
-		ConcurrentPollRoutineSize:               defaultConcurrentPollRoutineSize,
-		ConcurrentActivityExecutionSize:         wOptions.MaxConcurrentActivityExecutionSize,
-		MaxActivityExecutionRate:                wOptions.MaxActivityExecutionRate,
-		MaxActivityExecutionRateRefreshDuration: wOptions.MaxActivityExecutionRateRefreshDuration,
-		Identity:              wOptions.Identity,
-		MetricsScope:          wOptions.MetricsScope,
-		Logger:                wOptions.Logger,
-		EnableLoggingInReplay: wOptions.EnableLoggingInReplay,
-		UserContext:           wOptions.BackgroundActivityContext,
+		TaskList:                        taskList,
+		ConcurrentPollRoutineSize:       defaultConcurrentPollRoutineSize,
+		ConcurrentActivityExecutionSize: wOptions.MaxConcurrentActivityExecutionSize,
+		MaxActivityExecutionPerSecond:   wOptions.MaxActivityExecutionPerSecond,
+		Identity:                        wOptions.Identity,
+		MetricsScope:                    wOptions.MetricsScope,
+		Logger:                          wOptions.Logger,
+		EnableLoggingInReplay:           wOptions.EnableLoggingInReplay,
+		UserContext:                     wOptions.BackgroundActivityContext,
 	}
 
 	processTestTags(&wOptions, &workerParams)

@@ -33,7 +33,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber-go/tally"
@@ -107,11 +106,8 @@ type (
 		// Defines how many concurrent executions for task list by this worker.
 		ConcurrentActivityExecutionSize int
 
-		// Defines rate limiting on number of activity tasks that can be executed per MaxActivityExecutionRateRefreshDuration.
-		MaxActivityExecutionRate int
-
-		// Defines refresh duration for rate limit. If not specified, it uses 1s as default.
-		MaxActivityExecutionRateRefreshDuration time.Duration
+		// Defines rate limiting on number of activity tasks that can be executed per second.
+		MaxActivityExecutionPerSecond float64
 
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
@@ -226,13 +222,12 @@ func newWorkflowTaskWorkerInternal(
 		params,
 	)
 	worker := newBaseWorker(baseWorkerOptions{
-		pollerCount:                params.ConcurrentPollRoutineSize,
-		maxConcurrentTask:          defaultMaxConcurrentWorkflowExecutionSize,
-		maxTaskRate:                defaultMaxWorkflowExecutionRate,
-		maxTaskRateRefreshDuration: time.Second,
-		taskWorker:                 poller,
-		identity:                   params.Identity,
-		workerType:                 "DecisionWorker"},
+		pollerCount:       params.ConcurrentPollRoutineSize,
+		maxConcurrentTask: defaultMaxConcurrentWorkflowExecutionSize,
+		maxTaskPerSecond:  defaultMaxWorkflowExecutionRate,
+		taskWorker:        poller,
+		identity:          params.Identity,
+		workerType:        "DecisionWorker"},
 		params.Logger,
 		params.MetricsScope,
 	)
@@ -306,13 +301,12 @@ func newActivityTaskWorker(
 
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:                workerParams.ConcurrentPollRoutineSize,
-			maxConcurrentTask:          workerParams.ConcurrentActivityExecutionSize,
-			maxTaskRate:                workerParams.MaxActivityExecutionRate,
-			maxTaskRateRefreshDuration: workerParams.MaxActivityExecutionRateRefreshDuration,
-			taskWorker:                 poller,
-			identity:                   workerParams.Identity,
-			workerType:                 "ActivityWorker",
+			pollerCount:       workerParams.ConcurrentPollRoutineSize,
+			maxConcurrentTask: workerParams.ConcurrentActivityExecutionSize,
+			maxTaskPerSecond:  workerParams.MaxActivityExecutionPerSecond,
+			taskWorker:        poller,
+			identity:          workerParams.Identity,
+			workerType:        "ActivityWorker",
 		},
 		workerParams.Logger,
 		workerParams.MetricsScope,
@@ -1005,16 +999,15 @@ func newAggregatedWorker(
 ) (worker Worker) {
 	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
-		TaskList:                                taskList,
-		ConcurrentPollRoutineSize:               defaultConcurrentPollRoutineSize,
-		ConcurrentActivityExecutionSize:         wOptions.MaxConcurrentActivityExecutionSize,
-		MaxActivityExecutionRate:                wOptions.MaxActivityExecutionRate,
-		MaxActivityExecutionRateRefreshDuration: wOptions.MaxActivityExecutionRateRefreshDuration,
-		Identity:              wOptions.Identity,
-		MetricsScope:          wOptions.MetricsScope,
-		Logger:                wOptions.Logger,
-		EnableLoggingInReplay: wOptions.EnableLoggingInReplay,
-		UserContext:           wOptions.BackgroundActivityContext,
+		TaskList:                        taskList,
+		ConcurrentPollRoutineSize:       defaultConcurrentPollRoutineSize,
+		ConcurrentActivityExecutionSize: wOptions.MaxConcurrentActivityExecutionSize,
+		MaxActivityExecutionPerSecond:   wOptions.MaxActivityExecutionPerSecond,
+		Identity:                        wOptions.Identity,
+		MetricsScope:                    wOptions.MetricsScope,
+		Logger:                          wOptions.Logger,
+		EnableLoggingInReplay:           wOptions.EnableLoggingInReplay,
+		UserContext:                     wOptions.BackgroundActivityContext,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1227,11 +1220,8 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
-	if options.MaxActivityExecutionRate == 0 {
-		options.MaxActivityExecutionRate = defaultMaxActivityExecutionRate
-	}
-	if options.MaxActivityExecutionRateRefreshDuration == 0 {
-		options.MaxActivityExecutionRateRefreshDuration = time.Second
+	if options.MaxActivityExecutionPerSecond == 0 {
+		options.MaxActivityExecutionPerSecond = defaultMaxActivityExecutionRate
 	}
 	return options
 }

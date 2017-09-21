@@ -82,13 +82,12 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerCount                int
-		maxConcurrentTask          int
-		maxTaskRate                int
-		maxTaskRateRefreshDuration time.Duration
-		taskWorker                 taskPoller
-		identity                   string
-		workerType                 string
+		pollerCount       int
+		maxConcurrentTask int
+		maxTaskPerSecond  float64
+		taskWorker        taskPoller
+		identity          string
+		workerType        string
 	}
 
 	// baseWorker that wraps worker activities.
@@ -127,8 +126,8 @@ func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope t
 	return &baseWorker{
 		options:         options,
 		shutdownCh:      make(chan struct{}),
-		pollLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*100), 100),
-		taskLimiter:     rate.NewLimiter(rate.Every(options.maxTaskRateRefreshDuration), options.maxTaskRate),
+		pollLimiter:     rate.NewLimiter(rate.Limit(1000), 1),
+		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
 		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
@@ -160,8 +159,7 @@ func (bw *baseWorker) Start() {
 		bw.logger.Info("Started Worker",
 			zap.Int("PollerCount", bw.options.pollerCount),
 			zap.Int("MaxConcurrentTask", bw.options.maxConcurrentTask),
-			zap.Int("MaxTaskRate", bw.options.maxTaskRate),
-			zap.Duration("MaxTaskRateRefreshDuration", bw.options.maxTaskRateRefreshDuration),
+			zap.Float64("MaxTaskPerSecond", bw.options.maxTaskPerSecond),
 		)
 	})
 }
