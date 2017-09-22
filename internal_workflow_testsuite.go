@@ -770,6 +770,13 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		}, false)
 	}
 
+	if !env.isChildWorkflow() {
+		// This is to prevent auto-forwarding mock clock before main workflow starts. For child workflow, we increase
+		// the counter in env.ExecuteChildWorkflow(). We cannot do it here for child workflow, because we need to make
+		// sure the counter is increased before returning from ExecuteChildWorkflow().
+		env.runningCount.Inc()
+	}
+
 	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
@@ -790,12 +797,9 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	// ExecuteUntilAllBlocked() so the main loop is not blocked. The dispatcher will unblock when getMockReturn() returns.
 	mockReadyChannel.Receive(ctx, &mockRet)
 
-	if env.isChildWorkflow() {
-		env.postCallback(func() {
-			// reduce runningCount after current workflow dispatcher run is blocked (aka ExecuteUntilAllBlocked() returns).
-			env.runningCount.Dec()
-		}, false)
-	}
+	// reduce runningCount to allow auto-forwarding mock clock after current workflow dispatcher run is blocked (aka
+	// ExecuteUntilAllBlocked() returns).
+	env.runningCount.Dec()
 
 	if mockRet != nil {
 		return m.executeMock(ctx, input, mockRet)

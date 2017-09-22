@@ -1045,36 +1045,29 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFullyQualifiedName() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 	queryType := "state"
-	stateWaitTimer, stateWaitActivity, stateDone := "wait for timer", "wait for activity", "done"
+	stateWaitSignal, stateWaitActivity, stateDone := "wait for signal", "wait for activity", "done"
 	workflowFn := func(ctx Context) error {
 		var state string
 		err := SetQueryHandler(ctx, queryType, func() (string, error) {
 			return state, nil
 		})
 		if err != nil {
-			state = err.Error()
 			return err
 		}
 
-		state = stateWaitTimer
-		err = NewTimer(ctx, time.Hour).Get(ctx, nil)
-		if err != nil {
-			state = err.Error()
-			return err
-		}
+		state = stateWaitSignal
+		var signalData string
+		GetSignalChannel(ctx, "query-signal").Receive(ctx, &signalData)
 
 		state = stateWaitActivity
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		err = ExecuteActivity(ctx, testActivityHello, "mock_delay").Get(ctx, nil)
 		if err != nil {
-			state = err.Error()
 			return err
 		}
-
 		state = stateDone
 		return err
 	}
-
 	RegisterWorkflow(workflowFn)
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1086,9 +1079,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 		s.NoError(err)
 		s.Equal(expected, state)
 	}
-	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
-		verifyStateWithQuery(stateWaitTimer)
-	})
+	env.RegisterDelayedCallback(func() {
+		verifyStateWithQuery(stateWaitSignal)
+		env.SignalWorkflow("query-signal", "hello-query")
+	}, time.Hour)
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
 		verifyStateWithQuery(stateWaitActivity)
@@ -1097,5 +1091,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 	verifyStateWithQuery(stateDone)
 }
