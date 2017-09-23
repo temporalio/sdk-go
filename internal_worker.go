@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -359,8 +360,8 @@ type hostEnvImpl struct {
 	workflowAliasMap                 map[string]string
 	activityFuncMap                  map[string]activity
 	activityAliasMap                 map[string]string
-	encoding                         gobEncoding
-	tEncoding                        thriftEncoding
+	encoding                         encoding
+	tEncoding                        encoding
 	activityRegistrationInterceptors []interceptorFn
 	workflowRegistrationInterceptors []interceptorFn
 }
@@ -850,7 +851,8 @@ func newHostEnvironment() *hostEnvImpl {
 		workflowAliasMap: make(map[string]string),
 		activityFuncMap:  make(map[string]activity),
 		activityAliasMap: make(map[string]string),
-		encoding:         gobEncoding{},
+		encoding:         jsonEncoding{},
+		tEncoding:        thriftEncoding{},
 	}
 }
 
@@ -1156,6 +1158,40 @@ func (g gobEncoding) Unmarshal(data []byte, objs []interface{}) error {
 		if err := dec.Decode(obj); err != nil {
 			return fmt.Errorf(
 				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
+		}
+	}
+	return nil
+}
+
+// jsonEncoding encapsulates json encoding and decoding
+type jsonEncoding struct {
+}
+
+// Register implements the encoding interface
+func (g jsonEncoding) Register(obj interface{}) error {
+	return nil
+}
+
+// Marshal encodes an array of object into bytes
+func (g jsonEncoding) Marshal(objs []interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	for i, obj := range objs {
+		if err := enc.Encode(obj); err != nil {
+			return nil, fmt.Errorf(
+				"unable to encode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+// Unmarshal decodes a byte array into the passed in objects
+func (g jsonEncoding) Unmarshal(data []byte, objs []interface{}) error {
+	dec := json.NewDecoder(bytes.NewBuffer(data))
+	for i, obj := range objs {
+		if err := dec.Decode(obj); err != nil {
+			return fmt.Errorf(
+				"unable to decode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
 		}
 	}
 	return nil
