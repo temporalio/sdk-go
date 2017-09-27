@@ -67,7 +67,9 @@ func valueToString(v reflect.Value) string {
 	case reflect.Invalid:
 		return ""
 	case reflect.Slice:
-		// TODO: find a better way to handle this.
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return fmt.Sprintf("[%v]", string(v.Bytes()))
+		}
 		return fmt.Sprintf("[len=%d]", v.Len())
 	default:
 		return fmt.Sprint(v.Interface())
