@@ -92,10 +92,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockValues() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
+	runCount := 100
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= runCount; i++ {
 			err := ExecuteActivity(ctx, testActivityHello, fmt.Sprintf("msg%d", i)).Get(ctx, nil)
 			if err != nil {
 				return err
@@ -113,10 +114,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 		s.NoError(args.Get(&input))
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
 	})
-	expectedCalls := []string{
-		"testActivityHello:msg1",
-		"testActivityHello:msg2",
-		"testActivityHello:msg3",
+	expectedCalls := []string{}
+	for i := 1; i <= runCount; i++ {
+		expectedCalls = append(expectedCalls, fmt.Sprintf("testActivityHello:msg%v", i))
 	}
 
 	env.ExecuteWorkflow(workflowFn)

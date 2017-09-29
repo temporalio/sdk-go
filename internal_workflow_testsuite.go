@@ -945,42 +945,29 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	}
 	ensureRequiredParams(&params)
 
-	for fnName, tasklistActivity := range env.taskListSpecificActivities {
-		if _, ok := tasklistActivity.taskLists[taskList]; ok {
-			ae := &activityExecutor{name: fnName, fn: tasklistActivity.fn}
-			getHostEnvironment().addActivity(
-				fnName,
-				&activityExecutorWrapper{activityExecutor: ae, env: env},
-			)
-		}
-	}
-
 	if len(getHostEnvironment().getRegisteredActivities()) == 0 {
 		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
 	}
 
-	for _, a := range getHostEnvironment().getRegisteredActivities() {
-		fnName := a.ActivityType().Name
-		if _, ok := env.taskListSpecificActivities[fnName]; ok {
-			// activity is registered to a specific taskList, so ignore it from the global registered activities.
-			continue
+	getActivity := func(name string) activity {
+		tlsa, ok := env.taskListSpecificActivities[name]
+		if ok {
+			_, ok := tlsa.taskLists[taskList]
+			if !ok {
+				// activity are bind to specific task list but not to current task list
+				return nil
+			}
 		}
-		var ae *activityExecutor
-		switch v := a.(type) {
-		case *activityExecutor:
-			ae = v
-		case *activityExecutorWrapper:
-			ae = v.activityExecutor
-		default:
-			ae = &activityExecutor{name: v.ActivityType().Name, fn: v.GetFunction()}
+
+		activity, ok := getHostEnvironment().getActivity(name)
+		if !ok {
+			return nil
 		}
-		getHostEnvironment().addActivity(
-			fnName,
-			&activityExecutorWrapper{activityExecutor: ae, env: env},
-		)
+		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction()}
+		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandler(env.service, params, getHostEnvironment())
+	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, getHostEnvironment(), getActivity)
 	return taskHandler
 }
 

@@ -85,15 +85,17 @@ type (
 		hostEnv               *hostEnvImpl
 	}
 
+	activityProvider func(name string) activity
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
-		taskListName string
-		identity     string
-		service      m.TChanWorkflowService
-		metricsScope tally.Scope
-		logger       *zap.Logger
-		userContext  context.Context
-		hostEnv      *hostEnvImpl
+		taskListName     string
+		identity         string
+		service          m.TChanWorkflowService
+		metricsScope     tally.Scope
+		logger           *zap.Logger
+		userContext      context.Context
+		hostEnv          *hostEnvImpl
+		activityProvider activityProvider
 	}
 
 	// history wrapper method to help information about events.
@@ -810,14 +812,24 @@ func newActivityTaskHandler(
 	params workerExecutionParameters,
 	env *hostEnvImpl,
 ) ActivityTaskHandler {
+	return newActivityTaskHandlerWithCustomProvider(service, params, env, nil)
+}
+
+func newActivityTaskHandlerWithCustomProvider(
+	service m.TChanWorkflowService,
+	params workerExecutionParameters,
+	env *hostEnvImpl,
+	activityProvider activityProvider,
+) ActivityTaskHandler {
 	return &activityTaskHandlerImpl{
-		taskListName: params.TaskList,
-		identity:     params.Identity,
-		service:      service,
-		logger:       params.Logger,
-		metricsScope: params.MetricsScope,
-		userContext:  params.UserContext,
-		hostEnv:      env,
+		taskListName:     params.TaskList,
+		identity:         params.Identity,
+		service:          service,
+		logger:           params.Logger,
+		metricsScope:     params.MetricsScope,
+		userContext:      params.UserContext,
+		hostEnv:          env,
+		activityProvider: activityProvider,
 	}
 }
 
@@ -958,10 +970,10 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 	defer invoker.Close()
 	ctx := WithActivityTask(canCtx, t, invoker, ath.logger, ath.metricsScope)
 	activityType := *t.GetActivityType()
-	activityImplementation, ok := ath.hostEnv.getActivity(activityType.GetName())
-	if !ok {
+	activityImplementation := ath.getActivity(activityType.GetName())
+	if activityImplementation == nil {
 		// Couldn't find the activity implementation.
-		return nil, fmt.Errorf("Unable to find activityType=%v", activityType.GetName())
+		return nil, fmt.Errorf("unable to find activityType=%v", activityType.GetName())
 	}
 
 	// panic handler
@@ -997,6 +1009,18 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 	}
 
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err), nil
+}
+
+func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
+	if ath.activityProvider != nil {
+		return ath.activityProvider(name)
+	}
+
+	if a, ok := ath.hostEnv.getActivity(name); ok {
+		return a
+	}
+
+	return nil
 }
 
 func createNewDecision(decisionType s.DecisionType) *s.Decision {
