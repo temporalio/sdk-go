@@ -165,19 +165,19 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	// Respond task completion.
 	err = backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext()
+			tchCtx, cancel := newTChannelContext(context.Background())
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
 			case *s.RespondDecisionTaskCompletedRequest:
-				err1 = wtp.service.RespondDecisionTaskCompleted(ctx, request)
+				err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
 					})
 				}
 			case *s.RespondQueryTaskCompletedRequest:
-				err1 = wtp.service.RespondQueryTaskCompleted(ctx, request)
+				err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondQueryTaskCompleted failed.", zap.Error(err1))
@@ -217,10 +217,10 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		Identity: common.StringPtr(wtp.identity),
 	}
 
-	ctx, cancel := newTChannelContext(tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
+	tchCtx, cancel := newTChannelContext(context.Background(), tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
 	defer cancel()
 
-	response, err := wtp.service.PollForDecisionTask(ctx, request)
+	response, err := wtp.service.PollForDecisionTask(tchCtx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
@@ -236,7 +236,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	}
 
 	execution := response.GetWorkflowExecution()
-	iterator := newGetHistoryPageFunc(wtp.service, wtp.domain, execution, math.MaxInt64, wtp.metricsScope)
+	iterator := newGetHistoryPageFunc(context.Background(), wtp.service, wtp.domain, execution, math.MaxInt64, wtp.metricsScope)
 	task := &workflowTask{task: response, getHistoryPageFunc: iterator, pollStartTime: startTime}
 	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
 	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Now().Sub(startTime))
@@ -244,6 +244,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 }
 
 func newGetHistoryPageFunc(
+	ctx context.Context,
 	service m.TChanWorkflowService,
 	domain string,
 	execution *s.WorkflowExecution,
@@ -256,11 +257,11 @@ func newGetHistoryPageFunc(
 		var resp *s.GetWorkflowExecutionHistoryResponse
 		err := backoff.Retry(
 			func() error {
-				ctx, cancel := newTChannelContext()
+				tchCtx, cancel := newTChannelContext(ctx)
 				defer cancel()
 
 				var err1 error
-				resp, err1 = service.GetWorkflowExecutionHistory(ctx, &s.GetWorkflowExecutionHistoryRequest{
+				resp, err1 = service.GetWorkflowExecutionHistory(tchCtx, &s.GetWorkflowExecutionHistoryRequest{
 					Domain:        common.StringPtr(domain),
 					Execution:     execution,
 					NextPageToken: nextPageToken,
@@ -317,10 +318,10 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		Identity: common.StringPtr(atp.identity),
 	}
 
-	ctx, cancel := newTChannelContext(tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
+	tchCtx, cancel := newTChannelContext(context.Background(), tchanTimeout(pollTaskServiceTimeOut), tchanRetryOption(retryNeverOptions))
 	defer cancel()
 
-	response, err := atp.service.PollForActivityTask(ctx, request)
+	response, err := atp.service.PollForActivityTask(tchCtx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			atp.metricsScope.Counter(metrics.ActivityPollTransientFailedCounter).Inc(1)
@@ -375,7 +376,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	responseStartTime := time.Now()
-	reportErr := reportActivityComplete(atp.service, request, atp.metricsScope)
+	reportErr := reportActivityComplete(context.Background(), atp.service, request, atp.metricsScope)
 	if reportErr != nil {
 		atp.metricsScope.Counter(metrics.ActivityResponseFailedCounter).Inc(1)
 		traceLog(func() {
@@ -389,30 +390,30 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	return nil
 }
 
-func reportActivityComplete(service m.TChanWorkflowService, request interface{}, metricsScope tally.Scope) error {
+func reportActivityComplete(ctx context.Context, service m.TChanWorkflowService, request interface{}, metricsScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
 	}
 
-	ctx, cancel := newTChannelContext()
+	tchCtx, cancel := newTChannelContext(ctx)
 	defer cancel()
 	var reportErr error
 	switch request := request.(type) {
 	case *s.RespondActivityTaskCanceledRequest:
 		reportErr = backoff.Retry(
 			func() error {
-				return service.RespondActivityTaskCanceled(ctx, request)
+				return service.RespondActivityTaskCanceled(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 	case *s.RespondActivityTaskFailedRequest:
 		reportErr = backoff.Retry(
 			func() error {
-				return service.RespondActivityTaskFailed(ctx, request)
+				return service.RespondActivityTaskFailed(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 	case *s.RespondActivityTaskCompletedRequest:
 		reportErr = backoff.Retry(
 			func() error {
-				return service.RespondActivityTaskCompleted(ctx, request)
+				return service.RespondActivityTaskCompleted(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 	}
 	if reportErr == nil {

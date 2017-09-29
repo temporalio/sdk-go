@@ -21,6 +21,7 @@
 package cadence
 
 import (
+	"context"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -40,14 +41,14 @@ type (
 		// StartWorkflow starts a workflow execution
 		// The user can use this to start using a function or workflow type name.
 		// Either by
-		//     StartWorkflow(options, "workflowTypeName", input)
+		//     StartWorkflow(ctx, options, "workflowTypeName", input)
 		//     or
-		//     StartWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+		//     StartWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- WorkflowExecutionAlreadyStartedError
-		StartWorkflow(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WorkflowExecution, error)
+		StartWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WorkflowExecution, error)
 
 		// SignalWorkflow sends a signals to a workflow in execution
 		// - workflow ID of the workflow.
@@ -56,7 +57,7 @@ type (
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- InternalServiceError
-		SignalWorkflow(workflowID string, runID string, signalName string, arg interface{}) error
+		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
 
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
@@ -65,7 +66,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		CancelWorkflow(workflowID string, runID string) error
+		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
@@ -75,7 +76,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		TerminateWorkflow(workflowID string, runID string, reason string, details []byte) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error
 
 		// GetWorkflowHistory gets history of a particular workflow.
 		// - workflow ID of the workflow.
@@ -84,7 +85,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		GetWorkflowHistory(workflowID string, runID string) (*s.History, error)
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string) (*s.History, error)
 
 		// GetWorkflowStackTrace gets a stack trace of all goroutines of a particular workflow.
 		// atDecisionTaskCompletedEventID is the eventID of the CompleteDecisionTask event at which stack trace should be taken.
@@ -94,7 +95,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		GetWorkflowStackTrace(workflowID string, runID string, atDecisionTaskCompletedEventID int64) (string, error)
+		GetWorkflowStackTrace(ctx context.Context, workflowID string, runID string, atDecisionTaskCompletedEventID int64) (string, error)
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return cadence.ErrActivityResultPending to
@@ -109,28 +110,28 @@ type (
 		//	To fail the activity with an error.
 		//      CompleteActivity(token, nil, NewErrorWithDetails("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
-		CompleteActivity(taskToken []byte, result interface{}, err error) error
+		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- InternalServiceError
-		RecordActivityHeartbeat(taskToken []byte, details ...interface{}) error
+		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		ListClosedWorkflow(request *s.ListClosedWorkflowExecutionsRequest) (*s.ListClosedWorkflowExecutionsResponse, error)
+		ListClosedWorkflow(ctx context.Context, request *s.ListClosedWorkflowExecutionsRequest) (*s.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListClosedWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		ListOpenWorkflow(request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
+		ListOpenWorkflow(ctx context.Context, request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
 
 		// QueryWorkflow queries a given workflow execution and returns the query result synchronously. Parameter workflowID
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
@@ -150,7 +151,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error)
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -191,7 +192,7 @@ type (
 		//	- DomainAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(request *s.RegisterDomainRequest) error
+		Register(ctx context.Context, request *s.RegisterDomainRequest) error
 
 		// Describe a domain. The domain has two part of information.
 		// DomainInfo - Which has Name, Status, Description, Owner Email.
@@ -200,7 +201,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Describe(name string) (*s.DomainInfo, *s.DomainConfiguration, error)
+		Describe(ctx context.Context, name string) (*s.DomainInfo, *s.DomainConfiguration, error)
 
 		// Update a domain. The domain has two part of information.
 		// UpdateDomainInfo - To update domain Description and Owner Email.
@@ -209,7 +210,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Update(name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error
+		Update(ctx context.Context, name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error
 	}
 )
 

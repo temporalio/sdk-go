@@ -904,7 +904,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 
 func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 	isActivityCancelled := false
-	err := recordActivityHeartbeat(i.service, i.identity, i.taskToken, details, i.retryPolicy)
+	err := recordActivityHeartbeat(context.Background(), i.service, i.identity, i.taskToken, details, i.retryPolicy)
 
 	switch err.(type) {
 	case *CanceledError:
@@ -1030,6 +1030,7 @@ func createNewDecision(decisionType s.DecisionType) *s.Decision {
 }
 
 func recordActivityHeartbeat(
+	ctx context.Context,
 	service m.TChanWorkflowService,
 	identity string,
 	taskToken, details []byte,
@@ -1043,11 +1044,11 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(
 		func() error {
-			ctx, cancel := newTChannelContext()
+			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(ctx, request)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request)
 			return err
 		}, retryPolicy, isServiceTransientError)
 

@@ -369,13 +369,13 @@ func TestCompleteActivity(t *testing.T) {
 			failedRequest = args.Get(1).(*s.RespondActivityTaskFailedRequest)
 		})
 
-	wfClient.CompleteActivity([]byte("task-token"), nil, nil)
+	wfClient.CompleteActivity(context.Background(), []byte("task-token"), nil, nil)
 	require.NotNil(t, completedRequest)
 
-	wfClient.CompleteActivity([]byte("task-token"), nil, NewCanceledError())
+	wfClient.CompleteActivity(context.Background(), []byte("task-token"), nil, NewCanceledError())
 	require.NotNil(t, canceledRequest)
 
-	wfClient.CompleteActivity([]byte("task-token"), nil, errors.New(""))
+	wfClient.CompleteActivity(context.Background(), []byte("task-token"), nil, errors.New(""))
 	require.NotNil(t, failedRequest)
 }
 
@@ -391,8 +391,8 @@ func TestRecordActivityHeartbeat(t *testing.T) {
 			heartbeatRequest = args.Get(1).(*s.RecordActivityTaskHeartbeatRequest)
 		})
 
-	wfClient.RecordActivityHeartbeat(nil)
-	wfClient.RecordActivityHeartbeat(nil, "testStack", "customerObjects", 4)
+	wfClient.RecordActivityHeartbeat(context.Background(), nil)
+	wfClient.RecordActivityHeartbeat(context.Background(), nil, "testStack", "customerObjects", 4)
 	require.NotNil(t, heartbeatRequest)
 }
 

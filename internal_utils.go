@@ -69,8 +69,11 @@ func tchanRetryOption(retryOpt *tchannel.RetryOptions) func(builder *tchannel.Co
 }
 
 // newTChannelContext - Get a tchannel context
-func newTChannelContext(options ...func(builder *tchannel.ContextBuilder)) (tchannel.ContextWithHeaders, context.CancelFunc) {
+func newTChannelContext(ctx context.Context, options ...func(builder *tchannel.ContextBuilder)) (tchannel.ContextWithHeaders, context.CancelFunc) {
 	builder := tchannel.NewContextBuilder(defaultRPCTimeout)
+	if ctx != nil {
+		builder.SetParentContext(ctx)
+	}
 	builder.SetRetryOptions(retryDefaultOptions)
 	builder.AddHeader(versionHeaderName, LibraryVersion)
 	for _, opt := range options {

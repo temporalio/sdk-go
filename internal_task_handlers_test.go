@@ -565,7 +565,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByID() {
 	domain := "testDomain"
 	workflowClient := NewClient(service, domain, nil)
 
-	dump, err := workflowClient.GetWorkflowStackTrace("id1", "runId1", 0)
+	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", "runId1", 0)
 	t.NoError(err)
 	t.NotNil(dump)
 	t.True(strings.Contains(dump, ".Receive]"))
@@ -643,7 +643,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByIDAndDecisionTaskComp
 	domain := "testDomain"
 	workflowClient := NewClient(service, domain, nil)
 
-	dump, err := workflowClient.GetWorkflowStackTrace("id1", "runId1", 5)
+	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", "runId1", 5)
 	t.NoError(err)
 	t.NotNil(dump)
 	t.True(strings.Contains(dump, ".Receive]"))
