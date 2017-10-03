@@ -1042,7 +1042,7 @@ func recordActivityHeartbeat(
 		Identity:  common.StringPtr(identity)}
 
 	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
-	heartbeatErr := backoff.Retry(
+	heartbeatErr := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()

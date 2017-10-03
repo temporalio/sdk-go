@@ -162,9 +162,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
 func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap.Logger) error {
-
+	ctx := context.Background()
 	descDomainOp := func() error {
-		tchCtx, cancel := newTChannelContext(context.Background())
+		tchCtx, cancel := newTChannelContext(ctx)
 		defer cancel()
 		_, err := client.DescribeDomain(tchCtx, &shared.DescribeDomainRequest{Name: &domain})
 		if err != nil {
@@ -187,7 +187,7 @@ func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap
 	}
 
 	// exponential backoff retry for upto a minute
-	return backoff.Retry(descDomainOp, serviceOperationRetryPolicy, isServiceTransientError)
+	return backoff.Retry(ctx, descDomainOp, serviceOperationRetryPolicy, isServiceTransientError)
 }
 
 func newWorkflowWorkerInternal(

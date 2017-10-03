@@ -117,7 +117,7 @@ func (wc *workflowClient) StartWorkflow(
 	var response *s.StartWorkflowExecutionResponse
 
 	// Start creating workflow request.
-	err = backoff.Retry(
+	err = backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -162,7 +162,7 @@ func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 		Identity:   common.StringPtr(wc.identity),
 	}
 
-	return backoff.Retry(
+	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -181,7 +181,7 @@ func (wc *workflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 		Identity: common.StringPtr(wc.identity),
 	}
 
-	return backoff.Retry(
+	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -203,7 +203,7 @@ func (wc *workflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 		Identity: common.StringPtr(wc.identity),
 	}
 
-	err := backoff.Retry(
+	err := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -231,7 +231,7 @@ GetHistoryLoop:
 		}
 
 		var response *s.GetWorkflowExecutionHistoryResponse
-		err := backoff.Retry(
+		err := backoff.Retry(ctx,
 			func() error {
 				var err1 error
 				tchCtx, cancel := newTChannelContext(ctx)
@@ -352,7 +352,7 @@ func (wc *workflowClient) ListClosedWorkflow(ctx context.Context, request *s.Lis
 		request.Domain = common.StringPtr(wc.domain)
 	}
 	var response *s.ListClosedWorkflowExecutionsResponse
-	err := backoff.Retry(
+	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
 			tchCtx, cancel := newTChannelContext(ctx)
@@ -376,7 +376,7 @@ func (wc *workflowClient) ListOpenWorkflow(ctx context.Context, request *s.ListO
 		request.Domain = common.StringPtr(wc.domain)
 	}
 	var response *s.ListOpenWorkflowExecutionsResponse
-	err := backoff.Retry(
+	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
 			tchCtx, cancel := newTChannelContext(ctx)
@@ -423,7 +423,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	}
 
 	var resp *s.QueryWorkflowResponse
-	err := backoff.Retry(
+	err := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -444,7 +444,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 //	- BadRequestError
 //	- InternalServiceError
 func (dc *domainClient) Register(ctx context.Context, request *s.RegisterDomainRequest) error {
-	return backoff.Retry(
+	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -465,7 +465,7 @@ func (dc *domainClient) Describe(ctx context.Context, name string) (*s.DomainInf
 	}
 
 	var response *s.DescribeDomainResponse
-	err := backoff.Retry(
+	err := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
@@ -493,7 +493,7 @@ func (dc *domainClient) Update(ctx context.Context, name string, domainInfo *s.U
 		Configuration: domainConfig,
 	}
 
-	return backoff.Retry(
+	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()

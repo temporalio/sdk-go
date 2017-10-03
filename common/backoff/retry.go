@@ -21,6 +21,7 @@
 package backoff
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -86,11 +87,12 @@ func NewConcurrentRetrier(retryPolicy RetryPolicy) *ConcurrentRetrier {
 }
 
 // Retry function can be used to wrap any call with retry logic using the passed in policy
-func Retry(operation Operation, policy RetryPolicy, isRetryable IsRetryable) error {
+func Retry(ctx context.Context, operation Operation, policy RetryPolicy, isRetryable IsRetryable) error {
 	var err error
 	var next time.Duration
 
 	r := NewRetrier(policy, SystemClock)
+Retry_Loop:
 	for {
 		// operation completed successfully.  No need to retry.
 		if err = operation(); err == nil {
@@ -106,6 +108,18 @@ func Retry(operation Operation, policy RetryPolicy, isRetryable IsRetryable) err
 			return err
 		}
 
+		// check if ctx is done
+		if ctxDone := ctx.Done(); ctxDone != nil {
+			timer := time.NewTimer(next)
+			select {
+			case <-ctxDone:
+				return err
+			case <-timer.C:
+				continue Retry_Loop
+			}
+		}
+
+		// ctx is not cancellable
 		time.Sleep(next)
 	}
 }

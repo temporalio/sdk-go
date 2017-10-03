@@ -161,11 +161,12 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	}
 	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(executionStartTime))
 
+	ctx := context.Background()
 	responseStartTime := time.Now()
 	// Respond task completion.
-	err = backoff.Retry(
+	err = backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel := newTChannelContext(context.Background())
+			tchCtx, cancel := newTChannelContext(ctx)
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
@@ -255,7 +256,7 @@ func newGetHistoryPageFunc(
 		metricsScope.Counter(metrics.WorkflowGetHistoryCounter).Inc(1)
 		startTime := time.Now()
 		var resp *s.GetWorkflowExecutionHistoryResponse
-		err := backoff.Retry(
+		err := backoff.Retry(ctx,
 			func() error {
 				tchCtx, cancel := newTChannelContext(ctx)
 				defer cancel()
@@ -401,17 +402,17 @@ func reportActivityComplete(ctx context.Context, service m.TChanWorkflowService,
 	var reportErr error
 	switch request := request.(type) {
 	case *s.RespondActivityTaskCanceledRequest:
-		reportErr = backoff.Retry(
+		reportErr = backoff.Retry(ctx,
 			func() error {
 				return service.RespondActivityTaskCanceled(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 	case *s.RespondActivityTaskFailedRequest:
-		reportErr = backoff.Retry(
+		reportErr = backoff.Retry(ctx,
 			func() error {
 				return service.RespondActivityTaskFailed(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
 	case *s.RespondActivityTaskCompletedRequest:
-		reportErr = backoff.Retry(
+		reportErr = backoff.Retry(ctx,
 			func() error {
 				return service.RespondActivityTaskCompleted(tchCtx, request)
 			}, serviceOperationRetryPolicy, isServiceTransientError)
