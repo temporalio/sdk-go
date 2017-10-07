@@ -301,11 +301,14 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 		settable.Set(r, e)
 	})
 	Go(ctx, func(ctx Context) {
-		if ctx.Done() == nil {
-			return // not cancellable.
-		}
-		if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
-			getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+		if ctxDone := ctx.Done(); ctxDone != nil {
+			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
+				if ctx.Err() == ErrCanceled {
+					getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+				}
+			}).AddFuture(future, func(f Future) {
+				// activity is done, no-op
+			}).Select(ctx)
 		}
 	})
 	return future
@@ -356,14 +359,16 @@ func ExecuteChildWorkflow(ctx Context, f interface{}, args ...interface{}) Child
 		executionSettable.Set(r, e)
 	})
 	Go(ctx, func(ctx Context) {
-		if ctx.Done() == nil {
-			return // not cancellable.
-		}
-		if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
-			if childWorkflowExecution != nil {
-				getWorkflowEnvironment(ctx).RequestCancelWorkflow(
-					*options.domain, childWorkflowExecution.ID, childWorkflowExecution.RunID)
-			}
+		if ctxDone := ctx.Done(); ctxDone != nil {
+			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
+				if ctx.Err() == ErrCanceled && childWorkflowExecution != nil {
+					// child workflow started, and ctx cancelled
+					getWorkflowEnvironment(ctx).RequestCancelWorkflow(
+						*options.domain, childWorkflowExecution.ID, childWorkflowExecution.RunID)
+				}
+			}).AddFuture(mainFuture, func(f Future) {
+				// childWorkflow is done, no-op
+			}).Select(ctx)
 		}
 	})
 
@@ -418,13 +423,14 @@ func NewTimer(ctx Context, d time.Duration) Future {
 	})
 	if t != nil {
 		Go(ctx, func(ctx Context) {
-			if ctx.Done() == nil {
-				return // not cancellable.
+			if ctxDone := ctx.Done(); ctxDone != nil {
+				NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
+					// We will cancel the timer either it is explicit cancellation (or) we are closed.
+					getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
+				}).AddFuture(future, func(f Future) {
+					// timer is done, no-op
+				}).Select(ctx)
 			}
-			// We will cancel the timer either it is explicit cancellation
-			// (or) we are closed.
-			ctx.Done().Receive(ctx, nil)
-			getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
 		})
 	}
 	return future
