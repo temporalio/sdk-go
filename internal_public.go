@@ -30,7 +30,7 @@ package cadence
 import (
 	"context"
 
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
@@ -65,7 +65,7 @@ var enableVerboseLogging = false
 // To be used by framework level code that requires access to the original workflow task.
 func NewWorkflowTaskWorker(
 	taskHandler WorkflowTaskHandler,
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	taskList string,
 	options WorkerOptions,
@@ -87,7 +87,7 @@ func NewWorkflowTaskWorker(
 // To be used by framework level code that requires access to the original workflow task.
 func NewActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	taskList string,
 	options WorkerOptions,
@@ -124,7 +124,7 @@ func NewWorkflowTaskHandler(domain string, identity string, logger *zap.Logger) 
 // using activity functions registered through RegisterActivity. service parameter is used for
 // heartbeating from activity implementation.
 // To be used to invoke registered functions for debugging purposes.
-func NewActivityTaskHandler(service m.TChanWorkflowService, identity string, logger *zap.Logger) ActivityTaskHandler {
+func NewActivityTaskHandler(service workflowserviceclient.Interface, identity string, logger *zap.Logger) ActivityTaskHandler {
 	params := workerExecutionParameters{
 		Identity: identity,
 		Logger:   logger,

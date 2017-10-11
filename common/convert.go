@@ -58,3 +58,8 @@ func DecisionTypePtr(t s.DecisionType) *s.DecisionType {
 func EventTypePtr(t s.EventType) *s.EventType {
 	return &t
 }
+
+// QueryTaskCompletedTypePtr makes a copy and returns the pointer to a QueryTaskCompletedType.
+func QueryTaskCompletedTypePtr(t s.QueryTaskCompletedType) *s.QueryTaskCompletedType {
+	return &t
+}

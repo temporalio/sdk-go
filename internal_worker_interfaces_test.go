@@ -27,10 +27,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 
@@ -135,9 +135,10 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Create service endpoint
-	service := new(mocks.TChanWorkflowService)
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	domainStatus := m.DomainStatus_REGISTERED
+	domainStatus := m.DomainStatusRegistered
 	domainDesc := &m.DescribeDomainResponse{
 		DomainInfo: &m.DomainInfo{
 			Name:   &domain,
@@ -146,12 +147,12 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// mocks
-	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(domainDesc, nil)
-	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
-	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
-	service.On("StartWorkflowExecution", mock.Anything, mock.Anything).Return(&m.StartWorkflowExecutionResponse{}, nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(domainDesc, nil).AnyTimes()
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	env := getHostEnvironment()
 	// Launch worker.

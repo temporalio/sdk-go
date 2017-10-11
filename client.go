@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common/metrics"
 )
@@ -215,7 +215,7 @@ type (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service m.TChanWorkflowService, domain string, options *ClientOptions) Client {
+func NewClient(service workflowserviceclient.Interface, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -236,7 +236,7 @@ func NewClient(service m.TChanWorkflowService, domain string, options *ClientOpt
 }
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(service m.TChanWorkflowService, options *ClientOptions) DomainClient {
+func NewDomainClient(service workflowserviceclient.Interface, options *ClientOptions) DomainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")

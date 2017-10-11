@@ -236,7 +236,7 @@ func newNaiveDecisionStateMachine(decisionType decisionType, id string, decision
 }
 
 func newMarkerDecisionStateMachine(id string, attributes *s.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
-	d := createNewDecision(s.DecisionType_RecordMarker)
+	d := createNewDecision(s.DecisionTypeRecordMarker)
 	d.RecordMarkerDecisionAttributes = attributes
 	return &markerDecisionStateMachine{
 		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
@@ -244,7 +244,7 @@ func newMarkerDecisionStateMachine(id string, attributes *s.RecordMarkerDecision
 }
 
 func newCancelExternalWorkflowStateMachine(attributes *s.RequestCancelExternalWorkflowExecutionDecisionAttributes) *cancelExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(s.DecisionType_RequestCancelExternalWorkflowExecution)
+	d := createNewDecision(s.DecisionTypeRequestCancelExternalWorkflowExecution)
 	d.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
 	return &cancelExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeExternalWorkflow, attributes.GetWorkflowId(), d),
@@ -375,11 +375,11 @@ func (d *decisionStateMachineBase) String() string {
 func (d *activityDecisionStateMachine) getDecision() *s.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(s.DecisionType_ScheduleActivityTask)
+		decision := createNewDecision(s.DecisionTypeScheduleActivityTask)
 		decision.ScheduleActivityTaskDecisionAttributes = d.attributes
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(s.DecisionType_RequestCancelActivityTask)
+		decision := createNewDecision(s.DecisionTypeRequestCancelActivityTask)
 		decision.RequestCancelActivityTaskDecisionAttributes = &s.RequestCancelActivityTaskDecisionAttributes{
 			ActivityId: d.attributes.ActivityId,
 		}
@@ -437,11 +437,11 @@ func (d *timerDecisionStateMachine) handleCancelFailedEvent() {
 func (d *timerDecisionStateMachine) getDecision() *s.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(s.DecisionType_StartTimer)
+		decision := createNewDecision(s.DecisionTypeStartTimer)
 		decision.StartTimerDecisionAttributes = d.attributes
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(s.DecisionType_CancelTimer)
+		decision := createNewDecision(s.DecisionTypeCancelTimer)
 		decision.CancelTimerDecisionAttributes = &s.CancelTimerDecisionAttributes{
 			TimerId: d.attributes.TimerId,
 		}
@@ -454,11 +454,11 @@ func (d *timerDecisionStateMachine) getDecision() *s.Decision {
 func (d *childWorkflowDecisionStateMachine) getDecision() *s.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(s.DecisionType_StartChildWorkflowExecution)
+		decision := createNewDecision(s.DecisionTypeStartChildWorkflowExecution)
 		decision.StartChildWorkflowExecutionDecisionAttributes = d.attributes
 		return decision
 	case decisionStateCanceledAfterStarted:
-		decision := createNewDecision(s.DecisionType_RequestCancelExternalWorkflowExecution)
+		decision := createNewDecision(s.DecisionTypeRequestCancelExternalWorkflowExecution)
 		decision.RequestCancelExternalWorkflowExecutionDecisionAttributes = &s.RequestCancelExternalWorkflowExecutionDecisionAttributes{
 			Domain:     d.attributes.Domain,
 			WorkflowId: d.attributes.WorkflowId,
@@ -662,14 +662,14 @@ func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID strin
 func (h *decisionsHelper) getActivityID(event *s.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
-	case s.EventType_ActivityTaskCanceled:
-		scheduledEventID = event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId()
-	case s.EventType_ActivityTaskCompleted:
-		scheduledEventID = event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId()
-	case s.EventType_ActivityTaskFailed:
-		scheduledEventID = event.GetActivityTaskFailedEventAttributes().GetScheduledEventId()
-	case s.EventType_ActivityTaskTimedOut:
-		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
+	case s.EventTypeActivityTaskCanceled:
+		scheduledEventID = event.ActivityTaskCanceledEventAttributes.GetScheduledEventId()
+	case s.EventTypeActivityTaskCompleted:
+		scheduledEventID = event.ActivityTaskCompletedEventAttributes.GetScheduledEventId()
+	case s.EventTypeActivityTaskFailed:
+		scheduledEventID = event.ActivityTaskFailedEventAttributes.GetScheduledEventId()
+	case s.EventTypeActivityTaskTimedOut:
+		scheduledEventID = event.ActivityTaskTimedOutEventAttributes.GetScheduledEventId()
 	default:
 		panic(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
 	}

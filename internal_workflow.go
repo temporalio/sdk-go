@@ -1067,11 +1067,11 @@ func (p ChildWorkflowPolicy) toThriftChildPolicyPtr() *shared.ChildPolicy {
 	var childPolicy shared.ChildPolicy
 	switch p {
 	case ChildWorkflowPolicyTerminate:
-		childPolicy = shared.ChildPolicy_TERMINATE
+		childPolicy = shared.ChildPolicyTerminate
 	case ChildWorkflowPolicyRequestCancel:
-		childPolicy = shared.ChildPolicy_REQUEST_CANCEL
+		childPolicy = shared.ChildPolicyRequestCancel
 	case ChildWorkflowPolicyAbandon:
-		childPolicy = shared.ChildPolicy_ABANDON
+		childPolicy = shared.ChildPolicyAbandon
 	default:
 		panic(fmt.Sprintf("unknown child policy %v", p))
 	}

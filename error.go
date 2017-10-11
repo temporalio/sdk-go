@@ -162,7 +162,7 @@ func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
 	if err != nil {
 		panic(err)
 	}
-	return &TimeoutError{timeoutType: shared.TimeoutType_HEARTBEAT, details: data}
+	return &TimeoutError{timeoutType: shared.TimeoutTypeHeartbeat, details: data}
 }
 
 // NewCanceledError creates CanceledError instance

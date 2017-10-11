@@ -15,6 +15,15 @@ import:
   - thrift
 - package: go.uber.org/atomic
   version: v1.2.0
+- package: go.uber.org/thriftrw
+  version: ^1.6
+- package: go.uber.org/yarpc
+  version: ^1.7.1
+  subpackages:
+  - api/transport
+  - encoding/thrift/thriftrw-plugin-yarpc
+  - transport/http
+  - transport/tchannel
 - package: go.uber.org/zap
   version: v1.4.0
   subpackages:

@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
@@ -63,7 +63,7 @@ type (
 		domain       string
 		taskListName string
 		identity     string
-		service      m.TChanWorkflowService
+		service      workflowserviceclient.Interface
 		taskHandler  WorkflowTaskHandler
 		metricsScope tally.Scope
 		logger       *zap.Logger
@@ -74,7 +74,7 @@ type (
 		domain       string
 		taskListName string
 		identity     string
-		service      m.TChanWorkflowService
+		service      workflowserviceclient.Interface
 		taskHandler  ActivityTaskHandler
 		metricsScope tally.Scope
 		logger       *zap.Logger
@@ -117,7 +117,7 @@ func isClientSideError(err error) bool {
 	return false
 }
 
-func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service m.TChanWorkflowService,
+func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserviceclient.Interface,
 	domain string, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		service:      metrics.NewWorkflowServiceWrapper(service, params.MetricsScope),
@@ -231,12 +231,12 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		return nil, err
 	}
 
-	if response == nil || len(response.GetTaskToken()) == 0 {
+	if response == nil || len(response.TaskToken) == 0 {
 		wtp.metricsScope.Counter(metrics.DecisionPollNoTaskCounter).Inc(1)
 		return &workflowTask{}, nil
 	}
 
-	execution := response.GetWorkflowExecution()
+	execution := response.WorkflowExecution
 	iterator := newGetHistoryPageFunc(context.Background(), wtp.service, wtp.domain, execution, math.MaxInt64, wtp.metricsScope)
 	task := &workflowTask{task: response, getHistoryPageFunc: iterator, pollStartTime: startTime}
 	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
@@ -246,7 +246,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 
 func newGetHistoryPageFunc(
 	ctx context.Context,
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	execution *s.WorkflowExecution,
 	atDecisionTaskCompletedEventID int64,
@@ -276,23 +276,23 @@ func newGetHistoryPageFunc(
 
 		metricsScope.Counter(metrics.WorkflowGetHistorySucceedCounter).Inc(1)
 		metricsScope.Timer(metrics.WorkflowGetHistoryLatency).Record(time.Now().Sub(startTime))
-		h := resp.GetHistory()
+		h := resp.History
 		size := len(h.Events)
 		if size > 0 && atDecisionTaskCompletedEventID > 0 &&
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
 			first := h.Events[0].GetEventId() // eventIds start from 1
 			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != s.EventType_DecisionTaskCompleted {
+			if h.Events[len(h.Events)-1].GetEventType() != s.EventTypeDecisionTaskCompleted {
 				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
 					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
 			}
 			return h, nil, nil
 		}
-		return h, resp.GetNextPageToken(), nil
+		return h, resp.NextPageToken, nil
 	}
 }
 
-func newActivityTaskPoller(taskHandler ActivityTaskHandler, service m.TChanWorkflowService,
+func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserviceclient.Interface,
 	domain string, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		taskHandler:  taskHandler,
@@ -331,7 +331,7 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		}
 		return nil, err
 	}
-	if response == nil || len(response.GetTaskToken()) == 0 {
+	if response == nil || len(response.TaskToken) == 0 {
 		atp.metricsScope.Counter(metrics.ActivityPollNoTaskCounter).Inc(1)
 		return &activityTask{}, nil
 	}
@@ -391,7 +391,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	return nil
 }
 
-func reportActivityComplete(ctx context.Context, service m.TChanWorkflowService, request interface{}, metricsScope tally.Scope) error {
+func reportActivityComplete(ctx context.Context, service workflowserviceclient.Interface, request interface{}, metricsScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -441,7 +441,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 	if err == nil {
 		return &s.RespondActivityTaskCompletedRequest{
 			TaskToken: taskToken,
-			Result_:   result,
+			Result:    result,
 			Identity:  common.StringPtr(identity)}
 	}
 

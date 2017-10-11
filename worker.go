@@ -25,7 +25,7 @@ import (
 
 	"github.com/uber-go/tally"
 
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
@@ -106,7 +106,7 @@ type (
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
 func NewWorker(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	taskList string,
 	options WorkerOptions,

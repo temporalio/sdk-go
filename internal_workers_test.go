@@ -23,11 +23,11 @@ package cadence
 import (
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 
@@ -54,10 +54,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	domain := "testDomain"
 	// mocks
 	logger, _ := zap.NewDevelopment()
-	service := new(mocks.TChanWorkflowService)
-	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(nil, nil)
-	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
+
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -76,10 +78,12 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	domain := "testDomain"
 	// mocks
 	logger, _ := zap.NewDevelopment()
-	service := new(mocks.TChanWorkflowService)
-	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(nil, nil)
-	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
+
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -100,9 +104,11 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 	// mocks
-	service := new(mocks.TChanWorkflowService)
-	service.On("DescribeDomain", mock.Anything, mock.Anything).Return(nil, nil)
-	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
+
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",

@@ -23,11 +23,11 @@ package cadence
 import (
 	"testing"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber/tchannel-go/thrift"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/mocks"
 	"golang.org/x/net/context"
 )
 
@@ -100,7 +100,7 @@ func (ath sampleActivityTaskHandler) Execute(task *m.PollForActivityTaskResponse
 	}
 	return &m.RespondActivityTaskCompletedRequest{
 		TaskToken: task.TaskToken,
-		Result_:   result,
+		Result:    result,
 	}, nil
 }
 
@@ -114,12 +114,13 @@ func TestPollLayerInterfacesTestSuite(t *testing.T) {
 
 func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	// Create service endpoint and get a workflow task.
-	service := new(mocks.TChanWorkflowService)
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
 	ctx, _ := thrift.NewContext(10)
 
 	// mocks
-	service.On("PollForDecisionTask", mock.Anything, mock.Anything).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.On("RespondDecisionTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
 	response, err := service.PollForDecisionTask(ctx, &m.PollForDecisionTaskRequest{})
 	s.NoError(err)
@@ -136,12 +137,14 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	// Create service endpoint and get a activity task.
-	service := new(mocks.TChanWorkflowService)
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
+
 	ctx, _ := thrift.NewContext(10)
 
 	// mocks
-	service.On("PollForActivityTask", mock.Anything, mock.Anything).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.On("RespondActivityTaskCompleted", mock.Anything, mock.Anything).Return(nil)
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
 	response, err := service.PollForActivityTask(ctx, &m.PollForActivityTaskRequest{})
 	s.NoError(err)

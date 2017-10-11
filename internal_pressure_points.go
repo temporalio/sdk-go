@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"time"
 
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/zap"
 )
 
@@ -57,7 +57,7 @@ type (
 
 // newWorkflowWorkerWithPressurePoints returns an instance of a workflow worker.
 func newWorkflowWorkerWithPressurePoints(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string,

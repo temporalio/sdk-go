@@ -28,13 +28,13 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/golang/mock/gomock"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/util"
-	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 
@@ -80,47 +80,47 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 }
 
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *s.WorkflowExecutionStartedEventAttributes) *s.HistoryEvent {
-	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventType_WorkflowExecutionStarted), WorkflowExecutionStartedEventAttributes: attr}
+	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionStarted), WorkflowExecutionStartedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskScheduled(eventID int64, attr *s.ActivityTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_ActivityTaskScheduled),
+		EventType: common.EventTypePtr(s.EventTypeActivityTaskScheduled),
 		ActivityTaskScheduledEventAttributes: attr}
 }
 
 func createTestEventActivityTaskStarted(eventID int64, attr *s.ActivityTaskStartedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:                            common.Int64Ptr(eventID),
-		EventType:                          common.EventTypePtr(s.EventType_ActivityTaskStarted),
+		EventType:                          common.EventTypePtr(s.EventTypeActivityTaskStarted),
 		ActivityTaskStartedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskCompleted(eventID int64, attr *s.ActivityTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_ActivityTaskCompleted),
+		EventType: common.EventTypePtr(s.EventTypeActivityTaskCompleted),
 		ActivityTaskCompletedEventAttributes: attr}
 }
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *s.DecisionTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_DecisionTaskScheduled),
+		EventType: common.EventTypePtr(s.EventTypeDecisionTaskScheduled),
 		DecisionTaskScheduledEventAttributes: attr}
 }
 
 func createTestEventDecisionTaskStarted(eventID int64) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_DecisionTaskStarted)}
+		EventType: common.EventTypePtr(s.EventTypeDecisionTaskStarted)}
 }
 
 func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_WorkflowExecutionSignaled),
+		EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionSignaled),
 		WorkflowExecutionSignaledEventAttributes: &s.WorkflowExecutionSignaledEventAttributes{
 			SignalName: common.StringPtr(signalName),
 			Identity:   common.StringPtr("test-identity"),
@@ -131,7 +131,7 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 func createTestEventDecisionTaskCompleted(eventID int64, attr *s.DecisionTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventType_DecisionTaskCompleted),
+		EventType: common.EventTypePtr(s.EventTypeDecisionTaskCompleted),
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
@@ -180,9 +180,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.GetDecisions()))
-	t.Equal(s.DecisionType_ScheduleActivityTask, response.GetDecisions()[0].GetDecisionType())
-	t.NotNil(response.GetDecisions()[0].GetScheduleActivityTaskDecisionAttributes())
+	t.Equal(1, len(response.Decisions))
+	t.Equal(s.DecisionTypeScheduleActivityTask, response.Decisions[0].GetDecisionType())
+	t.NotNil(response.Decisions[0].ScheduleActivityTaskDecisionAttributes)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
@@ -211,9 +211,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.GetDecisions()))
-	t.Equal(s.DecisionType_ScheduleActivityTask, response.GetDecisions()[0].GetDecisionType())
-	t.NotNil(response.GetDecisions()[0].GetScheduleActivityTaskDecisionAttributes())
+	t.Equal(1, len(response.Decisions))
+	t.Equal(s.DecisionTypeScheduleActivityTask, response.Decisions[0].GetDecisionType())
+	t.NotNil(response.Decisions[0].ScheduleActivityTaskDecisionAttributes)
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
 	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
@@ -221,9 +221,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	response = request.(*s.RespondDecisionTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.GetDecisions()))
-	t.Equal(s.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[0].GetDecisionType())
-	t.NotNil(response.GetDecisions()[0].GetCompleteWorkflowExecutionDecisionAttributes())
+	t.Equal(1, len(response.Decisions))
+	t.Equal(s.DecisionTypeCompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
+	t.NotNil(response.Decisions[0].CompleteWorkflowExecutionDecisionAttributes)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow() {
@@ -289,8 +289,8 @@ func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expected
 	queryResp, ok := response.(*s.RespondQueryTaskCompletedRequest)
 	t.True(ok)
 	t.Nil(queryResp.ErrorMessage)
-	t.NotNil(queryResp.QueryResult_)
-	encodedValue := EncodedValue(queryResp.QueryResult_)
+	t.NotNil(queryResp.QueryResult)
+	encodedValue := EncodedValue(queryResp.QueryResult)
 	var queryResult string
 	err := encodedValue.Get(&queryResult)
 	t.NoError(err)
@@ -348,10 +348,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	//t.printAllDecisions(response.GetDecisions())
-	t.Equal(1, len(response.GetDecisions()))
-	t.Equal(s.DecisionType_CompleteWorkflowExecution, response.GetDecisions()[0].GetDecisionType())
-	t.NotNil(response.GetDecisions()[0].GetCompleteWorkflowExecutionDecisionAttributes())
+	//t.printAllDecisions(response.Decisions)
+	t.Equal(1, len(response.Decisions))
+	t.Equal(s.DecisionTypeCompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
+	t.NotNil(response.Decisions[0].CompleteWorkflowExecutionDecisionAttributes)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PressurePoints() {
@@ -408,14 +408,16 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
-	mockService := mocks.TChanWorkflowService{}
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
+
 	cancelRequested := false
 	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
-	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(&heartbeatResponse, nil)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
 
 	cadenceInvoker := &cadenceInvoker{
 		identity:  "Test_Cadence_Invoker",
-		service:   &mockService,
+		service:   mockService,
 		taskToken: nil,
 	}
 
@@ -425,9 +427,11 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
-	mockService := &mocks.TChanWorkflowService{}
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
+
 	entityNotExistsError := &s.EntityNotExistsError{}
-	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(nil, entityNotExistsError)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
 		nil,
@@ -490,7 +494,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	a := &testActivityDeadline{}
 	hostEnv := getHostEnvironment()
 	hostEnv.addActivity(a.ActivityType().Name, a)
-	mockService := &mocks.TChanWorkflowService{}
+
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
 
 	for i, d := range deadlineTests {
 		wep := workerExecutionParameters{
@@ -554,10 +560,11 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByID() {
 			TaskList:     taskList,
 		}),
 	}
-	service := new(mocks.TChanWorkflowService)
+	mockCtrl := gomock.NewController(t.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
 
 	// mocks
-	service.On("GetWorkflowExecutionHistory", mock.Anything, mock.Anything).Return(&s.GetWorkflowExecutionHistoryResponse{
+	service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(&s.GetWorkflowExecutionHistoryResponse{
 		History: &s.History{
 			Events: testEvents,
 		},
@@ -632,10 +639,12 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByIDAndDecisionTaskComp
 		createTestEventDecisionTaskCompleted(8, &s.DecisionTaskCompletedEventAttributes{
 			StartedEventId: &started, ScheduledEventId: &scheduled}),
 	}
-	service := new(mocks.TChanWorkflowService)
+
+	mockCtrl := gomock.NewController(t.T())
+	service := workflowservicetest.NewMockClient(mockCtrl)
 
 	// mocks
-	service.On("GetWorkflowExecutionHistory", mock.Anything, mock.Anything).Return(&s.GetWorkflowExecutionHistoryResponse{
+	service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(&s.GetWorkflowExecutionHistoryResponse{
 		History: &s.History{
 			Events: testEvents,
 		},

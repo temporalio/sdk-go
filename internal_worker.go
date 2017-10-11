@@ -37,7 +37,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber-go/tally"
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
@@ -72,7 +72,7 @@ type (
 	// task list names they might have to manage 'n' workers for 'n' task lists.
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     m.TChanWorkflowService
+		workflowService     workflowserviceclient.Interface
 		domain              string
 		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
@@ -83,7 +83,7 @@ type (
 	// TODO: Worker doing heartbeating automatically while activity task is running
 	activityWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     m.TChanWorkflowService
+		workflowService     workflowserviceclient.Interface
 		domain              string
 		poller              taskPoller
 		worker              *baseWorker
@@ -128,7 +128,7 @@ type (
 
 // newWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -161,7 +161,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyDomainExist does a DescribeDomain operation on the specified domain with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap.Logger) error {
+func verifyDomainExist(client workflowserviceclient.Interface, domain string, logger *zap.Logger) error {
 	ctx := context.Background()
 	descDomainOp := func() error {
 		tchCtx, cancel := newTChannelContext(ctx)
@@ -191,7 +191,7 @@ func verifyDomainExist(client m.TChanWorkflowService, domain string, logger *zap
 }
 
 func newWorkflowWorkerInternal(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -211,7 +211,7 @@ func newWorkflowWorkerInternal(
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 ) Worker {
@@ -268,7 +268,7 @@ func (ww *workflowWorker) Stop() {
 }
 
 func newActivityWorker(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
@@ -287,7 +287,7 @@ func newActivityWorker(
 
 func newActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	workerParams workerExecutionParameters,
 ) (worker Worker) {
@@ -994,7 +994,7 @@ func (aw *aggregatedWorker) Stop() {
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func newAggregatedWorker(
-	service m.TChanWorkflowService,
+	service workflowserviceclient.Interface,
 	domain string,
 	taskList string,
 	options WorkerOptions,

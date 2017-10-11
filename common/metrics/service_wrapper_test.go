@@ -26,12 +26,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/tchannel-go/thrift"
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/mocks"
 )
 
 type testCase struct {
@@ -68,12 +68,55 @@ func Test_Wrapper(t *testing.T) {
 		// one case of server error
 		{"PollForActivityTask", []interface{}{ctx, &s.PollForActivityTaskRequest{}}, []interface{}{nil, &s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
 		{"QueryWorkflow", []interface{}{ctx, &s.QueryWorkflowRequest{}}, []interface{}{nil, &s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &s.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, &s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &s.RespondQueryTaskCompletedRequest{}}, []interface{}{&s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
 	}
 
 	for _, test := range tests {
-		mockService, wrapperService, closer, reporter := newService()
-		mockService.On(test.serviceMethod, mock.Anything, mock.Anything).Return(test.mockReturns...)
+		mockService, wrapperService, closer, reporter := newService(t)
+
+		switch test.serviceMethod {
+		case "DeprecateDomain":
+			mockService.EXPECT().DeprecateDomain(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "DescribeDomain":
+			mockService.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "GetWorkflowExecutionHistory":
+			mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "ListClosedWorkflowExecutions":
+			mockService.EXPECT().ListClosedWorkflowExecutions(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "ListOpenWorkflowExecutions":
+			mockService.EXPECT().ListOpenWorkflowExecutions(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "PollForActivityTask":
+			mockService.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "PollForDecisionTask":
+			mockService.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RecordActivityTaskHeartbeat":
+			mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RegisterDomain":
+			mockService.EXPECT().RegisterDomain(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RequestCancelWorkflowExecution":
+			mockService.EXPECT().RequestCancelWorkflowExecution(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskCanceled":
+			mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskCompleted":
+			mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskFailed":
+			mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondDecisionTaskCompleted":
+			mockService.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "SignalWorkflowExecution":
+			mockService.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "StartWorkflowExecution":
+			mockService.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "TerminateWorkflowExecution":
+			mockService.EXPECT().TerminateWorkflowExecution(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "UpdateDomain":
+			mockService.EXPECT().UpdateDomain(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "QueryWorkflow":
+			mockService.EXPECT().QueryWorkflow(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondQueryTaskCompleted":
+			mockService.EXPECT().RespondQueryTaskCompleted(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		}
+
 		inputs := make([]reflect.Value, len(test.callArgs))
 		for i, arg := range test.callArgs {
 			inputs[i] = reflect.ValueOf(arg)
@@ -103,12 +146,13 @@ func assertMetrics(t *testing.T, reporter *capturingStatsReporter, methodName st
 	require.Equal(t, CadenceMetricsPrefix+methodName+"."+CadenceLatency, reporter.timers[0].name)
 }
 
-func newService() (mockService *mocks.TChanWorkflowService,
-	wrapperService m.TChanWorkflowService,
+func newService(t *testing.T) (mockService *workflowservicetest.MockClient,
+	wrapperService workflowserviceclient.Interface,
 	closer io.Closer,
 	reporter *capturingStatsReporter,
 ) {
-	mockService = &mocks.TChanWorkflowService{}
+	mockCtrl := gomock.NewController(t)
+	mockService = workflowservicetest.NewMockClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := newMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)

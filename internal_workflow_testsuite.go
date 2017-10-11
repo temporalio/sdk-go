@@ -30,14 +30,14 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/atomic"
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
-	"go.uber.org/cadence/mocks"
 	"go.uber.org/zap"
 )
 
@@ -109,7 +109,7 @@ type (
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock          *mock.Mock
-		service       m.TChanWorkflowService
+		service       workflowserviceclient.Interface
 		workerOptions WorkerOptions
 		logger        *zap.Logger
 		metricsScope  tally.Scope
@@ -201,8 +201,10 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	}
 
 	// setup mock service
-	mockService := new(mocks.TChanWorkflowService)
-	mockHeartbeatFn := func(c thrift.Context, r *shared.RecordActivityTaskHeartbeatRequest) error {
+	mockCtrl := gomock.NewController(&testReporter{logger: env.logger})
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
+
+	mockHeartbeatFn := func(c context.Context, r *shared.RecordActivityTaskHeartbeatRequest) error {
 		activityID := string(r.TaskToken)
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.activities[activityID]
@@ -210,7 +212,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return shared.NewEntityNotExistsError()
+			return &shared.EntityNotExistsError{}
 		}
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
 		env.postCallback(func() {
@@ -223,9 +225,16 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		return nil
 	}
 
-	mockService.On("RecordActivityTaskHeartbeat", mock.Anything, mock.Anything).Return(
-		&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)},
-		mockHeartbeatFn)
+	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)}, nil)
+	em.Do(func(ctx context.Context, r *shared.RecordActivityTaskHeartbeatRequest) {
+		// TODO: The following will hit a data race in the gomock code where the Do() action is executed outside
+		// the lock and setting return value from inside the action is going to run into races.
+		// err := mockHeartbeatFn(ctx, r)
+		// em.Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)}, err)
+		mockHeartbeatFn(ctx, r)
+	}).AnyTimes()
+
 	env.service = mockService
 
 	if env.workerOptions.Logger == nil {
@@ -372,7 +381,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	case *shared.RespondActivityTaskFailedRequest:
 		return nil, constructError(request.GetReason(), request.Details)
 	case *shared.RespondActivityTaskCompletedRequest:
-		return EncodedValue(request.Result_), nil
+		return EncodedValue(request.Result), nil
 	default:
 		// will never happen
 		return nil, fmt.Errorf("unsupported respond type %T", result)
@@ -698,7 +707,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		err = constructError(*request.Reason, request.Details)
 		activityHandle.callback(nil, err)
 	case *shared.RespondActivityTaskCompletedRequest:
-		blob = request.Result_
+		blob = request.Result
 		activityHandle.callback(blob, nil)
 	default:
 		panic(fmt.Sprintf("unsupported respond type %T", result))
@@ -1139,3 +1148,15 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 
 // make sure interface is implemented
 var _ workflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
+
+type testReporter struct {
+	logger *zap.Logger
+}
+
+func (t *testReporter) Errorf(format string, args ...interface{}) {
+	t.logger.Error(fmt.Sprintf(format, args...))
+}
+
+func (t *testReporter) Fatalf(format string, args ...interface{}) {
+	t.logger.Fatal(fmt.Sprintf(format, args...))
+}

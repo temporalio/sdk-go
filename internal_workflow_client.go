@@ -29,7 +29,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 
-	m "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
@@ -49,7 +49,7 @@ type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
 		workflowExecution WorkflowExecution
-		workflowService   m.TChanWorkflowService
+		workflowService   workflowserviceclient.Interface
 		domain            string
 		metricsScope      tally.Scope
 		identity          string
@@ -57,7 +57,7 @@ type (
 
 	// domainClient is the client for managing domains.
 	domainClient struct {
-		workflowService m.TChanWorkflowService
+		workflowService workflowserviceclient.Interface
 		metricsScope    tally.Scope
 		identity        string
 	}
@@ -215,7 +215,7 @@ func (wc *workflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 // GetWorkflowHistory gets history of a particular workflow.
 func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string) (*s.History, error) {
-	history := s.NewHistory()
+	history := &s.History{}
 	history.Events = make([]*s.HistoryEvent, 0)
 	var nextPageToken []byte
 
@@ -242,11 +242,11 @@ GetHistoryLoop:
 		if err != nil {
 			return nil, err
 		}
-		history.Events = append(history.Events, response.GetHistory().GetEvents()...)
-		if response.GetNextPageToken() == nil {
+		history.Events = append(history.Events, response.History.Events...)
+		if response.NextPageToken == nil {
 			break GetHistoryLoop
 		}
-		nextPageToken = response.GetNextPageToken()
+		nextPageToken = response.NextPageToken
 	}
 	return history, nil
 }
@@ -280,7 +280,7 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 		return "", err
 	}
 	workerParams := workerExecutionParameters{
-		TaskList:                  startWorkflowEvent.GetTaskList().GetName(),
+		TaskList:                  startWorkflowEvent.TaskList.GetName(),
 		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
 		Identity:                  startWorkflowEvent.GetIdentity(),
 		MetricsScope:              tally.NoopScope,
@@ -300,11 +300,11 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 	}
 	request, stackTrace, err := taskHandler.ProcessWorkflowTask(task, getHistoryPage, true)
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
-	if err == nil && response != nil && len(response.GetDecisions()) > 0 && len(stackTrace) == 0 {
-		lastDecision := response.GetDecisions()[len(response.GetDecisions())-1]
-		if lastDecision.GetDecisionType() == s.DecisionType_FailWorkflowExecution {
+	if err == nil && response != nil && len(response.Decisions) > 0 && len(stackTrace) == 0 {
+		lastDecision := response.Decisions[len(response.Decisions)-1]
+		if lastDecision.GetDecisionType() == s.DecisionTypeFailWorkflowExecution {
 			return "", fmt.Errorf("Cannot get stack trace dump for failed worklfow: %s",
-				lastDecision.GetFailWorkflowExecutionDecisionAttributes().GetDetails())
+				lastDecision.FailWorkflowExecutionDecisionAttributes.Details)
 		}
 		return "", errors.New("Cannot get stack trace dump for a completed workflow")
 	}
@@ -417,8 +417,8 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 			RunId:      getRunID(runID),
 		},
 		Query: &s.WorkflowQuery{
-			QueryType:  common.StringPtr(queryType),
-			QueryArgs_: input,
+			QueryType: common.StringPtr(queryType),
+			QueryArgs: input,
 		},
 	}
 
@@ -435,7 +435,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 		return nil, err
 	}
 
-	return EncodedValue(resp.QueryResult_), nil
+	return EncodedValue(resp.QueryResult), nil
 }
 
 // Register a domain with cadence server
@@ -476,7 +476,7 @@ func (dc *domainClient) Describe(ctx context.Context, name string) (*s.DomainInf
 	if err != nil {
 		return nil, nil, err
 	}
-	return response.GetDomainInfo(), response.GetConfiguration(), nil
+	return response.DomainInfo, response.Configuration, nil
 }
 
 // Update a domain. The domain has two part of information
