@@ -21,6 +21,7 @@
 package cadence
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -126,6 +127,9 @@ type (
 
 		runningCount atomic.Int32
 
+		expectedMockCalls map[string]struct{}
+		panicMockCalls    []string
+
 		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)
 		onActivityCompletedListener      func(activityInfo *ActivityInfo, result EncodedValue, err error)
 		onActivityCanceledListener       func(activityInfo *ActivityInfo)
@@ -173,6 +177,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			childWorkflows:  make(map[string]*testChildWorkflowHandle),
 			callbackChannel: make(chan testCallbackHandle, 1000),
 			testTimeout:     time.Second * 3,
+
+			expectedMockCalls: make(map[string]struct{}),
 		},
 
 		workflowInfo: &WorkflowInfo{
@@ -858,6 +864,10 @@ func (m *mockWrapper) methodCalled(name string, args ...interface{}) (retArgs mo
 				// re-panic, if this is a legit panic (aka not due to unexpected mock call)
 				panic(pw.p)
 			}
+			if _, ok := m.env.expectedMockCalls[name]; ok {
+				// user setup mock calls, but we panic, most likely is due to parameters mismatch
+				m.env.panicMockCalls = append(m.env.panicMockCalls, fmt.Sprintf("%v", p))
+			}
 			retArgs = nil
 			// if there is no panic, meaning mock call go through, and runBeforeMockCallReturns() is called. We would
 			// already Unlock the locker in  runBeforeMockCallReturns() before the potential wait.
@@ -1144,6 +1154,27 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 		return nil, err
 	}
 	return EncodedValue(blob), nil
+}
+
+func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
+	env.locker.Lock()
+	defer env.locker.Unlock()
+
+	env.expectedMockCalls[callWrapper.call.Method] = struct{}{}
+	return func(args mock.Arguments) {
+		env.runBeforeMockCallReturns(callWrapper, args)
+	}
+}
+
+func (env *testWorkflowEnvironmentImpl) getFailedMockCallMessages() string {
+	env.locker.Lock()
+	defer env.locker.Unlock()
+
+	var buf bytes.Buffer
+	for k, v := range env.panicMockCalls {
+		buf.WriteString(fmt.Sprintf("\n\u2757 Unexpected Method Call %v: %s", k+1, v))
+	}
+	return buf.String()
 }
 
 // make sure interface is implemented
