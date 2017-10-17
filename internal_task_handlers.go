@@ -1044,11 +1044,11 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel := newTChannelContext(ctx)
+			tchCtx, cancel, opt := newChannelContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request, opt...)
 			return err
 		}, retryPolicy, isServiceTransientError)
 

@@ -38,6 +38,7 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )
 
@@ -267,8 +268,8 @@ func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
 
 	for _, tc := range testCases {
 		service := workflowservicetest.NewMockClient(mockCtrl)
-		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, tc.domainErr).Do(
-			func(ctx context.Context, request *s.DescribeDomainRequest) {
+		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.domainErr).Do(
+			func(ctx context.Context, request *s.DescribeDomainRequest, opts ...yarpc.CallOption) {
 				// log
 			}).Times(2)
 
@@ -314,8 +315,8 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 		},
 	}
 	// mocks
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(domainDesc, nil).Do(
-		func(ctx context.Context, request *s.DescribeDomainRequest) {
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).Do(
+		func(ctx context.Context, request *s.DescribeDomainRequest, opts ...yarpc.CallOption) {
 			// log
 		}).AnyTimes()
 

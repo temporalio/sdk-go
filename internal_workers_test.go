@@ -57,7 +57,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
 	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -81,7 +81,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
 	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -107,7 +107,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
 	executionParameters := workerExecutionParameters{

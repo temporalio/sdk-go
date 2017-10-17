@@ -32,6 +32,7 @@ import (
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
+	"go.uber.org/yarpc"
 )
 
 func TestActivityHeartbeat(t *testing.T) {
@@ -42,7 +43,7 @@ func TestActivityHeartbeat(t *testing.T) {
 	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
@@ -62,9 +63,9 @@ func TestActivityHeartbeat_InternalError(t *testing.T) {
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, &s.InternalServiceError{}).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest) {
+		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			fmt.Println("MOCK RecordActivityTaskHeartbeat executed")
 		}).AnyTimes()
 
@@ -81,7 +82,7 @@ func TestActivityHeartbeat_CancelRequested(t *testing.T) {
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(true)}, nil).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
@@ -99,7 +100,7 @@ func TestActivityHeartbeat_EntityNotExist(t *testing.T) {
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, &s.EntityNotExistsError{}).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
@@ -118,7 +119,7 @@ func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
 		logger:         getLogger()})
 
 	// Multiple calls but only one call is made.
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
@@ -131,7 +132,7 @@ func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker2,
 		logger:         getLogger()})
-	service2.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service2.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
@@ -144,12 +145,12 @@ func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker3,
 		logger:         getLogger()})
-	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 
-	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest) {
+		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			ev := EncodedValues(request.Details)
 			var progress string
 			err := ev.Get(&progress)
@@ -174,11 +175,11 @@ func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker4,
 		logger:         getLogger()})
-	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
-	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest) {
+		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			require.Nil(t, request.Details)
 			waitCh2 <- struct{}{}
 		}).Times(1)

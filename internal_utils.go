@@ -33,6 +33,7 @@ import (
 	"github.com/uber/tchannel-go"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/yarpc"
 	"golang.org/x/net/context"
 )
 
@@ -54,32 +55,48 @@ var retryDefaultOptions = &tchannel.RetryOptions{
 	RetryOn: tchannel.RetryDefault,
 }
 
-// sets the rpc timeout for a tchannel context
-func tchanTimeout(timeout time.Duration) func(builder *tchannel.ContextBuilder) {
-	return func(b *tchannel.ContextBuilder) {
-		b.SetTimeout(timeout)
+// ContextBuilder stores all Channel-specific parameters that will
+// be stored inside of a context.
+type contextBuilder struct {
+	// If Timeout is zero, Build will default to defaultTimeout.
+	Timeout time.Duration
+
+	// ParentContext to build the new context from. If empty, context.Background() is used.
+	// The new (child) context inherits a number of properties from the parent context:
+	//   - context fields, accessible via `ctx.Value(key)`
+	ParentContext context.Context
+}
+
+func (cb *contextBuilder) Build() (context.Context, context.CancelFunc) {
+	parent := cb.ParentContext
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, cb.Timeout)
+}
+
+// sets the rpc timeout for a context
+func chanTimeout(timeout time.Duration) func(builder *contextBuilder) {
+	return func(b *contextBuilder) {
+		b.Timeout = timeout
 	}
 }
 
-// sets the retry option for a tchannel context
-func tchanRetryOption(retryOpt *tchannel.RetryOptions) func(builder *tchannel.ContextBuilder) {
-	return func(b *tchannel.ContextBuilder) {
-		b.SetRetryOptions(retryOpt)
-	}
-}
-
-// newTChannelContext - Get a tchannel context
-func newTChannelContext(ctx context.Context, options ...func(builder *tchannel.ContextBuilder)) (tchannel.ContextWithHeaders, context.CancelFunc) {
-	builder := tchannel.NewContextBuilder(defaultRPCTimeout)
+// newChannelContext - Get a rpc channel context
+func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc, []yarpc.CallOption) {
+	builder := &contextBuilder{Timeout: defaultRPCTimeout}
 	if ctx != nil {
-		builder.SetParentContext(ctx)
+		builder.ParentContext = ctx
 	}
-	builder.SetRetryOptions(retryDefaultOptions)
-	builder.AddHeader(versionHeaderName, LibraryVersion)
 	for _, opt := range options {
 		opt(builder)
 	}
-	return builder.Build()
+	ctx, cancelFn := builder.Build()
+
+	callOptions := []yarpc.CallOption{
+		yarpc.WithHeader(versionHeaderName, LibraryVersion)}
+
+	return ctx, cancelFn, callOptions
 }
 
 // GetWorkerIdentity gets a default identity for the worker.

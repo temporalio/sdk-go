@@ -164,9 +164,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func verifyDomainExist(client workflowserviceclient.Interface, domain string, logger *zap.Logger) error {
 	ctx := context.Background()
 	descDomainOp := func() error {
-		tchCtx, cancel := newTChannelContext(ctx)
+		tchCtx, cancel, opt := newChannelContext(ctx)
 		defer cancel()
-		_, err := client.DescribeDomain(tchCtx, &shared.DescribeDomainRequest{Name: &domain})
+		_, err := client.DescribeDomain(tchCtx, &shared.DescribeDomainRequest{Name: &domain}, opt...)
 		if err != nil {
 			if _, ok := err.(*shared.EntityNotExistsError); ok {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))

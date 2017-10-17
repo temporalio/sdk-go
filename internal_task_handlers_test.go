@@ -413,7 +413,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 
 	cancelRequested := false
 	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
 
 	cadenceInvoker := &cadenceInvoker{
 		identity:  "Test_Cadence_Invoker",
@@ -431,7 +431,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService := workflowservicetest.NewMockClient(mockCtrl)
 
 	entityNotExistsError := &s.EntityNotExistsError{}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
 		nil,
@@ -447,7 +447,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 }
 
 type testActivityDeadline struct {
-	d time.Duration
+	logger *zap.Logger
+	d      time.Duration
 }
 
 func (t *testActivityDeadline) Execute(ctx context.Context, input []byte) ([]byte, error) {
@@ -471,6 +472,7 @@ func (t *testActivityDeadline) GetFunction() interface{} {
 }
 
 type deadlineTest struct {
+	actWaitDuration  time.Duration
 	ScheduleTS       time.Time
 	ScheduleDuration int32
 	StartTS          time.Time
@@ -479,19 +481,19 @@ type deadlineTest struct {
 }
 
 var deadlineTests = []deadlineTest{
-	{time.Now(), 3, time.Now(), 3, nil},
-	{time.Now(), 4, time.Now(), 3, nil},
-	{time.Now(), 3, time.Now(), 4, nil},
-	{time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
-	{time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-	{time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-	{time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
-	{time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
-	{time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
+	{time.Duration(0), time.Now(), 3, time.Now(), 3, nil},
+	{time.Duration(0), time.Now(), 4, time.Now(), 3, nil},
+	{time.Duration(0), time.Now(), 3, time.Now(), 4, nil},
+	{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
+	{time.Duration(0), time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
+	{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
+	{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
+	{time.Duration(1 * time.Second), time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
+	{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
 }
 
 func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
-	a := &testActivityDeadline{}
+	a := &testActivityDeadline{logger: t.logger}
 	hostEnv := getHostEnvironment()
 	hostEnv.addActivity(a.ActivityType().Name, a)
 
@@ -499,6 +501,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	mockService := workflowservicetest.NewMockClient(mockCtrl)
 
 	for i, d := range deadlineTests {
+		a.d = d.actWaitDuration
 		wep := workerExecutionParameters{
 			Logger: t.logger,
 		}

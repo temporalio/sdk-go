@@ -22,21 +22,15 @@ package cadence
 
 import (
 	"github.com/stretchr/testify/require"
-	"github.com/uber/tchannel-go"
 	"testing"
 	"time"
 )
 
-func TestTChannelBuilderOptions(t *testing.T) {
-	builder := tchannel.NewContextBuilder(defaultRPCTimeout)
-	require.Equal(t, defaultRPCTimeout, builder.Timeout)
+func TestChannelBuilderOptions(t *testing.T) {
+	builder := &contextBuilder{Timeout: defaultRPCTimeout}
 
-	opt1 := tchanTimeout(time.Minute)
-	opt2 := tchanRetryOption(retryNeverOptions)
-
+	opt1 := chanTimeout(time.Minute)
 	opt1(builder)
-	opt2(builder)
 
 	require.Equal(t, time.Minute, builder.Timeout)
-	require.Equal(t, retryNeverOptions, builder.RetryOptions)
 }

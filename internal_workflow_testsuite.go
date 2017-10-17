@@ -39,6 +39,7 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
+	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )
 
@@ -210,7 +211,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	mockCtrl := gomock.NewController(&testReporter{logger: env.logger})
 	mockService := workflowservicetest.NewMockClient(mockCtrl)
 
-	mockHeartbeatFn := func(c context.Context, r *shared.RecordActivityTaskHeartbeatRequest) error {
+	mockHeartbeatFn := func(c context.Context, r *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) error {
 		activityID := string(r.TaskToken)
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.activities[activityID]
@@ -231,14 +232,14 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		return nil
 	}
 
-	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any()).
+	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)}, nil)
-	em.Do(func(ctx context.Context, r *shared.RecordActivityTaskHeartbeatRequest) {
+	em.Do(func(ctx context.Context, r *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 		// TODO: The following will hit a data race in the gomock code where the Do() action is executed outside
 		// the lock and setting return value from inside the action is going to run into races.
-		// err := mockHeartbeatFn(ctx, r)
+		// err := mockHeartbeatFn(ctx, r, opts)
 		// em.Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(false)}, err)
-		mockHeartbeatFn(ctx, r)
+		mockHeartbeatFn(ctx, r, opts...)
 	}).AnyTimes()
 
 	env.service = mockService
