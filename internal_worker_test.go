@@ -324,7 +324,6 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 		TaskToken:                     []byte("taskToken1"),
 		WorkflowExecution:             &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
 		ActivityType:                  &s.ActivityType{Name: &activityType},
-		StartedEventId:                &startedEventID,
 		Input:                         input,
 		ActivityId:                    &activityID,
 		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),

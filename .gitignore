@@ -9,5 +9,6 @@
 .tmp/
 /vendor
 cadence-client
+bins
 test
 test.log
