@@ -406,11 +406,11 @@ func Now(ctx Context) time.Time {
 	return getWorkflowEnvironment(ctx).Now()
 }
 
-// NewTimer returns immediately and the future becomes ready after the specified timeout.
-//  - The current timer resolution implementation is in seconds but is subjected to change.
-//  - The workflow needs to use this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer())
-//  - You can also cancel the pending timer using context(WithCancel(ctx)) and that will cancel the timer with
-// error TimerCanceledError.
+// NewTimer returns immediately and the future becomes ready after the specified duration d. The workflow needs to use
+// this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
+// timer by cancel the Context (using context from cadence.WithCancel(ctx)) and that will cancel the timer. After timer
+// is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+// The current timer resolution implementation is in seconds but is subjected to change.
 func NewTimer(ctx Context, d time.Duration) Future {
 	future, settable := NewFuture(ctx)
 	if d <= 0 {
@@ -436,12 +436,13 @@ func NewTimer(ctx Context, d time.Duration) Future {
 	return future
 }
 
-// Sleep pauses the current goroutine for at least the duration d.
-// A negative or zero duration causes Sleep to return immediately.
-//  - The current timer resolution implementation is in seconds but is subjected to change.
-//  - The workflow needs to use this Sleep() to sleep instead of the Go lang library one(timer.Sleep())
-//  - You can also cancel the pending sleep using context(WithCancel(ctx)) and that will cancel the sleep with
-//    error TimerCanceledError.
+// Sleep pauses the current workflow for at least the duration d. A negative or zero duration causes Sleep to return
+// immediately. Workflow code needs to use this Sleep() to sleep instead of the Go lang library one(timer.Sleep()).
+// You can cancel the pending sleep by cancel the Context (using context from cadence.WithCancel(ctx)).
+// Sleep() returns nil if the duration d is passed, or it returns *CanceledError if the ctx is canceled. There are 2
+// reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with cadence.WithCancel(ctx));
+// 2) your workflow itself is canceled by external request.
+// The current timer resolution implementation is in seconds but is subjected to change.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	t := NewTimer(ctx, d)
 	err = t.Get(ctx, nil)
