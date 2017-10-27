@@ -21,7 +21,6 @@
 package cadence
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -94,10 +93,6 @@ type (
 		isWorkflow bool
 	}
 
-	panicWrapper struct {
-		p interface{}
-	}
-
 	taskListSpecificActivity struct {
 		fn        interface{}
 		taskLists map[string]struct{}
@@ -129,7 +124,6 @@ type (
 		runningCount atomic.Int32
 
 		expectedMockCalls map[string]struct{}
-		panicMockCalls    []string
 
 		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)
 		onActivityCompletedListener      func(activityInfo *ActivityInfo, result EncodedValue, err error)
@@ -730,18 +724,6 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 // runBeforeMockCallReturns is registered as mock call's RunFn by *mock.Call.Run(fn). It will be called by testify's
 // mock.MethodCalled() before it returns.
 func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallWrapper, args mock.Arguments) {
-	defer func() {
-		if p := recover(); p != nil {
-			// wrap the panic, so we know this is a real panic (aka not due to mock call unexpected), and should not be
-			// swallowed by panic handler in mockWrapper.getMockReturn()
-			panic(&panicWrapper{p})
-		}
-	}()
-
-	// mock call is expected, below code could block on wait, and we don't need the lock anymore. The corresponding Lock
-	// call is in mockWrapper.methodCalled().
-	env.locker.Unlock()
-
 	if call.waitDuration > 0 {
 		// we want this mock call to block until the wait duration is elapsed (on workflow clock).
 		waitCh := make(chan time.Time)
@@ -826,12 +808,11 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 }
 
 func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock.Arguments) {
-	if m.env.mock == nil {
+	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
 		// no mock
 		return nil
 	}
 
-	// check if we have mock setup
 	fnType := reflect.TypeOf(m.fn)
 	reflectArgs, err := getHostEnvironment().decodeArgs(fnType, input)
 	if err != nil {
@@ -848,35 +829,7 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock
 		realArgs = append(realArgs, arg.Interface())
 	}
 
-	return m.methodCalled(m.name, realArgs...)
-}
-
-func (m *mockWrapper) methodCalled(name string, args ...interface{}) (retArgs mock.Arguments) {
-	// This method is run in separate go routinue, both for activity and child workflow.
-	// We need the lock because the args could include a cadence.Context which will be accessed by mock.MethodCalled()
-	// and is also accessed by the main loop.
-	m.env.locker.Lock()
-	// There is no way to check if a mock call is expected or not. A pull request to add it was rejected. See PR:
-	// https://github.com/stretchr/testify/pull/453. We could try to call the mock method, and if the call is not
-	// expected, the mock.MethodCalled() will panic, which we would catch and just return nil from this method.
-	defer func() {
-		if p := recover(); p != nil {
-			if pw, ok := p.(*panicWrapper); ok {
-				// re-panic, if this is a legit panic (aka not due to unexpected mock call)
-				panic(pw.p)
-			}
-			if _, ok := m.env.expectedMockCalls[name]; ok {
-				// user setup mock calls, but we panic, most likely is due to parameters mismatch
-				m.env.panicMockCalls = append(m.env.panicMockCalls, fmt.Sprintf("%v", p))
-			}
-			retArgs = nil
-			// if there is no panic, meaning mock call go through, and runBeforeMockCallReturns() is called. We would
-			// already Unlock the locker in  runBeforeMockCallReturns() before the potential wait.
-			m.env.locker.Unlock()
-		}
-	}()
-
-	return m.env.mock.MethodCalled(name, args...)
+	return m.env.mock.MethodCalled(m.name, realArgs...)
 }
 
 func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) ([]byte, error) {
@@ -1165,17 +1118,6 @@ func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrappe
 	return func(args mock.Arguments) {
 		env.runBeforeMockCallReturns(callWrapper, args)
 	}
-}
-
-func (env *testWorkflowEnvironmentImpl) getFailedMockCallMessages() string {
-	env.locker.Lock()
-	defer env.locker.Unlock()
-
-	var buf bytes.Buffer
-	for k, v := range env.panicMockCalls {
-		buf.WriteString(fmt.Sprintf("\n\u2757 Unexpected Method Call %v: %s", k+1, v))
-	}
-	return buf.String()
 }
 
 // make sure interface is implemented

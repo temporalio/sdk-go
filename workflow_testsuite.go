@@ -23,7 +23,6 @@ package cadence
 import (
 	"context"
 	"reflect"
-	"testing"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -372,14 +371,4 @@ func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
 func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
 	t.impl.setActivityTaskList(tasklist, activityFn...)
-}
-
-// AssertExpectations asserts that everything specified with OnActivity and OnWorkflow was in fact called as expected.
-// Calls may have occurred in any order.
-func (t *TestWorkflowEnvironment) AssertExpectations(tt *testing.T) bool {
-	retVal := t.Mock.AssertExpectations(tt)
-	if !retVal {
-		tt.Log(t.impl.getFailedMockCallMessages())
-	}
-	return retVal
 }

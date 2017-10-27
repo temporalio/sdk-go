@@ -1020,7 +1020,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		var result string
-		fut := ExecuteActivity(ctx, "go.uber.org/cadence.testActivityHello", "friendly_name")
+		fut := ExecuteActivity(ctx, getFunctionName(testActivityHello), "friendly_name")
 		err := fut.Get(ctx, &result)
 		return err
 	}
@@ -1039,7 +1039,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFullyQualifiedName() {
 		}
 	}()
 	env := s.NewTestWorkflowEnvironment()
-	env.ExecuteWorkflow("go.uber.org/cadence.testWorkflowHello")
+	env.ExecuteWorkflow(getFunctionName(testWorkflowHello))
 	s.Fail("Should have panic'ed at ExecuteWorkflow")
 }
 
