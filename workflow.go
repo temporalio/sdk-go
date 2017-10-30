@@ -39,22 +39,35 @@ var (
 type (
 
 	// Channel must be used instead of native go channel by workflow code.
-	// Use Context.NewChannel method to create an instance.
+	// Use cadence.NewChannel(ctx) method to create Channel instance.
 	Channel interface {
-		// Blocks until it gets a value. when it gets a value assigns to the provided pointer.
-		// Example:
-		//   var v string
-		//   c.Receive(ctx, &v)
-		Receive(ctx Context, valuePtr interface{}) (more bool)              // more is false when channel is closed
-		ReceiveAsync(valuePtr interface{}) (ok bool)                        // ok is true when value was returned
-		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) // ok is true when value was returned, more is false when channel is closed
+		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
+		// Returns false when Channel is closed.
+		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
+		//  var v string
+		//  c.Receive(ctx, &v)
+		Receive(ctx Context, valuePtr interface{}) (more bool)
+
+		// ReceiveAsync try to receive from Channel without blocking. If there is data available from the Channel, it
+		// assign the data to valuePtr and returns true. Otherwise, it returns false immediately.
+		ReceiveAsync(valuePtr interface{}) (ok bool)
+
+		// ReceiveAsyncWithMoreFlag is same as ReceiveAsync with extra return value more to indicate if there could be
+		// more value from the Channel. The more is false when Channel is closed.
+		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
+
+		// Send blocks until the data is sent.
 		Send(ctx Context, v interface{})
-		SendAsync(v interface{}) (ok bool) // ok when value was sent
-		Close()                            // prohibit sends
+
+		// SendAsync try to send without blocking. It returns true if the data was sent, otherwise it returns false.
+		SendAsync(v interface{}) (ok bool)
+
+		// Close close the Channel, and prohibit subsequent sends.
+		Close()
 	}
 
-	// Selector must be used instead of native go select by workflow code
-	// Use Context.NewSelector method to create an instance.
+	// Selector must be used instead of native go select by workflow code.
+	// Use cadence.NewSelector(ctx) method to create a Selector instance.
 	Selector interface {
 		AddReceive(c Channel, f func(c Channel, more bool)) Selector
 		AddSend(c Channel, v interface{}, f func()) Selector
@@ -65,21 +78,21 @@ type (
 
 	// Future represents the result of an asynchronous computation.
 	Future interface {
-		// Get blocks until the future is ready. When ready it either returns non nil error
-		// or assigns result value to the provided pointer.
+		// Get blocks until the future is ready. When ready it either returns non nil error or assigns result value to
+		// the provided pointer.
 		// Example:
-		// var v string
-		// if err := f.Get(ctx, &v); err != nil {
-		//     return err
-		// }
-		// fmt.Printf("Value=%v", v)
+		//  var v string
+		//  if err := f.Get(ctx, &v); err != nil {
+		//      return err
+		//  }
 		Get(ctx Context, valuePtr interface{}) error
+
 		// When true Get is guaranteed to not block
 		IsReady() bool
 	}
 
 	// Settable is used to set value or error on a future.
-	// See NewFuture function.
+	// See more: cadence.NewFuture(ctx).
 	Settable interface {
 		Set(value interface{}, err error)
 		SetValue(value interface{})
@@ -93,6 +106,11 @@ type (
 		// GetChildWorkflowExecution returns a future that will be ready when child workflow execution started. You can
 		// get the WorkflowExecution of the child workflow from the future. Then you can use Workflow ID and RunID of
 		// child workflow to cancel or send signal to child workflow.
+		//  childWorkflowFuture := cadence.ExecuteChildWorkflow(ctx, child, ...)
+		//  var childWE WorkflowExecution
+		//  if err := childWorkflowFuture.GetChildWorkflowExecution().Get(&childWE); err == nil {
+		//      // child workflow started, you can use childWE to get the WorkflowID and RunID of child workflow
+		//  }
 		GetChildWorkflowExecution() Future
 	}
 
@@ -181,8 +199,8 @@ func RegisterWorkflow(workflowFunc interface{}) {
 // RegisterWorkflowWithOptions registers the workflow function with options
 // The user can use options to provide an external name for the workflow or leave it empty if no
 // external name is required. This can be used as
-// client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{})
-// client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
+//  client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{})
+//  client.RegisterWorkflow(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
 // A workflow takes a cadence context and input and returns a (result, error) or just error.
 // Examples:
 //	func sampleWorkflow(ctx cadence.Context, input []byte) (result []byte, err error)
@@ -257,32 +275,32 @@ func NewFuture(ctx Context) (Future, Settable) {
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.
-//  - Context can be used to pass the settings for this activity.
-// 	For example: task list that this need to be routed, timeouts that need to be configured.
-//	Use ActivityOptions to pass down the options.
-//			ao := ActivityOptions{
-// 				TaskList: "exampleTaskList",
-// 				ScheduleToStartTimeout: 10 * time.Second,
-// 				StartToCloseTimeout: 5 * time.Second,
-// 				ScheduleToCloseTimeout: 10 * time.Second,
-// 				HeartbeatTimeout: 0,
-// 			}
-//			ctx1 := WithActivityOptions(ctx, ao)
+// Context can be used to pass the settings for this activity.
+// For example: task list that this need to be routed, timeouts that need to be configured.
+// Use ActivityOptions to pass down the options.
+//  ao := ActivityOptions{
+// 	    TaskList: "exampleTaskList",
+// 	    ScheduleToStartTimeout: 10 * time.Second,
+// 	    StartToCloseTimeout: 5 * time.Second,
+// 	    ScheduleToCloseTimeout: 10 * time.Second,
+// 	    HeartbeatTimeout: 0,
+// 	}
+//	ctx := WithActivityOptions(ctx, ao)
+// Or to override a single option
+//  ctx := WithTaskList(ctx, "exampleTaskList")
+// Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
+// Input args are the arguments that need to be passed to the scheduled activity.
 //
-//			or to override a single option
-//
-//			ctx1 := WithTaskList(ctx, "exampleTaskList")
-//  - f - Either a activity name or a function that is getting scheduled.
-//  - args - The arguments that need to be passed to the function represented by 'f'.
-//  - If the activity failed to complete then the future get error would indicate the failure
-// and it can be one of CustomError, TimeoutError, CanceledError, PanicError, GenericError.
-//  - You can also cancel the pending activity using context(WithCancel(ctx)) and that will fail the activity with
+// If the activity failed to complete then the future get error would indicate the failure, and it can be one of
+// CustomError, TimeoutError, CanceledError, PanicError, GenericError.
+// You can cancel the pending activity using context(cadence.WithCancel(ctx)) and that will fail the activity with
 // error CanceledError.
-// - returns Future with activity result or failure
-func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
+//
+// ExecuteActivity returns Future with activity result or failure.
+func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
-	future, settable := newDecodeFuture(ctx, f)
-	activityType, input, err := getValidatedActivityFunction(f, args)
+	future, settable := newDecodeFuture(ctx, activity)
+	activityType, input, err := getValidatedActivityFunction(activity, args)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -315,28 +333,28 @@ func ExecuteActivity(ctx Context, f interface{}, args ...interface{}) Future {
 }
 
 // ExecuteChildWorkflow requests child workflow execution in the context of a workflow.
-//  - Context can be used to pass the settings for the child workflow.
-// 	For example: task list that this child workflow should be routed, timeouts that need to be configured.
-//	Use ChildWorkflowOptions to pass down the options.
-//			cwo := ChildWorkflowOptions{
-// 				ExecutionStartToCloseTimeout: 10 * time.Minute,
-// 				TaskStartToCloseTimeout: time.Minute,
-// 			}
-//			ctx1 := WithChildWorkflowOptions(ctx, cwo)
-//  - f - Either a workflow name or a workflow function that is getting scheduled.
-//  - args - The arguments that need to be passed to the child workflow function represented by 'f'.
-//  - If the child workflow failed to complete then the future get error would indicate the failure
-// and it can be one of CustomError, TimeoutError, CanceledError, GenericError.
-//  - You can also cancel the pending child workflow using context(WithCancel(ctx)) and that will fail the workflow with
+// Context can be used to pass the settings for the child workflow.
+// For example: task list that this child workflow should be routed, timeouts that need to be configured.
+// Use ChildWorkflowOptions to pass down the options.
+//  cwo := ChildWorkflowOptions{
+// 	    ExecutionStartToCloseTimeout: 10 * time.Minute,
+// 	    TaskStartToCloseTimeout: time.Minute,
+// 	}
+//  ctx := WithChildWorkflowOptions(ctx, cwo)
+// Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.
+// Input args are the arguments that need to be passed to the child workflow function represented by childWorkflow.
+// If the child workflow failed to complete then the future get error would indicate the failure and it can be one of
+// CustomError, TimeoutError, CanceledError, GenericError.
+// You can cancel the pending child workflow using context(cadence.WithCancel(ctx)) and that will fail the workflow with
 // error CanceledError.
-// - returns ChildWorkflowFuture
-func ExecuteChildWorkflow(ctx Context, f interface{}, args ...interface{}) ChildWorkflowFuture {
-	mainFuture, mainSettable := newDecodeFuture(ctx, f)
+// ExecuteChildWorkflow returns ChildWorkflowFuture.
+func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflow)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := childWorkflowFutureImpl{
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl)}
-	wfType, input, err := getValidatedWorkerFunction(f, args)
+	wfType, input, err := getValidatedWorkerFunction(childWorkflow, args)
 	if err != nil {
 		mainSettable.Set(nil, err)
 		return result
@@ -450,9 +468,11 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 }
 
 // RequestCancelWorkflow can be used to request cancellation of an external workflow.
-// - workflowID - name of the workflow ID.
-// - runID 	- Optional - indicates the instance of a workflow.
-// You can specify the domain of the workflow using the context like
+// Input workflowID is the workflow ID of target workflow.
+// Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
+// then the currently running instance of that workflowID will be used.
+// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// of the target workflow using the context like:
 //	ctx := WithWorkflowDomain(ctx, "domain-name")
 func RequestCancelWorkflow(ctx Context, workflowID, runID string) error {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
@@ -530,39 +550,42 @@ func (b EncodedValue) Get(valuePtr interface{}) error {
 	return getHostEnvironment().decodeArg(b, valuePtr)
 }
 
-// SideEffect executes provided function once, records its result into the workflow history and doesn't
-// reexecute it on replay returning recorded result instead. It can be seen as an "inline" activity.
-// Use it only for short nondeterministic code snippets like getting random value or generating UUID.
+// SideEffect executes provided function once, records its result into the workflow history. The recorded result on
+// history will be returned without executing the provided function during replay. This guarantees the deterministic
+// requirement for workflow as the exact same result will be returned in replay.
+// Common use case is to run some short non-deterministic code in workflow, like getting random number or new UUID.
 // The only way to fail SideEffect is to panic which causes decision task failure. The decision task after timeout is
-// rescheduled and reexecuted giving SideEffect another chance to succeed.
-// Be careful to not return any data from SideEffect function any other way than through its recorded return value.
-// For example this code is BROKEN:
+// rescheduled and re-executed giving SideEffect another chance to succeed.
 //
-// var executed bool
-// cadence.SideEffect(func(ctx cadence.Context) interface{} {
-//        executed = true
-//        return nil
-// })
-// if executed {
-//        ....
-// } else {
-//        ....
-// }
-// On replay the function is not executed, the executed flag is not set to true
-// and the workflow takes a different path breaking the determinism.
+// Caution: do not use SideEffect to modify closures, always retrieve result from SideEffect's encoded return value.
+// For example this code is BROKEN:
+//  // Bad example:
+//  var random int
+//  cadence.SideEffect(func(ctx cadence.Context) interface{} {
+//         random = rand.Intn(100)
+//         return nil
+//  })
+//  // random will always be 0 in replay, thus this code is non-deterministic
+//  if random < 50 {
+//         ....
+//  } else {
+//         ....
+//  }
+// On replay the provided function is not executed, the random will always be 0, and the workflow could takes a
+// different path breaking the determinism.
 //
 // Here is the correct way to use SideEffect:
-//
-// encodedRandom := SideEffect(func(ctx cadence.Context) interface{} {
-//       return rand.Intn(100)
-// })
-// var random int
-// encodedRandom.Get(&random)
-// if random < 50 {
-//        ....
-// } else {
-//        ....
-// }
+//  // Good example:
+//  encodedRandom := SideEffect(func(ctx cadence.Context) interface{} {
+//        return rand.Intn(100)
+//  })
+//  var random int
+//  encodedRandom.Get(&random)
+//  if random < 50 {
+//         ....
+//  } else {
+//         ....
+//  }
 func SideEffect(ctx Context, f func(ctx Context) interface{}) EncodedValue {
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() ([]byte, error) {
@@ -591,42 +614,39 @@ const DefaultVersion Version = -1
 // workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
 // returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
 // For example initially workflow has the following code:
-// err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//  err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
 // it should be updated to
-// err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//  err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
 // The backwards compatible way to execute the update is
-// v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
-// if v  == DefaultVersion {
-//     err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
-// } else {
-//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
-// }
+//  v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
+//  if v  == DefaultVersion {
+//      err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//  } else {
+//      err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//  }
 //
 // Then bar has to be changed to baz:
+//  v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
+//  if v  == DefaultVersion {
+//      err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//  } else if v == 1 {
+//      err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//  } else {
+//      err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//  }
 //
-// v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
-// if v  == DefaultVersion {
-//     err = cadence.ExecuteActivity(ctx, foo).Get(ctx, nil)
-// } else if v == 1 {
-//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
-// } else {
-//     err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
-// }
-//
-// Later when there are no workflows running DefaultVersion the correspondent branch can be removed:
-//
-// v :=  GetVersion(ctx, "fooChange", 1, 2)
-// if v == 1 {
-//     err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
-// } else {
-//     err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
-// }
+// Later when there are no workflow executions running DefaultVersion the correspondent branch can be removed:
+//  v :=  GetVersion(ctx, "fooChange", 1, 2)
+//  if v == 1 {
+//      err = cadence.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//  } else {
+//      err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//  }
 //
 // Currently there is no supported way to completely remove GetVersion call after it was introduced.
 // Keep it even if single branch is left:
-//
-// GetVersion(ctx, "fooChange", 2, 2)
-// err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//  GetVersion(ctx, "fooChange", 2, 2)
+//  err = cadence.ExecuteActivity(ctx, baz).Get(ctx, nil)
 //
 // It is necessary as GetVersion performs validation of a version against a workflow history and fails decisions if
 // a workflow code is not compatible with it.
@@ -671,7 +691,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 //    }
 //    currentState = "done"
 //    return nil
-// }
+//  }
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	if strings.HasPrefix(queryType, "__") {
 		return errors.New("queryType starts with '__' is reserved for internal use")

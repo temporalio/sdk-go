@@ -68,9 +68,9 @@ func RegisterActivity(activityFunc interface{}) {
 // RegisterActivityWithOptions registers the activity function with options
 // The user can use options to provide an external name for the activity or leave it empty if no
 // external name is required. This can be used as
-// client.RegisterActivity(barActivity, RegisterActivityOptions{})
-// client.RegisterActivity(barActivity, RegisterActivityOptions{Name: "barExternal"})
-// A activity takes a context and input and returns a (result, error) or just error.
+//  client.RegisterActivity(barActivity, RegisterActivityOptions{})
+//  client.RegisterActivity(barActivity, RegisterActivityOptions{Name: "barExternal"})
+// An activity takes a context and input and returns a (result, error) or just error.
 // Examples:
 //	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
 //	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
@@ -114,11 +114,11 @@ func GetActivityMetricsScope(ctx context.Context) tally.Scope {
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
 // If the activity is either cancelled (or) workflow/activity doesn't exist then we would cancel
 // the context with error context.Canceled.
-// 	TODO: we don't have a way to distinguish between the two cases when context is cancelled because
-// 	context doesn't support overriding value of ctx.Error.
-// 	TODO: Implement automatic heartbeating with cancellation through ctx.
+//  TODO: we don't have a way to distinguish between the two cases when context is cancelled because
+//  context doesn't support overriding value of ctx.Error.
+//  TODO: Implement automatic heartbeating with cancellation through ctx.
 // details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
-//	can check error TimeOutType()/Details().
+// can check error TimeOutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	var data []byte
 	var err error
@@ -168,8 +168,7 @@ func WithActivityTask(
 	})
 }
 
-// ActivityOptions stores all activity-specific parameters that will
-// be stored inside of a context.
+// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
 type ActivityOptions struct {
 	// TaskList that the activity needs to be scheduled on.
 	// optional: The default task list with the same name as the workflow task list.

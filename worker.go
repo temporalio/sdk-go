@@ -42,10 +42,7 @@ type (
 		Stop()
 	}
 
-	// WorkerOptions is to configure a worker instance,
-	// for example (1) the logger or any specific metrics.
-	// 	       (2) Whether to heart beat for activities automatically.
-	// Use NewWorkerOptions function to create an instance.
+	// WorkerOptions is used to configure a worker instance.
 	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this host can have.
 		// The zero value of this uses the default value.
@@ -79,9 +76,9 @@ type (
 		Logger *zap.Logger
 
 		// Optional: Enable logging in replay.
-		// In the decider you can use Cadence.GetLogger(ctx) to access logger that is replay aware.
-		// This will enable workflow decider code to log during
-		// the replay mode as well. This will be too verbose and often repeated logs.
+		// In the workflow code you can use cadence.GetLogger(ctx) to write logs. By default, the logger will skip log
+		// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
+		// This is only useful for debugging purpose.
 		// default: false
 		EnableLoggingInReplay bool
 
