@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pborman/uuid"
 	"github.com/uber/tchannel-go"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
@@ -101,11 +102,23 @@ func newChannelContext(ctx context.Context, options ...func(builder *contextBuil
 
 // GetWorkerIdentity gets a default identity for the worker.
 func getWorkerIdentity(tasklistName string) string {
+	return fmt.Sprintf("%d@%s@%s", os.Getpid(), getHostName(), tasklistName)
+}
+
+func getHostName() string {
 	hostName, err := os.Hostname()
 	if err != nil {
 		hostName = "UnKnown"
 	}
-	return fmt.Sprintf("%d@%s@%s", os.Getpid(), hostName, tasklistName)
+	return hostName
+}
+
+// worker uuid per process
+var workerUUID string = uuid.New()
+
+func getWorkerTaskList() string {
+	// includes hostname for debuggability, workerUUID guarantees the uniqueness
+	return fmt.Sprintf("%s:%s", getHostName(), workerUUID)
 }
 
 func flowActivityTypeFrom(v s.ActivityType) ActivityType {

@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -43,6 +44,8 @@ const (
 	retryServiceOperationInitialInterval    = time.Millisecond
 	retryServiceOperationMaxInterval        = 4 * time.Second
 	retryServiceOperationExpirationInterval = 60 * time.Second
+
+	stickyDecisionScheduleToStartTimeoutSeconds = 5
 )
 
 var (
@@ -67,6 +70,13 @@ type (
 		taskHandler  WorkflowTaskHandler
 		metricsScope tally.Scope
 		logger       *zap.Logger
+
+		disableStickyExecution       bool
+		StickyScheduleToStartTimeout time.Duration
+
+		pendingRegularPollCount int
+		pendingStickyPollCount  int
+		requestLock             sync.Mutex
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -127,6 +137,9 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		taskHandler:  taskHandler,
 		metricsScope: params.MetricsScope,
 		logger:       params.Logger,
+
+		disableStickyExecution:       params.DisableStickyExecution,
+		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 	}
 }
 
@@ -171,6 +184,12 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 			var err1 error
 			switch request := completedRequest.(type) {
 			case *s.RespondDecisionTaskCompletedRequest:
+				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
+					request.StickyAttributes = &s.StickyExecutionAttributes{
+						WorkerTaskList:                common.StringPtr(getWorkerTaskList()),
+						ScheduleToStartTimeoutSeconds: common.Int32Ptr(int32(wtp.StickyScheduleToStartTimeout.Seconds())),
+					}
+				}
 				err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
 					traceLog(func() {
@@ -204,6 +223,48 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	return nil
 }
 
+// getNextPollRequest returns appropriate next poll request based on poller configuration.
+// Simple rules:
+// 1) if sticky execution is disabled, always poll for regular task list
+// 2) otherwise:
+//   2.1) make sure there is at least one pending request for regular task list
+//   2.2) make sure there is at least one pending request for sticky task list
+//   2.3) poll from the tasklist that has less pending requests, if they are the same, poll from sticky task list.
+// TODO: make this more smart to auto adjust based on poll latency
+func (wtp *workflowTaskPoller) getNextPollRequest() (request *s.PollForDecisionTaskRequest, release func()) {
+	taskList := wtp.taskListName
+	if wtp.disableStickyExecution {
+		// nothing to release in non-sticky mode
+		release = func() {
+		}
+	} else {
+		wtp.requestLock.Lock()
+		if wtp.pendingRegularPollCount == 0 || wtp.pendingRegularPollCount < wtp.pendingStickyPollCount {
+			wtp.pendingRegularPollCount++
+			release = func() {
+				wtp.requestLock.Lock()
+				wtp.pendingRegularPollCount--
+				wtp.requestLock.Unlock()
+			}
+		} else {
+			wtp.pendingStickyPollCount++
+			taskList = getWorkerTaskList()
+			release = func() {
+				wtp.requestLock.Lock()
+				wtp.pendingStickyPollCount--
+				wtp.requestLock.Unlock()
+			}
+		}
+		wtp.requestLock.Unlock()
+	}
+
+	return &s.PollForDecisionTaskRequest{
+		Domain:   common.StringPtr(wtp.domain),
+		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(taskList)}),
+		Identity: common.StringPtr(wtp.identity),
+	}, release
+}
+
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	startTime := time.Now()
@@ -212,14 +273,12 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
-	request := &s.PollForDecisionTaskRequest{
-		Domain:   common.StringPtr(wtp.domain),
-		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(wtp.taskListName)}),
-		Identity: common.StringPtr(wtp.identity),
-	}
 
 	tchCtx, cancel, opt := newChannelContext(context.Background(), chanTimeout(pollTaskServiceTimeOut))
 	defer cancel()
+
+	request, release := wtp.getNextPollRequest()
+	defer release()
 
 	response, err := wtp.service.PollForDecisionTask(tchCtx, request, opt...)
 	if err != nil {

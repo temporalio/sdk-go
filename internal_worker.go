@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/uber-go/tally"
@@ -123,6 +124,11 @@ type (
 
 		// Context to store user provided key/value pairs
 		UserContext context.Context
+
+		// Disable sticky execution
+		DisableStickyExecution bool
+
+		StickyScheduleToStartTimeout time.Duration
 	}
 )
 
@@ -1010,6 +1016,8 @@ func newAggregatedWorker(
 		Logger:                          wOptions.Logger,
 		EnableLoggingInReplay:           wOptions.EnableLoggingInReplay,
 		UserContext:                     wOptions.BackgroundActivityContext,
+		DisableStickyExecution:          wOptions.DisableStickyExecution,
+		StickyScheduleToStartTimeout:    wOptions.StickyScheduleToStartTimeout,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1258,6 +1266,9 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	}
 	if options.MaxActivityExecutionPerSecond == 0 {
 		options.MaxActivityExecutionPerSecond = defaultMaxActivityExecutionRate
+	}
+	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
+		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
 	}
 	return options
 }

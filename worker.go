@@ -22,6 +22,7 @@ package cadence
 
 import (
 	"context"
+	"time"
 
 	"github.com/uber-go/tally"
 
@@ -89,6 +90,21 @@ type (
 		// Optional: Disable running activity workers.
 		// default: false
 		DisableActivityWorker bool
+
+		// Optional: Disable sticky execution.
+		// default: false
+		// Sticky Execution is to run the decision tasks for one workflow execution on same worker host. This is an
+		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
+		// memory. New decision task contains the new history events will be dispatched to the same worker. If this
+		// worker crashes, the sticky decision task will timeout after StickyScheduleToStartTimeout, and cadence server
+		// will clear the stickiness for that workflow execution and automatically reschedule a new decision task that
+		// is available for any worker to pick up and resume the progress.
+		DisableStickyExecution bool
+
+		// Optional: Sticky schedule to start timeout.
+		// default: 5s
+		// The resolution is seconds. See details about StickyExecution on the comments for DisableStickyExecution.
+		StickyScheduleToStartTimeout time.Duration
 
 		// Optional: sets context for activity. The context can be used to pass any configuration to activity
 		// like common logger for all activities.
