@@ -21,7 +21,7 @@ See [samples](https://github.com/samarabbas/cadence-samples) to get started
 
 ### Activity
 
-Activity is the implementation of a particular task in the business logic. 
+Activity is the implementation of a particular task in the business logic.
 
 Activities are implemented as functions. Data can be passed directly to an activity via function parameters. The parameters can be either basic types or structs, with the only requirement being that the parameters need to be serializable. Even though it is not required, we recommand that the first parameter of an activity function is of type `context.Context`, in order to allow the activity to interact with other framework methods. The function must return an `error` value, and can optionally return a result value. The result value can be either a basic type or a struct with the only requirement being that it is serializable.
 
@@ -119,15 +119,16 @@ You can run a Cadence worker in a new or an exiting service. Use the framework A
 package main
 
 import (
-	"github.com/uber/tchannel-go"
-	"github.com/uber/tchannel-go/thrift"
-
-	"github.com/uber-go/tally"
-
 	"go.uber.org/cadence"
 	t "go.uber.org/cadence/.gen/go/cadence"
+	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/yarpc"
+	"go.uber.org/yarpc/api/transport"
+	"go.uber.org/yarpc/transport/tchannel"
 )
 
 var HostPort = "127.0.0.1:7933"
@@ -137,9 +138,7 @@ var ClientName = "SimpleWorker"
 var CadenceService = "CadenceServiceFrontend"
 
 func main() {
-	startWorker(
-		buildLogger(),
-		buildCadenceClient())
+	startWorker(buildLogger(), buildCadenceClient())
 }
 
 func buildLogger() *zap.Logger {
@@ -155,20 +154,28 @@ func buildLogger() *zap.Logger {
 	return logger
 }
 
-func buildCadenceClient() t.TChanWorkflowService {
-	tchan, err := tchannel.NewChannel(ClientName, nil)
+func buildCadenceClient() workflowserviceclient.Interface {
+	ch, err := tchannel.NewChannelTransport(tchannel.ServiceName(ClientName))
 	if err != nil {
-		panic("Failed to setup channel")
+		panic("Failed to setup tchannel")
 	}
-
-	opts := &thrift.ClientOptions{
-		HostPort: HostPort,
+	dispatcher := yarpc.NewDispatcher(yarpc.Config{
+			Name: ClientName,
+			Outbounds: yarpc.Outbounds{
+				CadenceService: {Unary: ch.NewSingleOutbound(HostPort)},
+			},
+		})
+	if err := b.dispatcher.Start(); err != nil {
+		panic("Failed to start dispatcher")
 	}
-	return t.NewTChanWorkflowServiceClient(
-		thrift.NewClient(tchan, CadenceService, opts))
+	client, err := workflowserviceclient.New(dispatcher.ClientConfig(CadenceService))
+	if err != nil {
+		panic("Failed to setup workflowserviceclient")
+	}
+	return client
 }
 
-func startWorker(logger *zap.Logger, client t.TChanWorkflowService) {
+func startWorker(logger *zap.Logger, service workflowserviceclient.Interface) {
 	// TaskListName - identifies set of client workflows, activities and workers.
 	// it could be your group or client or application name.
 	workerOptions := cadence.WorkerOptions{
@@ -177,7 +184,7 @@ func startWorker(logger *zap.Logger, client t.TChanWorkflowService) {
 	}
 
 	worker := cadence.NewWorker(
-		client,
+		service,
 		Domain,
 		TaskListName,
 		workerOptions)
