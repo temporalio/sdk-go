@@ -23,7 +23,6 @@ package cadence
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -34,7 +33,6 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/common"
-	"go.uber.org/cadence/common/util"
 	"go.uber.org/zap"
 )
 
@@ -50,8 +48,6 @@ type (
 )
 
 func init() {
-	RegisterWorkflow(stackTraceWorkflow)
-	RegisterActivity(stackTraceActivity)
 	RegisterWorkflowWithOptions(
 		helloWorldWorkflowFunc,
 		RegisterWorkflowOptions{Name: "HelloWorld_Workflow"},
@@ -529,145 +525,5 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		if err != nil {
 			t.Nil(r, td)
 		}
-	}
-}
-
-func stackTraceActivity() error {
-	return ErrActivityResultPending
-}
-
-func stackTraceWorkflow(ctx Context) error {
-	ctx = WithActivityOptions(ctx, ActivityOptions{
-		ScheduleToStartTimeout: time.Minute,
-		StartToCloseTimeout:    time.Minute,
-	})
-	err := ExecuteActivity(ctx, stackTraceActivity).Get(ctx, nil)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByID() {
-	// Schedule an activity and see if we complete workflow.
-	workflowType := "go.uber.org/cadence.stackTraceWorkflow"
-	taskListName := "tl1"
-	taskList := &s.TaskList{Name: &taskListName}
-	testEvents := []*s.HistoryEvent{
-
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
-			TaskList:     taskList,
-			WorkflowType: &s.WorkflowType{Name: &workflowType},
-		}),
-		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: taskList}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventActivityTaskScheduled(4, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("go.uber.org/cadence.stackTraceActivity")},
-			TaskList:     taskList,
-		}),
-	}
-	mockCtrl := gomock.NewController(t.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
-	// mocks
-	service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(&s.GetWorkflowExecutionHistoryResponse{
-		History: &s.History{
-			Events: testEvents,
-		},
-	}, nil)
-	domain := "testDomain"
-	workflowClient := NewClient(service, domain, nil)
-
-	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", "runId1", 0)
-	t.NoError(err)
-	t.NotNil(dump)
-	t.True(strings.Contains(dump, ".Receive]"))
-	t.True(strings.Contains(dump, "blocked on"))
-}
-
-func (t *TaskHandlersTestSuite) TestGetWorkflowStackTrace() {
-	// Schedule an activity and see if we complete workflow.
-	workflowType := "go.uber.org/cadence.stackTraceWorkflow"
-	taskListName := "tl1"
-	taskList := &s.TaskList{Name: &taskListName}
-	testEvents := []*s.HistoryEvent{
-
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
-			TaskList:     taskList,
-			WorkflowType: &s.WorkflowType{Name: &workflowType},
-		}),
-		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: taskList}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventActivityTaskScheduled(4, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("go.uber.org/cadence.stackTraceActivity")},
-			TaskList:     taskList,
-		}),
-	}
-	dump, err := GetWorkflowStackTrace(&s.History{Events: testEvents})
-	t.NoError(err)
-	t.NotNil(dump)
-	t.True(strings.Contains(dump, ".Receive]"))
-	t.True(strings.Contains(dump, "blocked on"))
-}
-
-func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByIDAndDecisionTaskCompletedEventID() {
-	// Schedule an activity and see if we complete workflow.
-	workflowType := "go.uber.org/cadence.stackTraceWorkflow"
-	taskListName := "tl1"
-	taskList := &s.TaskList{Name: &taskListName}
-	var scheduled int64 = 2
-	var started int64 = 3
-
-	testEvents := []*s.HistoryEvent{
-
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
-			TaskList:     taskList,
-			WorkflowType: &s.WorkflowType{Name: &workflowType},
-		}),
-		createTestEventDecisionTaskScheduled(scheduled, &s.DecisionTaskScheduledEventAttributes{TaskList: taskList}),
-		createTestEventDecisionTaskStarted(started),
-		createTestEventActivityTaskScheduled(4, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("go.uber.org/cadence.stackTraceActivity")},
-			TaskList:     taskList,
-		}),
-		createTestEventDecisionTaskCompleted(5, &s.DecisionTaskCompletedEventAttributes{
-			StartedEventId: &started, ScheduledEventId: &scheduled}),
-		createTestEventActivityTaskCompleted(6, &s.ActivityTaskCompletedEventAttributes{}),
-		createTestEventDecisionTaskScheduled(scheduled, &s.DecisionTaskScheduledEventAttributes{TaskList: taskList}),
-		createTestEventDecisionTaskStarted(started),
-		createTestEventActivityTaskScheduled(7, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("go.uber.org/cadence.stackTraceActivity")},
-			TaskList:     taskList,
-		}),
-		createTestEventDecisionTaskCompleted(8, &s.DecisionTaskCompletedEventAttributes{
-			StartedEventId: &started, ScheduledEventId: &scheduled}),
-	}
-
-	mockCtrl := gomock.NewController(t.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
-	// mocks
-	service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(&s.GetWorkflowExecutionHistoryResponse{
-		History: &s.History{
-			Events: testEvents,
-		},
-	}, nil)
-	domain := "testDomain"
-	workflowClient := NewClient(service, domain, nil)
-
-	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", uuid.New(), 5)
-	t.NoError(err)
-	t.NotNil(dump)
-	t.True(strings.Contains(dump, ".Receive]"))
-	t.True(strings.Contains(dump, "blocked on"))
-}
-
-func (t *TaskHandlersTestSuite) printAllDecisions(decisions []*s.Decision) {
-	for _, d := range decisions {
-		t.logger.Info(util.DecisionToString(d))
 	}
 }

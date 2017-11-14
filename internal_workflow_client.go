@@ -23,9 +23,6 @@ package cadence
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math"
-
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 
@@ -34,7 +31,6 @@ import (
 	"go.uber.org/cadence/common"
 	"go.uber.org/cadence/common/backoff"
 	"go.uber.org/cadence/common/metrics"
-	"go.uber.org/zap"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -249,66 +245,6 @@ GetHistoryLoop:
 		nextPageToken = response.NextPageToken
 	}
 	return history, nil
-}
-
-func (wc *workflowClient) GetWorkflowStackTrace(ctx context.Context, workflowID string, runID string, atDecisionTaskCompletedEventID int64) (string, error) {
-	historyIterator := &historyIteratorImpl{
-		execution:    &s.WorkflowExecution{WorkflowId: common.StringPtr(workflowID), RunId: common.StringPtr(runID)},
-		domain:       wc.domain,
-		service:      wc.workflowService,
-		metricsScope: wc.metricsScope,
-		maxEventID:   atDecisionTaskCompletedEventID,
-	}
-
-	return getWorkflowStackTraceImpl(workflowID, runID, historyIterator)
-}
-
-func getWorkflowStackTraceImpl(workflowID string, runID string, historyIterator *historyIteratorImpl) (string, error) {
-	firstPage, err := historyIterator.GetNextPage()
-	if err != nil {
-		return "", err
-	}
-	if len(firstPage.Events) == 0 {
-		return "", errors.New("empty history")
-	}
-	startWorkflowEvent := firstPage.Events[0].WorkflowExecutionStartedEventAttributes
-	if startWorkflowEvent == nil {
-		return "", errors.New("First event is not WorkflowExecutionStarted")
-	}
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		return "", err
-	}
-	workerParams := workerExecutionParameters{
-		TaskList:                  startWorkflowEvent.TaskList.GetName(),
-		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
-		Identity:                  startWorkflowEvent.GetIdentity(),
-		MetricsScope:              tally.NoopScope,
-		Logger:                    logger,
-		EnableLoggingInReplay:     false,
-		UserContext:               context.Background(),
-	}
-	var maxInt64 int64 = math.MaxInt64
-	taskHandler := newWorkflowTaskHandler("unknown", workerParams, nil, getHostEnvironment())
-	task := &s.PollForDecisionTaskResponse{
-		History:                firstPage,
-		PreviousStartedEventId: &maxInt64,
-		StartedEventId:         &maxInt64,
-		WorkflowExecution:      &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
-		WorkflowType:           startWorkflowEvent.WorkflowType,
-		NextPageToken:          historyIterator.nextPageToken,
-	}
-	request, stackTrace, err := taskHandler.ProcessWorkflowTask(task, historyIterator, true)
-	response := request.(*s.RespondDecisionTaskCompletedRequest)
-	if err == nil && response != nil && len(response.Decisions) > 0 && len(stackTrace) == 0 {
-		lastDecision := response.Decisions[len(response.Decisions)-1]
-		if lastDecision.GetDecisionType() == s.DecisionTypeFailWorkflowExecution {
-			return "", fmt.Errorf("Cannot get stack trace dump for failed worklfow: %s",
-				lastDecision.FailWorkflowExecutionDecisionAttributes.Details)
-		}
-		return "", errors.New("Cannot get stack trace dump for a completed workflow")
-	}
-	return stackTrace, err
 }
 
 // CompleteActivity reports activity completed. activity Execute method can return cadence.ErrActivityResultPending to

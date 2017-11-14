@@ -87,16 +87,6 @@ type (
 		//	- InternalServiceError
 		GetWorkflowHistory(ctx context.Context, workflowID string, runID string) (*s.History, error)
 
-		// GetWorkflowStackTrace gets a stack trace of all goroutines of a particular workflow.
-		// atDecisionTaskCompletedEventID is the eventID of the CompleteDecisionTask event at which stack trace should be taken.
-		// It allows to look at the past states of a workflow.
-		// 0 value indicates that the whole existing history should be used.
-		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
-		GetWorkflowStackTrace(ctx context.Context, workflowID string, runID string, atDecisionTaskCompletedEventID int64) (string, error)
-
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return cadence.ErrActivityResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
