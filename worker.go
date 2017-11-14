@@ -132,8 +132,10 @@ func NewWorker(
 // through RegisterWorkflow.
 // Use Client.GetWorkflowStackTrace to get a stack trace given workflowID and runID.
 func GetWorkflowStackTrace(h *s.History) (string, error) {
-	getHistoryPage := func(nextPageToken []byte) (*s.History, []byte, error) {
-		return h, nil, nil
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: func(nextPageToken []byte) (*s.History, []byte, error) {
+			return h, nil, nil
+		},
 	}
-	return getWorkflowStackTraceImpl("unknown", "unknown", getHistoryPage)
+	return getWorkflowStackTraceImpl("unknown", "unknown", historyIterator)
 }

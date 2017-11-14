@@ -252,19 +252,19 @@ GetHistoryLoop:
 }
 
 func (wc *workflowClient) GetWorkflowStackTrace(ctx context.Context, workflowID string, runID string, atDecisionTaskCompletedEventID int64) (string, error) {
-	getHistoryPage := newGetHistoryPageFunc(
-		ctx,
-		wc.workflowService,
-		wc.domain,
-		&s.WorkflowExecution{WorkflowId: common.StringPtr(workflowID), RunId: common.StringPtr(runID)},
-		atDecisionTaskCompletedEventID,
-		wc.metricsScope,
-	)
-	return getWorkflowStackTraceImpl(workflowID, runID, getHistoryPage)
+	historyIterator := &historyIteratorImpl{
+		execution:    &s.WorkflowExecution{WorkflowId: common.StringPtr(workflowID), RunId: common.StringPtr(runID)},
+		domain:       wc.domain,
+		service:      wc.workflowService,
+		metricsScope: wc.metricsScope,
+		maxEventID:   atDecisionTaskCompletedEventID,
+	}
+
+	return getWorkflowStackTraceImpl(workflowID, runID, historyIterator)
 }
 
-func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage GetHistoryPage) (string, error) {
-	firstPage, taskToken, err := getHistoryPage([]byte{})
+func getWorkflowStackTraceImpl(workflowID string, runID string, historyIterator *historyIteratorImpl) (string, error) {
+	firstPage, err := historyIterator.GetNextPage()
 	if err != nil {
 		return "", err
 	}
@@ -296,9 +296,9 @@ func getWorkflowStackTraceImpl(workflowID string, runID string, getHistoryPage G
 		StartedEventId:         &maxInt64,
 		WorkflowExecution:      &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
 		WorkflowType:           startWorkflowEvent.WorkflowType,
-		NextPageToken:          taskToken,
+		NextPageToken:          historyIterator.nextPageToken,
 	}
-	request, stackTrace, err := taskHandler.ProcessWorkflowTask(task, getHistoryPage, true)
+	request, stackTrace, err := taskHandler.ProcessWorkflowTask(task, historyIterator, true)
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
 	if err == nil && response != nil && len(response.Decisions) > 0 && len(stackTrace) == 0 {
 		lastDecision := response.Decisions[len(response.Decisions)-1]

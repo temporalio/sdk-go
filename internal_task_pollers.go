@@ -25,7 +25,6 @@ package cadence
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -88,6 +87,16 @@ type (
 		taskHandler  ActivityTaskHandler
 		metricsScope tally.Scope
 		logger       *zap.Logger
+	}
+
+	historyIteratorImpl struct {
+		iteratorFunc  func(nextPageToken []byte) (*s.History, []byte, error)
+		execution     *s.WorkflowExecution
+		nextPageToken []byte
+		domain        string
+		service       workflowserviceclient.Interface
+		metricsScope  tally.Scope
+		maxEventID    int64
 	}
 )
 
@@ -167,7 +176,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 
 	executionStartTime := time.Now()
 	// Process the task.
-	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.getHistoryPageFunc, false)
+	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.historyIterator, false)
 	if err != nil {
 		wtp.metricsScope.Counter(metrics.DecisionExecutionFailedCounter).Inc(1)
 		return err
@@ -295,12 +304,49 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		return &workflowTask{}, nil
 	}
 
-	execution := response.WorkflowExecution
-	iterator := newGetHistoryPageFunc(context.Background(), wtp.service, wtp.domain, execution, math.MaxInt64, wtp.metricsScope)
-	task := &workflowTask{task: response, getHistoryPageFunc: iterator, pollStartTime: startTime}
+	historyIterator := &historyIteratorImpl{
+		nextPageToken: response.NextPageToken,
+		execution:     response.WorkflowExecution,
+		domain:        wtp.domain,
+		service:       wtp.service,
+		metricsScope:  wtp.metricsScope,
+		maxEventID:    response.GetStartedEventId(),
+	}
+	task := &workflowTask{
+		task:            response,
+		historyIterator: historyIterator,
+		pollStartTime:   startTime,
+	}
 	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
 	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Now().Sub(startTime))
 	return task, nil
+}
+
+func (h *historyIteratorImpl) GetNextPage() (*s.History, error) {
+	if h.iteratorFunc == nil {
+		h.iteratorFunc = newGetHistoryPageFunc(
+			context.Background(),
+			h.service,
+			h.domain,
+			h.execution,
+			h.maxEventID,
+			h.metricsScope)
+	}
+
+	history, token, err := h.iteratorFunc(h.nextPageToken)
+	if err != nil {
+		return nil, err
+	}
+	h.nextPageToken = token
+	return history, nil
+}
+
+func (h *historyIteratorImpl) Reset() {
+	h.nextPageToken = nil
+}
+
+func (h *historyIteratorImpl) HasNextPage() bool {
+	return h.nextPageToken != nil
 }
 
 func newGetHistoryPageFunc(

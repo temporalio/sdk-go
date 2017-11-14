@@ -294,19 +294,7 @@ func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
 }
 
 func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker {
-	//logger := getLogger()
-
 	domain := "testDomain"
-
-	workflowID := "w1"
-	runID := "r1"
-	activityType := "testActivity"
-	workflowType := "sampleWorkflowExecute"
-	activityID := "a1"
-	taskList := "tl1"
-	var startedEventID int64 = 10
-	input, err := getHostEnvironment().encodeArgs([]interface{}{})
-	require.NoError(t, err)
 	domainStatus := s.DomainStatusRegistered
 	domainDesc := &s.DescribeDomainResponse{
 		DomainInfo: &s.DomainInfo{
@@ -320,34 +308,11 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 			// log
 		}).AnyTimes()
 
-	activityTask := &s.PollForActivityTaskResponse{
-		TaskToken:                     []byte("taskToken1"),
-		WorkflowExecution:             &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
-		ActivityType:                  &s.ActivityType{Name: &activityType},
-		Input:                         input,
-		ActivityId:                    &activityID,
-		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
-		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(2),
-		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
-		StartToCloseTimeoutSeconds:    common.Int32Ptr(2),
-	}
+	activityTask := &s.PollForActivityTaskResponse{}
 	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(activityTask, nil).AnyTimes()
 	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	decisionTask := &s.PollForDecisionTaskResponse{
-		TaskToken:              []byte("taskToken1"),
-		WorkflowExecution:      &s.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
-		WorkflowType:           &s.WorkflowType{Name: &workflowType},
-		StartedEventId:         &startedEventID,
-		PreviousStartedEventId: &startedEventID,
-		History: &s.History{
-			Events: []*s.HistoryEvent{
-				{WorkflowExecutionStartedEventAttributes: &s.WorkflowExecutionStartedEventAttributes{
-					TaskList: &s.TaskList{Name: &taskList},
-				}},
-			},
-		},
-	}
+	decisionTask := &s.PollForDecisionTaskResponse{}
 	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(decisionTask, nil).AnyTimes()
 	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 

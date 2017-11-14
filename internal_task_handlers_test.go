@@ -146,7 +146,7 @@ func createWorkflowTask(
 		History:                &s.History{Events: events},
 		WorkflowExecution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr("fake-workflow-id"),
-			RunId:      common.StringPtr("fake-run-id"),
+			RunId:      common.StringPtr(uuid.New()),
 		},
 	}
 }
@@ -322,6 +322,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 
 	// now change the history event so it does not match to decision produced via replay
 	testEvents[1].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
 	request, _, err = taskHandler.ProcessWorkflowTask(task, nil, false)
 	t.Error(err)
 	t.Nil(request)
@@ -397,11 +398,14 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	nextEvents := []*s.HistoryEvent{
 		createTestEventDecisionTaskStarted(3),
 	}
-	iteratorfn := func(nextToken []byte) (*s.History, []byte, error) {
-		return &s.History{nextEvents}, nil, nil
+
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: func(nextToken []byte) (*s.History, []byte, error) {
+			return &s.History{nextEvents}, nil, nil
+		},
 	}
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	request, _, err := taskHandler.ProcessWorkflowTask(task, iteratorfn, false)
+	request, _, err := taskHandler.ProcessWorkflowTask(task, historyIterator, false)
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
@@ -655,7 +659,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowStackTraceByIDAndDecisionTaskComp
 	domain := "testDomain"
 	workflowClient := NewClient(service, domain, nil)
 
-	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", "runId1", 5)
+	dump, err := workflowClient.GetWorkflowStackTrace(context.Background(), "id1", uuid.New(), 5)
 	t.NoError(err)
 	t.NotNil(dump)
 	t.True(strings.Contains(dump, ".Receive]"))

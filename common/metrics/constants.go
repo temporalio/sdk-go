@@ -74,4 +74,8 @@ const (
 	CadenceError          = CadenceMetricsPrefix + "error"
 	CadenceLatency        = CadenceMetricsPrefix + "latency"
 	CadenceInvalidRequest = CadenceMetricsPrefix + "invalid-request"
+
+	StickyCacheHit   = CadenceMetricsPrefix + "sticky-cache-hit"
+	StickyCacheMiss  = CadenceMetricsPrefix + "sticky-cache-miss"
+	StickyCacheStall = CadenceMetricsPrefix + "sticky-cache-stall"
 )

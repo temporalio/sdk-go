@@ -36,15 +36,22 @@ import (
 )
 
 type (
-	// GetHistoryPage - Fetches a history page given a continuation token.
-	GetHistoryPage func(nextToken []byte) (*s.History, []byte, error)
+	// HistoryIterator iterator through history events
+	HistoryIterator interface {
+		// GetNextPage returns next page of history events
+		GetNextPage() (*s.History, error)
+		// Reset resets the internal state so next GetNextPage() call will return first page of events from beginning.
+		Reset()
+		// HasNextPage returns if there are more page of events
+		HasNextPage() bool
+	}
 
 	// WorkflowTaskHandler represents decision task handlers.
 	WorkflowTaskHandler interface {
 		// Process the workflow task
 		ProcessWorkflowTask(
 			task *s.PollForDecisionTaskResponse,
-			getHistoryPage GetHistoryPage,
+			historyIterator HistoryIterator,
 			emitStack bool) (response interface{}, stackTrace string, err error)
 	}
 
