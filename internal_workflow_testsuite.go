@@ -727,13 +727,13 @@ func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallW
 	if call.waitDuration > 0 {
 		// we want this mock call to block until the wait duration is elapsed (on workflow clock).
 		waitCh := make(chan time.Time)
-		env.runningCount.Dec() // reduce runningCount, since this mock call is about to be blocked.
 		env.registerDelayedCallback(func() {
-			waitCh <- env.Now()    // this will unblock mock call
 			env.runningCount.Inc() // increase runningCount as the mock call is ready to resume.
+			waitCh <- env.Now()    // this will unblock mock call
 		}, call.waitDuration)
 
-		<-waitCh // this will block until mock clock move forward by waitDuration
+		env.runningCount.Dec() // reduce runningCount, since this mock call is about to be blocked.
+		<-waitCh               // this will block until mock clock move forward by waitDuration
 	}
 
 	// run the actual runFn if it was setup
