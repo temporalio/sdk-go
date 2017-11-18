@@ -142,6 +142,13 @@ type (
 		//  - EntityNotExistError
 		//  - QueryFailError
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error)
+
+		// DescribeWorkflowExecution returns information about the specified workflow execution.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		//  - EntityNotExistError
+		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*s.DescribeWorkflowExecutionResponse, error)
 	}
 
 	// ClientOptions are optional parameters for Client creation.

@@ -66,6 +66,7 @@ const (
 	scopeNameUpdateDomain                   = CadenceMetricsPrefix + "UpdateDomain"
 	scopeNameQueryWorkflow                  = CadenceMetricsPrefix + "QueryWorkflow"
 	scopeNameRespondQueryTaskCompleted      = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
+	scopeNameDescribeWorkflowExecution      = CadenceMetricsPrefix + "DescribeWorkflowExecution"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -119,6 +120,13 @@ func (w *workflowServiceMetricsWrapper) DeprecateDomain(ctx context.Context, req
 func (w *workflowServiceMetricsWrapper) DescribeDomain(ctx context.Context, request *shared.DescribeDomainRequest, opts ...yarpc.CallOption) (*shared.DescribeDomainResponse, error) {
 	scope := w.getOperationScope(scopeNameDescribeDomain)
 	result, err := w.service.DescribeDomain(ctx, request)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) DescribeWorkflowExecution(ctx context.Context, request *shared.DescribeWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.DescribeWorkflowExecutionResponse, error) {
+	scope := w.getOperationScope(scopeNameDescribeWorkflowExecution)
+	result, err := w.service.DescribeWorkflowExecution(ctx, request)
 	scope.handleError(err)
 	return result, err
 }

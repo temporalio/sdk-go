@@ -326,6 +326,34 @@ func (wc *workflowClient) ListOpenWorkflow(ctx context.Context, request *s.ListO
 	return response, nil
 }
 
+// DescribeWorkflowExecution returns information about the specified workflow execution.
+// The errors it can return:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*s.DescribeWorkflowExecutionResponse, error) {
+	request := &s.DescribeWorkflowExecutionRequest{
+		Domain: common.StringPtr(wc.domain),
+		Execution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      common.StringPtr(runID),
+		},
+	}
+	var response *s.DescribeWorkflowExecutionResponse
+	err := backoff.Retry(ctx,
+		func() error {
+			var err1 error
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+			response, err1 = wc.workflowService.DescribeWorkflowExecution(tchCtx, request, opt...)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // QueryWorkflow queries a given workflow execution
 // workflowID and queryType are required, other parameters are optional.
 // - workflow ID of the workflow.

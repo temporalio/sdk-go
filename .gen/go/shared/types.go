@@ -7014,6 +7014,286 @@ func (v *DescribeDomainResponse) Equals(rhs *DescribeDomainResponse) bool {
 	return true
 }
 
+type DescribeWorkflowExecutionRequest struct {
+	Domain    *string            `json:"domain,omitempty"`
+	Execution *WorkflowExecution `json:"execution,omitempty"`
+}
+
+// ToWire translates a DescribeWorkflowExecutionRequest struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *DescribeWorkflowExecutionRequest) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.Execution != nil {
+		w, err = v.Execution.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a DescribeWorkflowExecutionRequest struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a DescribeWorkflowExecutionRequest struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v DescribeWorkflowExecutionRequest
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *DescribeWorkflowExecutionRequest) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.Domain = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.Execution, err = _WorkflowExecution_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a DescribeWorkflowExecutionRequest
+// struct.
+func (v *DescribeWorkflowExecutionRequest) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
+		i++
+	}
+	if v.Execution != nil {
+		fields[i] = fmt.Sprintf("Execution: %v", v.Execution)
+		i++
+	}
+
+	return fmt.Sprintf("DescribeWorkflowExecutionRequest{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this DescribeWorkflowExecutionRequest match the
+// provided DescribeWorkflowExecutionRequest.
+//
+// This function performs a deep comparison.
+func (v *DescribeWorkflowExecutionRequest) Equals(rhs *DescribeWorkflowExecutionRequest) bool {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
+		return false
+	}
+	if !((v.Execution == nil && rhs.Execution == nil) || (v.Execution != nil && rhs.Execution != nil && v.Execution.Equals(rhs.Execution))) {
+		return false
+	}
+
+	return true
+}
+
+// GetDomain returns the value of Domain if it is set or its
+// zero value if it is unset.
+func (v *DescribeWorkflowExecutionRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
+	}
+
+	return
+}
+
+type DescribeWorkflowExecutionResponse struct {
+	ExecutionConfiguration *WorkflowExecutionConfiguration `json:"executionConfiguration,omitempty"`
+	WorkflowExecutionInfo  *WorkflowExecutionInfo          `json:"workflowExecutionInfo,omitempty"`
+}
+
+// ToWire translates a DescribeWorkflowExecutionResponse struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *DescribeWorkflowExecutionResponse) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.ExecutionConfiguration != nil {
+		w, err = v.ExecutionConfiguration.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.WorkflowExecutionInfo != nil {
+		w, err = v.WorkflowExecutionInfo.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _WorkflowExecutionConfiguration_Read(w wire.Value) (*WorkflowExecutionConfiguration, error) {
+	var v WorkflowExecutionConfiguration
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _WorkflowExecutionInfo_Read(w wire.Value) (*WorkflowExecutionInfo, error) {
+	var v WorkflowExecutionInfo
+	err := v.FromWire(w)
+	return &v, err
+}
+
+// FromWire deserializes a DescribeWorkflowExecutionResponse struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a DescribeWorkflowExecutionResponse struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v DescribeWorkflowExecutionResponse
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *DescribeWorkflowExecutionResponse) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TStruct {
+				v.ExecutionConfiguration, err = _WorkflowExecutionConfiguration_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.WorkflowExecutionInfo, err = _WorkflowExecutionInfo_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a DescribeWorkflowExecutionResponse
+// struct.
+func (v *DescribeWorkflowExecutionResponse) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.ExecutionConfiguration != nil {
+		fields[i] = fmt.Sprintf("ExecutionConfiguration: %v", v.ExecutionConfiguration)
+		i++
+	}
+	if v.WorkflowExecutionInfo != nil {
+		fields[i] = fmt.Sprintf("WorkflowExecutionInfo: %v", v.WorkflowExecutionInfo)
+		i++
+	}
+
+	return fmt.Sprintf("DescribeWorkflowExecutionResponse{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this DescribeWorkflowExecutionResponse match the
+// provided DescribeWorkflowExecutionResponse.
+//
+// This function performs a deep comparison.
+func (v *DescribeWorkflowExecutionResponse) Equals(rhs *DescribeWorkflowExecutionResponse) bool {
+	if !((v.ExecutionConfiguration == nil && rhs.ExecutionConfiguration == nil) || (v.ExecutionConfiguration != nil && rhs.ExecutionConfiguration != nil && v.ExecutionConfiguration.Equals(rhs.ExecutionConfiguration))) {
+		return false
+	}
+	if !((v.WorkflowExecutionInfo == nil && rhs.WorkflowExecutionInfo == nil) || (v.WorkflowExecutionInfo != nil && rhs.WorkflowExecutionInfo != nil && v.WorkflowExecutionInfo.Equals(rhs.WorkflowExecutionInfo))) {
+		return false
+	}
+
+	return true
+}
+
 type DomainAlreadyExistsError struct {
 	Message string `json:"message,required"`
 }
@@ -10898,12 +11178,6 @@ func (v *ListClosedWorkflowExecutionsResponse) ToWire() (wire.Value, error) {
 	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
-}
-
-func _WorkflowExecutionInfo_Read(w wire.Value) (*WorkflowExecutionInfo, error) {
-	var v WorkflowExecutionInfo
-	err := v.FromWire(w)
-	return &v, err
 }
 
 func _List_WorkflowExecutionInfo_Read(l wire.ValueList) ([]*WorkflowExecutionInfo, error) {
@@ -21328,6 +21602,218 @@ func (v *WorkflowExecutionCompletedEventAttributes) Equals(rhs *WorkflowExecutio
 func (v *WorkflowExecutionCompletedEventAttributes) GetDecisionTaskCompletedEventId() (o int64) {
 	if v.DecisionTaskCompletedEventId != nil {
 		return *v.DecisionTaskCompletedEventId
+	}
+
+	return
+}
+
+type WorkflowExecutionConfiguration struct {
+	TaskList                            *TaskList    `json:"taskList,omitempty"`
+	ExecutionStartToCloseTimeoutSeconds *int32       `json:"executionStartToCloseTimeoutSeconds,omitempty"`
+	TaskStartToCloseTimeoutSeconds      *int32       `json:"taskStartToCloseTimeoutSeconds,omitempty"`
+	ChildPolicy                         *ChildPolicy `json:"childPolicy,omitempty"`
+}
+
+// ToWire translates a WorkflowExecutionConfiguration struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *WorkflowExecutionConfiguration) ToWire() (wire.Value, error) {
+	var (
+		fields [4]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.TaskList != nil {
+		w, err = v.TaskList.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.ExecutionStartToCloseTimeoutSeconds != nil {
+		w, err = wire.NewValueI32(*(v.ExecutionStartToCloseTimeoutSeconds)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.TaskStartToCloseTimeoutSeconds != nil {
+		w, err = wire.NewValueI32(*(v.TaskStartToCloseTimeoutSeconds)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.ChildPolicy != nil {
+		w, err = v.ChildPolicy.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a WorkflowExecutionConfiguration struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a WorkflowExecutionConfiguration struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v WorkflowExecutionConfiguration
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *WorkflowExecutionConfiguration) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TStruct {
+				v.TaskList, err = _TaskList_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.ExecutionStartToCloseTimeoutSeconds = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.TaskStartToCloseTimeoutSeconds = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 40:
+			if field.Value.Type() == wire.TI32 {
+				var x ChildPolicy
+				x, err = _ChildPolicy_Read(field.Value)
+				v.ChildPolicy = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a WorkflowExecutionConfiguration
+// struct.
+func (v *WorkflowExecutionConfiguration) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [4]string
+	i := 0
+	if v.TaskList != nil {
+		fields[i] = fmt.Sprintf("TaskList: %v", v.TaskList)
+		i++
+	}
+	if v.ExecutionStartToCloseTimeoutSeconds != nil {
+		fields[i] = fmt.Sprintf("ExecutionStartToCloseTimeoutSeconds: %v", *(v.ExecutionStartToCloseTimeoutSeconds))
+		i++
+	}
+	if v.TaskStartToCloseTimeoutSeconds != nil {
+		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
+		i++
+	}
+	if v.ChildPolicy != nil {
+		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
+		i++
+	}
+
+	return fmt.Sprintf("WorkflowExecutionConfiguration{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this WorkflowExecutionConfiguration match the
+// provided WorkflowExecutionConfiguration.
+//
+// This function performs a deep comparison.
+func (v *WorkflowExecutionConfiguration) Equals(rhs *WorkflowExecutionConfiguration) bool {
+	if !((v.TaskList == nil && rhs.TaskList == nil) || (v.TaskList != nil && rhs.TaskList != nil && v.TaskList.Equals(rhs.TaskList))) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.ExecutionStartToCloseTimeoutSeconds, rhs.ExecutionStartToCloseTimeoutSeconds) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
+		return false
+	}
+	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
+		return false
+	}
+
+	return true
+}
+
+// GetExecutionStartToCloseTimeoutSeconds returns the value of ExecutionStartToCloseTimeoutSeconds if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionConfiguration) GetExecutionStartToCloseTimeoutSeconds() (o int32) {
+	if v.ExecutionStartToCloseTimeoutSeconds != nil {
+		return *v.ExecutionStartToCloseTimeoutSeconds
+	}
+
+	return
+}
+
+// GetTaskStartToCloseTimeoutSeconds returns the value of TaskStartToCloseTimeoutSeconds if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionConfiguration) GetTaskStartToCloseTimeoutSeconds() (o int32) {
+	if v.TaskStartToCloseTimeoutSeconds != nil {
+		return *v.TaskStartToCloseTimeoutSeconds
+	}
+
+	return
+}
+
+// GetChildPolicy returns the value of ChildPolicy if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionConfiguration) GetChildPolicy() (o ChildPolicy) {
+	if v.ChildPolicy != nil {
+		return *v.ChildPolicy
 	}
 
 	return
