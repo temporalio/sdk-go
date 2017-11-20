@@ -7,8 +7,8 @@ This doc is intended for contributors to `cadence-client` (hopefully that's you!
 ## Development Environment
 
 * Go. Install on OS X with `brew install go`.
-* `thrift`. Install on OS X with `brew install thrift`)
-* `thrift-gen`. Install with `go get github.com/uber/tchannel-go/thrift/thrift-gen`
+* `thrift`. Install on OS X with `brew install thrift`.
+* `thrift-gen`. Install with `go get github.com/uber/tchannel-go/thrift/thrift-gen`.
 
 ## Checking out the code
 
