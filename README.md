@@ -8,7 +8,7 @@
 Make sure you clone this repo into the correct location.
 
 ```bash
-git clone git@github.com:uber/cadence.git $GOPATH/src/go.uber.org/cadence
+git clone git@github.com:uber-go/cadence-client.git $GOPATH/src/go.uber.org/cadence
 ```
 
 or
@@ -165,14 +165,11 @@ func buildCadenceClient() workflowserviceclient.Interface {
 				CadenceService: {Unary: ch.NewSingleOutbound(HostPort)},
 			},
 		})
-	if err := b.dispatcher.Start(); err != nil {
+	if err := dispatcher.Start(); err != nil {
 		panic("Failed to start dispatcher")
 	}
-	client, err := workflowserviceclient.New(dispatcher.ClientConfig(CadenceService))
-	if err != nil {
-		panic("Failed to setup workflowserviceclient")
-	}
-	return client
+
+	return workflowserviceclient.New(dispatcher.ClientConfig(CadenceService))
 }
 
 func startWorker(logger *zap.Logger, service workflowserviceclient.Interface) {
