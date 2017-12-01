@@ -114,7 +114,7 @@ func getHostName() string {
 }
 
 // worker uuid per process
-var workerUUID string = uuid.New()
+var workerUUID = uuid.New()
 
 func getWorkerTaskList() string {
 	// includes hostname for debuggability, workerUUID guarantees the uniqueness

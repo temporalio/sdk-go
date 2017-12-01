@@ -64,6 +64,9 @@ const (
 	ActivityTaskCompletedCounter       = CadenceMetricsPrefix + "activity-task-completed"
 	ActivityTaskFailedCounter          = CadenceMetricsPrefix + "activity-task-failed"
 	ActivityTaskCanceledCounter        = CadenceMetricsPrefix + "activity-task-canceled"
+	ActivityTaskCompletedByIDCounter   = CadenceMetricsPrefix + "activity-task-completed-by-id"
+	ActivityTaskFailedByIDCounter      = CadenceMetricsPrefix + "activity-task-failed-by-id"
+	ActivityTaskCanceledByIDCounter    = CadenceMetricsPrefix + "activity-task-canceled-by-id"
 
 	UnhandledSignalsCounter = CadenceMetricsPrefix + "unhandled-signals"
 

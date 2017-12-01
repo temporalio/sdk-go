@@ -46,27 +46,30 @@ type (
 )
 
 const (
-	scopeNameDeprecateDomain                = CadenceMetricsPrefix + "DeprecateDomain"
-	scopeNameDescribeDomain                 = CadenceMetricsPrefix + "DescribeDomain"
-	scopeNameGetWorkflowExecutionHistory    = CadenceMetricsPrefix + "GetWorkflowExecutionHistory"
-	scopeNameListClosedWorkflowExecutions   = CadenceMetricsPrefix + "ListClosedWorkflowExecutions"
-	scopeNameListOpenWorkflowExecutions     = CadenceMetricsPrefix + "ListOpenWorkflowExecutions"
-	scopeNamePollForActivityTask            = CadenceMetricsPrefix + "PollForActivityTask"
-	scopeNamePollForDecisionTask            = CadenceMetricsPrefix + "PollForDecisionTask"
-	scopeNameRecordActivityTaskHeartbeat    = CadenceMetricsPrefix + "RecordActivityTaskHeartbeat"
-	scopeNameRegisterDomain                 = CadenceMetricsPrefix + "RegisterDomain"
-	scopeNameRequestCancelWorkflowExecution = CadenceMetricsPrefix + "RequestCancelWorkflowExecution"
-	scopeNameRespondActivityTaskCanceled    = CadenceMetricsPrefix + "RespondActivityTaskCanceled"
-	scopeNameRespondActivityTaskCompleted   = CadenceMetricsPrefix + "RespondActivityTaskCompleted"
-	scopeNameRespondActivityTaskFailed      = CadenceMetricsPrefix + "RespondActivityTaskFailed"
-	scopeNameRespondDecisionTaskCompleted   = CadenceMetricsPrefix + "RespondDecisionTaskCompleted"
-	scopeNameSignalWorkflowExecution        = CadenceMetricsPrefix + "SignalWorkflowExecution"
-	scopeNameStartWorkflowExecution         = CadenceMetricsPrefix + "StartWorkflowExecution"
-	scopeNameTerminateWorkflowExecution     = CadenceMetricsPrefix + "TerminateWorkflowExecution"
-	scopeNameUpdateDomain                   = CadenceMetricsPrefix + "UpdateDomain"
-	scopeNameQueryWorkflow                  = CadenceMetricsPrefix + "QueryWorkflow"
-	scopeNameRespondQueryTaskCompleted      = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
-	scopeNameDescribeWorkflowExecution      = CadenceMetricsPrefix + "DescribeWorkflowExecution"
+	scopeNameDeprecateDomain                  = CadenceMetricsPrefix + "DeprecateDomain"
+	scopeNameDescribeDomain                   = CadenceMetricsPrefix + "DescribeDomain"
+	scopeNameGetWorkflowExecutionHistory      = CadenceMetricsPrefix + "GetWorkflowExecutionHistory"
+	scopeNameListClosedWorkflowExecutions     = CadenceMetricsPrefix + "ListClosedWorkflowExecutions"
+	scopeNameListOpenWorkflowExecutions       = CadenceMetricsPrefix + "ListOpenWorkflowExecutions"
+	scopeNamePollForActivityTask              = CadenceMetricsPrefix + "PollForActivityTask"
+	scopeNamePollForDecisionTask              = CadenceMetricsPrefix + "PollForDecisionTask"
+	scopeNameRecordActivityTaskHeartbeat      = CadenceMetricsPrefix + "RecordActivityTaskHeartbeat"
+	scopeNameRegisterDomain                   = CadenceMetricsPrefix + "RegisterDomain"
+	scopeNameRequestCancelWorkflowExecution   = CadenceMetricsPrefix + "RequestCancelWorkflowExecution"
+	scopeNameRespondActivityTaskCanceled      = CadenceMetricsPrefix + "RespondActivityTaskCanceled"
+	scopeNameRespondActivityTaskCompleted     = CadenceMetricsPrefix + "RespondActivityTaskCompleted"
+	scopeNameRespondActivityTaskFailed        = CadenceMetricsPrefix + "RespondActivityTaskFailed"
+	scopeNameRespondActivityTaskCanceledByID  = CadenceMetricsPrefix + "RespondActivityTaskCanceledByID"
+	scopeNameRespondActivityTaskCompletedByID = CadenceMetricsPrefix + "RespondActivityTaskCompletedByID"
+	scopeNameRespondActivityTaskFailedByID    = CadenceMetricsPrefix + "RespondActivityTaskFailedByID"
+	scopeNameRespondDecisionTaskCompleted     = CadenceMetricsPrefix + "RespondDecisionTaskCompleted"
+	scopeNameSignalWorkflowExecution          = CadenceMetricsPrefix + "SignalWorkflowExecution"
+	scopeNameStartWorkflowExecution           = CadenceMetricsPrefix + "StartWorkflowExecution"
+	scopeNameTerminateWorkflowExecution       = CadenceMetricsPrefix + "TerminateWorkflowExecution"
+	scopeNameUpdateDomain                     = CadenceMetricsPrefix + "UpdateDomain"
+	scopeNameQueryWorkflow                    = CadenceMetricsPrefix + "QueryWorkflow"
+	scopeNameRespondQueryTaskCompleted        = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
+	scopeNameDescribeWorkflowExecution        = CadenceMetricsPrefix + "DescribeWorkflowExecution"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -204,6 +207,27 @@ func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompleted(ctx context
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailed(ctx context.Context, request *shared.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskFailed)
 	err := w.service.RespondActivityTaskFailed(ctx, request)
+	scope.handleError(err)
+	return err
+}
+
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskCanceledByID(ctx context.Context, request *shared.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) error {
+	scope := w.getOperationScope(scopeNameRespondActivityTaskCanceledByID)
+	err := w.service.RespondActivityTaskCanceledByID(ctx, request)
+	scope.handleError(err)
+	return err
+}
+
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompletedByID(ctx context.Context, request *shared.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) error {
+	scope := w.getOperationScope(scopeNameRespondActivityTaskCompletedByID)
+	err := w.service.RespondActivityTaskCompletedByID(ctx, request)
+	scope.handleError(err)
+	return err
+}
+
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedByID(ctx context.Context, request *shared.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) error {
+	scope := w.getOperationScope(scopeNameRespondActivityTaskFailedByID)
+	err := w.service.RespondActivityTaskFailedByID(ctx, request)
 	scope.handleError(err)
 	return err
 }

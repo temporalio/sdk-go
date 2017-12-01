@@ -102,6 +102,21 @@ type (
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
+		// CompleteActivityById reports activity completed.
+		// Similar to CompleteActivity, but may save cadence user from keeping taskToken info.
+		// activity Execute method can return cadence.ErrActivityResultPending to
+		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
+		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
+		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+		// activity task failed event will be reported.
+		// An activity implementation should use activityID provided in ActivityOption to use for completion.
+		// domainID, workflowID, activityID are required, runID is optional.
+		// The errors it can return:
+		//  - ErrorWithDetails
+		//  - TimeoutError
+		//  - CanceledError
+		CompleteActivityByID(ctx context.Context, domainID, workflowID, runID, activityID string, result interface{}, err error) error
+
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:

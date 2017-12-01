@@ -18,8 +18,6 @@ PROGS = cadence-client
 TEST_ARG ?= -race -v -timeout 5m
 BUILD := ./build
 
-export PATH := $(GOPATH)/bin:$(PATH)
-
 THRIFT_GEN=$(GOPATH)/bin/thrift-gen
 
 define thriftrwrule

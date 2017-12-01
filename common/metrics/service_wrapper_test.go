@@ -58,6 +58,9 @@ func Test_Wrapper(t *testing.T) {
 		{"RespondActivityTaskCanceled", []interface{}{ctx, &s.RespondActivityTaskCanceledRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
 		{"RespondActivityTaskCompleted", []interface{}{ctx, &s.RespondActivityTaskCompletedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
 		{"RespondActivityTaskFailed", []interface{}{ctx, &s.RespondActivityTaskFailedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &s.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &s.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskFailedByID", []interface{}{ctx, &s.RespondActivityTaskFailedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
 		{"RespondDecisionTaskCompleted", []interface{}{ctx, &s.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
 		{"SignalWorkflowExecution", []interface{}{ctx, &s.SignalWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
 		{"StartWorkflowExecution", []interface{}{ctx, &s.StartWorkflowExecutionRequest{}}, []interface{}{&s.StartWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
@@ -101,6 +104,12 @@ func Test_Wrapper(t *testing.T) {
 			mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "RespondActivityTaskFailed":
 			mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskCanceledByID":
+			mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskCompletedByID":
+			mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RespondActivityTaskFailedByID":
+			mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "RespondDecisionTaskCompleted":
 			mockService.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "SignalWorkflowExecution":
