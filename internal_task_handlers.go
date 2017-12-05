@@ -469,7 +469,9 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		workflowContext.Lock()
 		if h.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
 			// cached state is missing events, we need to discard the cached state and rebuild one.
-			wth.logger.Warn("Cached sticky workflow state is missing some events.",
+			wth.logger.Debug("Cached sticky workflow state is stalled.",
+				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
+				zap.String(tagRunID, runID),
 				zap.Int64("CachedPreviousStartedEventID", workflowContext.previousStartedEventID),
 				zap.Int64("TaskFirstEventID", h.Events[0].GetEventId()),
 				zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
@@ -500,18 +502,21 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		}
 		workflowContext.Lock()
 	}
-	if task.Query == nil {
-		workflowContext.previousStartedEventID = task.GetStartedEventId()
-	}
-
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
 	if workflowContext.isDestroyed() {
 		workflowContext.resetWorkflowState()
-		if h, err = resetHistory(task, historyIterator); err != nil {
-			return
+		// reset history events if necessary
+		if h.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+			if h, err = resetHistory(task, historyIterator); err != nil {
+				return
+			}
 		}
+	}
+
+	if task.Query == nil {
+		workflowContext.previousStartedEventID = task.GetStartedEventId()
 	}
 
 	return
