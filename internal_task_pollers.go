@@ -499,8 +499,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	}
 	atp.metricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Now().Sub(executionStartTime))
 
-	if request == nil {
-		// this could be true when activity returns ErrActivityResultPending.
+	if request == ErrActivityResultPending {
 		return nil
 	}
 
@@ -603,7 +602,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
-		return nil
+		return ErrActivityResultPending
 	}
 
 	if err == nil {

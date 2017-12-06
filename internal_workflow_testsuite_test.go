@@ -326,9 +326,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	}
 
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Once()
-	env.SetTestTimeout(time.Second * 2) // don't waist time waiting
-
-	env.ExecuteWorkflow(testWorkflowHello) // workflow won't complete, as the fakeActivity returns ErrActivityResultPending
+	env.ExecuteWorkflow(testWorkflowHello)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	env.AssertExpectations(s.T())
@@ -336,6 +334,16 @@ func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal("async_complete", result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityReturnsErrActivityResultPending() {
+	env := s.NewTestActivityEnvironment()
+	activityFn := func(ctx context.Context) (string, error) {
+		return "", ErrActivityResultPending
+	}
+	RegisterActivity(activityFn)
+	_, err := env.ExecuteActivity(activityFn)
+	s.Equal(ErrActivityResultPending, err)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
