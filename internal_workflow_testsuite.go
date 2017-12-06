@@ -667,8 +667,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		// post activity result to workflow dispatcher
 		env.postCallback(func() {
 			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name)
+			env.runningCount.Dec()
 		}, false /* do not auto schedule decision task, because activity might be still pending */)
-		env.runningCount.Dec()
 	}()
 
 	return activityInfo
