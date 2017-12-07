@@ -5,7 +5,7 @@ language: go
 directories:
     - $HOME/.glide/cache
 go:
-  - 1.8
+  - 1.9
 
 go_import_path: go.uber.org/cadence
 addons:
@@ -32,3 +32,4 @@ script:
 
 after_success:
   - export BRANCH=$(if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then echo $TRAVIS_BRANCH; else echo $TRAVIS_PULL_REQUEST_BRANCH; fi)
+

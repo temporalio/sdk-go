@@ -18,17 +18,23 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+// Package testsuite contains unit testing framework for Cadence workflows and activities.
+package testsuite
 
-import "go.uber.org/cadence/internal"
+import (
+	"go.uber.org/cadence/internal"
+)
 
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the cadence team as part of a major feature or
-// behavior change
-const LibraryVersion = internal.LibraryVersion
+type (
+	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
+	WorkflowTestSuite = internal.WorkflowTestSuite
+
+	// TestWorkflowEnvironment is the environment that you use to test workflow
+	TestWorkflowEnvironment = internal.TestWorkflowEnvironment
+
+	// TestActivityEnvironment is the environment that you use to test activity
+	TestActivityEnvironment = internal.TestActivityEnvironment
+
+	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
+	MockCallWrapper = internal.MockCallWrapper
+)

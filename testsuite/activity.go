@@ -18,17 +18,28 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+package testsuite
 
-import "go.uber.org/cadence/internal"
+import (
+	"context"
+	"github.com/uber-go/tally"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/internal"
+	"go.uber.org/zap"
+)
 
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the cadence team as part of a major feature or
-// behavior change
-const LibraryVersion = internal.LibraryVersion
+// ServiceInvoker abstracts calls to the Cadence service from an activity implementation.
+// Implement to unit test activities.
+type ServiceInvoker = internal.ServiceInvoker
+
+// WithActivityTask adds activity specific information into context.
+// Use this method to unit test activity implementations that use methods that require initialized context.
+func WithActivityTask(
+	ctx context.Context,
+	task *shared.PollForActivityTaskResponse,
+	invoker ServiceInvoker,
+	logger *zap.Logger,
+	scope tally.Scope,
+) context.Context {
+	return internal.WithActivityTask(ctx, task, invoker, logger, scope)
+}

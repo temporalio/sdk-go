@@ -18,17 +18,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+// Package encoded contains wrappers that are used for binary payloads deserialization.
+package encoded
 
-import "go.uber.org/cadence/internal"
+import (
+	"go.uber.org/cadence/internal"
+)
 
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the cadence team as part of a major feature or
-// behavior change
-const LibraryVersion = internal.LibraryVersion
+type (
+
+	// Value is type alias used to encapsulate/extract encoded value from workflow/activity.
+	Value = internal.EncodedValue
+
+	// Values is type alias used to encapsulate/extract encoded values from workflow/activity.
+	Values = internal.EncodedValues
+)

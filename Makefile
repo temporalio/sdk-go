@@ -48,27 +48,31 @@ yarpc-install:
 	go get './vendor/go.uber.org/thriftrw'
 	go get './vendor/go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc'
 
-glide:
-	glide install
-
 clean_thrift:
 	rm -rf .gen
 
 thriftc: clean_thrift yarpc-install $(THRIFTRW_GEN_SRC)
 
-copyright: ./cmd/tools/copyright/licensegen.go
-	go run ./cmd/tools/copyright/licensegen.go --verifyOnly
+copyright: ./internal/cmd/tools/copyright/licensegen.go
+	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
+
+vendor/glide.updated: glide.lock glide.yaml
+	glide install
+	touch vendor/glide.updated
+
+dummy: vendor/glide.updated $(ALL_SRC)
+	go build -i -o dummy internal/cmd/dummy/dummy.go
 
 test: bins
-
-bins: glide thriftc copyright lint
 	@rm -f test
 	@rm -f test.log
 	@for dir in $(TEST_DIRS); do \
 		go test -race -coverprofile=$@ "$$dir" | tee -a test.log; \
 	done;
 
-cover_profile: clean copyright lint glide
+bins: thriftc copyright lint dummy
+
+cover_profile: clean copyright lint vendor/glide.updated
 	@mkdir -p $(BUILD)
 	@echo "mode: atomic" > $(BUILD)/cover.out
 
@@ -105,3 +109,4 @@ fmt:
 clean:
 	rm -rf cadence-client
 	rm -Rf $(BUILD)
+	rm -f dummy

@@ -1,5 +1,5 @@
 hash: a72bbd25bc1c2c48d387f6ab0cb73a1794846cd56d5a32638c140630b6db3663
-updated: 2017-10-05T16:54:46.312727581-07:00
+updated: 2017-12-03T11:27:45.178046-08:00
 imports:
 - name: github.com/apache/thrift
   version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
@@ -16,11 +16,15 @@ imports:
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/gogo/protobuf
-  version: 100ba4e885062801d56799d78530b73b178a78f3
+  version: 342cbe0a04158f6dcb03ca0079991a51a4248c02
   subpackages:
   - proto
+- name: github.com/golang/mock
+  version: 13f360950a79f5864a972c786a10a50e44b69541
+  subpackages:
+  - gomock
 - name: github.com/golang/protobuf
-  version: 130e6b02ab059e7b717a096f397c5b60111cae74
+  version: 1e59b77b52bf8e4b449a57e6f79f21226d571845
   subpackages:
   - proto
 - name: github.com/matttproud/golang_protobuf_extensions
@@ -48,13 +52,13 @@ imports:
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 49fee292b27bfff7f354ee0f64e1bc4850462edf
+  version: 2f17f4a9d485bf34b4bfaccc273805040e4f86c8
   subpackages:
   - expfmt
   - internal/bitbucket.org/ww/goautoneg
   - model
 - name: github.com/prometheus/procfs
-  version: a1dba9ce8baed984a2495b658c82687f8157b98f
+  version: a6e9df898b1336106c743392c48ee0b71f5c4efa
   subpackages:
   - xfs
 - name: github.com/stretchr/objx
@@ -91,14 +95,13 @@ imports:
   - internal/semver
   - version
 - name: go.uber.org/yarpc
-  version: eaacec4789c6e7c5853ea81319d6c5100d3e0f9d
+  version: 9fe9f33dbb59ff30a8da4bf962683022531ae916
   subpackages:
   - api/encoding
   - api/middleware
   - api/transport
   - encoding/thrift/thriftrw-plugin-yarpc
   - internal
-  - internal/clientconfig
   - internal/digester
   - internal/errorsync
   - internal/humanize
@@ -121,7 +124,7 @@ imports:
   - internal/multierror
   - zapcore
 - name: golang.org/x/net
-  version: a04bdaca5b32abe1c069418fb7088ae607de5bd0
+  version: a8b9294777976932365dabb6640cf1468d95c70f
   subpackages:
   - bpf
   - context
@@ -130,18 +133,14 @@ imports:
   - ipv4
   - ipv6
 - name: golang.org/x/time
-  version: 8be79e1e0910c292df4e79c241bb7e8f7e725959
+  version: 6dc17368e09b0e8634d71cac8168d853e869a0c7
   subpackages:
   - rate
 testImports:
-- name: github.com/golang/mock
-  version: 13f360950a79f5864a972c786a10a50e44b69541
-  subpackages:
-  - gomock
 - name: github.com/sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: golang.org/x/sys
-  version: 9a7256cb28ed514b4e1e5f68959914c4c28a92e0
+  version: d4266bc12aae0b4128952c889b769442fce5d2f1
   repo: https://github.com/golang/sys
   subpackages:
   - unix

@@ -18,17 +18,33 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+package internal
 
-import "go.uber.org/cadence/internal"
+import (
+	"time"
+)
 
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the cadence team as part of a major feature or
-// behavior change
-const LibraryVersion = internal.LibraryVersion
+// All code in this file is private to the package.
+
+type (
+	timerInfo struct {
+		timerID string
+	}
+
+	// workflowTimerClient wraps the async workflow timer functionality.
+	workflowTimerClient interface {
+
+		// Now - Current time when the decision task is started or replayed.
+		// the workflow need to use this for wall clock to make the flow logic deterministic.
+		Now() time.Time
+
+		// NewTimer - Creates a new timer that will fire callback after d(resolution is in seconds).
+		// The callback indicates the error(TimerCanceledError) if the timer is cancelled.
+		NewTimer(d time.Duration, callback resultHandler) *timerInfo
+
+		// RequestCancelTimer - Requests cancel of a timer, this one doesn't wait for cancellation request
+		// to complete, instead invokes the resultHandler with TimerCanceledError
+		// If the timer is not started then it is a no-operation.
+		RequestCancelTimer(timerID string)
+	}
+)

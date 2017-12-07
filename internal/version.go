@@ -18,9 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
-
-import "go.uber.org/cadence/internal"
+package internal
 
 // LibraryVersion is a semver string that represents
 // the version of this cadence client library
@@ -31,4 +29,4 @@ import "go.uber.org/cadence/internal"
 // Update to this version number is typically done
 // by the cadence team as part of a major feature or
 // behavior change
-const LibraryVersion = internal.LibraryVersion
+const LibraryVersion = "v0.5.0"

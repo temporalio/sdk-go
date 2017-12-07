@@ -18,17 +18,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+package internal
 
-import "go.uber.org/cadence/internal"
-
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the cadence team as part of a major feature or
-// behavior change
-const LibraryVersion = internal.LibraryVersion
+const (
+	tagActivityID      = "ActivityID"
+	tagActivityType    = "ActivityType"
+	tagDomain          = "Domain"
+	tagEventID         = "EventID"
+	tagEventType       = "EventType"
+	tagRoutineID       = "routineID"
+	tagRunID           = "RunID"
+	tagTaskList        = "TaskList"
+	tagTimerID         = "TimerID"
+	tagWorkflowID      = "WorkflowID"
+	tagWorkflowType    = "WorkflowType"
+	tagWorkerID        = "WorkerID"
+	tagWorkerType      = "WorkerType"
+	tagSideEffectID    = "SideEffectID"
+	tagMarkerName      = "MarkerName"
+	tagChangeID        = "ChangeID"
+	tagVersion         = "Version"
+	tagChildWorkflowID = "ChildWorkflowID"
+)
