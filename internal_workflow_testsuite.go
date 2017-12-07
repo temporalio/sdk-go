@@ -33,7 +33,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
@@ -121,7 +120,7 @@ type (
 		timers         map[string]*testTimerHandle
 		childWorkflows map[string]*testChildWorkflowHandle
 
-		runningCount atomic.Int32
+		runningCount int
 
 		expectedMockCalls map[string]struct{}
 
@@ -487,7 +486,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	}
 
 	// fire timer if there is no running activity
-	if env.runningCount.Load() == 0 {
+	if env.runningCount == 0 {
 		if nextTimer.wallTimer != nil {
 			nextTimer.wallTimer.Stop()
 			nextTimer.wallTimer = nil
@@ -661,7 +660,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
 	env.activities[activityInfo.activityID] = activityHandle
-	env.runningCount.Inc()
+	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	go func() {
 		result, err := taskHandler.Execute(task)
@@ -671,7 +670,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		// post activity result to workflow dispatcher
 		env.postCallback(func() {
 			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name)
-			env.runningCount.Dec()
+			env.runningCount--
 		}, false /* do not auto schedule decision task, because activity might be still pending */)
 	}()
 
@@ -732,12 +731,15 @@ func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallW
 		// we want this mock call to block until the wait duration is elapsed (on workflow clock).
 		waitCh := make(chan time.Time)
 		env.registerDelayedCallback(func() {
-			env.runningCount.Inc() // increase runningCount as the mock call is ready to resume.
-			waitCh <- env.Now()    // this will unblock mock call
+			env.runningCount++  // increase runningCount as the mock call is ready to resume.
+			waitCh <- env.Now() // this will unblock mock call
 		}, call.waitDuration)
 
-		env.runningCount.Dec() // reduce runningCount, since this mock call is about to be blocked.
-		<-waitCh               // this will block until mock clock move forward by waitDuration
+		// make sure decrease runningCount after delayed callback is posted
+		env.postCallback(func() {
+			env.runningCount-- // reduce runningCount, since this mock call is about to be blocked.
+		}, false)
+		<-waitCh // this will block until mock clock move forward by waitDuration
 	}
 
 	// run the actual runFn if it was setup
@@ -776,7 +778,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		// This is to prevent auto-forwarding mock clock before main workflow starts. For child workflow, we increase
 		// the counter in env.ExecuteChildWorkflow(). We cannot do it here for child workflow, because we need to make
 		// sure the counter is increased before returning from ExecuteChildWorkflow().
-		env.runningCount.Inc()
+		env.runningCount++
 	}
 
 	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true}
@@ -801,7 +803,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 
 	// reduce runningCount to allow auto-forwarding mock clock after current workflow dispatcher run is blocked (aka
 	// ExecuteUntilAllBlocked() returns).
-	env.runningCount.Dec()
+	env.runningCount--
 
 	if mockRet != nil {
 		return m.executeMock(ctx, input, mockRet)
@@ -1043,7 +1045,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(options workflowOpt
 
 	// start immediately
 	startedHandler(childEnv.workflowInfo.WorkflowExecution, nil)
-	env.runningCount.Inc()
+	env.runningCount++
 
 	// run child workflow in separate goroutinue
 	go childEnv.executeWorkflowInternal(options.workflowType.Name, options.input)
