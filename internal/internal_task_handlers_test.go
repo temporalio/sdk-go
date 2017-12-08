@@ -222,7 +222,54 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	t.NotNil(response.Decisions[0].CompleteWorkflowExecutionDecisionAttributes)
 }
 
-func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow() {
+func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
+	// Schedule an activity and see if we complete workflow.
+	taskList := "sticky-tl"
+	execution := &s.WorkflowExecution{
+		WorkflowId: common.StringPtr("fake-workflow-id"),
+		RunId:      common.StringPtr(uuid.New()),
+	}
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			TaskList:     &s.TaskList{Name: &taskList},
+		}),
+		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
+		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+	}
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "test-id-1",
+		Logger:   t.logger,
+	}
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+
+	// first make progress on the workflow
+	task := createWorkflowTask(testEvents[0:1], 0, "HelloWorld_Workflow")
+	task.StartedEventId = common.Int64Ptr(1)
+	task.WorkflowExecution = execution
+	request, _, err := taskHandler.ProcessWorkflowTask(task, nil, false)
+	response := request.(*s.RespondDecisionTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+	t.Equal(1, len(response.Decisions))
+	t.Equal(s.DecisionTypeScheduleActivityTask, response.Decisions[0].GetDecisionType())
+	t.NotNil(response.Decisions[0].ScheduleActivityTaskDecisionAttributes)
+
+	// then check the current state using query task
+	task = createQueryTask([]*s.HistoryEvent{}, 6, "HelloWorld_Workflow", "test-query")
+	task.WorkflowExecution = execution
+	queryResp, _, err := taskHandler.ProcessWorkflowTask(task, nil, false)
+	t.NoError(err)
+	t.verifyQueryResult(queryResp, "waiting-activity-result")
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
 	testEvents := []*s.HistoryEvent{

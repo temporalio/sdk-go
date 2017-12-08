@@ -74,7 +74,6 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 	err := ExecuteActivity(ctx, activityName).Get(ctx, &result)
 	if err == nil {
 		queryResult = "done"
-		fmt.Println("Result", result)
 		return nil
 	}
 

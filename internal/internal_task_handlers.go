@@ -456,43 +456,52 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 	historyIterator HistoryIterator) (workflowContext *workflowExecutionContext, skipReplayCheck bool, err error) {
 
 	skipReplayCheck = task.Query != nil
-	h := task.History
 	runID := task.WorkflowExecution.GetRunId()
 
+	history := task.History
+	isFullHistory := true
+	if len(history.Events) == 0 || history.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+		isFullHistory = false
+	}
+
 	workflowContext = nil
-	if task.Query == nil {
-		// TODO: we don't use cached workflow context for query task. Will address that shortly.
+	if task.Query == nil || (task.Query != nil && !isFullHistory) {
 		workflowContext = getWorkflowContext(runID)
 	}
 
 	if workflowContext != nil {
 		workflowContext.Lock()
-		if h.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
-			// cached state is missing events, we need to discard the cached state and rebuild one.
+		if task.Query != nil && !isFullHistory {
+			// query task and we have a valid cached state
+			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
+			skipReplayCheck = true
+		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 {
+			// non query task and we have a valid cached state
+			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
+			skipReplayCheck = true
+		} else {
+			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
 			wth.logger.Debug("Cached sticky workflow state is stalled.",
 				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 				zap.String(tagRunID, runID),
 				zap.Int64("CachedPreviousStartedEventID", workflowContext.previousStartedEventID),
-				zap.Int64("TaskFirstEventID", h.Events[0].GetEventId()),
+				zap.Int64("TaskFirstEventID", history.Events[0].GetEventId()),
 				zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
 				zap.Int64("TaskPreviousStartedEventID", task.GetPreviousStartedEventId()))
 
 			wth.metricsScope.Counter(metrics.StickyCacheStall).Inc(1)
 			workflowContext.destroyCachedState()
-		} else {
-			// we have a valid cached state
-			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
-			skipReplayCheck = true
 		}
 	} else {
-		if h.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+		if !isFullHistory {
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
 			wth.metricsScope.Counter(metrics.StickyCacheMiss).Inc(1)
-			if h, err = resetHistory(task, historyIterator); err != nil {
+			if history, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
 		}
+
 		if workflowContext, err = wth.createWorkflowContext(task); err != nil {
 			return
 		}
@@ -502,19 +511,23 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		}
 		workflowContext.Lock()
 	}
+
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
 	if workflowContext.isDestroyed() {
 		workflowContext.resetWorkflowState()
 		// reset history events if necessary
-		if h.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
-			if h, err = resetHistory(task, historyIterator); err != nil {
+		if !isFullHistory {
+			if history, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
 		}
 	}
 
+	// since the "query decision task" is a transient decision
+	// meaning there is no "query decision event" on the history side
+	// we should not update the previous started event ID
 	if task.Query == nil {
 		workflowContext.previousStartedEventID = task.GetStartedEventId()
 	}
@@ -531,8 +544,13 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	if task == nil {
 		return nil, "", errors.New("nil workflow task provided")
 	}
-	h := task.History
-	if h == nil || len(h.Events) == 0 {
+
+	if task.History == nil || len(task.History.Events) == 0 {
+		task.History = &s.History{
+			Events: []*s.HistoryEvent{},
+		}
+	}
+	if task.Query == nil && len(task.History.Events) == 0 {
 		return nil, "", errors.New("nil or empty history")
 	}
 
@@ -674,6 +692,7 @@ ProcessEvents:
 	if task.Query != nil {
 		// for query task
 		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs)
+
 		queryTaskCompleteRequest := &s.RespondQueryTaskCompletedRequest{
 			TaskToken: task.TaskToken,
 		}
@@ -736,20 +755,21 @@ matchLoop:
 		var e *s.HistoryEvent
 		if hi < hSize {
 			e = historyEvents[hi]
-		}
-		if isVersionMarkerEvent(e) {
-			hi++
-			continue matchLoop
+			if isVersionMarkerEvent(e) {
+				hi++
+				continue matchLoop
+			}
 		}
 
 		var d *s.Decision
 		if di < dSize {
 			d = replayDecisions[di]
+			if isVersionMarkerDecision(d) {
+				di++
+				continue matchLoop
+			}
 		}
-		if isVersionMarkerDecision(d) {
-			di++
-			continue matchLoop
-		}
+
 		if d == nil {
 			return fmt.Errorf("nondeterministic workflow: missing replay decision for %s", util.HistoryEventToString(e))
 		}
