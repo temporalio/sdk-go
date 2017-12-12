@@ -135,6 +135,8 @@ enum DecisionTaskFailedCause {
   BAD_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_ATTRIBUTES,
   BAD_CONTINUE_AS_NEW_ATTRIBUTES,
   START_TIMER_DUPLICATE_ID,
+  RESET_STICKY_TASKLIST,
+  WORKFLOW_WORKER_UNHANDLED_FAILURE
 }
 
 enum CancelExternalWorkflowExecutionFailedCause {
@@ -177,6 +179,10 @@ struct TaskList {
   10: optional string name
 }
 
+struct TaskListMetadata {
+  10: optional double maxTasksPerSecond
+}
+
 struct WorkflowExecution {
   10: optional string workflowId
   20: optional string runId
@@ -196,6 +202,11 @@ struct WorkflowExecutionConfiguration {
   20: optional i32 executionStartToCloseTimeoutSeconds
   30: optional i32 taskStartToCloseTimeoutSeconds
   40: optional ChildPolicy childPolicy
+}
+
+struct TransientDecisionInfo {
+  10: optional HistoryEvent scheduledEvent
+  20: optional HistoryEvent startedEvent
 }
 
 struct ScheduleActivityTaskDecisionAttributes {
@@ -320,6 +331,7 @@ struct WorkflowExecutionContinuedAsNewEventAttributes {
 struct DecisionTaskScheduledEventAttributes {
   10: optional TaskList taskList
   20: optional i32 startToCloseTimeoutSeconds
+  30: optional i64 (js.type = "Long") attempt
 }
 
 struct DecisionTaskStartedEventAttributes {
@@ -345,6 +357,7 @@ struct DecisionTaskFailedEventAttributes {
   10: optional i64 (js.type = "Long") scheduledEventId
   20: optional i64 (js.type = "Long") startedEventId
   30: optional DecisionTaskFailedCause cause
+  35: optional binary details
   40: optional string identity
 }
 
@@ -717,10 +730,18 @@ struct RespondDecisionTaskCompletedRequest {
   50: optional StickyExecutionAttributes stickyAttributes
 }
 
+struct RespondDecisionTaskFailedRequest {
+  10: optional binary taskToken
+  20: optional DecisionTaskFailedCause cause
+  30: optional binary details
+  40: optional string identity
+}
+
 struct PollForActivityTaskRequest {
   10: optional string domain
   20: optional TaskList taskList
   30: optional string identity
+  40: optional TaskListMetadata taskListMetadata
 }
 
 struct PollForActivityTaskResponse {
@@ -805,6 +826,7 @@ struct GetWorkflowExecutionHistoryRequest {
   20: optional WorkflowExecution execution
   30: optional i32 maximumPageSize
   40: optional binary nextPageToken
+  50: optional bool waitForNewEvent
 }
 
 struct GetWorkflowExecutionHistoryResponse {

@@ -63,6 +63,7 @@ const (
 	scopeNameRespondActivityTaskCompletedByID = CadenceMetricsPrefix + "RespondActivityTaskCompletedByID"
 	scopeNameRespondActivityTaskFailedByID    = CadenceMetricsPrefix + "RespondActivityTaskFailedByID"
 	scopeNameRespondDecisionTaskCompleted     = CadenceMetricsPrefix + "RespondDecisionTaskCompleted"
+	scopeNameRespondDecisionTaskFailed        = CadenceMetricsPrefix + "RespondDecisionTaskFailed"
 	scopeNameSignalWorkflowExecution          = CadenceMetricsPrefix + "SignalWorkflowExecution"
 	scopeNameStartWorkflowExecution           = CadenceMetricsPrefix + "StartWorkflowExecution"
 	scopeNameTerminateWorkflowExecution       = CadenceMetricsPrefix + "TerminateWorkflowExecution"
@@ -235,6 +236,13 @@ func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedByID(ctx contex
 func (w *workflowServiceMetricsWrapper) RespondDecisionTaskCompleted(ctx context.Context, request *shared.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondDecisionTaskCompleted)
 	err := w.service.RespondDecisionTaskCompleted(ctx, request)
+	scope.handleError(err)
+	return err
+}
+
+func (w *workflowServiceMetricsWrapper) RespondDecisionTaskFailed(ctx context.Context, request *shared.RespondDecisionTaskFailedRequest, opts ...yarpc.CallOption) error {
+	scope := w.getOperationScope(scopeNameRespondDecisionTaskFailed)
+	err := w.service.RespondDecisionTaskFailed(ctx, request)
 	scope.handleError(err)
 	return err
 }

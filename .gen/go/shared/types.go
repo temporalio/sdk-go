@@ -5470,6 +5470,8 @@ const (
 	DecisionTaskFailedCauseBadRequestCancelExternalWorkflowExecutionAttributes DecisionTaskFailedCause = 9
 	DecisionTaskFailedCauseBadContinueAsNewAttributes                          DecisionTaskFailedCause = 10
 	DecisionTaskFailedCauseStartTimerDuplicateID                               DecisionTaskFailedCause = 11
+	DecisionTaskFailedCauseResetStickyTasklist                                 DecisionTaskFailedCause = 12
+	DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure                      DecisionTaskFailedCause = 13
 )
 
 // DecisionTaskFailedCause_Values returns all recognized values of DecisionTaskFailedCause.
@@ -5487,6 +5489,8 @@ func DecisionTaskFailedCause_Values() []DecisionTaskFailedCause {
 		DecisionTaskFailedCauseBadRequestCancelExternalWorkflowExecutionAttributes,
 		DecisionTaskFailedCauseBadContinueAsNewAttributes,
 		DecisionTaskFailedCauseStartTimerDuplicateID,
+		DecisionTaskFailedCauseResetStickyTasklist,
+		DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure,
 	}
 }
 
@@ -5532,6 +5536,12 @@ func (v *DecisionTaskFailedCause) UnmarshalText(value []byte) error {
 		return nil
 	case "START_TIMER_DUPLICATE_ID":
 		*v = DecisionTaskFailedCauseStartTimerDuplicateID
+		return nil
+	case "RESET_STICKY_TASKLIST":
+		*v = DecisionTaskFailedCauseResetStickyTasklist
+		return nil
+	case "WORKFLOW_WORKER_UNHANDLED_FAILURE":
+		*v = DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
 		return nil
 	default:
 		return fmt.Errorf("unknown enum value %q for %q", value, "DecisionTaskFailedCause")
@@ -5593,6 +5603,10 @@ func (v DecisionTaskFailedCause) String() string {
 		return "BAD_CONTINUE_AS_NEW_ATTRIBUTES"
 	case 11:
 		return "START_TIMER_DUPLICATE_ID"
+	case 12:
+		return "RESET_STICKY_TASKLIST"
+	case 13:
+		return "WORKFLOW_WORKER_UNHANDLED_FAILURE"
 	}
 	return fmt.Sprintf("DecisionTaskFailedCause(%d)", w)
 }
@@ -5635,6 +5649,10 @@ func (v DecisionTaskFailedCause) MarshalJSON() ([]byte, error) {
 		return ([]byte)("\"BAD_CONTINUE_AS_NEW_ATTRIBUTES\""), nil
 	case 11:
 		return ([]byte)("\"START_TIMER_DUPLICATE_ID\""), nil
+	case 12:
+		return ([]byte)("\"RESET_STICKY_TASKLIST\""), nil
+	case 13:
+		return ([]byte)("\"WORKFLOW_WORKER_UNHANDLED_FAILURE\""), nil
 	}
 	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
 }
@@ -5679,6 +5697,7 @@ type DecisionTaskFailedEventAttributes struct {
 	ScheduledEventId *int64                   `json:"scheduledEventId,omitempty"`
 	StartedEventId   *int64                   `json:"startedEventId,omitempty"`
 	Cause            *DecisionTaskFailedCause `json:"cause,omitempty"`
+	Details          []byte                   `json:"details,omitempty"`
 	Identity         *string                  `json:"identity,omitempty"`
 }
 
@@ -5699,7 +5718,7 @@ type DecisionTaskFailedEventAttributes struct {
 //   }
 func (v *DecisionTaskFailedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -5727,6 +5746,14 @@ func (v *DecisionTaskFailedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.Details != nil {
+		w, err = wire.NewValueBinary(v.Details), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 35, Value: w}
 		i++
 	}
 	if v.Identity != nil {
@@ -5799,6 +5826,14 @@ func (v *DecisionTaskFailedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 35:
+			if field.Value.Type() == wire.TBinary {
+				v.Details, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
 		case 40:
 			if field.Value.Type() == wire.TBinary {
 				var x string
@@ -5822,7 +5857,7 @@ func (v *DecisionTaskFailedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [5]string
 	i := 0
 	if v.ScheduledEventId != nil {
 		fields[i] = fmt.Sprintf("ScheduledEventId: %v", *(v.ScheduledEventId))
@@ -5834,6 +5869,10 @@ func (v *DecisionTaskFailedEventAttributes) String() string {
 	}
 	if v.Cause != nil {
 		fields[i] = fmt.Sprintf("Cause: %v", *(v.Cause))
+		i++
+	}
+	if v.Details != nil {
+		fields[i] = fmt.Sprintf("Details: %v", v.Details)
 		i++
 	}
 	if v.Identity != nil {
@@ -5866,6 +5905,9 @@ func (v *DecisionTaskFailedEventAttributes) Equals(rhs *DecisionTaskFailedEventA
 		return false
 	}
 	if !_DecisionTaskFailedCause_EqualsPtr(v.Cause, rhs.Cause) {
+		return false
+	}
+	if !((v.Details == nil && rhs.Details == nil) || (v.Details != nil && rhs.Details != nil && bytes.Equal(v.Details, rhs.Details))) {
 		return false
 	}
 	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
@@ -5918,6 +5960,7 @@ func (v *DecisionTaskFailedEventAttributes) GetIdentity() (o string) {
 type DecisionTaskScheduledEventAttributes struct {
 	TaskList                   *TaskList `json:"taskList,omitempty"`
 	StartToCloseTimeoutSeconds *int32    `json:"startToCloseTimeoutSeconds,omitempty"`
+	Attempt                    *int64    `json:"attempt,omitempty"`
 }
 
 // ToWire translates a DecisionTaskScheduledEventAttributes struct into a Thrift-level intermediate
@@ -5937,7 +5980,7 @@ type DecisionTaskScheduledEventAttributes struct {
 //   }
 func (v *DecisionTaskScheduledEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [2]wire.Field
+		fields [3]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -5957,6 +6000,14 @@ func (v *DecisionTaskScheduledEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.Attempt != nil {
+		w, err = wire.NewValueI64(*(v.Attempt)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
 
@@ -6003,6 +6054,16 @@ func (v *DecisionTaskScheduledEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 30:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.Attempt = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -6016,7 +6077,7 @@ func (v *DecisionTaskScheduledEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [2]string
+	var fields [3]string
 	i := 0
 	if v.TaskList != nil {
 		fields[i] = fmt.Sprintf("TaskList: %v", v.TaskList)
@@ -6024,6 +6085,10 @@ func (v *DecisionTaskScheduledEventAttributes) String() string {
 	}
 	if v.StartToCloseTimeoutSeconds != nil {
 		fields[i] = fmt.Sprintf("StartToCloseTimeoutSeconds: %v", *(v.StartToCloseTimeoutSeconds))
+		i++
+	}
+	if v.Attempt != nil {
+		fields[i] = fmt.Sprintf("Attempt: %v", *(v.Attempt))
 		i++
 	}
 
@@ -6041,6 +6106,9 @@ func (v *DecisionTaskScheduledEventAttributes) Equals(rhs *DecisionTaskScheduled
 	if !_I32_EqualsPtr(v.StartToCloseTimeoutSeconds, rhs.StartToCloseTimeoutSeconds) {
 		return false
 	}
+	if !_I64_EqualsPtr(v.Attempt, rhs.Attempt) {
+		return false
+	}
 
 	return true
 }
@@ -6050,6 +6118,16 @@ func (v *DecisionTaskScheduledEventAttributes) Equals(rhs *DecisionTaskScheduled
 func (v *DecisionTaskScheduledEventAttributes) GetStartToCloseTimeoutSeconds() (o int32) {
 	if v.StartToCloseTimeoutSeconds != nil {
 		return *v.StartToCloseTimeoutSeconds
+	}
+
+	return
+}
+
+// GetAttempt returns the value of Attempt if it is set or its
+// zero value if it is unset.
+func (v *DecisionTaskScheduledEventAttributes) GetAttempt() (o int64) {
+	if v.Attempt != nil {
+		return *v.Attempt
 	}
 
 	return
@@ -8830,6 +8908,7 @@ type GetWorkflowExecutionHistoryRequest struct {
 	Execution       *WorkflowExecution `json:"execution,omitempty"`
 	MaximumPageSize *int32             `json:"maximumPageSize,omitempty"`
 	NextPageToken   []byte             `json:"nextPageToken,omitempty"`
+	WaitForNewEvent *bool              `json:"waitForNewEvent,omitempty"`
 }
 
 // ToWire translates a GetWorkflowExecutionHistoryRequest struct into a Thrift-level intermediate
@@ -8849,7 +8928,7 @@ type GetWorkflowExecutionHistoryRequest struct {
 //   }
 func (v *GetWorkflowExecutionHistoryRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -8885,6 +8964,14 @@ func (v *GetWorkflowExecutionHistoryRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+	if v.WaitForNewEvent != nil {
+		w, err = wire.NewValueBool(*(v.WaitForNewEvent)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
 		i++
 	}
 
@@ -8949,6 +9036,16 @@ func (v *GetWorkflowExecutionHistoryRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 50:
+			if field.Value.Type() == wire.TBool {
+				var x bool
+				x, err = field.Value.GetBool(), error(nil)
+				v.WaitForNewEvent = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -8962,7 +9059,7 @@ func (v *GetWorkflowExecutionHistoryRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [5]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -8978,6 +9075,10 @@ func (v *GetWorkflowExecutionHistoryRequest) String() string {
 	}
 	if v.NextPageToken != nil {
 		fields[i] = fmt.Sprintf("NextPageToken: %v", v.NextPageToken)
+		i++
+	}
+	if v.WaitForNewEvent != nil {
+		fields[i] = fmt.Sprintf("WaitForNewEvent: %v", *(v.WaitForNewEvent))
 		i++
 	}
 
@@ -9001,6 +9102,9 @@ func (v *GetWorkflowExecutionHistoryRequest) Equals(rhs *GetWorkflowExecutionHis
 	if !((v.NextPageToken == nil && rhs.NextPageToken == nil) || (v.NextPageToken != nil && rhs.NextPageToken != nil && bytes.Equal(v.NextPageToken, rhs.NextPageToken))) {
 		return false
 	}
+	if !_Bool_EqualsPtr(v.WaitForNewEvent, rhs.WaitForNewEvent) {
+		return false
+	}
 
 	return true
 }
@@ -9020,6 +9124,16 @@ func (v *GetWorkflowExecutionHistoryRequest) GetDomain() (o string) {
 func (v *GetWorkflowExecutionHistoryRequest) GetMaximumPageSize() (o int32) {
 	if v.MaximumPageSize != nil {
 		return *v.MaximumPageSize
+	}
+
+	return
+}
+
+// GetWaitForNewEvent returns the value of WaitForNewEvent if it is set or its
+// zero value if it is unset.
+func (v *GetWorkflowExecutionHistoryRequest) GetWaitForNewEvent() (o bool) {
+	if v.WaitForNewEvent != nil {
+		return *v.WaitForNewEvent
 	}
 
 	return
@@ -11846,9 +11960,10 @@ func (v *MarkerRecordedEventAttributes) GetDecisionTaskCompletedEventId() (o int
 }
 
 type PollForActivityTaskRequest struct {
-	Domain   *string   `json:"domain,omitempty"`
-	TaskList *TaskList `json:"taskList,omitempty"`
-	Identity *string   `json:"identity,omitempty"`
+	Domain           *string           `json:"domain,omitempty"`
+	TaskList         *TaskList         `json:"taskList,omitempty"`
+	Identity         *string           `json:"identity,omitempty"`
+	TaskListMetadata *TaskListMetadata `json:"taskListMetadata,omitempty"`
 }
 
 // ToWire translates a PollForActivityTaskRequest struct into a Thrift-level intermediate
@@ -11868,7 +11983,7 @@ type PollForActivityTaskRequest struct {
 //   }
 func (v *PollForActivityTaskRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -11898,8 +12013,22 @@ func (v *PollForActivityTaskRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
+	if v.TaskListMetadata != nil {
+		w, err = v.TaskListMetadata.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _TaskListMetadata_Read(w wire.Value) (*TaskListMetadata, error) {
+	var v TaskListMetadata
+	err := v.FromWire(w)
+	return &v, err
 }
 
 // FromWire deserializes a PollForActivityTaskRequest struct from its Thrift-level
@@ -11952,6 +12081,14 @@ func (v *PollForActivityTaskRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 40:
+			if field.Value.Type() == wire.TStruct {
+				v.TaskListMetadata, err = _TaskListMetadata_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -11965,7 +12102,7 @@ func (v *PollForActivityTaskRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -11977,6 +12114,10 @@ func (v *PollForActivityTaskRequest) String() string {
 	}
 	if v.Identity != nil {
 		fields[i] = fmt.Sprintf("Identity: %v", *(v.Identity))
+		i++
+	}
+	if v.TaskListMetadata != nil {
+		fields[i] = fmt.Sprintf("TaskListMetadata: %v", v.TaskListMetadata)
 		i++
 	}
 
@@ -11995,6 +12136,9 @@ func (v *PollForActivityTaskRequest) Equals(rhs *PollForActivityTaskRequest) boo
 		return false
 	}
 	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
+		return false
+	}
+	if !((v.TaskListMetadata == nil && rhs.TaskListMetadata == nil) || (v.TaskListMetadata != nil && rhs.TaskListMetadata != nil && v.TaskListMetadata.Equals(rhs.TaskListMetadata))) {
 		return false
 	}
 
@@ -17033,6 +17177,206 @@ func (v *RespondDecisionTaskCompletedRequest) GetIdentity() (o string) {
 	return
 }
 
+type RespondDecisionTaskFailedRequest struct {
+	TaskToken []byte                   `json:"taskToken,omitempty"`
+	Cause     *DecisionTaskFailedCause `json:"cause,omitempty"`
+	Details   []byte                   `json:"details,omitempty"`
+	Identity  *string                  `json:"identity,omitempty"`
+}
+
+// ToWire translates a RespondDecisionTaskFailedRequest struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *RespondDecisionTaskFailedRequest) ToWire() (wire.Value, error) {
+	var (
+		fields [4]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.TaskToken != nil {
+		w, err = wire.NewValueBinary(v.TaskToken), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.Cause != nil {
+		w, err = v.Cause.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.Details != nil {
+		w, err = wire.NewValueBinary(v.Details), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.Identity != nil {
+		w, err = wire.NewValueString(*(v.Identity)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a RespondDecisionTaskFailedRequest struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a RespondDecisionTaskFailedRequest struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v RespondDecisionTaskFailedRequest
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *RespondDecisionTaskFailedRequest) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				v.TaskToken, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TI32 {
+				var x DecisionTaskFailedCause
+				x, err = _DecisionTaskFailedCause_Read(field.Value)
+				v.Cause = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
+			if field.Value.Type() == wire.TBinary {
+				v.Details, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 40:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.Identity = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a RespondDecisionTaskFailedRequest
+// struct.
+func (v *RespondDecisionTaskFailedRequest) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [4]string
+	i := 0
+	if v.TaskToken != nil {
+		fields[i] = fmt.Sprintf("TaskToken: %v", v.TaskToken)
+		i++
+	}
+	if v.Cause != nil {
+		fields[i] = fmt.Sprintf("Cause: %v", *(v.Cause))
+		i++
+	}
+	if v.Details != nil {
+		fields[i] = fmt.Sprintf("Details: %v", v.Details)
+		i++
+	}
+	if v.Identity != nil {
+		fields[i] = fmt.Sprintf("Identity: %v", *(v.Identity))
+		i++
+	}
+
+	return fmt.Sprintf("RespondDecisionTaskFailedRequest{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this RespondDecisionTaskFailedRequest match the
+// provided RespondDecisionTaskFailedRequest.
+//
+// This function performs a deep comparison.
+func (v *RespondDecisionTaskFailedRequest) Equals(rhs *RespondDecisionTaskFailedRequest) bool {
+	if !((v.TaskToken == nil && rhs.TaskToken == nil) || (v.TaskToken != nil && rhs.TaskToken != nil && bytes.Equal(v.TaskToken, rhs.TaskToken))) {
+		return false
+	}
+	if !_DecisionTaskFailedCause_EqualsPtr(v.Cause, rhs.Cause) {
+		return false
+	}
+	if !((v.Details == nil && rhs.Details == nil) || (v.Details != nil && rhs.Details != nil && bytes.Equal(v.Details, rhs.Details))) {
+		return false
+	}
+	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
+		return false
+	}
+
+	return true
+}
+
+// GetCause returns the value of Cause if it is set or its
+// zero value if it is unset.
+func (v *RespondDecisionTaskFailedRequest) GetCause() (o DecisionTaskFailedCause) {
+	if v.Cause != nil {
+		return *v.Cause
+	}
+
+	return
+}
+
+// GetIdentity returns the value of Identity if it is set or its
+// zero value if it is unset.
+func (v *RespondDecisionTaskFailedRequest) GetIdentity() (o string) {
+	if v.Identity != nil {
+		return *v.Identity
+	}
+
+	return
+}
+
 type RespondQueryTaskCompletedRequest struct {
 	TaskToken     []byte                  `json:"taskToken,omitempty"`
 	CompletedType *QueryTaskCompletedType `json:"completedType,omitempty"`
@@ -20095,6 +20439,132 @@ func (v *TaskList) GetName() (o string) {
 	return
 }
 
+type TaskListMetadata struct {
+	MaxTasksPerSecond *float64 `json:"maxTasksPerSecond,omitempty"`
+}
+
+// ToWire translates a TaskListMetadata struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *TaskListMetadata) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.MaxTasksPerSecond != nil {
+		w, err = wire.NewValueDouble(*(v.MaxTasksPerSecond)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a TaskListMetadata struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a TaskListMetadata struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v TaskListMetadata
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *TaskListMetadata) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TDouble {
+				var x float64
+				x, err = field.Value.GetDouble(), error(nil)
+				v.MaxTasksPerSecond = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a TaskListMetadata
+// struct.
+func (v *TaskListMetadata) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	if v.MaxTasksPerSecond != nil {
+		fields[i] = fmt.Sprintf("MaxTasksPerSecond: %v", *(v.MaxTasksPerSecond))
+		i++
+	}
+
+	return fmt.Sprintf("TaskListMetadata{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _Double_EqualsPtr(lhs, rhs *float64) bool {
+	if lhs != nil && rhs != nil {
+
+		x := *lhs
+		y := *rhs
+		return (x == y)
+	}
+	return lhs == nil && rhs == nil
+}
+
+// Equals returns true if all the fields of this TaskListMetadata match the
+// provided TaskListMetadata.
+//
+// This function performs a deep comparison.
+func (v *TaskListMetadata) Equals(rhs *TaskListMetadata) bool {
+	if !_Double_EqualsPtr(v.MaxTasksPerSecond, rhs.MaxTasksPerSecond) {
+		return false
+	}
+
+	return true
+}
+
+// GetMaxTasksPerSecond returns the value of MaxTasksPerSecond if it is set or its
+// zero value if it is unset.
+func (v *TaskListMetadata) GetMaxTasksPerSecond() (o float64) {
+	if v.MaxTasksPerSecond != nil {
+		return *v.MaxTasksPerSecond
+	}
+
+	return
+}
+
 type TerminateWorkflowExecutionRequest struct {
 	Domain            *string            `json:"domain,omitempty"`
 	WorkflowExecution *WorkflowExecution `json:"workflowExecution,omitempty"`
@@ -21041,6 +21511,134 @@ func (v *TimerStartedEventAttributes) GetDecisionTaskCompletedEventId() (o int64
 	}
 
 	return
+}
+
+type TransientDecisionInfo struct {
+	ScheduledEvent *HistoryEvent `json:"scheduledEvent,omitempty"`
+	StartedEvent   *HistoryEvent `json:"startedEvent,omitempty"`
+}
+
+// ToWire translates a TransientDecisionInfo struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *TransientDecisionInfo) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.ScheduledEvent != nil {
+		w, err = v.ScheduledEvent.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.StartedEvent != nil {
+		w, err = v.StartedEvent.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a TransientDecisionInfo struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a TransientDecisionInfo struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v TransientDecisionInfo
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *TransientDecisionInfo) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TStruct {
+				v.ScheduledEvent, err = _HistoryEvent_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.StartedEvent, err = _HistoryEvent_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a TransientDecisionInfo
+// struct.
+func (v *TransientDecisionInfo) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.ScheduledEvent != nil {
+		fields[i] = fmt.Sprintf("ScheduledEvent: %v", v.ScheduledEvent)
+		i++
+	}
+	if v.StartedEvent != nil {
+		fields[i] = fmt.Sprintf("StartedEvent: %v", v.StartedEvent)
+		i++
+	}
+
+	return fmt.Sprintf("TransientDecisionInfo{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this TransientDecisionInfo match the
+// provided TransientDecisionInfo.
+//
+// This function performs a deep comparison.
+func (v *TransientDecisionInfo) Equals(rhs *TransientDecisionInfo) bool {
+	if !((v.ScheduledEvent == nil && rhs.ScheduledEvent == nil) || (v.ScheduledEvent != nil && rhs.ScheduledEvent != nil && v.ScheduledEvent.Equals(rhs.ScheduledEvent))) {
+		return false
+	}
+	if !((v.StartedEvent == nil && rhs.StartedEvent == nil) || (v.StartedEvent != nil && rhs.StartedEvent != nil && v.StartedEvent.Equals(rhs.StartedEvent))) {
+		return false
+	}
+
+	return true
 }
 
 type UpdateDomainInfo struct {
