@@ -155,7 +155,7 @@ func GetLogger(ctx Context) *zap.Logger {
 
 // GetMetricsScope returns a metrics scope to be used in workflow's context
 func GetMetricsScope(ctx Context) tally.Scope {
-	return GetMetricsScope(ctx)
+	return internal.GetMetricsScope(ctx)
 }
 
 // RequestCancelWorkflow can be used to request cancellation of an external workflow.
