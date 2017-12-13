@@ -33,7 +33,7 @@ type (
 	Channel = internal.Channel
 
 	// Selector must be used instead of native go select by workflow code.
-	// Use cadence.NewSelector(ctx) method to create a Selector instance.
+	// Use workflow.NewSelector(ctx) method to create a Selector instance.
 	Selector = internal.Selector
 
 	// Future represents the result of an asynchronous computation.
@@ -102,7 +102,7 @@ func Now(ctx Context) time.Time {
 
 // NewTimer returns immediately and the future becomes ready after the specified duration d. The workflow needs to use
 // this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
-// timer by cancel the Context (using context from cadence.WithCancel(ctx)) and that will cancel the timer. After timer
+// timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
 // is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
 // The current timer resolution implementation is in seconds but is subjected to change.
 func NewTimer(ctx Context, d time.Duration) Future {
@@ -111,9 +111,9 @@ func NewTimer(ctx Context, d time.Duration) Future {
 
 // Sleep pauses the current workflow for at least the duration d. A negative or zero duration causes Sleep to return
 // immediately. Workflow code needs to use this Sleep() to sleep instead of the Go lang library one(timer.Sleep()).
-// You can cancel the pending sleep by cancel the Context (using context from cadence.WithCancel(ctx)).
+// You can cancel the pending sleep by cancel the Context (using context from workflow.WithCancel(ctx)).
 // Sleep() returns nil if the duration d is passed, or it returns *CanceledError if the ctx is canceled. There are 2
-// reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with cadence.WithCancel(ctx));
+// reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with workflow.WithCancel(ctx));
 // 2) your workflow itself is canceled by external request.
 // The current timer resolution implementation is in seconds but is subjected to change.
 func Sleep(ctx Context, d time.Duration) (err error) {
