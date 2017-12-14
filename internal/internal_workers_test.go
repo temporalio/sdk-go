@@ -58,8 +58,8 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
 	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -82,8 +82,8 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
 	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -108,7 +108,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
 	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",

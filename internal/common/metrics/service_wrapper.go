@@ -116,175 +116,175 @@ func (s *operationScope) handleError(err error) {
 
 func (w *workflowServiceMetricsWrapper) DeprecateDomain(ctx context.Context, request *shared.DeprecateDomainRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameDeprecateDomain)
-	err := w.service.DeprecateDomain(ctx, request)
+	err := w.service.DeprecateDomain(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) DescribeDomain(ctx context.Context, request *shared.DescribeDomainRequest, opts ...yarpc.CallOption) (*shared.DescribeDomainResponse, error) {
 	scope := w.getOperationScope(scopeNameDescribeDomain)
-	result, err := w.service.DescribeDomain(ctx, request)
+	result, err := w.service.DescribeDomain(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) DescribeWorkflowExecution(ctx context.Context, request *shared.DescribeWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.DescribeWorkflowExecutionResponse, error) {
 	scope := w.getOperationScope(scopeNameDescribeWorkflowExecution)
-	result, err := w.service.DescribeWorkflowExecution(ctx, request)
+	result, err := w.service.DescribeWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) GetWorkflowExecutionHistory(ctx context.Context, request *shared.GetWorkflowExecutionHistoryRequest, opts ...yarpc.CallOption) (*shared.GetWorkflowExecutionHistoryResponse, error) {
 	scope := w.getOperationScope(scopeNameGetWorkflowExecutionHistory)
-	result, err := w.service.GetWorkflowExecutionHistory(ctx, request)
+	result, err := w.service.GetWorkflowExecutionHistory(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) ListClosedWorkflowExecutions(ctx context.Context, request *shared.ListClosedWorkflowExecutionsRequest, opts ...yarpc.CallOption) (*shared.ListClosedWorkflowExecutionsResponse, error) {
 	scope := w.getOperationScope(scopeNameListClosedWorkflowExecutions)
-	result, err := w.service.ListClosedWorkflowExecutions(ctx, request)
+	result, err := w.service.ListClosedWorkflowExecutions(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) ListOpenWorkflowExecutions(ctx context.Context, request *shared.ListOpenWorkflowExecutionsRequest, opts ...yarpc.CallOption) (*shared.ListOpenWorkflowExecutionsResponse, error) {
 	scope := w.getOperationScope(scopeNameListOpenWorkflowExecutions)
-	result, err := w.service.ListOpenWorkflowExecutions(ctx, request)
+	result, err := w.service.ListOpenWorkflowExecutions(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) PollForActivityTask(ctx context.Context, request *shared.PollForActivityTaskRequest, opts ...yarpc.CallOption) (*shared.PollForActivityTaskResponse, error) {
 	scope := w.getOperationScope(scopeNamePollForActivityTask)
-	result, err := w.service.PollForActivityTask(ctx, request)
+	result, err := w.service.PollForActivityTask(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) PollForDecisionTask(ctx context.Context, request *shared.PollForDecisionTaskRequest, opts ...yarpc.CallOption) (*shared.PollForDecisionTaskResponse, error) {
 	scope := w.getOperationScope(scopeNamePollForDecisionTask)
-	result, err := w.service.PollForDecisionTask(ctx, request)
+	result, err := w.service.PollForDecisionTask(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeat(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) (*shared.RecordActivityTaskHeartbeatResponse, error) {
 	scope := w.getOperationScope(scopeNameRecordActivityTaskHeartbeat)
-	result, err := w.service.RecordActivityTaskHeartbeat(ctx, request)
+	result, err := w.service.RecordActivityTaskHeartbeat(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) RegisterDomain(ctx context.Context, request *shared.RegisterDomainRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRegisterDomain)
-	err := w.service.RegisterDomain(ctx, request)
+	err := w.service.RegisterDomain(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RequestCancelWorkflowExecution(ctx context.Context, request *shared.RequestCancelWorkflowExecutionRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRequestCancelWorkflowExecution)
-	err := w.service.RequestCancelWorkflowExecution(ctx, request)
+	err := w.service.RequestCancelWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskCanceled(ctx context.Context, request *shared.RespondActivityTaskCanceledRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCanceled)
-	err := w.service.RespondActivityTaskCanceled(ctx, request)
+	err := w.service.RespondActivityTaskCanceled(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompleted(ctx context.Context, request *shared.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCompleted)
-	err := w.service.RespondActivityTaskCompleted(ctx, request)
+	err := w.service.RespondActivityTaskCompleted(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailed(ctx context.Context, request *shared.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskFailed)
-	err := w.service.RespondActivityTaskFailed(ctx, request)
+	err := w.service.RespondActivityTaskFailed(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskCanceledByID(ctx context.Context, request *shared.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCanceledByID)
-	err := w.service.RespondActivityTaskCanceledByID(ctx, request)
+	err := w.service.RespondActivityTaskCanceledByID(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompletedByID(ctx context.Context, request *shared.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCompletedByID)
-	err := w.service.RespondActivityTaskCompletedByID(ctx, request)
+	err := w.service.RespondActivityTaskCompletedByID(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedByID(ctx context.Context, request *shared.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskFailedByID)
-	err := w.service.RespondActivityTaskFailedByID(ctx, request)
+	err := w.service.RespondActivityTaskFailedByID(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondDecisionTaskCompleted(ctx context.Context, request *shared.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondDecisionTaskCompleted)
-	err := w.service.RespondDecisionTaskCompleted(ctx, request)
+	err := w.service.RespondDecisionTaskCompleted(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondDecisionTaskFailed(ctx context.Context, request *shared.RespondDecisionTaskFailedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondDecisionTaskFailed)
-	err := w.service.RespondDecisionTaskFailed(ctx, request)
+	err := w.service.RespondDecisionTaskFailed(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) SignalWorkflowExecution(ctx context.Context, request *shared.SignalWorkflowExecutionRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameSignalWorkflowExecution)
-	err := w.service.SignalWorkflowExecution(ctx, request)
+	err := w.service.SignalWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) StartWorkflowExecution(ctx context.Context, request *shared.StartWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.StartWorkflowExecutionResponse, error) {
 	scope := w.getOperationScope(scopeNameStartWorkflowExecution)
-	result, err := w.service.StartWorkflowExecution(ctx, request)
+	result, err := w.service.StartWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) TerminateWorkflowExecution(ctx context.Context, request *shared.TerminateWorkflowExecutionRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameTerminateWorkflowExecution)
-	err := w.service.TerminateWorkflowExecution(ctx, request)
+	err := w.service.TerminateWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
 
 func (w *workflowServiceMetricsWrapper) UpdateDomain(ctx context.Context, request *shared.UpdateDomainRequest, opts ...yarpc.CallOption) (*shared.UpdateDomainResponse, error) {
 	scope := w.getOperationScope(scopeNameUpdateDomain)
-	result, err := w.service.UpdateDomain(ctx, request)
+	result, err := w.service.UpdateDomain(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) QueryWorkflow(ctx context.Context, request *shared.QueryWorkflowRequest, opts ...yarpc.CallOption) (*shared.QueryWorkflowResponse, error) {
 	scope := w.getOperationScope(scopeNameQueryWorkflow)
-	result, err := w.service.QueryWorkflow(ctx, request)
+	result, err := w.service.QueryWorkflow(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondQueryTaskCompleted(ctx context.Context, request *shared.RespondQueryTaskCompletedRequest, opts ...yarpc.CallOption) error {
 	scope := w.getOperationScope(scopeNameRespondQueryTaskCompleted)
-	err := w.service.RespondQueryTaskCompleted(ctx, request)
+	err := w.service.RespondQueryTaskCompleted(ctx, request, opts...)
 	scope.handleError(err)
 	return err
 }
