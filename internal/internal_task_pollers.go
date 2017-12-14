@@ -111,15 +111,12 @@ func createServiceRetryPolicy() backoff.RetryPolicy {
 func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
 	switch err.(type) {
-	case *s.BadRequestError:
-		return false
-	case *s.EntityNotExistsError:
-		return false
-	case *s.WorkflowExecutionAlreadyStartedError:
-		return false
-	case *s.DomainAlreadyExistsError:
-		return false
-	case *s.QueryFailedError:
+	case *s.BadRequestError,
+		*s.EntityNotExistsError,
+		*s.WorkflowExecutionAlreadyStartedError,
+		*s.DomainAlreadyExistsError,
+		*s.QueryFailedError,
+		*s.CancellationAlreadyRequestedError:
 		return false
 	}
 
