@@ -23,11 +23,13 @@ package internal
 import (
 	"context"
 	"errors"
+
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -387,7 +389,7 @@ func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (EncodedValue, error) {
+func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error) {
 	var input []byte
 	if len(args) > 0 {
 		var err error
