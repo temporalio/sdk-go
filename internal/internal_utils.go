@@ -38,23 +38,44 @@ import (
 	"golang.org/x/net/context"
 )
 
-// versionHeaderName refers to the name of the
-// tchannel / http header that contains the client
-// library version
-const versionHeaderName = "cadence-client-version"
+const (
+	// libraryVersionHeaderName refers to the name of the
+	// tchannel / http header that contains the client
+	// library version
+	libraryVersionHeaderName = "cadence-client-library-version"
 
-// defaultRPCTimeout is the default tchannel rpc call timeout
-const defaultRPCTimeout = 10 * time.Second
+	// featureVersionHeaderName refers to the name of the
+	// tchannel / http header that contains the client
+	// feature version
+	featureVersionHeaderName = "cadence-client-feature-version"
 
-// retryNeverOptions - Never retry the connection
-var retryNeverOptions = &tchannel.RetryOptions{
-	RetryOn: tchannel.RetryNever,
-}
+	// clientImplHeaderName refers to the name of the
+	// header that contains the client implementation
+	clientImplHeaderName  = "cadence-client-name"
+	clientImplHeaderValue = "uber-go"
 
-// retryDefaultOptions - retry with default options.
-var retryDefaultOptions = &tchannel.RetryOptions{
-	RetryOn: tchannel.RetryDefault,
-}
+	// defaultRPCTimeout is the default tchannel rpc call timeout
+	defaultRPCTimeout = 10 * time.Second
+)
+
+var (
+	// retryNeverOptions - Never retry the connection
+	retryNeverOptions = &tchannel.RetryOptions{
+		RetryOn: tchannel.RetryNever,
+	}
+
+	// retryDefaultOptions - retry with default options.
+	retryDefaultOptions = &tchannel.RetryOptions{
+		RetryOn: tchannel.RetryDefault,
+	}
+
+	// call header to cadence server
+	yarpcCallOptions = []yarpc.CallOption{
+		yarpc.WithHeader(libraryVersionHeaderName, LibraryVersion),
+		yarpc.WithHeader(featureVersionHeaderName, FeatureVersion),
+		yarpc.WithHeader(clientImplHeaderName, clientImplHeaderValue),
+	}
+)
 
 // ContextBuilder stores all Channel-specific parameters that will
 // be stored inside of a context.
@@ -94,10 +115,7 @@ func newChannelContext(ctx context.Context, options ...func(builder *contextBuil
 	}
 	ctx, cancelFn := builder.Build()
 
-	callOptions := []yarpc.CallOption{
-		yarpc.WithHeader(versionHeaderName, LibraryVersion)}
-
-	return ctx, cancelFn, callOptions
+	return ctx, cancelFn, yarpcCallOptions
 }
 
 // GetWorkerIdentity gets a default identity for the worker.

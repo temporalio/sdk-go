@@ -146,12 +146,12 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// mocks
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).AnyTimes()
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	env := getHostEnvironment()
 	// Launch worker.

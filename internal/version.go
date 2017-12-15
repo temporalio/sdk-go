@@ -20,13 +20,26 @@
 
 package internal
 
-// LibraryVersion is a semver string that represents
-// the version of this cadence client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to cadence server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
+// below are the metadata which will be embedded as part
+// of headers in every rpc call made by this client to
+// cadence server.
+
+// Update to the metadata below is typically done
 // by the cadence team as part of a major feature or
 // behavior change
-const LibraryVersion = "v0.5.0"
+
+// LibraryVersion is a semver that represents
+// the version of this cadence client library.
+// This represent API changes visibile to Cadence
+// client side library consumers. I.e. developers
+// that are writing workflows. So every time we change API
+// that can affect them we have to change this number.
+// Format: MAJOR.MINOR.PATCH
+const LibraryVersion = "0.5.0"
+
+// FeatureVersion is a semver that represents the
+// feature set of this cadence client library support.
+// This can be used for client capibility check, on
+// Cadence server, for backward compatibility
+// Format: MAJOR.MINOR.PATCH
+const FeatureVersion = "1.0.0"

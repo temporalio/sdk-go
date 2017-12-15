@@ -268,7 +268,7 @@ func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
 
 	for _, tc := range testCases {
 		service := workflowservicetest.NewMockClient(mockCtrl)
-		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.domainErr).Do(
+		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, tc.domainErr).Do(
 			func(ctx context.Context, request *s.DescribeDomainRequest, opts ...yarpc.CallOption) {
 				// log
 			}).Times(2)
@@ -303,18 +303,18 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 		},
 	}
 	// mocks
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).Do(
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).Do(
 		func(ctx context.Context, request *s.DescribeDomainRequest, opts ...yarpc.CallOption) {
 			// log
 		}).AnyTimes()
 
 	activityTask := &s.PollForActivityTaskResponse{}
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(activityTask, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(activityTask, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	decisionTask := &s.PollForDecisionTaskResponse{}
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(decisionTask, nil).AnyTimes()
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(decisionTask, nil).AnyTimes()
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{}
@@ -336,15 +336,15 @@ func TestCompleteActivity(t *testing.T) {
 	domain := "testDomain"
 	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
-	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskCanceledRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
@@ -366,15 +366,15 @@ func TestCompleteActivityById(t *testing.T) {
 	domain := "testDomain"
 	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
-	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *s.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
@@ -403,7 +403,7 @@ func TestRecordActivityHeartbeat(t *testing.T) {
 	var heartbeatRequest *s.RecordActivityTaskHeartbeatRequest
 	cancelRequested := false
 	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
 		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			heartbeatRequest = request
 		}).Times(2)

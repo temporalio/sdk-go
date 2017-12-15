@@ -57,9 +57,9 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil)
+	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -81,9 +81,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil)
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil)
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -107,8 +107,8 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
+	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",

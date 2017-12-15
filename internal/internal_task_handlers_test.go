@@ -460,7 +460,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 
 	cancelRequested := false
 	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil)
 
 	cadenceInvoker := &cadenceInvoker{
 		identity:  "Test_Cadence_Invoker",
@@ -478,7 +478,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService := workflowservicetest.NewMockClient(mockCtrl)
 
 	entityNotExistsError := &s.EntityNotExistsError{}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
 		nil,
