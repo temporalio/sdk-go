@@ -190,6 +190,17 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
+			case *s.RespondDecisionTaskFailedRequest:
+				// Only fail decision on first attempt, subsequent failure on the same decision task will timeout.
+				// This is to avoid spin on the failed decision task. Checking Attempt not nil for older server.
+				if workflowTask.task.Attempt != nil && workflowTask.task.GetAttempt() == 0 {
+					err1 = wtp.service.RespondDecisionTaskFailed(tchCtx, request, opt...)
+					if err1 != nil {
+						traceLog(func() {
+							wtp.logger.Debug("RespondDecisionTaskFailed failed.", zap.Error(err1))
+						})
+					}
+				}
 			case *s.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
 					request.StickyAttributes = &s.StickyExecutionAttributes{

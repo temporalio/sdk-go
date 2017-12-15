@@ -540,7 +540,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator,
 	emitStack bool,
-) (result interface{}, stackTrace string, err error) {
+) (completeRequest interface{}, stackTrace string, err error) {
 	if task == nil {
 		return nil, "", errors.New("nil workflow task provided")
 	}
@@ -568,9 +568,8 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	if err != nil {
 		return nil, "", err
 	}
-	workflowClosed := false
 	defer func() {
-		if err != nil || workflowClosed {
+		if err != nil || workflowContext.isWorkflowCompleted {
 			// TODO: in case of error, ideally, we should notify server to clear the stickiness.
 			// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 			// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
@@ -582,12 +581,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		workflowContext.release()
 	}()
 
-	eventHandler := workflowContext.eventHandler
+	eventHandler := workflowContext.eventHandler.(*workflowExecutionEventHandlerImpl)
 
-	reorderedHistory := newHistory(&workflowTask{task: task, historyIterator: historyIterator}, eventHandler.(*workflowExecutionEventHandlerImpl))
-	decisions := []*s.Decision{}
-	replayDecisions := []*s.Decision{}
-	respondEvents := []*s.HistoryEvent{}
+	reorderedHistory := newHistory(&workflowTask{task: task, historyIterator: historyIterator}, eventHandler)
+	var decisions []*s.Decision
+	var replayDecisions []*s.Decision
+	var respondEvents []*s.HistoryEvent
 
 	// Process events
 ProcessEvents:
@@ -610,7 +609,7 @@ ProcessEvents:
 		isInReplay := reorderedEvents[0].GetEventId() < reorderedHistory.LastNonReplayedID()
 		for i, event := range reorderedEvents {
 			isLast := !isInReplay && i == len(reorderedEvents)-1
-			if isDecisionEvent(event.GetEventType()) {
+			if !skipReplayCheck && isDecisionEvent(event.GetEventType()) {
 				respondEvents = append(respondEvents, event)
 			}
 
@@ -631,7 +630,7 @@ ProcessEvents:
 			if eventDecisions != nil {
 				if !isInReplay {
 					decisions = append(decisions, eventDecisions...)
-				} else {
+				} else if !skipReplayCheck {
 					replayDecisions = append(replayDecisions, eventDecisions...)
 				}
 			}
@@ -652,76 +651,7 @@ ProcessEvents:
 		}
 	}
 
-	if err != nil {
-		wth.logger.Error("Unable to read workflow start attributes.", zap.Error(err))
-		return nil, "", err
-	}
-
-	if panicErr, ok := workflowContext.err.(*PanicError); ok {
-		// Timeout the Decision instead of failing workflow.
-		// TODO: Pump this stack trace on to workflow history for debuggability by exposing decision type fail to client.
-		wth.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
-		wth.logger.Error("Workflow panic.",
-			zap.String("PanicError", panicErr.Error()),
-			zap.String("PanicStack", panicErr.StackTrace()))
-
-		return nil, "", workflowContext.err
-	}
-	closeDecision := wth.completeWorkflow(workflowContext.isWorkflowCompleted, workflowContext.result, workflowContext.err)
-	if closeDecision != nil {
-		decisions = append(decisions, closeDecision)
-
-		elapsed := time.Now().Sub(workflowContext.workflowStartTime)
-		wth.metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
-
-		switch closeDecision.GetDecisionType() {
-		case s.DecisionTypeCompleteWorkflowExecution:
-			wth.metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
-		case s.DecisionTypeFailWorkflowExecution:
-			wth.metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
-		case s.DecisionTypeCancelWorkflowExecution:
-			wth.metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
-		case s.DecisionTypeContinueAsNewWorkflowExecution:
-			wth.metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
-		}
-
-		workflowClosed = true
-	}
-
-	var completeRequest interface{}
-	if task.Query != nil {
-		// for query task
-		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs)
-
-		queryTaskCompleteRequest := &s.RespondQueryTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-		}
-		if err != nil {
-			queryTaskCompleteRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeFailed)
-			queryTaskCompleteRequest.ErrorMessage = common.StringPtr(err.Error())
-		} else {
-			queryTaskCompleteRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeCompleted)
-			queryTaskCompleteRequest.QueryResult = result
-		}
-		completeRequest = queryTaskCompleteRequest
-	} else {
-		// Fill the response.
-		completeRequest = &s.RespondDecisionTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-			Decisions: decisions,
-			Identity:  common.StringPtr(wth.identity),
-			// ExecutionContext:
-		}
-		traceLog(func() {
-			var buf bytes.Buffer
-			for i, d := range decisions {
-				buf.WriteString(fmt.Sprintf("%v: %v\n", i, util.DecisionToString(d)))
-			}
-			wth.logger.Debug("new_decisions",
-				zap.Int("DecisionCount", len(decisions)),
-				zap.String("Decisions", buf.String()))
-		})
-	}
+	completeRequest = wth.completeWorkflow(eventHandler, task, workflowContext, decisions)
 
 	if emitStack {
 		stackTrace = eventHandler.StackTrace()
@@ -943,43 +873,97 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 }
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
-	isWorkflowCompleted bool,
-	completionResult []byte,
-	err error,
-) *s.Decision {
-	var decision *s.Decision
-	if canceledErr, ok := err.(*CanceledError); ok {
+	eventHandler *workflowExecutionEventHandlerImpl,
+	task *s.PollForDecisionTaskResponse,
+	workflowContext *workflowExecutionContext,
+	decisions []*s.Decision) interface{} {
+
+	// for query task
+	if task.Query != nil {
+		queryCompletedRequest := &s.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
+		if panicErr, ok := workflowContext.err.(*PanicError); ok {
+			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeFailed)
+			queryCompletedRequest.ErrorMessage = common.StringPtr("Workflow panic: " + panicErr.Error())
+			return queryCompletedRequest
+		}
+
+		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs)
+		if err != nil {
+			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeFailed)
+			queryCompletedRequest.ErrorMessage = common.StringPtr(err.Error())
+		} else {
+			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeCompleted)
+			queryCompletedRequest.QueryResult = result
+		}
+		return queryCompletedRequest
+	}
+
+	// fail decision task on decider panic
+	if panicErr, ok := workflowContext.err.(*PanicError); ok {
+		// Workflow panic
+		wth.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
+		wth.logger.Error("Workflow panic.",
+			zap.String("PanicError", panicErr.Error()),
+			zap.String("PanicStack", panicErr.StackTrace()))
+		failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
+		_, details := getErrorDetails(panicErr)
+		return &s.RespondDecisionTaskFailedRequest{
+			TaskToken: task.TaskToken,
+			Cause:     &failedCause,
+			Details:   details,
+			Identity:  common.StringPtr(wth.identity),
+		}
+	}
+
+	// complete decision task
+	var closeDecision *s.Decision
+	if canceledErr, ok := workflowContext.err.(*CanceledError); ok {
 		// Workflow cancelled
-		decision = createNewDecision(s.DecisionTypeCancelWorkflowExecution)
-		decision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
+		wth.metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
+		closeDecision = createNewDecision(s.DecisionTypeCancelWorkflowExecution)
+		closeDecision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
 			Details: canceledErr.details,
 		}
-	} else if contErr, ok := err.(*ContinueAsNewError); ok {
+	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
 		// Continue as new error.
-		decision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
-		decision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
+		wth.metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
+		closeDecision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
+		closeDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
 			WorkflowType: workflowTypePtr(*contErr.options.workflowType),
 			Input:        contErr.options.input,
 			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.options.taskListName}),
 			ExecutionStartToCloseTimeoutSeconds: contErr.options.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.options.taskStartToCloseTimeoutSeconds,
 		}
-	} else if err != nil {
+	} else if workflowContext.err != nil {
 		// Workflow failures
-		decision = createNewDecision(s.DecisionTypeFailWorkflowExecution)
-		reason, details := getErrorDetails(err)
-		decision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
+		wth.metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		closeDecision = createNewDecision(s.DecisionTypeFailWorkflowExecution)
+		reason, details := getErrorDetails(workflowContext.err)
+		closeDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
 			Reason:  common.StringPtr(reason),
 			Details: details,
 		}
-	} else if isWorkflowCompleted {
+	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
-		decision = createNewDecision(s.DecisionTypeCompleteWorkflowExecution)
-		decision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
-			Result: completionResult,
+		wth.metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
+		closeDecision = createNewDecision(s.DecisionTypeCompleteWorkflowExecution)
+		closeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
+			Result: workflowContext.result,
 		}
 	}
-	return decision
+
+	if closeDecision != nil {
+		decisions = append(decisions, closeDecision)
+		elapsed := time.Now().Sub(workflowContext.workflowStartTime)
+		wth.metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
+	}
+
+	return &s.RespondDecisionTaskCompletedRequest{
+		TaskToken: task.TaskToken,
+		Decisions: decisions,
+		Identity:  common.StringPtr(wth.identity),
+	}
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEvent, isInReplay bool) error {
