@@ -1,7 +1,7 @@
 # Go framework for Cadence [![Build Status](https://travis-ci.org/uber-go/cadence-client.svg?branch=master)](https://travis-ci.org/uber-go/cadence-client) [![Coverage Status](https://coveralls.io/repos/uber-go/cadence-client/badge.svg?branch=master&service=github)](https://coveralls.io/github/uber-go/cadence-client?branch=master)
 [Cadence](https://github.com/uber/cadence) is a distributed, scalable, durable, and highly available orchestration engine we developed at Uber Engineering to execute asynchronous long-running business logic in a scalable and resilient way.
 
-`cadence-client` is the framework for authoring workflows and activites.
+`cadence-client` is the framework for authoring workflows and activities.
 
 ## How to use
 
