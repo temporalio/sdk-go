@@ -323,10 +323,10 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 
 func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
 	if d < 0 {
-		callback(nil, errors.New("Invalid delayInSeconds provided"))
+		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
 	}
-	if d == 0 {
+	if d.Seconds() == 0 {
 		callback(nil, nil)
 		return nil
 	}
