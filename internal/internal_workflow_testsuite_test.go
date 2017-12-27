@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -109,7 +110,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 	env := s.NewTestWorkflowEnvironment()
 
 	var activityCalls []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values) {
 		var input string
 		s.NoError(args.Get(&input))
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
@@ -267,12 +268,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	env := s.NewTestWorkflowEnvironment()
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, cancelledActivityID string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values) {
 		var msg string
 		s.NoError(args.Get(&msg))
 		activityMap[msg] = activityInfo.ActivityID
 	})
-	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result EncodedValue, err error) {
+	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result encoded.Value, err error) {
 		completedActivityID = activityInfo.ActivityID
 		fmt.Printf("OnActivityCompletedListener %+v", activityInfo)
 	})
@@ -585,10 +586,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	var childWorkflowName, childWorkflowResult string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values) {
 		childWorkflowName = workflowInfo.WorkflowType.Name
 	})
-	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result EncodedValue, err error) {
+	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result encoded.Value, err error) {
 		s.NoError(err)
 		s.NoError(result.Get(&childWorkflowResult))
 	})
@@ -978,7 +979,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	var called []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values) {
 		called = append(called, activityInfo.ActivityType.Name)
 	})
 
@@ -1008,7 +1009,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	var called []string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values) {
 		called = append(called, workflowInfo.WorkflowType.Name)
 	})
 
@@ -1092,7 +1093,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 		env.SignalWorkflow("query-signal", "hello-query")
 	}, time.Hour)
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values) {
 		verifyStateWithQuery(stateWaitActivity)
 	})
 	env.ExecuteWorkflow(workflowFn)

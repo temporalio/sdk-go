@@ -29,7 +29,7 @@ import (
 )
 
 // QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
-// stack of the workflow. The result will be a string encoded in the EncodedValue.
+// stack of the workflow. The result will be a string encoded in the encoded.Value.
 const QueryTypeStackTrace string = internal.QueryTypeStackTrace
 
 type (

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -586,7 +587,7 @@ func (b EncodedValue) Get(valuePtr interface{}) error {
 //  } else {
 //         ....
 //  }
-func SideEffect(ctx Context, f func(ctx Context) interface{}) EncodedValue {
+func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() ([]byte, error) {
 		r := f(ctx)

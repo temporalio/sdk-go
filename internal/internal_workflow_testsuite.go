@@ -36,6 +36,7 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
@@ -124,12 +125,12 @@ type (
 
 		expectedMockCalls map[string]struct{}
 
-		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)
-		onActivityCompletedListener      func(activityInfo *ActivityInfo, result EncodedValue, err error)
+		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values)
+		onActivityCompletedListener      func(activityInfo *ActivityInfo, result encoded.Value, err error)
 		onActivityCanceledListener       func(activityInfo *ActivityInfo)
-		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details EncodedValues)
-		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues)
-		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result EncodedValue, err error)
+		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details encoded.Values)
+		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values)
+		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result encoded.Value, err error)
 		onChildWorkflowCanceledListener  func(workflowInfo *WorkflowInfo)
 		onTimerScheduledListener         func(timerID string, duration time.Duration)
 		onTimerFiredListener             func(timerID string)
@@ -351,7 +352,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
-) (EncodedValue, error) {
+) (encoded.Value, error) {
 	fnName := getFunctionName(activityFn)
 
 	input, err := getHostEnvironment().encodeArgs(args)
@@ -1108,7 +1109,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (EncodedValue, error) {
+func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {
 	data, err := getHostEnvironment().encodeArg(args)
 	if err != nil {
 		return nil, err

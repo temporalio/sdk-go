@@ -25,6 +25,8 @@ import (
 	"reflect"
 	"time"
 
+	"go.uber.org/cadence/encoded"
+
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -96,8 +98,8 @@ func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
-// Caller should use EncodedValue.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (EncodedValue, error) {
+// Caller should use encoded.Value.Get() to extract strong typed result value.
+func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (encoded.Value, error) {
 	return t.impl.executeActivity(activityFn, args...)
 }
 
@@ -251,14 +253,14 @@ func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
 func (t *TestWorkflowEnvironment) SetOnActivityStartedListener(
-	listener func(activityInfo *ActivityInfo, ctx context.Context, args EncodedValues)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onActivityStartedListener = listener
 	return t
 }
 
 // SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
 func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
-	listener func(activityInfo *ActivityInfo, result EncodedValue, err error)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, result encoded.Value, err error)) *TestWorkflowEnvironment {
 	t.impl.onActivityCompletedListener = listener
 	return t
 }
@@ -272,21 +274,21 @@ func (t *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
-	listener func(activityInfo *ActivityInfo, details EncodedValues)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, details encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onActivityHeartbeatListener = listener
 	return t
 }
 
 // SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
 func (t *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
-	listener func(workflowInfo *WorkflowInfo, ctx Context, args EncodedValues)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onChildWorkflowStartedListener = listener
 	return t
 }
 
 // SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
 func (t *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
-	listener func(workflowInfo *WorkflowInfo, result EncodedValue, err error)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, result encoded.Value, err error)) *TestWorkflowEnvironment {
 	t.impl.onChildWorkflowCompletedListener = listener
 	return t
 }
@@ -354,7 +356,7 @@ func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{})
 }
 
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
-func (t *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (EncodedValue, error) {
+func (t *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {
 	return t.impl.queryWorkflow(queryType, args...)
 }
 
