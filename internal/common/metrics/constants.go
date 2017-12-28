@@ -68,6 +68,8 @@ const (
 	ActivityTaskFailedByIDCounter      = CadenceMetricsPrefix + "activity-task-failed-by-id"
 	ActivityTaskCanceledByIDCounter    = CadenceMetricsPrefix + "activity-task-canceled-by-id"
 
+	TaskListQueueLatency = CadenceMetricsPrefix + "tasklist-queue-latency"
+
 	UnhandledSignalsCounter = CadenceMetricsPrefix + "unhandled-signals"
 
 	WorkerStartCounter = CadenceMetricsPrefix + "worker-start"
