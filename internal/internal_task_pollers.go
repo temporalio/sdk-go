@@ -40,7 +40,7 @@ import (
 const (
 	pollTaskServiceTimeOut = 3 * time.Minute // Server long poll is 1 * Minutes + delta
 
-	retryServiceOperationInitialInterval    = time.Millisecond
+	retryServiceOperationInitialInterval    = 200 * time.Millisecond
 	retryServiceOperationMaxInterval        = 4 * time.Second
 	retryServiceOperationExpirationInterval = 60 * time.Second
 
