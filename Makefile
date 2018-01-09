@@ -44,7 +44,10 @@ LINT_SRC := $(filter-out ./mock%,$(ALL_SRC))
 # all directories with *_test.go files in them
 TEST_DIRS := $(sort $(dir $(filter %_test.go,$(ALL_SRC))))
 
-yarpc-install:
+vendor:
+	glide install
+
+yarpc-install: vendor
 	go get './vendor/go.uber.org/thriftrw'
 	go get './vendor/go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc'
 
