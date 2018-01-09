@@ -49,14 +49,22 @@ type (
 		// default: defaultMaxConcurrentActivityExecutionSize(1k)
 		MaxConcurrentActivityExecutionSize int
 
-		// Optional: Sets the rate limiting on number of activities that can be executed per second. Notice that the
-		// number is represented in float, so that you can set it to less than 1 if needed. For example, set the number
-		// to 0.1 means you want your activity to be executed once for every 10 seconds. This can be used to protect
-		// down stream services from flooding.
-		// The zero value of this uses the default value.
-		// default: defaultMaxActivityExecutionRate(100k)
-		// Warning: activity's StartToCloseTimeout starts ticking even if a task is blocked due to rate limiting.
-		MaxActivityExecutionPerSecond float64
+		// Optional: Sets the rate limiting on number of activities that can be executed per second per
+		// worker. This can be used to limit resources used by the worker.
+		// Notice that the number is represented in float, so that you can set it to less than
+		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
+		// once for every 10 seconds. This can be used to protect down stream services from flooding.
+		// The zero value of this uses the default value. Default: 100k
+		WorkerActivitiesPerSecond float64
+
+		// Optional: Sets the rate limiting on number of activities that can be executed per second.
+		// This is managed by the server and controls activities per second for your entire tasklist
+		// whereas WorkerActivityTasksPerSecond controls activities only per worker.
+		// Notice that the number is represented in float, so that you can set it to less than
+		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
+		// once for every 10 seconds. This can be used to protect down stream services from flooding.
+		// The zero value of this uses the default value. Default: 100k
+		TaskListActivitiesPerSecond float64
 
 		// Optional: if the activities need auto heart beating for those activities
 		// by the framework

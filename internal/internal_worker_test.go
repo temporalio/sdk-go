@@ -214,7 +214,7 @@ func TestCreateWorker(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	worker := createWorker(t, service)
+	worker := createWorkerWithThrottle(t, service, float64(500.0))
 	err := worker.Start()
 	require.NoError(t, err)
 	time.Sleep(time.Millisecond * 200)
@@ -293,7 +293,33 @@ func TestWorkerStartFailsWithInvalidDomain(t *testing.T) {
 	}
 }
 
+func ofPollForActivityTaskRequest(tps float64) gomock.Matcher {
+	return &mockPollForActivityTaskRequest{tps: tps}
+}
+
+type mockPollForActivityTaskRequest struct {
+	tps float64
+}
+
+func (m *mockPollForActivityTaskRequest) Matches(x interface{}) bool {
+	v, ok := x.(*s.PollForActivityTaskRequest)
+	if !ok {
+		return false
+	}
+	return *(v.TaskListMetadata.MaxTasksPerSecond) == m.tps
+}
+
+func (m *mockPollForActivityTaskRequest) String() string {
+	return "PollForActivityTaskRequest"
+}
+
 func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker {
+	return createWorkerWithThrottle(t, service, float64(0.0))
+}
+
+func createWorkerWithThrottle(
+	t *testing.T, service *workflowservicetest.MockClient, activitiesPerSecond float64,
+) Worker {
 	domain := "testDomain"
 	domainStatus := s.DomainStatusRegistered
 	domainDesc := &s.DescribeDomainResponse{
@@ -309,7 +335,13 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 		}).AnyTimes()
 
 	activityTask := &s.PollForActivityTaskResponse{}
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(activityTask, nil).AnyTimes()
+	expectedActivitiesPerSecond := activitiesPerSecond
+	if expectedActivitiesPerSecond == 0.0 {
+		expectedActivitiesPerSecond = _defaultTaskListActivitiesPerSecond
+	}
+	service.EXPECT().PollForActivityTask(
+		gomock.Any(), ofPollForActivityTaskRequest(expectedActivitiesPerSecond), callOptions...,
+	).Return(activityTask, nil).AnyTimes()
 	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	decisionTask := &s.PollForDecisionTaskResponse{}
@@ -318,7 +350,8 @@ func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker 
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{}
-	workerOptions.MaxActivityExecutionPerSecond = 20
+	workerOptions.WorkerActivitiesPerSecond = 20
+	workerOptions.TaskListActivitiesPerSecond = activitiesPerSecond
 
 	// Start Worker.
 	worker := NewWorker(

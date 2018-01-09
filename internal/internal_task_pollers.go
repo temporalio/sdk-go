@@ -81,13 +81,14 @@ type (
 
 	// activityTaskPoller implements polling/processing a workflow task
 	activityTaskPoller struct {
-		domain       string
-		taskListName string
-		identity     string
-		service      workflowserviceclient.Interface
-		taskHandler  ActivityTaskHandler
-		metricsScope tally.Scope
-		logger       *zap.Logger
+		domain              string
+		taskListName        string
+		identity            string
+		service             workflowserviceclient.Interface
+		taskHandler         ActivityTaskHandler
+		metricsScope        tally.Scope
+		logger              *zap.Logger
+		activitiesPerSecond float64
 	}
 
 	historyIteratorImpl struct {
@@ -431,13 +432,15 @@ func newGetHistoryPageFunc(
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserviceclient.Interface,
 	domain string, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		taskHandler:  taskHandler,
-		service:      metrics.NewWorkflowServiceWrapper(service, params.MetricsScope),
-		domain:       domain,
-		taskListName: params.TaskList,
-		identity:     params.Identity,
-		logger:       params.Logger,
-		metricsScope: params.MetricsScope}
+		taskHandler:         taskHandler,
+		service:             metrics.NewWorkflowServiceWrapper(service, params.MetricsScope),
+		domain:              domain,
+		taskListName:        params.TaskList,
+		identity:            params.Identity,
+		logger:              params.Logger,
+		metricsScope:        params.MetricsScope,
+		activitiesPerSecond: params.TaskListActivitiesPerSecond,
+	}
 }
 
 // Poll for a single activity task from the service
@@ -450,9 +453,10 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
 	request := &s.PollForActivityTaskRequest{
-		Domain:   common.StringPtr(atp.domain),
-		TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),
-		Identity: common.StringPtr(atp.identity),
+		Domain:           common.StringPtr(atp.domain),
+		TaskList:         common.TaskListPtr(s.TaskList{Name: common.StringPtr(atp.taskListName)}),
+		Identity:         common.StringPtr(atp.identity),
+		TaskListMetadata: &s.TaskListMetadata{MaxTasksPerSecond: &atp.activitiesPerSecond},
 	}
 
 	tchCtx, cancel, opt := newChannelContext(context.Background(), chanTimeout(pollTaskServiceTimeOut))
