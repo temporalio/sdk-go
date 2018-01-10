@@ -813,7 +813,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	if childWorkflow.handled {
 		return nil
 	}
-	err := errors.New("terminated")
+	err := newTerminatedError()
 	childWorkflow.handle(nil, err)
 
 	return nil

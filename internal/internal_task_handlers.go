@@ -1244,7 +1244,7 @@ func recordActivityHeartbeat(
 }
 
 // This enables verbose logging in the client library.
-// check Cadence.EnableVerboseLogging()
+// check worker.EnableVerboseLogging()
 func traceLog(fn func()) {
 	if enableVerboseLogging {
 		fn()

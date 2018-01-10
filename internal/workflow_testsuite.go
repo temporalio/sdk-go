@@ -231,7 +231,7 @@ func (t *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args .
 	t.impl.executeWorkflow(workflowFn, args...)
 }
 
-// Now returns the current workflow time (a.k.a cadence.Now() time) of this TestWorkflowEnvironment.
+// Now returns the current workflow time (a.k.a workflow.Now() time) of this TestWorkflowEnvironment.
 func (t *TestWorkflowEnvironment) Now() time.Time {
 	return t.impl.Now()
 }
@@ -245,7 +245,7 @@ func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestW
 
 // SetTestTimeout sets the wall clock timeout for this workflow test run. When test timeout happen, it means workflow is
 // blocked and cannot make progress. This could happen if workflow is waiting for activity result for too long.
-// This is real wall clock time, not the workflow time (a.k.a cadence.Now() time).
+// This is real wall clock time, not the workflow time (a.k.a workflow.Now() time).
 func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *TestWorkflowEnvironment {
 	t.impl.testTimeout = idleTimeout
 	return t

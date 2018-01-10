@@ -83,7 +83,7 @@ type (
 	}
 
 	// Workflow is an interface that any workflow should implement.
-	// Code of a workflow must be deterministic. It must use cadence.Channel, cadence.Selector, and workflow.Go instead of
+	// Code of a workflow must be deterministic. It must use workflow.Channel, workflow.Selector, and workflow.Go instead of
 	// native channels, select and go. It also must not use range operation over map as it is randomized by go runtime.
 	// All time manipulation should use current time returned by GetTime(ctx) method.
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.

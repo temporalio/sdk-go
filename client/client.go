@@ -46,6 +46,29 @@ type (
 	// DomainClient is the client for managing operations on the domain.
 	// CLI, tools, ... can use this layer to manager operations on domain.
 	DomainClient = internal.DomainClient
+
+	// HistoryEventIterator is a iterator which can return history events
+	HistoryEventIterator = internal.HistoryEventIterator
+
+	// WorkflowRun represents a started non child workflow
+	WorkflowRun = internal.WorkflowRun
+
+	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
+	WorkflowIDReusePolicy = internal.WorkflowIDReusePolicy
+)
+
+const (
+	// WorkflowIDReusePolicyAllowDuplicateFailedOnly allow start a workflow execution
+	// when workflow not running, and the last execution close state is in
+	// [terminated, cancelled, timeouted, failed].
+	WorkflowIDReusePolicyAllowDuplicateFailedOnly WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyAllowDuplicateFailedOnly
+
+	// WorkflowIDReusePolicyAllowDuplicate allow start a workflow execution using
+	// the same workflow ID,when workflow not running.
+	WorkflowIDReusePolicyAllowDuplicate WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyAllowDuplicate
+
+	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all
+	WorkflowIDReusePolicyRejectDuplicate WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyRejectDuplicate
 )
 
 // NewClient creates an instance of a workflow client

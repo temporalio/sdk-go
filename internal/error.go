@@ -55,10 +55,10 @@ Workflow code could handle errors based on different types of error. Below is sa
 _, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
 if err != nil {
 	switch err := err.(type) {
-	case *CustomError:
+	case *workflow.CustomError:
 		// handle activity errors (created via NewCustomError() API)
 		switch err.Reason() {
-		case cadence.CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
+		case CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
 			var detailMsg string // assuming activity return error by NewCustomError(CustomErrReasonA, "string details")
 			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
 			// handle CustomErrReasonA
@@ -67,13 +67,13 @@ if err != nil {
 		default:
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
-	case *cadence.GenericError:
+	case *workflow.GenericError:
 		// handle generic error (errors created other than using NewCustomError() API)
-	case *cadence.CanceledError:
+	case *workflow.CanceledError:
 		// handle cancellation
-	case *cadence.TimeoutError:
+	case *workflow.TimeoutError:
 		// handle timeout, could check timeout type by err.TimeoutType()
-	case *cadence.PanicError:
+	case *workflow.PanicError:
 		// handle panic
 	}
 }
@@ -104,6 +104,10 @@ type (
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
 		details []byte
+	}
+
+	// TerminatedError returned when workflow was terminated.
+	TerminatedError struct {
 	}
 
 	// PanicError contains information about panicked workflow/activity.
@@ -275,4 +279,14 @@ func (e *PanicError) StackTrace() string {
 // Error from error interface
 func (e *ContinueAsNewError) Error() string {
 	return "ContinueAsNew"
+}
+
+// newTerminatedError creates NewTerminatedError instance
+func newTerminatedError() *TerminatedError {
+	return &TerminatedError{}
+}
+
+// Error from error interface
+func (e *TerminatedError) Error() string {
+	return "Terminated"
 }

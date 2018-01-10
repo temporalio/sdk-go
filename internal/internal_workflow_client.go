@@ -23,6 +23,8 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -41,16 +43,16 @@ var _ DomainClient = (*domainClient)(nil)
 
 const (
 	defaultDecisionTaskTimeoutInSecs = 20
+	historyEventChanSize             = 100
 )
 
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
-		workflowExecution WorkflowExecution
-		workflowService   workflowserviceclient.Interface
-		domain            string
-		metricsScope      tally.Scope
-		identity          string
+		workflowService workflowserviceclient.Interface
+		domain          string
+		metricsScope    tally.Scope
+		identity        string
 	}
 
 	// domainClient is the client for managing domains.
@@ -59,12 +61,67 @@ type (
 		metricsScope    tally.Scope
 		identity        string
 	}
+
+	// WorkflowRun represents a started non child workflow
+	WorkflowRun interface {
+		// GetRunID return the first started workflow run ID (please see below)
+		GetRunID() string
+
+		// Get will fill the workflow execution result to valuePtr,
+		// if workflow execution is a success, or return corresponding,
+		// error. This is a blocking API.
+		Get(ctx context.Context, valuePtr interface{}) error
+
+		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
+		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
+		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
+		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
+		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:
+		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
+		// NOTE: DO NOT USE client.ExecuteWorkflow API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
+	}
+
+	// workflowRunImpl is an implementation of WorkflowRun
+	workflowRunImpl struct {
+		workflowFn   interface{}
+		firstRunID   string
+		currentRunID string
+		iterFn       func(ctx context.Context, runID string) HistoryEventIterator
+	}
+
+	// HistoryEventIterator represents the interface for
+	// history event iterator
+	HistoryEventIterator interface {
+		// HasNext return whether this iterator has next value
+		HasNext() bool
+		// Next returns the next history events and error
+		// The errors it can return:
+		//	- EntityNotExistsError
+		//	- BadRequestError
+		//	- InternalServiceError
+		Next() (*s.HistoryEvent, error)
+	}
+
+	// historyEventIteratorImpl is the implementation of HistoryEventIterator
+	historyEventIteratorImpl struct {
+		// whether this iterator is initialized
+		initialized bool
+		// local cached histroy events and corresponding comsuming index
+		nextEventIndex int
+		events         []*s.HistoryEvent
+		// token to get next page of history events
+		nexttoken []byte
+		// err when getting next page of history events
+		err error
+		// func which use a next token to get next page of history events
+		paginate func(nexttoken []byte) (*s.GetWorkflowExecutionHistoryResponse, error)
+	}
 )
 
 // StartWorkflow starts a workflow execution
 // The user can use this to start using a functor like.
 // Either by
-//     StartWorkflow(options, "workflowTypeName", input)
+//     StartWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
 //     StartWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
 func (wc *workflowClient) StartWorkflow(
@@ -110,7 +167,9 @@ func (wc *workflowClient) StartWorkflow(
 		Input:        input,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
-		Identity:                            common.StringPtr(wc.identity)}
+		Identity:                            common.StringPtr(wc.identity),
+		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
+	}
 
 	var response *s.StartWorkflowExecutionResponse
 
@@ -137,6 +196,41 @@ func (wc *workflowClient) StartWorkflow(
 		ID:    options.ID,
 		RunID: response.GetRunId()}
 	return executionInfo, nil
+}
+
+// ExecuteWorkflow starts a workflow execution and wait until this workflow reaches the end state, such as
+// workflow finished successfully or timeout.
+// The user can use this to start using a functor like below and get the workflow execution result, as encoded.Value
+// Either by
+//     RunWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
+//     or
+//     RunWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+// NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
+func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+
+	// start the workflow execution
+	runID := ""
+	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
+	if err != nil {
+		if alreadyStartedErr, ok := err.(*s.WorkflowExecutionAlreadyStartedError); ok {
+			runID = alreadyStartedErr.GetRunId()
+		} else {
+			return nil, err
+		}
+	} else {
+		runID = executionInfo.RunID
+	}
+
+	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
+		return wc.GetWorkflowHistory(fnCtx, options.ID, fnRunID, true, s.HistoryEventFilterTypeCloseEvent)
+	}
+
+	return &workflowRunImpl{
+		workflowFn:   workflow,
+		firstRunID:   runID,
+		currentRunID: runID,
+		iterFn:       iterFn,
+	}, nil
 }
 
 // SignalWorkflow signals a workflow in execution.
@@ -211,21 +305,21 @@ func (wc *workflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 	return err
 }
 
-// GetWorkflowHistory gets history of a particular workflow.
-func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string) (*s.History, error) {
-	history := &s.History{}
-	history.Events = make([]*s.HistoryEvent, 0)
-	var nextPageToken []byte
+// GetWorkflowHistory return a channel which contains the history events of a given workflow
+func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
+	isLongPoll bool, filterType s.HistoryEventFilterType) HistoryEventIterator {
 
-GetHistoryLoop:
-	for {
+	domain := wc.domain
+	paginate := func(nexttoken []byte) (*s.GetWorkflowExecutionHistoryResponse, error) {
 		request := &s.GetWorkflowExecutionHistoryRequest{
-			Domain: common.StringPtr(wc.domain),
+			Domain: common.StringPtr(domain),
 			Execution: &s.WorkflowExecution{
 				WorkflowId: common.StringPtr(workflowID),
 				RunId:      getRunID(runID),
 			},
-			NextPageToken: nextPageToken,
+			WaitForNewEvent:        common.BoolPtr(isLongPoll),
+			HistoryEventFilterType: &filterType,
+			NextPageToken:          nexttoken,
 		}
 
 		var response *s.GetWorkflowExecutionHistoryResponse
@@ -240,13 +334,12 @@ GetHistoryLoop:
 		if err != nil {
 			return nil, err
 		}
-		history.Events = append(history.Events, response.History.Events...)
-		if response.NextPageToken == nil {
-			break GetHistoryLoop
-		}
-		nextPageToken = response.NextPageToken
+		return response, nil
 	}
-	return history, nil
+
+	return &historyEventIteratorImpl{
+		paginate: paginate,
+	}
 }
 
 // CompleteActivity reports activity completed. activity Execute method can return acitivity.activity.ErrResultPending to
@@ -495,4 +588,141 @@ func getRunID(runID string) *string {
 		return nil
 	}
 	return common.StringPtr(runID)
+}
+
+// paginateWorkflowHistory is the internal func paginate on the whole workflow eecution history
+func (wc *workflowClient) paginateWorkflowHistory(ctx context.Context, workflowID string, runID string,
+	isLongPoll bool, filterType s.HistoryEventFilterType) (*s.History, error) {
+
+	history := &s.History{}
+	history.Events = make([]*s.HistoryEvent, 0)
+	var nexttoken []byte
+
+GetHistoryLoop:
+	for {
+		request := &s.GetWorkflowExecutionHistoryRequest{
+			Domain: common.StringPtr(wc.domain),
+			Execution: &s.WorkflowExecution{
+				WorkflowId: common.StringPtr(workflowID),
+				RunId:      getRunID(runID),
+			},
+			WaitForNewEvent:        common.BoolPtr(isLongPoll),
+			HistoryEventFilterType: &filterType,
+			NextPageToken:          nexttoken,
+		}
+
+		var response *s.GetWorkflowExecutionHistoryResponse
+		err := backoff.Retry(ctx,
+			func() error {
+				var err1 error
+				tchCtx, cancel, opt := newChannelContext(ctx)
+				defer cancel()
+				response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request, opt...)
+				return err1
+			}, serviceOperationRetryPolicy, isServiceTransientError)
+		if err != nil {
+			return nil, err
+		}
+		history.Events = append(history.Events, response.History.Events...)
+		if response.NextPageToken == nil {
+			break GetHistoryLoop
+		}
+		nexttoken = response.NextPageToken
+	}
+	return history, nil
+}
+
+func (iter *historyEventIteratorImpl) HasNext() bool {
+	if iter.nextEventIndex < len(iter.events) || iter.err != nil {
+		return true
+	} else if !iter.initialized || len(iter.nexttoken) != 0 {
+		iter.initialized = true
+		response, err := iter.paginate(iter.nexttoken)
+		iter.nextEventIndex = 0
+		if err == nil {
+			iter.events = response.History.Events
+			iter.nexttoken = response.NextPageToken
+			iter.err = nil
+		} else {
+			iter.events = nil
+			iter.nexttoken = nil
+			iter.err = err
+		}
+
+		if iter.nextEventIndex < len(iter.events) || iter.err != nil {
+			return true
+		}
+		return false
+	}
+
+	return false
+}
+
+func (iter *historyEventIteratorImpl) Next() (*s.HistoryEvent, error) {
+	// if caller call the Next() when iteration is over, just return nil, nil
+	if !iter.HasNext() {
+		// debug.PrintStack()
+		panic("HistoryEventIterator Next() called without checking HasNext()")
+	}
+
+	// we have cached events
+	if iter.nextEventIndex < len(iter.events) {
+		index := iter.nextEventIndex
+		iter.nextEventIndex++
+		return iter.events[index], nil
+	} else if iter.err != nil {
+		// we have err, clear that iter.err and return err
+		err := iter.err
+		iter.err = nil
+		return nil, err
+	}
+
+	panic("HistoryEventIterator Next() should return either a history event or a err")
+}
+
+func (workflowRun *workflowRunImpl) GetRunID() string {
+	return workflowRun.firstRunID
+}
+
+func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{}) error {
+
+	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID)
+	if !iter.HasNext() {
+		panic("could not get last history event for workflow")
+	}
+	closeEvent, err := iter.Next()
+	if err != nil {
+		return err
+	}
+
+	switch closeEvent.GetEventType() {
+	case s.EventTypeWorkflowExecutionCompleted:
+		attributes := closeEvent.WorkflowExecutionCompletedEventAttributes
+		if valuePtr == nil || attributes.Result == nil {
+			return nil
+		}
+		rf := reflect.ValueOf(valuePtr)
+		if rf.Type().Kind() != reflect.Ptr {
+			return errors.New("value parameter is not a pointer")
+		}
+		err = deSerializeFunctionResult(workflowRun.workflowFn, attributes.Result, valuePtr)
+	case s.EventTypeWorkflowExecutionFailed:
+		attributes := closeEvent.WorkflowExecutionFailedEventAttributes
+		err = constructError(attributes.GetReason(), attributes.Details)
+	case s.EventTypeWorkflowExecutionCanceled:
+		attributes := closeEvent.WorkflowExecutionCanceledEventAttributes
+		err = NewCanceledError(attributes.Details)
+	case s.EventTypeWorkflowExecutionTerminated:
+		err = newTerminatedError()
+	case s.EventTypeWorkflowExecutionTimedOut:
+		attributes := closeEvent.WorkflowExecutionTimedOutEventAttributes
+		err = NewTimeoutError(attributes.GetTimeoutType())
+	case s.EventTypeWorkflowExecutionContinuedAsNew:
+		attributes := closeEvent.WorkflowExecutionContinuedAsNewEventAttributes
+		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
+		return workflowRun.Get(ctx, valuePtr)
+	default:
+		err = fmt.Errorf("Unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
+	}
+	return err
 }

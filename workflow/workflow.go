@@ -67,7 +67,7 @@ const (
 )
 
 // Register - registers a workflow function with the framework.
-// A workflow takes a cadence context and input and returns a (result, error) or just error.
+// A workflow takes a workflow context and input and returns a (result, error) or just error.
 // Examples:
 //	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 //	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
@@ -84,7 +84,7 @@ func Register(workflowFunc interface{}) {
 // external name is required. This can be used as
 //  client.RegisterWorkflow(sampleWorkflow, RegisterOptions{})
 //  client.RegisterWorkflow(sampleWorkflow, RegisterOptions{Name: "foo"})
-// A workflow takes a cadence context and input and returns a (result, error) or just error.
+// A workflow takes a workflow context and input and returns a (result, error) or just error.
 // Examples:
 //	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 //	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
@@ -185,7 +185,7 @@ func GetSignalChannel(ctx Context, signalName string) Channel {
 // For example this code is BROKEN:
 //  // Bad example:
 //  var random int
-//  cadence.SideEffect(func(ctx workflow.Context) interface{} {
+//  workflow.SideEffect(func(ctx workflow.Context) interface{} {
 //         random = rand.Intn(100)
 //         return nil
 //  })
@@ -268,17 +268,17 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 // SetQueryHandler sets the query handler to handle workflow query. The queryType specify which query type this handler
 // should handle. The handler must be a function that returns 2 values. The first return value must be a serializable
 // result. The second return value must be an error. The handler function could receive any number of input parameters.
-// All the input parameter must be serializable. You should call cadence.SetQueryHandler() at the beginning of the workflow
+// All the input parameter must be serializable. You should call workflow.SetQueryHandler() at the beginning of the workflow
 // code. When client calls Client.QueryWorkflow() to cadence server, a task will be generated on server that will be dispatched
 // to a workflow worker, which will replay the history events and then execute a query handler based on the query type.
-// The query handler will be invoked out of the context of the workflow, meaning that the handler code must not use cadence
+// The query handler will be invoked out of the context of the workflow, meaning that the handler code must not use workflow
 // context to do things like workflow.NewChannel(), workflow.Go() or to call any workflow blocking functions like
 // Channel.Get() or Future.Get(). Trying to do so in query handler code will fail the query and client will receive
 // QueryFailedError.
 // Example of workflow code that support query type "current_state":
 //  func MyWorkflow(ctx workflow.Context, input string) error {
 //    currentState := "started" // this could be any serializable struct
-//    err := cadence.SetQueryHandler(ctx, "current_state", func() (string, error) {
+//    err := workflow.SetQueryHandler(ctx, "current_state", func() (string, error) {
 //      return currentState, nil
 //    })
 //    if err != nil {

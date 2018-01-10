@@ -27,7 +27,7 @@ import (
 
 /*
 Below are the possible errors that activity or child workflow could return:
-1) *cadence.CustomError: (this should be the most common one)
+1) *workflow.CustomError: (this should be the most common one)
 	If activity or child workflow implementation returns *CustomError by using NewCustomError() API, workflow code would receive *CustomError.
 	The err would contain a Reason and Details. The reason is what activity specified to NewCustomError(), which workflow
 	code could check to determine what kind of error it was and take actions based on the reason. The details is encoded
@@ -37,7 +37,7 @@ Below are the possible errors that activity or child workflow could return:
 	If activity or child workflow implementation returns errors other than from NewCustomError() API,
     workflow code would receive *GenericError.
 	Use err.Error() to get the string representation of the actual error.
-3) *cadence.CanceledError:
+3) *workflow.CanceledError:
 	If activity or child workflow was canceled, workflow code will receive instance of *CanceledError.
     When activity or child workflow finishes cleanup it can indicate it by returning error created through
     NewCancelError() and could supply optional details which could be extracted by workflow code.
@@ -59,10 +59,10 @@ Workflow code could handle errors based on different types of error. Below is sa
 _, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
 if err != nil {
 	switch err := err.(type) {
-	case *CustomError:
+	case *workflowCustomError:
 		// handle activity errors (created via NewCustomError() API)
 		switch err.Reason() {
-		case cadence.CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
+		case CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
 			var detailMsg string // assuming activity return error by NewCustomError(CustomErrReasonA, "string details")
 			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
 			// handle CustomErrReasonA
@@ -71,13 +71,13 @@ if err != nil {
 		default:
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
-	case *cadence.GenericError:
+	case *workflow.GenericError:
 		// handle generic error (errors created other than using NewCustomError() API)
-	case *cadence.CanceledError:
+	case *workflow.CanceledError:
 		// handle cancellation
-	case *cadence.TimeoutError:
+	case *workflow.TimeoutError:
 		// handle timeout, could check timeout type by err.TimeoutType()
-	case *cadence.PanicError:
+	case *workflow.PanicError:
 		// handle panic
 	}
 }
@@ -85,11 +85,14 @@ if err != nil {
 
 type (
 	// GenericError is returned from activity or child workflow when an implementations return error
-	// other than from cadence.NewCustomError() API.
+	// other than from workflow.NewCustomError() API.
 	GenericError = internal.GenericError
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError = internal.TimeoutError
+
+	// TerminatedError returned when workflow was terminated.
+	TerminatedError = internal.TerminatedError
 
 	// PanicError contains information about panicked workflow/activity.
 	PanicError = internal.PanicError
