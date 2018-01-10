@@ -436,6 +436,18 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	if event == nil {
 		return nil, errors.New("nil event provided")
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			weh.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
+			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskListName)
+			st := getStackTraceRaw(topLine, 7, 0)
+			weh.logger.Error("ProcessEvent panic.",
+				zap.String("PanicError", fmt.Sprintf("%v", p)),
+				zap.String("PanicStack", st))
+
+			weh.Complete(nil, newPanicError(p, st))
+		}
+	}()
 
 	weh.isReplay = isReplay
 	traceLog(func() {
