@@ -162,6 +162,10 @@ type (
 		// as: completed/failed/timedout/terminated/canceled)
 		// Optional: default false
 		WaitForCancellation bool
+
+		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
+		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate
+		WorkflowIDReusePolicy WorkflowIDReusePolicy
 	}
 
 	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
@@ -495,6 +499,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(cwo.TaskStartToCloseTimeout.Seconds()))
 	wfOptions.childPolicy = cwo.ChildPolicy
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
+	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 
 	return ctx1
 }

@@ -164,6 +164,7 @@ type (
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
+		workflowIDReusePolicy               WorkflowIDReusePolicy
 	}
 
 	// decodeFutureImpl

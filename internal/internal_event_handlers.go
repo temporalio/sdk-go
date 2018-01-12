@@ -223,6 +223,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Input = options.input
 	attributes.WorkflowType = workflowTypePtr(*options.workflowType)
 	attributes.ChildPolicy = options.childPolicy.toThriftChildPolicyPtr()
+	attributes.WorkflowIdReusePolicy = options.workflowIDReusePolicy.toThriftPtr()
 
 	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
 	decision.setData(&scheduledChildWorkflow{
