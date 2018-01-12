@@ -346,7 +346,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{
 			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 	}
@@ -370,6 +370,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.Error(err)
 	t.Nil(request)
 	t.Contains(err.Error(), "nondeterministic")
+
+	// now with different package name to activity type
+	testEvents[1].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")
+	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
+	request, _, err = taskHandler.ProcessWorkflowTask(task, nil, false)
+	t.NoError(err)
+	t.NotNil(request)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {

@@ -25,6 +25,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -327,7 +328,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
 	}
-	if d.Seconds() == 0 {
+	if d == 0 {
 		callback(nil, nil)
 		return nil
 	}
@@ -335,7 +336,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 	timerID := wc.GenerateSequenceID()
 	startTimerAttr := &m.StartTimerDecisionAttributes{}
 	startTimerAttr.TimerId = common.StringPtr(timerID)
-	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ptr(int64(d.Seconds()))
+	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ptr(int64(math.Ceil(d.Seconds())))
 
 	decision := wc.decisionsHelper.startTimer(startTimerAttr)
 	decision.setData(&scheduledTimer{callback: callback})

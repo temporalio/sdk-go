@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -719,6 +720,14 @@ matchLoop:
 	return nil
 }
 
+func lastPartOfActivityName(name string) string {
+	lastDotIdx := strings.LastIndex(name, ".")
+	if lastDotIdx < 0 || lastDotIdx == len(name)-1 {
+		return name
+	}
+	return name[lastDotIdx+1:]
+}
+
 func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) bool {
 	switch d.GetDecisionType() {
 	case s.DecisionTypeScheduleActivityTask:
@@ -729,7 +738,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		decisionAttributes := d.ScheduleActivityTaskDecisionAttributes
 
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
-			eventAttributes.ActivityType.GetName() != decisionAttributes.ActivityType.GetName() ||
+			lastPartOfActivityName(eventAttributes.ActivityType.GetName()) != lastPartOfActivityName(decisionAttributes.ActivityType.GetName()) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) ||
 			(strictMode && bytes.Compare(eventAttributes.Input, decisionAttributes.Input) != 0) {
 			return false
@@ -758,7 +767,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		decisionAttributes := d.StartTimerDecisionAttributes
 
 		if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() ||
-			eventAttributes.GetStartToFireTimeoutSeconds() != decisionAttributes.GetStartToFireTimeoutSeconds() {
+			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != decisionAttributes.GetStartToFireTimeoutSeconds()) {
 			return false
 		}
 
