@@ -959,6 +959,42 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	s.EqualValues(expectedValues, actualValues)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {
+	activityFn := func(msg string) (string, error) {
+		return msg, nil
+	}
+	activityAlias := "some-random-activity-alias"
+
+	RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: activityAlias})
+	env := s.NewTestActivityEnvironment()
+	input := "some random input"
+
+	encodedValue, err := env.ExecuteActivity(activityFn, input)
+	s.NoError(err)
+	output := ""
+	encodedValue.Get(&output)
+	s.Equal(input, output)
+
+	encodedValue, err = env.ExecuteActivity(activityAlias, input)
+	s.NoError(err)
+	output = ""
+	encodedValue.Get(&output)
+	s.Equal(input, output)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowRegistration() {
+	workflowFn := func(ctx Context) error {
+		return nil
+	}
+	workflowAlias := "some-random-workflow-alias"
+
+	RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{Name: workflowAlias})
+	env := s.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowAlias)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 	activityFn := func(msg string) (string, error) {
 		return "hello_" + msg, nil

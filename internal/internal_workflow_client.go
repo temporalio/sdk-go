@@ -153,7 +153,7 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	// Validate type and its arguments.
-	workflowType, input, err := getValidatedWorkerFunction(workflowFunc, args)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args)
 	if err != nil {
 		return nil, err
 	}
