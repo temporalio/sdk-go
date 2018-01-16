@@ -34,13 +34,13 @@ type (
 	Options = internal.WorkerOptions
 )
 
-// NewWorker creates an instance of worker for managing workflow and activity executions.
+// New creates an instance of worker for managing workflow and activity executions.
 // service 	- thrift connection to the cadence server.
 // domain - the name of the cadence domain.
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
-func NewWorker(
+func New(
 	service workflowserviceclient.Interface,
 	domain string,
 	taskList string,
