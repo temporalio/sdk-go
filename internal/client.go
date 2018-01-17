@@ -205,6 +205,14 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*s.DescribeWorkflowExecutionResponse, error)
+
+		// DescribeTaskList returns information about the target tasklist, right now this API returns the
+		// pollers which polled this tasklist in last few minutes.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		//  - EntityNotExistError
+		DescribeTaskList(ctx context.Context, tasklist string, tasklistType s.TaskListType) (*s.DescribeTaskListResponse, error)
 	}
 
 	// ClientOptions are optional parameters for Client creation.

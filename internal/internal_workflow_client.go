@@ -518,6 +518,37 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	return EncodedValue(resp.QueryResult), nil
 }
 
+// DescribeTaskList returns information about the target tasklist, right now this API returns the
+// pollers which polled this tasklist in last few minutes.
+// - tasklist name of tasklist
+// - tasklistType type of tasklist, can be decition or activity
+// The errors it can return:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+func (wc *workflowClient) DescribeTaskList(ctx context.Context, tasklist string, tasklistType s.TaskListType) (*s.DescribeTaskListResponse, error) {
+	request := &s.DescribeTaskListRequest{
+		Domain:       common.StringPtr(wc.domain),
+		TaskList:     &s.TaskList{Name: common.StringPtr(tasklist)},
+		TaskListType: &tasklistType,
+	}
+
+	var resp *s.DescribeTaskListResponse
+	err := backoff.Retry(ctx,
+		func() error {
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+			var err error
+			resp, err = wc.workflowService.DescribeTaskList(tchCtx, request, opt...)
+			return err
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
 // Register a domain with cadence server
 // The errors it can throw:
 //	- DomainAlreadyExistsError
