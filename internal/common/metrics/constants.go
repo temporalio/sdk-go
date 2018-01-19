@@ -45,7 +45,6 @@ const (
 	DecisionExecutionLatency           = CadenceMetricsPrefix + "decision-execution-latency"
 	DecisionResponseFailedCounter      = CadenceMetricsPrefix + "decision-response-failed"
 	DecisionResponseLatency            = CadenceMetricsPrefix + "decision-response-latency"
-	DecisionEndToEndLatency            = CadenceMetricsPrefix + "decision-endtoend-latency" // measure from poll request start to response completed
 	DecisionTaskPanicCounter           = CadenceMetricsPrefix + "decision-task-panic"
 	DecisionTaskCompletedCounter       = CadenceMetricsPrefix + "decision-task-completed"
 
@@ -67,6 +66,13 @@ const (
 	ActivityTaskCompletedByIDCounter   = CadenceMetricsPrefix + "activity-task-completed-by-id"
 	ActivityTaskFailedByIDCounter      = CadenceMetricsPrefix + "activity-task-failed-by-id"
 	ActivityTaskCanceledByIDCounter    = CadenceMetricsPrefix + "activity-task-canceled-by-id"
+	LocalActivityTotalCounter          = CadenceMetricsPrefix + "local-activity-total"
+	LocalActivityTimeoutCounter        = CadenceMetricsPrefix + "local-activity-timeout"
+	LocalActivityCanceledCounter       = CadenceMetricsPrefix + "local-activity-canceled"
+	LocalActivityFailedCounter         = CadenceMetricsPrefix + "local-activity-failed"
+	LocalActivityPanicCounter          = CadenceMetricsPrefix + "local-activity-panic"
+	LocalActivityExecutionLatency      = CadenceMetricsPrefix + "local-activity-execution-latency"
+	WorkerPanicCounter                 = CadenceMetricsPrefix + "worker-panic"
 
 	TaskListQueueLatency = CadenceMetricsPrefix + "tasklist-queue-latency"
 

@@ -44,6 +44,10 @@ type (
 		activityID string
 	}
 
+	localActivityInfo struct {
+		activityID string
+	}
+
 	// executeActivityParameters configuration parameters for scheduling an activity
 	executeActivityParameters struct {
 		ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
@@ -56,6 +60,13 @@ type (
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
 		OriginalTaskListName          string
+	}
+
+	executeLocalActivityParams struct {
+		ActivityFn                    interface{} // local activity function pointer
+		InputArgs                     []interface{}
+		ScheduleToCloseTimeoutSeconds int32
+		WorkflowInfo                  *WorkflowInfo
 	}
 
 	// asyncActivityClient for requesting activity execution
@@ -71,6 +82,13 @@ type (
 		RequestCancelActivity(activityID string)
 	}
 
+	// localActivityClient for requesting local activity execution
+	localActivityClient interface {
+		ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo
+
+		RequestCancelLocalActivity(activityID string)
+	}
+
 	activityEnvironment struct {
 		taskToken         []byte
 		workflowExecution WorkflowExecution
@@ -79,11 +97,15 @@ type (
 		serviceInvoker    ServiceInvoker
 		logger            *zap.Logger
 		metricsScope      tally.Scope
+		isLocalActivity   bool
 	}
 )
 
-const activityEnvContextKey = "activityEnv"
-const activityOptionsContextKey = "activityOptions"
+const (
+	activityEnvContextKey          = "activityEnv"
+	activityOptionsContextKey      = "activityOptions"
+	localActivityOptionsContextKey = "localActivityOptions"
+)
 
 func getActivityEnv(ctx context.Context) *activityEnvironment {
 	env := ctx.Value(activityEnvContextKey)
@@ -99,6 +121,14 @@ func getActivityOptions(ctx Context) *executeActivityParameters {
 		return nil
 	}
 	return eap.(*executeActivityParameters)
+}
+
+func getLocalActivityOptions(ctx Context) *executeLocalActivityParams {
+	opts := ctx.Value(localActivityOptionsContextKey)
+	if opts == nil {
+		return nil
+	}
+	return opts.(*executeLocalActivityParams)
 }
 
 func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error) {
@@ -126,6 +156,18 @@ func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error
 	}
 	if p.HeartbeatTimeoutSeconds < 0 {
 		return nil, errors.New("invalid negative HeartbeatTimeoutSeconds")
+	}
+
+	return p, nil
+}
+
+func getValidatedLocalActivityOptions(ctx Context) (*executeLocalActivityParams, error) {
+	p := getLocalActivityOptions(ctx)
+	if p == nil {
+		return nil, errLocalActivityParamsBadRequest
+	}
+	if p.ScheduleToCloseTimeoutSeconds <= 0 {
+		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
 	}
 
 	return p, nil
@@ -311,6 +353,13 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}) err
 func setActivityParametersIfNotExist(ctx Context) Context {
 	if valCtx := getActivityOptions(ctx); valCtx == nil {
 		return WithValue(ctx, activityOptionsContextKey, &executeActivityParameters{})
+	}
+	return ctx
+}
+
+func setLocalActivityParametersIfNotExist(ctx Context) Context {
+	if valCtx := getLocalActivityOptions(ctx); valCtx == nil {
+		return WithValue(ctx, localActivityOptionsContextKey, &executeLocalActivityParams{})
 	}
 	return ctx
 }

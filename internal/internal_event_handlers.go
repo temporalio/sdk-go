@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -76,9 +77,12 @@ type (
 		decisionsHelper  *decisionsHelper
 		sideEffectResult map[int32][]byte
 		changeVersions   map[string]Version
+		pendingLaTasks   map[string]*localActivityTask
+		unstartedLaTasks map[string]struct{}
 
 		counterID         int32     // To generate sequence IDs for activity/timer etc.
 		currentReplayTime time.Time // Indicates current replay time of the decision.
+		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
 		completeHandler completionHandler               // events completion handler
 		cancelHandler   func()                          // A cancel handler to be invoked on a cancel notification
@@ -91,6 +95,25 @@ type (
 
 		metricsScope tally.Scope
 		hostEnv      *hostEnvImpl
+	}
+
+	localActivityTask struct {
+		sync.Mutex
+		activityID   string
+		params       *executeLocalActivityParams
+		callback     resultHandler
+		wc           *workflowExecutionContext
+		decisionTask *m.PollForDecisionTaskResponse
+		canceled     bool
+		cancelFunc   func()
+	}
+
+	localActivityMarkerData struct {
+		ActivityID string
+		ErrReason  string
+		ErrJSON    string // string instead of []byte so the encoded blob is human readable
+		ResultJSON string
+		ReplayTime time.Time
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -132,6 +155,8 @@ func newWorkflowExecutionEventHandler(
 		decisionsHelper:       newDecisionsHelper(),
 		sideEffectResult:      make(map[int32][]byte),
 		changeVersions:        make(map[string]Version),
+		pendingLaTasks:        make(map[string]*localActivityTask),
+		unstartedLaTasks:      make(map[string]struct{}),
 		completeHandler:       completeHandler,
 		enableLoggingInReplay: enableLoggingInReplay,
 		hostEnv:               hostEnv,
@@ -171,6 +196,15 @@ func (s *scheduledChildWorkflow) handle(result []byte, err error) {
 	}
 	s.handled = true
 	s.resultCallback(result, err)
+}
+
+func (t *localActivityTask) cancel() {
+	t.Lock()
+	t.canceled = true
+	if t.cancelFunc != nil {
+		t.cancelFunc()
+	}
+	t.Unlock()
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -315,8 +349,26 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
 }
 
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo {
+	activityID := wc.GenerateSequenceID()
+	task := &localActivityTask{activityID: activityID, params: &params, callback: callback}
+	wc.pendingLaTasks[activityID] = task
+	wc.unstartedLaTasks[activityID] = struct{}{}
+	return &localActivityInfo{activityID: activityID}
+}
+
+func (wc *workflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
+	if task, ok := wc.pendingLaTasks[activityID]; ok {
+		task.cancel()
+	}
+}
+
 func (wc *workflowEnvironmentImpl) SetCurrentReplayTime(replayTime time.Time) {
+	if replayTime.Before(wc.currentReplayTime) {
+		return
+	}
 	wc.currentReplayTime = replayTime
+	wc.currentLocalTime = time.Now()
 }
 
 func (wc *workflowEnvironmentImpl) Now() time.Time {
@@ -718,10 +770,72 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		encodedValues.Get(&changeID, &version)
 		weh.changeVersions[changeID] = version
 		return nil
+	case localActivityMarkerName:
+		return weh.handleLocalActivityMarker(attributes.Details)
 	default:
 		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
 			attributes.GetMarkerName(), eventID)
 	}
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData EncodedValue) error {
+	var lamd localActivityMarkerData
+	if err := markerData.Get(&lamd); err != nil {
+		return err
+	}
+
+	weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
+
+	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
+		delete(weh.pendingLaTasks, lamd.ActivityID)
+		delete(weh.unstartedLaTasks, lamd.ActivityID)
+		if len(lamd.ErrReason) > 0 {
+			la.callback(nil, constructError(lamd.ErrReason, []byte(lamd.ErrJSON)))
+		} else {
+			la.callback([]byte(lamd.ResultJSON), nil)
+		}
+
+		// update time
+		weh.SetCurrentReplayTime(lamd.ReplayTime)
+
+		// resume workflow execution after apply local activity result
+		weh.workflowDefinition.OnDecisionTaskStarted()
+	}
+
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) ([]*m.Decision, error) {
+	// convert local activity result and error to marker data
+	lamd := localActivityMarkerData{
+		ActivityID: lar.task.activityID,
+		ReplayTime: weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
+	}
+	if lar.err != nil {
+		errReason, errDetails := getErrorDetails(lar.err)
+		lamd.ErrReason = errReason
+		lamd.ErrJSON = string(errDetails)
+	} else {
+		lamd.ResultJSON = string(lar.result)
+	}
+
+	// encode marker data
+	markerData, err := getHostEnvironment().encodeArg(lamd)
+	if err != nil {
+		return nil, err
+	}
+
+	// create marker event for local activity result
+	markerEvent := &m.HistoryEvent{
+		EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
+		MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
+			MarkerName: common.StringPtr(localActivityMarkerName),
+			Details:    markerData,
+		},
+	}
+
+	// apply the local activity result to workflow
+	return weh.ProcessEvent(markerEvent, false, false)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(

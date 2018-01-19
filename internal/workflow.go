@@ -33,8 +33,9 @@ import (
 )
 
 var (
-	errActivityParamsBadRequest = errors.New("missing activity parameters through context, check ActivityOptions")
-	errWorkflowOptionBadRequest = errors.New("missing workflow options through context, check WorkflowOptions")
+	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
+	errActivityParamsBadRequest      = errors.New("missing activity parameters through context, check ActivityOptions")
+	errWorkflowOptionBadRequest      = errors.New("missing workflow options through context, check WorkflowOptions")
 )
 
 type (
@@ -334,6 +335,73 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 			}).Select(ctx)
 		}
 	})
+	return future
+}
+
+// ExecuteLocalActivity requests to run a local activity. A local activity is like a regular activity with some key
+// differences:
+// * Local activity is scheduled and run by the workflow worker locally.
+// * Local activity does not need Cadence server to schedule activity task and does not rely on activity worker.
+// * No need to register local activity.
+// * The parameter activity to ExecuteLocalActivity() must be a function.
+// * Local activity is for short living activities (usually finishes within seconds).
+// * Local activity cannot heartbeat.
+//
+// Context can be used to pass the settings for this local activity.
+// For now there is only one setting for timeout to be set:
+//  lao := LocalActivityOptions{
+// 	    ScheduleToCloseTimeout: 5 * time.Second,
+// 	}
+//	ctx := WithLocalActivityOptions(ctx, lao)
+// The timeout here should be relative shorter than the DecisionTaskStartToCloseTimeout of the workflow. If you need a
+// longer timeout, you probably should not use local activity and instead should use regular activity. Local activity is
+// designed to be used for short living activities (usually finishes within seconds).
+//
+// Input args are the arguments that will to be passed to the local activity. The input args will be hand over directly
+// to local activity function without serialization/deserialization because we don't need to pass the input across process
+// boundary. However, the result will still go through serialization/deserialization because we need to record the result
+// as history to cadence server so if the workflow crashes, a different worker can replay the history without running
+// the local activity again.
+//
+// If the activity failed to complete then the future get error would indicate the failure, and it can be one of
+// CustomError, TimeoutError, CanceledError, PanicError, GenericError.
+// You can cancel the pending activity by cancel the context(workflow.WithCancel(ctx)) and that will fail the activity
+// with error CanceledError.
+//
+// ExecuteLocalActivity returns Future with local activity result or failure.
+func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	future, settable := newDecodeFuture(ctx, activity)
+
+	if err := validateFunctionArgs(activity, args, false); err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+	params, err := getValidatedLocalActivityOptions(ctx)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+
+	params.ActivityFn = activity
+	params.InputArgs = args
+	params.WorkflowInfo = GetWorkflowInfo(ctx)
+
+	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(*params, func(r []byte, e error) {
+		settable.Set(r, e)
+	})
+
+	Go(ctx, func(ctx Context) {
+		if ctxDone := ctx.Done(); ctxDone != nil {
+			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
+				if ctx.Err() == ErrCanceled {
+					getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la.activityID)
+				}
+			}).AddFuture(future, func(f Future) {
+				// activity is done, no-op
+			}).Select(ctx)
+		}
+	})
+
 	return future
 }
 

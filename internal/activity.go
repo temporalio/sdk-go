@@ -120,6 +120,11 @@ func GetActivityMetricsScope(ctx context.Context) tally.Scope {
 // details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
 // can check error TimeOutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
+	env := getActivityEnv(ctx)
+	if env.isLocalActivity {
+		// no-op for local activity
+		return
+	}
 	var data []byte
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
@@ -129,7 +134,6 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 			panic(err)
 		}
 	}
-	env := getActivityEnv(ctx)
 	err = env.serviceInvoker.Heartbeat(data)
 	if err != nil {
 		log := GetActivityLogger(ctx)
@@ -203,6 +207,13 @@ type ActivityOptions struct {
 	ActivityID string
 }
 
+// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
+type LocalActivityOptions struct {
+	// ScheduleToCloseTimeout - The end to end timeout for the local activity.
+	// This field is required.
+	ScheduleToCloseTimeout time.Duration
+}
+
 // WithActivityOptions adds all options to the context.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
@@ -215,6 +226,15 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.HeartbeatTimeoutSeconds = int32(options.HeartbeatTimeout.Seconds())
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = common.StringPtr(options.ActivityID)
+	return ctx1
+}
+
+// WithLocalActivityOptions adds local activity options to the context.
+func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
+	ctx1 := setLocalActivityParametersIfNotExist(ctx)
+	opts := getLocalActivityOptions(ctx1)
+
+	opts.ScheduleToCloseTimeoutSeconds = int32(options.ScheduleToCloseTimeout.Seconds())
 	return ctx1
 }
 

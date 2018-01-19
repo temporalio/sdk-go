@@ -178,6 +178,12 @@ func getErrorDetails(err error) (string, []byte) {
 			panic(gobErr)
 		}
 		return errReasonPanic, data
+	case *TimeoutError:
+		data, gobErr := getHostEnvironment().encodeArgs([]interface{}{err.timeoutType})
+		if gobErr != nil {
+			panic(gobErr)
+		}
+		return errReasonTimeout, data
 	default:
 		// will be convert to GenericError when receiving from server.
 		return errReasonGeneric, []byte(err.Error())
@@ -198,6 +204,11 @@ func constructError(reason string, details []byte) error {
 		return &GenericError{err: string(details)}
 	case errReasonCanceled:
 		return NewCanceledError(details)
+	case errReasonTimeout:
+		var timeoutType s.TimeoutType
+		details := EncodedValues(details)
+		details.Get(&timeoutType)
+		return NewTimeoutError(timeoutType)
 	default:
 		return NewCustomError(reason, details)
 	}

@@ -128,6 +128,7 @@ const (
 	errReasonPanic    = "cadenceInternal:Panic"
 	errReasonGeneric  = "cadenceInternal:Generic"
 	errReasonCanceled = "cadenceInternal:Canceled"
+	errReasonTimeout  = "cadenceInternal:Timeout"
 )
 
 // ErrActivityResultPending is returned from activity's implementation to indicate the activity is not completed when

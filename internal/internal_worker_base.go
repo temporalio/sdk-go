@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -52,6 +53,7 @@ type (
 	// Should only be used within the scope of workflow definition
 	workflowEnvironment interface {
 		asyncActivityClient
+		localActivityClient
 		workflowTimerClient
 		SideEffect(f func() ([]byte, error), callback resultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
@@ -151,6 +153,7 @@ func (bw *baseWorker) Start() {
 		bw.shutdownWG.Add(1)
 		go bw.runPoller()
 	}
+
 	bw.shutdownWG.Add(1)
 	go bw.runTaskDispatcher()
 
@@ -246,6 +249,17 @@ func (bw *baseWorker) pollTask() {
 }
 
 func (bw *baseWorker) processTask(task interface{}) {
+	defer func() {
+		if p := recover(); p != nil {
+			bw.metricsScope.Counter(metrics.WorkerPanicCounter).Inc(1)
+			topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
+			st := getStackTraceRaw(topLine, 7, 0)
+			bw.logger.Error("Unhandled panic.",
+				zap.String("PanicError", fmt.Sprintf("%v", p)),
+				zap.String("PanicStack", st))
+		}
+		bw.pollerRequestCh <- struct{}{}
+	}()
 	err := bw.options.taskWorker.ProcessTask(task)
 	if err != nil {
 		if isClientSideError(err) {
@@ -254,8 +268,6 @@ func (bw *baseWorker) processTask(task interface{}) {
 			bw.logger.Info("Task processing failed with error", zap.Error(err))
 		}
 	}
-
-	bw.pollerRequestCh <- struct{}{}
 }
 
 func (bw *baseWorker) Run() {

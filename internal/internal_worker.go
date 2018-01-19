@@ -79,6 +79,7 @@ type (
 		domain              string
 		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
+		localActivityWorker *baseWorker
 		identity            string
 	}
 
@@ -244,11 +245,39 @@ func newWorkflowTaskWorkerInternal(
 		params.MetricsScope,
 	)
 
+	// laTunnel is the glue that hookup 3 parts
+	laTunnel := &localActivityTunnel{
+		taskCh:   make(chan *localActivityTask, 1000),
+		resultCh: make(chan interface{}),
+	}
+
+	// 1) workflow handler will send local activity task to laTunnel
+	if handlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl); ok {
+		handlerImpl.laTunnel = laTunnel
+	}
+
+	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
+	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel)
+	localActivityWorker := newBaseWorker(baseWorkerOptions{
+		pollerCount:       1, // 1 poller (from local channel) is enough for local activity
+		maxConcurrentTask: params.ConcurrentActivityExecutionSize,
+		maxTaskPerSecond:  params.WorkerActivitiesPerSecond,
+		taskWorker:        localActivityTaskPoller,
+		identity:          params.Identity,
+		workerType:        "LocalActivityWorker"},
+		params.Logger,
+		params.MetricsScope,
+	)
+
+	// 3) the result pushed to laTunnel will be send as task to workflow worker to process.
+	worker.taskQueueCh = laTunnel.resultCh
+
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
 		poller:              poller,
 		worker:              worker,
+		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
 		domain:              domain,
 	}
@@ -260,6 +289,7 @@ func (ww *workflowWorker) Start() error {
 	if err != nil {
 		return err
 	}
+	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
 }
@@ -269,12 +299,14 @@ func (ww *workflowWorker) Run() error {
 	if err != nil {
 		return err
 	}
+	ww.localActivityWorker.Start()
 	ww.worker.Run()
 	return nil
 }
 
 // Shutdown the worker.
 func (ww *workflowWorker) Stop() {
+	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
 }
 
@@ -940,7 +972,24 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 		args = append(args, decoded...)
 	}
 
-	// Invoke the activity with arguments.
+	fnValue := reflect.ValueOf(ae.fn)
+	retValues := fnValue.Call(args)
+	return validateFunctionAndGetResults(ae.fn, retValues)
+}
+
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) ([]byte, error) {
+	fnType := reflect.TypeOf(ae.fn)
+	args := []reflect.Value{}
+
+	// activities optionally might not take context.
+	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+		args = append(args, reflect.ValueOf(ctx))
+	}
+
+	for _, arg := range actualArgs {
+		args = append(args, reflect.ValueOf(arg))
+	}
+
 	fnValue := reflect.ValueOf(ae.fn)
 	retValues := fnValue.Call(args)
 	return validateFunctionAndGetResults(ae.fn, retValues)

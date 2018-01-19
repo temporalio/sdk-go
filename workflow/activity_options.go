@@ -29,9 +29,17 @@ import (
 // ActivityOptions stores all activity-specific invocation parameters that will be stored inside of a context.
 type ActivityOptions = internal.ActivityOptions
 
+// LocalActivityOptions doc
+type LocalActivityOptions = internal.LocalActivityOptions
+
 // WithActivityOptions adds all options to the context.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	return internal.WithActivityOptions(ctx, options)
+}
+
+// WithLocalActivityOptions adds options for local activity to context
+func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
+	return internal.WithLocalActivityOptions(ctx, options)
 }
 
 // WithTaskList adds a task list to the context.

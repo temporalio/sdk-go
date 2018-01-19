@@ -666,6 +666,14 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	return activityInfo
 }
 
+func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo {
+	panic("not implemented yet, coming soon")
+}
+
+func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
+	panic("not implemented yet, coming soon")
+}
+
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
