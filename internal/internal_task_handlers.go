@@ -789,7 +789,7 @@ matchLoop:
 	return nil
 }
 
-func lastPartOfActivityName(name string) string {
+func lastPartOfName(name string) string {
 	lastDotIdx := strings.LastIndex(name, ".")
 	if lastDotIdx < 0 || lastDotIdx == len(name)-1 {
 		return name
@@ -807,7 +807,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		decisionAttributes := d.ScheduleActivityTaskDecisionAttributes
 
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
-			lastPartOfActivityName(eventAttributes.ActivityType.GetName()) != lastPartOfActivityName(decisionAttributes.ActivityType.GetName()) ||
+			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) ||
 			(strictMode && bytes.Compare(eventAttributes.Input, decisionAttributes.Input) != 0) {
 			return false
@@ -938,9 +938,9 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.StartChildWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.StartChildWorkflowExecutionDecisionAttributes
-		if eventAttributes.GetDomain() != decisionAttributes.GetDomain() ||
-			eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName() ||
-			eventAttributes.WorkflowType.GetName() != decisionAttributes.WorkflowType.GetName() {
+		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
+			(strictMode && eventAttributes.GetDomain() != decisionAttributes.GetDomain()) ||
+			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
 			return false
 		}
 
