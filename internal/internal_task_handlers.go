@@ -188,7 +188,8 @@ func isDecisionEvent(eventType s.EventType) bool {
 		s.EventTypeTimerCanceled,
 		s.EventTypeMarkerRecorded,
 		s.EventTypeStartChildWorkflowExecutionInitiated,
-		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated:
+		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
+		s.EventTypeSignalExternalWorkflowExecutionInitiated:
 		return true
 	default:
 		return false
@@ -565,7 +566,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 	return
 }
 
-// ProcessWorkflowTask processes each all the events of the workflow task.
+// ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator,

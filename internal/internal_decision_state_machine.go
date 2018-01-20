@@ -92,6 +92,10 @@ type (
 		*naiveDecisionStateMachine
 	}
 
+	signalExternalWorkflowDecisionStateMachine struct {
+		*naiveDecisionStateMachine
+	}
+
 	// only possible state transition is: CREATED->SENT->COMPLETED
 	markerDecisionStateMachine struct {
 		*naiveDecisionStateMachine
@@ -124,6 +128,7 @@ const (
 	decisionTypeExternalWorkflow decisionType = 2
 	decisionTypeMarker           decisionType = 3
 	decisionTypeTimer            decisionType = 4
+	decisionTypeSignal           decisionType = 5
 )
 
 const (
@@ -249,6 +254,14 @@ func newCancelExternalWorkflowStateMachine(attributes *s.RequestCancelExternalWo
 	d.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
 	return &cancelExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeExternalWorkflow, attributes.GetWorkflowId(), d),
+	}
+}
+
+func newSignalExternalWorkflowStateMachine(attributes *s.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
+	d := createNewDecision(s.DecisionTypeSignalExternalWorkflowExecution)
+	d.SignalExternalWorkflowExecutionDecisionAttributes = attributes
+	return &signalExternalWorkflowDecisionStateMachine{
+		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
 	}
 }
 
@@ -586,6 +599,24 @@ func (d *cancelExternalWorkflowDecisionStateMachine) handleCompletionEvent() {
 	}
 }
 
+func (d *signalExternalWorkflowDecisionStateMachine) handleInitiatedEvent() {
+	switch d.state {
+	case decisionStateDecisionSent:
+		d.moveState(decisionStateInitiated, eventInitiated)
+	default:
+		d.failStateTransition(eventInitiated)
+	}
+}
+
+func (d *signalExternalWorkflowDecisionStateMachine) handleCompletionEvent() {
+	switch d.state {
+	case decisionStateInitiated:
+		d.moveState(decisionStateCompleted, eventCompletion)
+	default:
+		d.failStateTransition(eventCompletion)
+	}
+}
+
 func (d *markerDecisionStateMachine) handleCompletionEvent() {
 	// Marker decision transit from SENT to COMPLETED on EventType_MarkerRecorded event
 	switch d.state {
@@ -798,6 +829,39 @@ func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(wor
 		decision = h.getDecision(makeDecisionID(decisionTypeExternalWorkflow, workflowID))
 		decision.handleCompletionEvent()
 	}
+}
+
+func (h *decisionsHelper) signalExternalWorkflowExecution(domain, workflowID, runID, signalName string, input []byte, signalID string) decisionStateMachine {
+	attributes := &s.SignalExternalWorkflowExecutionDecisionAttributes{
+		Domain: common.StringPtr(domain),
+		Execution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(workflowID),
+			RunId:      common.StringPtr(runID),
+		},
+		SignalName: common.StringPtr(signalName),
+		Input:      input,
+		Control:    []byte(signalID),
+	}
+	decision := newSignalExternalWorkflowStateMachine(attributes, signalID)
+	h.addDecision(decision)
+	return decision
+}
+
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionInitiated(signalID string) {
+	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
+	decision.handleInitiatedEvent()
+}
+
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionCompleted(signalID string) decisionStateMachine {
+	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
+	decision.handleCompletionEvent()
+	return decision
+}
+
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionFailed(signalID string) decisionStateMachine {
+	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
+	decision.handleCompletionEvent()
+	return decision
 }
 
 func (h *decisionsHelper) startTimer(attributes *s.StartTimerDecisionAttributes) decisionStateMachine {

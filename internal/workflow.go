@@ -558,6 +558,42 @@ func RequestCancelWorkflow(ctx Context, workflowID, runID string) error {
 	return getWorkflowEnvironment(ctx).RequestCancelWorkflow(*options.domain, workflowID, runID)
 }
 
+// SignalExternalWorkflow can be used to send signal info to an external workflow.
+// Input workflowID is the workflow ID of target workflow.
+// Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
+// then the currently running instance of that workflowID will be used.
+// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// of the target workflow using the context like:
+//	ctx := WithWorkflowDomain(ctx, "domain-name")
+// SignalExternalWorkflow return Future with failure or empty success result.
+func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	options := getWorkflowEnvOptions(ctx1)
+	future, settable := NewFuture(ctx1)
+
+	if options.domain == nil {
+		settable.Set(nil, errors.New("domain is nil"))
+		return future
+	}
+	if workflowID == "" {
+		settable.Set(nil, errors.New("workflowId is empty"))
+		return future
+	}
+
+	input, err := getEncodedArg(arg)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+
+	resultCallback := func(result []byte, err error) {
+		settable.Set(result, err)
+	}
+	getWorkflowEnvironment(ctx).SignalExternalWorkflow(*options.domain, workflowID, runID, signalName, input, resultCallback)
+
+	return future
+}
+
 // WithChildWorkflowOptions adds all workflow options to the context.
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)

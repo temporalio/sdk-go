@@ -728,7 +728,7 @@ func (th *hostEnvImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinitio
 	wf, ok := th.getWorkflowFn(lookup)
 	if !ok {
 		supported := strings.Join(th.getRegisteredWorkflowTypes(), ", ")
-		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
+		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
 	wd := &workflowExecutor{name: lookup, fn: wf}
 	return newWorkflowDefinition(wd), nil
@@ -925,7 +925,7 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 		decoded, err := getHostEnvironment().decodeArgs(fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"Unable to decode the workflow function input bytes with error: %v, function name: %v",
+				"unable to decode the workflow function input bytes with error: %v, function name: %v",
 				err, we.name)
 		}
 		args = append(args, decoded...)
@@ -966,7 +966,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 		decoded, err := getHostEnvironment().decodeArgs(fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"Unable to decode the activity function input bytes with error: %v for function name: %v",
+				"unable to decode the activity function input bytes with error: %v for function name: %v",
 				err, ae.name)
 		}
 		args = append(args, decoded...)

@@ -1036,6 +1036,10 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workfl
 	return nil
 }
 
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, callback resultHandler) {
+	// TODO: add tests for signal external workflow
+}
+
 func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
 	childEnv := env.newTestWorkflowEnvironmentForChild(&options, callback)
 	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", options.workflowType.Name)

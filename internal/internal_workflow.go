@@ -937,7 +937,7 @@ func (s *selectorImpl) Select(ctx Context) {
 	}
 }
 
-// NewWorkflowDefinition creates a  WorkflowDefinition from a Workflow
+// NewWorkflowDefinition creates a WorkflowDefinition from a Workflow
 func newWorkflowDefinition(workflow workflow) workflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }

@@ -235,12 +235,9 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
-	var input []byte
-	if arg != nil {
-		var err error
-		if input, err = getHostEnvironment().encodeArg(arg); err != nil {
-			return err
-		}
+	input, err := getEncodedArg(arg)
+	if err != nil {
+		return err
 	}
 
 	request := &s.SignalWorkflowExecutionRequest{
@@ -262,7 +259,9 @@ func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 }
 
-// CancelWorkflow cancels a workflow in execution.
+// CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
+// workflowID is required, other parameters are optional.
+// If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *workflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &s.RequestCancelWorkflowExecutionRequest{
 		Domain: common.StringPtr(wc.domain),
@@ -756,4 +755,15 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = fmt.Errorf("Unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
 	return err
+}
+
+func getEncodedArg(arg interface{}) ([]byte, error) {
+	var input []byte
+	if arg != nil {
+		var err error
+		if input, err = getHostEnvironment().encodeArg(arg); err != nil {
+			return nil, err
+		}
+	}
+	return input, nil
 }
