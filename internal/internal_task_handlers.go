@@ -128,7 +128,6 @@ type (
 		workflowTask      *workflowTask
 		eventsHandler     *workflowExecutionEventHandlerImpl
 		loadedEvents      []*s.HistoryEvent
-		nextPageToken     []byte
 		currentIndex      int
 		historyEventsSize int
 		next              []*s.HistoryEvent
@@ -632,9 +631,6 @@ ProcessEvents:
 				respondEvents = append(respondEvents, event)
 			}
 
-			// Any metrics.
-			wth.reportAnyMetrics(event, isInReplay)
-
 			// Any pressure points.
 			err := wth.executeAnyPressurePoints(event, isInReplay)
 			if err != nil {
@@ -1059,15 +1055,6 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEve
 		}
 	}
 	return nil
-}
-
-func (wth *workflowTaskHandlerImpl) reportAnyMetrics(event *s.HistoryEvent, isInReplay bool) {
-	if wth.metricsScope != nil && !isInReplay {
-		switch event.GetEventType() {
-		case s.EventTypeDecisionTaskTimedOut:
-			wth.metricsScope.Counter(metrics.DecisionTimeoutCounter).Inc(1)
-		}
-	}
 }
 
 func newActivityTaskHandler(

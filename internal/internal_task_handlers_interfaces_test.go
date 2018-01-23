@@ -37,32 +37,6 @@ type (
 	}
 )
 
-// Workflow Context
-type testWorkflowContext struct {
-}
-
-func (wc testWorkflowContext) WorkflowInfo() WorkflowInfo {
-	return WorkflowInfo{}
-}
-func (wc testWorkflowContext) Complete(result []byte) {
-}
-func (wc testWorkflowContext) Fail(err error) {
-}
-func (wc testWorkflowContext) ScheduleActivityTask(parameters executeActivityParameters, callback resultHandler) {
-
-}
-
-// Activity Execution context
-type testActivityExecutionContext struct {
-}
-
-func (ac testActivityExecutionContext) TaskToken() []byte {
-	return []byte("")
-}
-func (ac testActivityExecutionContext) RecordActivityHeartbeat(details []byte) error {
-	return nil
-}
-
 // Sample Workflow task handler
 type sampleWorkflowTaskHandler struct {
 }

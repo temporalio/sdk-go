@@ -64,12 +64,6 @@ const (
 var _ Worker = (*aggregatedWorker)(nil)
 
 type (
-
-	// WorkflowFactory function is used to create a workflow implementation object.
-	// It is needed as a workflow object is created on every decision.
-	// To start a workflow instance use NewClient(...).StartWorkflow(...)
-	workflowFactory func(workflowType WorkflowType) (workflow, error)
-
 	// WorkflowWorker wraps the code for hosting workflow types.
 	// And worker is mapped 1:1 with task list. If the user want's to poll multiple
 	// task list names they might have to manage 'n' workers for 'n' task lists.
@@ -391,58 +385,15 @@ func (aw *activityWorker) Stop() {
 	aw.worker.Stop()
 }
 
-type workerFunc func(ctx Context, input []byte) ([]byte, error)
-type activityFunc func(ctx context.Context, input []byte) ([]byte, error)
-
-type interceptorFn func(name string, workflow interface{}) (string, interface{})
-
 // hostEnvImpl is the implementation of hostEnv
 type hostEnvImpl struct {
 	sync.Mutex
-	workflowFuncMap                  map[string]interface{}
-	workflowAliasMap                 map[string]string
-	activityFuncMap                  map[string]activity
-	activityAliasMap                 map[string]string
-	encoding                         encoding
-	tEncoding                        encoding
-	activityRegistrationInterceptors []interceptorFn
-	workflowRegistrationInterceptors []interceptorFn
-}
-
-func (th *hostEnvImpl) AddWorkflowRegistrationInterceptor(i interceptorFn) {
-	// As this function as well as registrations are called from init
-	// the order is not defined. So this code deals with registration before listener is
-	// registered as well as ones that come after.
-	// This is also the reason that listener cannot reject registration as it can be applied
-	// to already registered functions.
-	th.Lock()
-	funcMapCopy := th.workflowFuncMap // used to call listener outside of the lock.
-	th.workflowRegistrationInterceptors = append(th.workflowRegistrationInterceptors, i)
-	th.workflowFuncMap = make(map[string]interface{}) // clear map
-	th.Unlock()
-	for w, f := range funcMapCopy {
-		intw, intf := i(w, f)
-		th.Lock()
-		th.workflowFuncMap[intw] = intf
-		th.Unlock()
-	}
-}
-
-func (th *hostEnvImpl) AddActivityRegistrationInterceptor(i interceptorFn) {
-	// As this function as well as registrations are called from init
-	// the order is not defined. So this code deals with registration before listener is
-	// registered as well as ones that come after.
-	// This is also the reason that listener cannot reject registration as it can be applied
-	// to already registered functions.
-	th.Lock()
-	funcMapCopy := th.activityFuncMap // used to call listener outside of the lock.
-	th.activityRegistrationInterceptors = append(th.activityRegistrationInterceptors, i)
-	th.activityFuncMap = make(map[string]activity) // clear map
-	th.Unlock()
-	for w, a := range funcMapCopy {
-		intw, intf := i(w, a.GetFunction())
-		th.addActivity(intw, &activityExecutor{intw, intf})
-	}
+	workflowFuncMap  map[string]interface{}
+	workflowAliasMap map[string]string
+	activityFuncMap  map[string]activity
+	activityAliasMap map[string]string
+	encoding         encoding
+	tEncoding        encoding
 }
 
 func (th *hostEnvImpl) RegisterWorkflow(af interface{}) error {
@@ -472,7 +423,6 @@ func (th *hostEnvImpl) RegisterWorkflowWithOptions(
 	if err := th.registerEncodingTypes(fnType); err != nil {
 		return err
 	}
-	registerName, af = th.invokeInterceptors(registerName, af, th.workflowRegistrationInterceptors)
 	th.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
 		th.addWorkflowAlias(fnName, alias)
@@ -507,25 +457,11 @@ func (th *hostEnvImpl) RegisterActivityWithOptions(
 	if err := th.registerEncodingTypes(fnType); err != nil {
 		return err
 	}
-	registerName, af = th.invokeInterceptors(registerName, af, th.activityRegistrationInterceptors)
 	th.addActivityFn(registerName, af)
 	if len(alias) > 0 {
 		th.addActivityAlias(fnName, alias)
 	}
 	return nil
-}
-
-func (th *hostEnvImpl) invokeInterceptors(name string, f interface{}, interceptors []interceptorFn) (string, interface{}) {
-	th.Lock()
-	var copy []interceptorFn
-	for _, i := range interceptors {
-		copy = append(copy, i)
-	}
-	th.Unlock()
-	for _, l := range copy {
-		name, f = l(name, f)
-	}
-	return name, f
 }
 
 // Get the encoder.
@@ -579,12 +515,6 @@ func (th *hostEnvImpl) getRegisteredWorkflowTypes() []string {
 	return r
 }
 
-func (th *hostEnvImpl) lenWorkflowFns() int {
-	th.Lock()
-	defer th.Unlock()
-	return len(th.workflowFuncMap)
-}
-
 func (th *hostEnvImpl) addActivityAlias(fnName string, alias string) {
 	th.Lock()
 	defer th.Unlock()
@@ -628,16 +558,6 @@ func (th *hostEnvImpl) getRegisteredActivities() []activity {
 		activities = append(activities, a)
 	}
 	return activities
-}
-
-func (th *hostEnvImpl) getRegisteredActivityTypes() []string {
-	th.Lock()
-	defer th.Unlock()
-	var r []string
-	for t := range th.activityFuncMap {
-		r = append(r, t)
-	}
-	return r
 }
 
 // register all the types with encoder.

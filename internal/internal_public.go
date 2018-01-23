@@ -28,11 +28,7 @@ package internal
 // point of view only to access them from other packages.
 
 import (
-	"context"
-
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/zap"
 )
 
 type (
@@ -68,115 +64,7 @@ type (
 
 var enableVerboseLogging = false
 
-// NewWorkflowTaskWorker returns an instance of a workflow task handler worker.
-// To be used by framework level code that requires access to the original workflow task.
-func NewWorkflowTaskWorker(
-	taskHandler WorkflowTaskHandler,
-	service workflowserviceclient.Interface,
-	domain string,
-	taskList string,
-	options WorkerOptions,
-) (worker Worker) {
-	wOptions := fillWorkerOptionsDefaults(options)
-	workerParams := workerExecutionParameters{
-		TaskList:                  taskList,
-		ConcurrentPollRoutineSize: defaultConcurrentPollRoutineSize,
-		Identity:                  wOptions.Identity,
-		MetricsScope:              wOptions.MetricsScope,
-		Logger:                    wOptions.Logger,
-	}
-
-	processTestTags(&wOptions, &workerParams)
-	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, workerParams)
-}
-
-// NewActivityTaskWorker returns instance of an activity task handler worker.
-// To be used by framework level code that requires access to the original workflow task.
-func NewActivityTaskWorker(
-	taskHandler ActivityTaskHandler,
-	service workflowserviceclient.Interface,
-	domain string,
-	taskList string,
-	options WorkerOptions,
-) Worker {
-	wOptions := fillWorkerOptionsDefaults(options)
-	workerParams := workerExecutionParameters{
-		TaskList:                        taskList,
-		ConcurrentPollRoutineSize:       defaultConcurrentPollRoutineSize,
-		ConcurrentActivityExecutionSize: wOptions.MaxConcurrentActivityExecutionSize,
-		WorkerActivitiesPerSecond:       wOptions.WorkerActivitiesPerSecond,
-		TaskListActivitiesPerSecond:     wOptions.TaskListActivitiesPerSecond,
-		Identity:                        wOptions.Identity,
-		MetricsScope:                    wOptions.MetricsScope,
-		Logger:                          wOptions.Logger,
-		EnableLoggingInReplay:           wOptions.EnableLoggingInReplay,
-		UserContext:                     wOptions.BackgroundActivityContext,
-	}
-
-	processTestTags(&wOptions, &workerParams)
-	return newActivityTaskWorker(taskHandler, service, domain, workerParams)
-}
-
-// NewWorkflowTaskHandler creates an instance of a WorkflowTaskHandler from a decision poll response
-// using workflow functions registered through RegisterWorkflow
-// To be used to replay a workflow in a debugger.
-func NewWorkflowTaskHandler(domain string, identity string, logger *zap.Logger) WorkflowTaskHandler {
-	params := workerExecutionParameters{
-		Identity: identity,
-		Logger:   logger,
-	}
-	return newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
-}
-
-// NewActivityTaskHandler creates an instance of a WorkflowTaskHandler from a decision poll response
-// using activity functions registered through RegisterActivity. service parameter is used for
-// heartbeating from activity implementation.
-// To be used to invoke registered functions for debugging purposes.
-func NewActivityTaskHandler(service workflowserviceclient.Interface, identity string, logger *zap.Logger) ActivityTaskHandler {
-	params := workerExecutionParameters{
-		Identity: identity,
-		Logger:   logger,
-	}
-	ensureRequiredParams(&params)
-	return newActivityTaskHandler(service, params, getHostEnvironment())
-}
-
-// AddWorkflowRegistrationInterceptor adds interceptor that is called for each RegisterWorkflow call.
-// This function guarantees that the interceptor function is called for each registration even
-// if it itself is called from init()
-func AddWorkflowRegistrationInterceptor(
-	i func(name string, workflow interface{}) (string, interface{}),
-) {
-	getHostEnvironment().AddWorkflowRegistrationInterceptor(i)
-}
-
-// AddActivityRegistrationInterceptor adds interceptor that is called for each RegisterActivity call.
-// This function guarantees that the interceptor function is called for each registration even
-// if it itself is called from init()
-func AddActivityRegistrationInterceptor(
-	i func(name string, activity interface{}) (string, interface{})) {
-	getHostEnvironment().AddActivityRegistrationInterceptor(i)
-}
-
-// SerializeFnArgs serializes an activity function arguments.
-func SerializeFnArgs(args ...interface{}) ([]byte, error) {
-	return getHostEnvironment().encodeArgs(args)
-}
-
-// DeserializeFnResults de-serializes a function results.
-// The input result doesn't include the error. The cadence server has result, error.
-// This is to de-serialize the result.
-func DeserializeFnResults(result []byte, to interface{}) error {
-	return getHostEnvironment().decodeArg(result, to)
-}
-
 // EnableVerboseLogging enable or disable verbose logging. This is for internal use only.
 func EnableVerboseLogging(enable bool) {
 	enableVerboseLogging = enable
-}
-
-// WithTestTags - is used for internal cadence use to pass any test tags.
-// TODO: Build the tags on top of the context and pass it around instead of map of maps.
-func WithTestTags(ctx context.Context, testTags map[string]map[string]string) context.Context {
-	return context.WithValue(ctx, testTagsContextKey, testTags)
 }

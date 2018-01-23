@@ -43,7 +43,6 @@ var _ DomainClient = (*domainClient)(nil)
 
 const (
 	defaultDecisionTaskTimeoutInSecs = 20
-	historyEventChanSize             = 100
 )
 
 type (
@@ -618,48 +617,6 @@ func getRunID(runID string) *string {
 		return nil
 	}
 	return common.StringPtr(runID)
-}
-
-// paginateWorkflowHistory is the internal func paginate on the whole workflow eecution history
-func (wc *workflowClient) paginateWorkflowHistory(ctx context.Context, workflowID string, runID string,
-	isLongPoll bool, filterType s.HistoryEventFilterType) (*s.History, error) {
-
-	history := &s.History{}
-	history.Events = make([]*s.HistoryEvent, 0)
-	var nexttoken []byte
-
-GetHistoryLoop:
-	for {
-		request := &s.GetWorkflowExecutionHistoryRequest{
-			Domain: common.StringPtr(wc.domain),
-			Execution: &s.WorkflowExecution{
-				WorkflowId: common.StringPtr(workflowID),
-				RunId:      getRunID(runID),
-			},
-			WaitForNewEvent:        common.BoolPtr(isLongPoll),
-			HistoryEventFilterType: &filterType,
-			NextPageToken:          nexttoken,
-		}
-
-		var response *s.GetWorkflowExecutionHistoryResponse
-		err := backoff.Retry(ctx,
-			func() error {
-				var err1 error
-				tchCtx, cancel, opt := newChannelContext(ctx)
-				defer cancel()
-				response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request, opt...)
-				return err1
-			}, serviceOperationRetryPolicy, isServiceTransientError)
-		if err != nil {
-			return nil, err
-		}
-		history.Events = append(history.Events, response.History.Events...)
-		if response.NextPageToken == nil {
-			break GetHistoryLoop
-		}
-		nexttoken = response.NextPageToken
-	}
-	return history, nil
 }
 
 func (iter *historyEventIteratorImpl) HasNext() bool {

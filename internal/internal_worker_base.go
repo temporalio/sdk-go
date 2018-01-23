@@ -79,10 +79,6 @@ type (
 		Close()
 	}
 
-	// WorkflowDefinitionFactory that returns a workflow definition for a specific
-	// workflow type.
-	workflowDefinitionFactory func(workflowType WorkflowType) (workflowDefinition, error)
-
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
 		pollerCount       int

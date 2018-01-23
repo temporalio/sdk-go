@@ -166,7 +166,6 @@ type (
 		suite.Suite
 		workflowServiceClient *workflowservicetest.MockClient
 		workflowClient        Client
-		workflowRun           WorkflowRun
 	}
 )
 

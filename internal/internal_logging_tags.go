@@ -26,7 +26,6 @@ const (
 	tagDomain          = "Domain"
 	tagEventID         = "EventID"
 	tagEventType       = "EventType"
-	tagRoutineID       = "routineID"
 	tagRunID           = "RunID"
 	tagTaskList        = "TaskList"
 	tagTimerID         = "TimerID"
@@ -35,8 +34,5 @@ const (
 	tagWorkerID        = "WorkerID"
 	tagWorkerType      = "WorkerType"
 	tagSideEffectID    = "SideEffectID"
-	tagMarkerName      = "MarkerName"
-	tagChangeID        = "ChangeID"
-	tagVersion         = "Version"
 	tagChildWorkflowID = "ChildWorkflowID"
 )

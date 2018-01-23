@@ -46,21 +46,15 @@ const (
 
 type (
 	syncWorkflowDefinition struct {
-		workflow        workflow
-		dispatcher      dispatcher
-		cancel          CancelFunc
-		cancelRequested bool
-		rootCtx         Context
+		workflow   workflow
+		dispatcher dispatcher
+		cancel     CancelFunc
+		rootCtx    Context
 	}
 
 	workflowResult struct {
 		workflowResult []byte
 		error          error
-	}
-
-	activityClient struct {
-		dispatcher  dispatcher
-		asyncClient asyncActivityClient
 	}
 
 	futureImpl struct {
@@ -423,11 +417,6 @@ func newDispatcher(rootCtx Context, root func(ctx Context)) dispatcher {
 	result := &dispatcherImpl{}
 	result.newCoroutine(rootCtx, root)
 	return result
-}
-
-// getDispatcher retrieves current dispatcher from the Context passed to the coroutine function.
-func getDispatcher(ctx Context) dispatcher {
-	return getState(ctx).dispatcher
 }
 
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks

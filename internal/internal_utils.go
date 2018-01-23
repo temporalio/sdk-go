@@ -31,7 +31,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	"github.com/uber/tchannel-go"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
@@ -59,16 +58,6 @@ const (
 )
 
 var (
-	// retryNeverOptions - Never retry the connection
-	retryNeverOptions = &tchannel.RetryOptions{
-		RetryOn: tchannel.RetryNever,
-	}
-
-	// retryDefaultOptions - retry with default options.
-	retryDefaultOptions = &tchannel.RetryOptions{
-		RetryOn: tchannel.RetryDefault,
-	}
-
 	// call header to cadence server
 	yarpcCallOptions = []yarpc.CallOption{
 		yarpc.WithHeader(libraryVersionHeaderName, LibraryVersion),
@@ -139,10 +128,6 @@ func getWorkerTaskList() string {
 	return fmt.Sprintf("%s:%s", getHostName(), workerUUID)
 }
 
-func flowActivityTypeFrom(v s.ActivityType) ActivityType {
-	return ActivityType{Name: v.GetName()}
-}
-
 // ActivityTypePtr makes a copy and returns the pointer to a ActivityType.
 func activityTypePtr(v ActivityType) *s.ActivityType {
 	return &s.ActivityType{Name: common.StringPtr(v.Name)}
@@ -155,14 +140,6 @@ func flowWorkflowTypeFrom(v s.WorkflowType) WorkflowType {
 // WorkflowTypePtr makes a copy and returns the pointer to a WorkflowType.
 func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
-}
-
-// workflowExecutionPtr makes a copy and returns the pointer to a WorkflowExecution.
-func workflowExecutionPtr(t WorkflowExecution) *s.WorkflowExecution {
-	return &s.WorkflowExecution{
-		WorkflowId: common.StringPtr(t.ID),
-		RunId:      common.StringPtr(t.RunID),
-	}
 }
 
 // getErrorDetails gets reason and details.

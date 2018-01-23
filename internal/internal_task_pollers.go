@@ -89,7 +89,6 @@ type (
 		metricsScope        tally.Scope
 		logger              *zap.Logger
 		activitiesPerSecond float64
-		laTunnel            *localActivityTunnel
 	}
 
 	historyIteratorImpl struct {

@@ -22,7 +22,6 @@ package internal
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -34,17 +33,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	// ErrWorkflowTypeNotExist indicated workflow type doesn't exist in registry.
-	ErrWorkflowTypeNotExist = errors.New("workflow type doesn't existin the registry")
-)
-
 type (
-	// Workflow decider
-	helloWorldWorkflow struct {
-		cancelActivity bool
-	}
-
 	// Greeter activity
 	greeterActivity struct {
 	}

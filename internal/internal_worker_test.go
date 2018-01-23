@@ -26,8 +26,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"sort"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,60 +68,6 @@ func init() {
 	RegisterActivity(testActivityReturnStructPtr)
 	RegisterActivity(testActivityReturnNilStructPtrPtr)
 	RegisterActivity(testActivityReturnStructPtrPtr)
-}
-
-func TestActivityRegistrationListener(t *testing.T) {
-	// Used to test registration listeners
-	var registeredActivities []string
-	hostEnv := newHostEnvironment()
-	hostEnv.RegisterActivityWithOptions(
-		testActivity,
-		RegisterActivityOptions{Name: "testActivity"},
-	)
-	hostEnv.RegisterActivity(testActivityByteArgs)
-	hostEnv.AddActivityRegistrationInterceptor(
-		func(activityName string, activity interface{}) (string, interface{}) {
-			registeredActivities = append(registeredActivities, activityName)
-			return activityName, activity
-		},
-	)
-	hostEnv.RegisterActivityWithOptions(
-		testActivityMultipleArgs,
-		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
-	)
-
-	expectedActivities := []string{
-		"testActivity",
-		"testActivityMultipleArgs",
-		"go.uber.org/cadence/internal.testActivityByteArgs",
-	}
-	sort.Strings(registeredActivities)
-	sort.Strings(expectedActivities)
-	require.Equal(t, strings.Join(expectedActivities, ","), strings.Join(registeredActivities, ","))
-}
-
-func TestWorkflowRegistrationListener(t *testing.T) {
-	var registeredWorkflows []string
-	hostEnv := newHostEnvironment()
-	hostEnv.RegisterWorkflowWithOptions(
-		sampleWorkflowExecute,
-		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
-	)
-	hostEnv.AddWorkflowRegistrationInterceptor(
-		func(workflowName string, workflow interface{}) (string, interface{}) {
-			registeredWorkflows = append(registeredWorkflows, workflowName)
-			return workflowName, workflow
-		},
-	)
-	hostEnv.RegisterWorkflow(testReplayWorkflow)
-
-	expectedWorkflows := []string{
-		"sampleWorkflowExecute",
-		"go.uber.org/cadence/internal.testReplayWorkflow",
-	}
-	sort.Strings(registeredWorkflows)
-	sort.Strings(expectedWorkflows)
-	require.Equal(t, strings.Join(expectedWorkflows, ","), strings.Join(registeredWorkflows, ","))
 }
 
 func getLogger() *zap.Logger {
@@ -912,6 +856,7 @@ func TestGobEncoding(t *testing.T) {
 	}
 }
 
+/*
 var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
 var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
 var thriftEncodingTests = []encodingTest{
@@ -958,16 +903,7 @@ func _TestThriftEncoding(t *testing.T) {
 	err = enc.Unmarshal([]byte("dummy"), []interface{}{testWorkflowID1, &testWorkflowID2})
 	require.Contains(t, err.Error(), "pointer to pointer thrift.TStruct type is required")
 }
-
-// Encode function result.
-func testEncodeFunctionResult(r interface{}) []byte {
-	result, err := getHostEnvironment().encodeArg(r)
-	if err != nil {
-		fmt.Println(err)
-		panic("Failed to encode")
-	}
-	return result
-}
+*/
 
 // Encode function args
 func testEncodeFunctionArgs(workflowFunc interface{}, args ...interface{}) []byte {
