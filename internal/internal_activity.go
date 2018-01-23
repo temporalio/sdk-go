@@ -201,7 +201,7 @@ func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) er
 	for i := 0; fnArgIndex < fType.NumIn(); fnArgIndex, i = fnArgIndex+1, i+1 {
 		fnArgType := fType.In(fnArgIndex)
 		argType := reflect.TypeOf(args[i])
-		if !argType.AssignableTo(fnArgType) {
+		if argType != nil && !argType.AssignableTo(fnArgType) {
 			return fmt.Errorf(
 				"cannot assign function argument: %d from type: %s to type: %s",
 				fnArgIndex+1, argType, fnArgType,

@@ -904,12 +904,18 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 	args := []reflect.Value{}
 
 	// activities optionally might not take context.
+	argsOffeset := 0
 	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
 		args = append(args, reflect.ValueOf(ctx))
+		argsOffeset = 1
 	}
 
-	for _, arg := range actualArgs {
-		args = append(args, reflect.ValueOf(arg))
+	for i, arg := range actualArgs {
+		if arg == nil {
+			args = append(args, reflect.New(fnType.In(i+argsOffeset)).Elem())
+		} else {
+			args = append(args, reflect.ValueOf(arg))
+		}
 	}
 
 	fnValue := reflect.ValueOf(ae.fn)

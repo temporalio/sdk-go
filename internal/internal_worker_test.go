@@ -855,6 +855,26 @@ func TestGobEncoding(t *testing.T) {
 	}
 }
 
+func Test_ActivityNilArgs(t *testing.T) {
+	nilErr := errors.New("nils")
+	activityFn := func(name string, idx int, strptr *string) error {
+		if name == "" && idx == 0 && strptr == nil {
+			return nilErr
+		}
+		return nil
+	}
+
+	args := []interface{}{nil, nil, nil}
+	_, input, err := getValidatedActivityFunction(activityFn, args)
+	require.NoError(t, err)
+
+	reflectArgs, err := getHostEnvironment().decodeArgs(reflect.TypeOf(activityFn), input)
+	require.NoError(t, err)
+
+	reflectResults := reflect.ValueOf(activityFn).Call(reflectArgs)
+	require.Equal(t, nilErr, reflectResults[0].Interface())
+}
+
 /*
 var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
 var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
