@@ -363,11 +363,12 @@ func (wc *workflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 }
 
 // CompleteActivityById reports activity completed. Similar to CompleteActivity
-func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domainID, workflowID, runID, activityID string,
+// It takes domain name, workflowID, runID, activityID as arguments.
+func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string,
 	result interface{}, err error) error {
 
-	if activityID == "" || workflowID == "" || domainID == "" {
-		return errors.New("empty activity or workflow id or domainId")
+	if activityID == "" || workflowID == "" || domain == "" {
+		return errors.New("empty activity or workflow id or domainName")
 	}
 
 	var data []byte
@@ -379,7 +380,7 @@ func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domainID, wo
 		}
 	}
 
-	request := convertActivityResultToRespondRequestByID(wc.identity, domainID, workflowID, runID, activityID, data, err)
+	request := convertActivityResultToRespondRequestByID(wc.identity, domain, workflowID, runID, activityID, data, err)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
 }
 

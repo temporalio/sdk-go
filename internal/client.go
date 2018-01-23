@@ -151,12 +151,12 @@ type (
 		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
-		// domainID, workflowID, activityID are required, runID is optional.
+		// domain name, workflowID, activityID are required, runID is optional.
 		// The errors it can return:
 		//  - ErrorWithDetails
 		//  - TimeoutError
 		//  - CanceledError
-		CompleteActivityByID(ctx context.Context, domainID, workflowID, runID, activityID string, result interface{}, err error) error
+		CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.

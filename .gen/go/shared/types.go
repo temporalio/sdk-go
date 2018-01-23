@@ -17108,7 +17108,7 @@ func (v *RequestCancelWorkflowExecutionRequest) GetRequestId() (o string) {
 }
 
 type RespondActivityTaskCanceledByIDRequest struct {
-	DomainID   *string `json:"domainID,omitempty"`
+	Domain     *string `json:"domain,omitempty"`
 	WorkflowID *string `json:"workflowID,omitempty"`
 	RunID      *string `json:"runID,omitempty"`
 	ActivityID *string `json:"activityID,omitempty"`
@@ -17139,8 +17139,8 @@ func (v *RespondActivityTaskCanceledByIDRequest) ToWire() (wire.Value, error) {
 		err    error
 	)
 
-	if v.DomainID != nil {
-		w, err = wire.NewValueString(*(v.DomainID)), error(nil)
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
 		if err != nil {
 			return w, err
 		}
@@ -17217,7 +17217,7 @@ func (v *RespondActivityTaskCanceledByIDRequest) FromWire(w wire.Value) error {
 			if field.Value.Type() == wire.TBinary {
 				var x string
 				x, err = field.Value.GetString(), error(nil)
-				v.DomainID = &x
+				v.Domain = &x
 				if err != nil {
 					return err
 				}
@@ -17286,8 +17286,8 @@ func (v *RespondActivityTaskCanceledByIDRequest) String() string {
 
 	var fields [6]string
 	i := 0
-	if v.DomainID != nil {
-		fields[i] = fmt.Sprintf("DomainID: %v", *(v.DomainID))
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
 		i++
 	}
 	if v.WorkflowID != nil {
@@ -17319,7 +17319,7 @@ func (v *RespondActivityTaskCanceledByIDRequest) String() string {
 //
 // This function performs a deep comparison.
 func (v *RespondActivityTaskCanceledByIDRequest) Equals(rhs *RespondActivityTaskCanceledByIDRequest) bool {
-	if !_String_EqualsPtr(v.DomainID, rhs.DomainID) {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
 		return false
 	}
 	if !_String_EqualsPtr(v.WorkflowID, rhs.WorkflowID) {
@@ -17341,11 +17341,11 @@ func (v *RespondActivityTaskCanceledByIDRequest) Equals(rhs *RespondActivityTask
 	return true
 }
 
-// GetDomainID returns the value of DomainID if it is set or its
+// GetDomain returns the value of Domain if it is set or its
 // zero value if it is unset.
-func (v *RespondActivityTaskCanceledByIDRequest) GetDomainID() (o string) {
-	if v.DomainID != nil {
-		return *v.DomainID
+func (v *RespondActivityTaskCanceledByIDRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
 	}
 
 	return
@@ -17556,7 +17556,7 @@ func (v *RespondActivityTaskCanceledRequest) GetIdentity() (o string) {
 }
 
 type RespondActivityTaskCompletedByIDRequest struct {
-	DomainID   *string `json:"domainID,omitempty"`
+	Domain     *string `json:"domain,omitempty"`
 	WorkflowID *string `json:"workflowID,omitempty"`
 	RunID      *string `json:"runID,omitempty"`
 	ActivityID *string `json:"activityID,omitempty"`
@@ -17587,8 +17587,8 @@ func (v *RespondActivityTaskCompletedByIDRequest) ToWire() (wire.Value, error) {
 		err    error
 	)
 
-	if v.DomainID != nil {
-		w, err = wire.NewValueString(*(v.DomainID)), error(nil)
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
 		if err != nil {
 			return w, err
 		}
@@ -17665,7 +17665,7 @@ func (v *RespondActivityTaskCompletedByIDRequest) FromWire(w wire.Value) error {
 			if field.Value.Type() == wire.TBinary {
 				var x string
 				x, err = field.Value.GetString(), error(nil)
-				v.DomainID = &x
+				v.Domain = &x
 				if err != nil {
 					return err
 				}
@@ -17734,8 +17734,8 @@ func (v *RespondActivityTaskCompletedByIDRequest) String() string {
 
 	var fields [6]string
 	i := 0
-	if v.DomainID != nil {
-		fields[i] = fmt.Sprintf("DomainID: %v", *(v.DomainID))
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
 		i++
 	}
 	if v.WorkflowID != nil {
@@ -17767,7 +17767,7 @@ func (v *RespondActivityTaskCompletedByIDRequest) String() string {
 //
 // This function performs a deep comparison.
 func (v *RespondActivityTaskCompletedByIDRequest) Equals(rhs *RespondActivityTaskCompletedByIDRequest) bool {
-	if !_String_EqualsPtr(v.DomainID, rhs.DomainID) {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
 		return false
 	}
 	if !_String_EqualsPtr(v.WorkflowID, rhs.WorkflowID) {
@@ -17789,11 +17789,11 @@ func (v *RespondActivityTaskCompletedByIDRequest) Equals(rhs *RespondActivityTas
 	return true
 }
 
-// GetDomainID returns the value of DomainID if it is set or its
+// GetDomain returns the value of Domain if it is set or its
 // zero value if it is unset.
-func (v *RespondActivityTaskCompletedByIDRequest) GetDomainID() (o string) {
-	if v.DomainID != nil {
-		return *v.DomainID
+func (v *RespondActivityTaskCompletedByIDRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
 	}
 
 	return
@@ -18004,7 +18004,7 @@ func (v *RespondActivityTaskCompletedRequest) GetIdentity() (o string) {
 }
 
 type RespondActivityTaskFailedByIDRequest struct {
-	DomainID   *string `json:"domainID,omitempty"`
+	Domain     *string `json:"domain,omitempty"`
 	WorkflowID *string `json:"workflowID,omitempty"`
 	RunID      *string `json:"runID,omitempty"`
 	ActivityID *string `json:"activityID,omitempty"`
@@ -18036,8 +18036,8 @@ func (v *RespondActivityTaskFailedByIDRequest) ToWire() (wire.Value, error) {
 		err    error
 	)
 
-	if v.DomainID != nil {
-		w, err = wire.NewValueString(*(v.DomainID)), error(nil)
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
 		if err != nil {
 			return w, err
 		}
@@ -18122,7 +18122,7 @@ func (v *RespondActivityTaskFailedByIDRequest) FromWire(w wire.Value) error {
 			if field.Value.Type() == wire.TBinary {
 				var x string
 				x, err = field.Value.GetString(), error(nil)
-				v.DomainID = &x
+				v.Domain = &x
 				if err != nil {
 					return err
 				}
@@ -18201,8 +18201,8 @@ func (v *RespondActivityTaskFailedByIDRequest) String() string {
 
 	var fields [7]string
 	i := 0
-	if v.DomainID != nil {
-		fields[i] = fmt.Sprintf("DomainID: %v", *(v.DomainID))
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
 		i++
 	}
 	if v.WorkflowID != nil {
@@ -18238,7 +18238,7 @@ func (v *RespondActivityTaskFailedByIDRequest) String() string {
 //
 // This function performs a deep comparison.
 func (v *RespondActivityTaskFailedByIDRequest) Equals(rhs *RespondActivityTaskFailedByIDRequest) bool {
-	if !_String_EqualsPtr(v.DomainID, rhs.DomainID) {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
 		return false
 	}
 	if !_String_EqualsPtr(v.WorkflowID, rhs.WorkflowID) {
@@ -18263,11 +18263,11 @@ func (v *RespondActivityTaskFailedByIDRequest) Equals(rhs *RespondActivityTaskFa
 	return true
 }
 
-// GetDomainID returns the value of DomainID if it is set or its
+// GetDomain returns the value of Domain if it is set or its
 // zero value if it is unset.
-func (v *RespondActivityTaskFailedByIDRequest) GetDomainID() (o string) {
-	if v.DomainID != nil {
-		return *v.DomainID
+func (v *RespondActivityTaskFailedByIDRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
 	}
 
 	return

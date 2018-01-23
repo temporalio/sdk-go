@@ -356,18 +356,17 @@ func TestCompleteActivityById(t *testing.T) {
 			failedRequest = request
 		})
 
-	domainID := "domainId"
 	workflowID := "wid"
 	runID := ""
 	activityID := "aid"
 
-	wfClient.CompleteActivityByID(context.Background(), domainID, workflowID, runID, activityID, nil, nil)
+	wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, nil)
 	require.NotNil(t, completedRequest)
 
-	wfClient.CompleteActivityByID(context.Background(), domainID, workflowID, runID, activityID, nil, NewCanceledError())
+	wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, NewCanceledError())
 	require.NotNil(t, canceledRequest)
 
-	wfClient.CompleteActivityByID(context.Background(), domainID, workflowID, runID, activityID, nil, errors.New(""))
+	wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, errors.New(""))
 	require.NotNil(t, failedRequest)
 }
 
