@@ -58,6 +58,8 @@ const (
 
 	defaultMaxConcurrentWorkflowExecutionSize = 50     // hardcoded max workflow execution size.
 	defaultMaxWorkflowExecutionRate           = 100000 // Large workflow execution rate (unlimited)
+
+	testTagsContextKey = "cadence-testTags"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -1250,10 +1252,6 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	}
 	return options
 }
-
-type contextKey string
-
-const testTagsContextKey = contextKey("testTags")
 
 // getTestTags returns the test tags in the context.
 func getTestTags(ctx context.Context) map[string]map[string]string {
