@@ -63,3 +63,8 @@ func EventTypePtr(t s.EventType) *s.EventType {
 func QueryTaskCompletedTypePtr(t s.QueryTaskCompletedType) *s.QueryTaskCompletedType {
 	return &t
 }
+
+// TaskListKindPtr makes a copy and returns the pointer to a TaskListKind.
+func TaskListKindPtr(t s.TaskListKind) *s.TaskListKind {
+	return &t
+}

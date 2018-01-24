@@ -438,18 +438,13 @@ Wait_Result:
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 
-type decisionTaskPollRequest struct {
-	request      *s.PollForDecisionTaskRequest
-	isStickyTask bool
-}
-
-func (wtp *workflowTaskPoller) release(isStickyTask bool) {
+func (wtp *workflowTaskPoller) release(kind s.TaskListKind) {
 	if wtp.disableStickyExecution {
 		return
 	}
 
 	wtp.requestLock.Lock()
-	if isStickyTask {
+	if kind == s.TaskListKindSticky {
 		wtp.pendingStickyPollCount--
 	} else {
 		wtp.pendingRegularPollCount--
@@ -457,8 +452,8 @@ func (wtp *workflowTaskPoller) release(isStickyTask bool) {
 	wtp.requestLock.Unlock()
 }
 
-func (wtp *workflowTaskPoller) updateBacklog(isStickyTask bool, backlogCountHint int64) {
-	if !isStickyTask || wtp.disableStickyExecution {
+func (wtp *workflowTaskPoller) updateBacklog(taskListKind s.TaskListKind, backlogCountHint int64) {
+	if taskListKind == s.TaskListKindNormal || wtp.disableStickyExecution {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -474,28 +469,29 @@ func (wtp *workflowTaskPoller) updateBacklog(isStickyTask bool, backlogCountHint
 //   2.1) if sticky task list has backlog, always prefer to process sticky task first
 //   2.2) poll from the task list that has less pending requests (prefer sticky when they are the same).
 // TODO: make this more smart to auto adjust based on poll latency
-func (wtp *workflowTaskPoller) getNextPollRequest() (request *decisionTaskPollRequest) {
-	taskList := wtp.taskListName
-	isStickyTask := false
+func (wtp *workflowTaskPoller) getNextPollRequest() (request *s.PollForDecisionTaskRequest) {
+	taskListName := wtp.taskListName
+	taskListKind := s.TaskListKindNormal
 	if !wtp.disableStickyExecution {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskList = getWorkerTaskList()
-			isStickyTask = true
+			taskListName = getWorkerTaskList()
+			taskListKind = s.TaskListKindSticky
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	}
 
-	return &decisionTaskPollRequest{
-		request: &s.PollForDecisionTaskRequest{
-			Domain:   common.StringPtr(wtp.domain),
-			TaskList: common.TaskListPtr(s.TaskList{Name: common.StringPtr(taskList)}),
-			Identity: common.StringPtr(wtp.identity),
-		},
-		isStickyTask: isStickyTask,
+	taskList := s.TaskList{
+		Name: common.StringPtr(taskListName),
+		Kind: common.TaskListKindPtr(taskListKind),
+	}
+	return &s.PollForDecisionTaskRequest{
+		Domain:   common.StringPtr(wtp.domain),
+		TaskList: common.TaskListPtr(taskList),
+		Identity: common.StringPtr(wtp.identity),
 	}
 }
 
@@ -512,9 +508,9 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	defer cancel()
 
 	request := wtp.getNextPollRequest()
-	defer wtp.release(request.isStickyTask)
+	defer wtp.release(request.TaskList.GetKind())
 
-	response, err := wtp.service.PollForDecisionTask(tchCtx, request.request, opt...)
+	response, err := wtp.service.PollForDecisionTask(tchCtx, request, opt...)
 	if err != nil {
 		if isServiceTransientError(err) {
 			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
@@ -526,11 +522,11 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 
 	if response == nil || len(response.TaskToken) == 0 {
 		wtp.metricsScope.Counter(metrics.DecisionPollNoTaskCounter).Inc(1)
-		wtp.updateBacklog(request.isStickyTask, 0)
+		wtp.updateBacklog(request.TaskList.GetKind(), 0)
 		return &workflowTask{}, nil
 	}
 
-	wtp.updateBacklog(request.isStickyTask, response.GetBacklogCountHint())
+	wtp.updateBacklog(request.TaskList.GetKind(), response.GetBacklogCountHint())
 
 	historyIterator := &historyIteratorImpl{
 		nextPageToken: response.NextPageToken,
