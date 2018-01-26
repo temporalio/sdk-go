@@ -103,6 +103,12 @@ func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args .
 	return t.impl.executeActivity(activityFn, args...)
 }
 
+// ExecuteLocalActivity executes a local activity. The tested activity will be executed synchronously in the calling goroutinue.
+// Caller should use encoded.Value.Get() to extract strong typed result value.
+func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (encoded.Value, error) {
+	return t.impl.executeLocalActivity(activityFn, args...)
+}
+
 // SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
 // use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
@@ -325,6 +331,30 @@ func (t *TestWorkflowEnvironment) SetOnTimerFiredListener(listener func(timerID 
 // SetOnTimerCancelledListener sets a listener that will be called after a timer is cancelled
 func (t *TestWorkflowEnvironment) SetOnTimerCancelledListener(listener func(timerID string)) *TestWorkflowEnvironment {
 	t.impl.onTimerCancelledListener = listener
+	return t
+}
+
+// SetOnLocalActivityStartedListener sets a listener that will be called before local activity starts execution.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+func (t *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})) *TestWorkflowEnvironment {
+	t.impl.onLocalActivityStartedListener = listener
+	return t
+}
+
+// SetOnLocalActivityCompletedListener sets a listener that will be called after local activity is completed.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+func (t *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
+	listener func(activityInfo *ActivityInfo, result encoded.Value, err error)) *TestWorkflowEnvironment {
+	t.impl.onLocalActivityCompletedListener = listener
+	return t
+}
+
+// SetOnLocalActivityCanceledListener sets a listener that will be called after local activity is canceled.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+func (t *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
+	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
+	t.impl.onLocalActivityCanceledListener = listener
 	return t
 }
 

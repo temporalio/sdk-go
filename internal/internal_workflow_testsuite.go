@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -116,10 +117,11 @@ type (
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
 
-		counterID      int
-		activities     map[string]*testActivityHandle
-		timers         map[string]*testTimerHandle
-		childWorkflows map[string]*testChildWorkflowHandle
+		counterID       int
+		activities      map[string]*testActivityHandle
+		localActivities map[string]*localActivityTask
+		timers          map[string]*testTimerHandle
+		childWorkflows  map[string]*testChildWorkflowHandle
 
 		runningCount int
 
@@ -128,6 +130,9 @@ type (
 		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values)
 		onActivityCompletedListener      func(activityInfo *ActivityInfo, result encoded.Value, err error)
 		onActivityCanceledListener       func(activityInfo *ActivityInfo)
+		onLocalActivityStartedListener   func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})
+		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result encoded.Value, err error)
+		onLocalActivityCanceledListener  func(activityInfo *ActivityInfo)
 		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details encoded.Values)
 		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values)
 		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result encoded.Value, err error)
@@ -169,6 +174,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			wallClock:       clock.New(),
 			timers:          make(map[string]*testTimerHandle),
 			activities:      make(map[string]*testActivityHandle),
+			localActivities: make(map[string]*localActivityTask),
 			childWorkflows:  make(map[string]*testChildWorkflowHandle),
 			callbackChannel: make(chan testCallbackHandle, 1000),
 			testTimeout:     time.Second * 3,
@@ -379,6 +385,32 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		// will never happen
 		return nil, fmt.Errorf("unsupported respond type %T", result)
 	}
+}
+
+func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
+	activityFn interface{},
+	args ...interface{},
+) (encoded.Value, error) {
+	params := executeLocalActivityParams{
+		ActivityFn:                    activityFn,
+		InputArgs:                     args,
+		ScheduleToCloseTimeoutSeconds: int32(math.Ceil(env.testTimeout.Seconds())),
+		WorkflowInfo:                  env.workflowInfo,
+	}
+	task := &localActivityTask{
+		activityID: "test-local-activity",
+		params:     &params,
+		callback: func(result []byte, err error) {
+		},
+	}
+	taskHandler := localActivityTaskHandler{
+		userContext:  env.workerOptions.BackgroundActivityContext,
+		metricsScope: env.metricsScope,
+		logger:       env.logger,
+	}
+
+	result := taskHandler.executeLocalActivityTask(task)
+	return EncodedValue(result.result), result.err
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {
@@ -667,11 +699,60 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo {
-	panic("not implemented yet, coming soon")
+	activityID := getStringID(env.nextID())
+	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
+	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
+	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs); at != nil {
+		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
+		ae.name = at.Name
+	}
+	aew := &activityExecutorWrapper{activityExecutor: ae, env: env}
+
+	// substitute the local activity function so we could replace with mock if it is supplied.
+	params.ActivityFn = func(ctx context.Context, inputArgs ...interface{}) ([]byte, error) {
+		return aew.ExecuteWithActualArgs(ctx, params.InputArgs)
+	}
+
+	task := &localActivityTask{
+		activityID: activityID,
+		params:     &params,
+		callback:   callback,
+	}
+	taskHandler := localActivityTaskHandler{
+		userContext:  wOptions.BackgroundActivityContext,
+		metricsScope: wOptions.MetricsScope,
+		logger:       wOptions.Logger,
+	}
+
+	env.localActivities[activityID] = task
+	env.runningCount++
+
+	go func() {
+		result := taskHandler.executeLocalActivityTask(task)
+		env.postCallback(func() {
+			env.handleLocalActivityResult(result)
+			env.runningCount--
+		}, false)
+	}()
+
+	return &localActivityInfo{activityID: activityID}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
-	panic("not implemented yet, coming soon")
+	task, ok := env.localActivities[activityID]
+	if !ok {
+		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", zap.String(tagActivityID, activityID))
+		return
+	}
+	activityInfo := env.getActivityInfo(activityID, getFunctionName(task.params.ActivityFn))
+	env.logger.Debug("RequestCancelLocalActivity", zap.String(tagActivityID, activityID))
+	delete(env.localActivities, activityID)
+	env.postCallback(func() {
+		task.callback(nil, NewCanceledError())
+		if env.onLocalActivityCanceledListener != nil {
+			env.onLocalActivityCanceledListener(activityInfo)
+		}
+	}, true)
 }
 
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string) {
@@ -721,6 +802,29 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	env.startDecisionTask()
 }
 
+func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
+	activityID := result.task.activityID
+	activityType := getFunctionName(result.task.params.ActivityFn)
+	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, string(result.result)),
+		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
+
+	activityInfo := env.getActivityInfo(activityID, activityType)
+	task, ok := env.localActivities[activityID]
+	if !ok {
+		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or cancelled.",
+			zap.String(tagActivityID, activityID))
+		return
+	}
+
+	delete(env.localActivities, activityID)
+	task.callback(result.result, result.err)
+	if env.onLocalActivityCompletedListener != nil {
+		env.onLocalActivityCompletedListener(activityInfo, EncodedValue(result.result), result.err)
+	}
+
+	env.startDecisionTask()
+}
+
 // runBeforeMockCallReturns is registered as mock call's RunFn by *mock.Call.Run(fn). It will be called by testify's
 // mock.MethodCalled() before it returns.
 func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallWrapper, args mock.Arguments) {
@@ -760,6 +864,23 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 	}
 
 	return a.activityExecutor.Execute(ctx, input)
+}
+
+// Execute executes the activity code.
+func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inputArgs []interface{}) ([]byte, error) {
+	activityInfo := GetActivityInfo(ctx)
+	if a.env.onLocalActivityStartedListener != nil {
+		a.env.postCallback(func() {
+			a.env.onLocalActivityStartedListener(&activityInfo, ctx, inputArgs)
+		}, false)
+	}
+
+	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
+	if mockRet := m.getMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
+		return m.executeMockWithActualArgs(ctx, inputArgs, mockRet)
+	}
+
+	return a.activityExecutor.ExecuteWithActualArgs(ctx, inputArgs)
 }
 
 // Execute executes the workflow code.
@@ -810,6 +931,17 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	return w.workflowExecutor.Execute(ctx, input)
 }
 
+func (m *mockWrapper) getCtxArg(ctx interface{}) []interface{} {
+	fnType := reflect.TypeOf(m.fn)
+	if fnType.NumIn() > 0 {
+		if (!m.isWorkflow && isActivityContext(fnType.In(0))) ||
+			(m.isWorkflow && isWorkflowContext(fnType.In(0))) {
+			return []interface{}{ctx}
+		}
+	}
+	return nil
+}
+
 func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock.Arguments) {
 	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
 		// no mock
@@ -821,13 +953,7 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock
 	if err != nil {
 		panic(err)
 	}
-	realArgs := []interface{}{}
-	if fnType.NumIn() > 0 {
-		if (!m.isWorkflow && isActivityContext(fnType.In(0))) ||
-			(m.isWorkflow && isWorkflowContext(fnType.In(0))) {
-			realArgs = append(realArgs, ctx)
-		}
-	}
+	realArgs := m.getCtxArg(ctx)
 	for _, arg := range reflectArgs {
 		realArgs = append(realArgs, arg.Interface())
 	}
@@ -835,7 +961,18 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock
 	return m.env.mock.MethodCalled(m.name, realArgs...)
 }
 
-func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) ([]byte, error) {
+func (m *mockWrapper) getMockReturnWithActualArgs(ctx interface{}, inputArgs []interface{}) (retArgs mock.Arguments) {
+	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
+		// no mock
+		return nil
+	}
+
+	realArgs := m.getCtxArg(ctx)
+	realArgs = append(realArgs, inputArgs...)
+	return m.env.mock.MethodCalled(m.name, realArgs...)
+}
+
+func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	fnName := m.name
 	mockRetLen := len(mockRet)
 	if mockRetLen == 0 {
@@ -851,16 +988,15 @@ func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Ar
 			panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
 				fnName, fnType, mockFnType))
 		}
-		// we found a mock function that matches to actual function, so call that mockFn
-		if m.isWorkflow {
-			executor := &workflowExecutor{name: fnName, fn: mockFn}
-			return executor.Execute(ctx.(Context), input)
-		}
-
-		executor := &activityExecutor{name: fnName, fn: mockFn}
-		return executor.Execute(ctx.(context.Context), input)
+		return mockFn
 	}
+	return nil
+}
 
+func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
+	fnName := m.name
+	mockRetLen := len(mockRet)
+	fnType := reflect.TypeOf(m.fn)
 	// check if mockRet have same types as function's return types
 	if mockRetLen != fnType.NumOut() {
 		panic(fmt.Sprintf("mock of %v has incorrect number of returns, expected %d, but actual is %d",
@@ -908,6 +1044,33 @@ func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Ar
 		// this will never happen, panic just in case
 		panic("mock should either have 1 return value (error) or 2 return values (result, error)")
 	}
+}
+
+func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) ([]byte, error) {
+	fnName := m.name
+	// check if mock returns function which must match to the actual function.
+	if mockFn := m.getMockFn(mockRet); mockFn != nil {
+		// we found a mock function that matches to actual function, so call that mockFn
+		if m.isWorkflow {
+			executor := &workflowExecutor{name: fnName, fn: mockFn}
+			return executor.Execute(ctx.(Context), input)
+		}
+		executor := &activityExecutor{name: fnName, fn: mockFn}
+		return executor.Execute(ctx.(context.Context), input)
+	}
+
+	return m.getMockValue(mockRet)
+}
+
+func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []interface{}, mockRet mock.Arguments) ([]byte, error) {
+	fnName := m.name
+	// check if mock returns function which must match to the actual function.
+	if mockFn := m.getMockFn(mockRet); mockFn != nil {
+		executor := &activityExecutor{name: fnName, fn: mockFn}
+		return executor.ExecuteWithActualArgs(ctx.(context.Context), inputArgs)
+	}
+
+	return m.getMockValue(mockRet)
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string) ActivityTaskHandler {
