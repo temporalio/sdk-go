@@ -68,13 +68,13 @@ func (b EncodedValues) Get(valuePtr ...interface{}) error {
 	return getHostEnvironment().decode(b, valuePtr)
 }
 
-// NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. You can use the returned TestWorkflowEnvironment
+// NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. Use the returned TestWorkflowEnvironment
 // to run your workflow in the test environment.
 func (s *WorkflowTestSuite) NewTestWorkflowEnvironment() *TestWorkflowEnvironment {
 	return &TestWorkflowEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
 }
 
-// NewTestActivityEnvironment creates a new instance of TestActivityEnvironment. You can use the returned TestActivityEnvironment
+// NewTestActivityEnvironment creates a new instance of TestActivityEnvironment. Use the returned TestActivityEnvironment
 // to run your activity in the test environment.
 func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnvironment {
 	return &TestActivityEnvironment{impl: newTestWorkflowEnvironmentImpl(s)}
@@ -105,6 +105,7 @@ func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args .
 
 // SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
 // use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+// Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
 	t.impl.setWorkerOptions(options)
 	return t
@@ -238,6 +239,7 @@ func (t *TestWorkflowEnvironment) Now() time.Time {
 
 // SetWorkerOptions sets the WorkerOptions for TestWorkflowEnvironment. TestWorkflowEnvironment will use options set by
 // use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+// Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
 	t.impl.setWorkerOptions(options)
 	return t
@@ -252,6 +254,7 @@ func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 }
 
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (t *TestWorkflowEnvironment) SetOnActivityStartedListener(
 	listener func(activityInfo *ActivityInfo, ctx context.Context, args encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onActivityStartedListener = listener
@@ -259,6 +262,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityStartedListener(
 }
 
 // SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 	listener func(activityInfo *ActivityInfo, result encoded.Value, err error)) *TestWorkflowEnvironment {
 	t.impl.onActivityCompletedListener = listener
@@ -266,6 +270,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 }
 
 // SetOnActivityCanceledListener sets a listener that will be called after an activity is canceled.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (t *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
 	t.impl.onActivityCanceledListener = listener
@@ -273,6 +278,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 }
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
+// Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onActivityHeartbeatListener = listener
@@ -280,6 +286,7 @@ func (t *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 }
 
 // SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
+// Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (t *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 	listener func(workflowInfo *WorkflowInfo, ctx Context, args encoded.Values)) *TestWorkflowEnvironment {
 	t.impl.onChildWorkflowStartedListener = listener
@@ -287,6 +294,7 @@ func (t *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 }
 
 // SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
+// Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (t *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
 	listener func(workflowInfo *WorkflowInfo, result encoded.Value, err error)) *TestWorkflowEnvironment {
 	t.impl.onChildWorkflowCompletedListener = listener
@@ -294,6 +302,7 @@ func (t *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
 }
 
 // SetOnChildWorkflowCanceledListener sets a listener that will be called when a child workflow is canceled.
+// Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (t *TestWorkflowEnvironment) SetOnChildWorkflowCanceledListener(
 	listener func(workflowInfo *WorkflowInfo)) *TestWorkflowEnvironment {
 	t.impl.onChildWorkflowCanceledListener = listener
@@ -362,14 +371,14 @@ func (t *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
-// forward to fire next timer when workflow is blocked. You can use this API to make some event (like activity completion,
+// forward to fire next timer when workflow is blocked. Use this API to make some event (like activity completion,
 // signal or workflow cancellation) at desired time.
 func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delayDuration time.Duration) {
 	t.impl.registerDelayedCallback(callback, delayDuration)
 }
 
 // SetActivityTaskList set the affinity between activity and tasklist. By default, activity can be invoked by any tasklist
-// in this test environment. You can use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
+// in this test environment. Use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
 func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
 	t.impl.setActivityTaskList(tasklist, activityFn...)
