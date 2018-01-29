@@ -50,6 +50,7 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(cancelWorkflowAfterActivityTest)
 	RegisterWorkflow(signalWorkflowTest)
 	RegisterWorkflow(splitJoinActivityWorkflow)
+	RegisterWorkflow(activityOptionsWorkflow)
 
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -523,4 +524,31 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	var result []byte
 	env.GetWorkflowResult(&result)
 	s.EqualValues(strings.Join(expected, ""), string(result))
+}
+
+func activityOptionsWorkflow(ctx Context) (result string, err error) {
+	ao1 := ActivityOptions{
+		ActivityID: "id1",
+	}
+	ao2 := ActivityOptions{
+		ActivityID: "id2",
+	}
+	ctx1 := WithActivityOptions(ctx, ao1)
+	ctx2 := WithActivityOptions(ctx, ao2)
+
+	ctx1Ao := getActivityOptions(ctx1)
+	ctx2Ao := getActivityOptions(ctx2)
+	return *ctx1Ao.ActivityID + " " + *ctx2Ao.ActivityID, nil
+}
+
+// Test that activity options are correctly spawned with WithActivityOptions is called.
+// See https://github.com/uber-go/cadence-client/issues/372
+func (s *WorkflowUnitTest) Test_ActivityOptionsWorkflow() {
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(activityOptionsWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("id1 id2", result)
 }

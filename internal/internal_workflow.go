@@ -997,13 +997,15 @@ func getWorkflowEnvOptions(ctx Context) *workflowOptions {
 }
 
 func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
-	if valCtx := getWorkflowEnvOptions(ctx); valCtx == nil {
-		return WithValue(ctx, workflowEnvOptionsContextKey, &workflowOptions{
-			signalChannels: make(map[string]Channel),
-			queryHandlers:  make(map[string]func([]byte) ([]byte, error)),
-		})
+	options := getWorkflowEnvOptions(ctx)
+	var newOptions workflowOptions
+	if options != nil {
+		newOptions = *options
+	} else {
+		newOptions.signalChannels = make(map[string]Channel)
+		newOptions.queryHandlers = make(map[string]func([]byte) ([]byte, error))
 	}
-	return ctx
+	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
 // getSignalChannel finds the assosciated channel for the signal.

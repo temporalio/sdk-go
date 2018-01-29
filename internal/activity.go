@@ -214,7 +214,7 @@ type LocalActivityOptions struct {
 	ScheduleToCloseTimeout time.Duration
 }
 
-// WithActivityOptions adds all options to the context.
+// WithActivityOptions adds all options to the copy of the context.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
@@ -229,7 +229,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	return ctx1
 }
 
-// WithLocalActivityOptions adds local activity options to the context.
+// WithLocalActivityOptions adds local activity options to the copy of the context.
 func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
 	ctx1 := setLocalActivityParametersIfNotExist(ctx)
 	opts := getLocalActivityOptions(ctx1)
@@ -238,42 +238,42 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	return ctx1
 }
 
-// WithTaskList adds a task list to the context.
+// WithTaskList adds a task list to the copy of the context.
 func WithTaskList(ctx Context, name string) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).TaskListName = name
 	return ctx1
 }
 
-// WithScheduleToCloseTimeout adds a timeout to the context.
+// WithScheduleToCloseTimeout adds a timeout to the copy of the context.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
-// WithScheduleToStartTimeout adds a timeout to the context.
+// WithScheduleToStartTimeout adds a timeout to the copy of the context.
 func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
-// WithStartToCloseTimeout adds a timeout to the context.
+// WithStartToCloseTimeout adds a timeout to the copy of the context.
 func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
-// WithHeartbeatTimeout adds a timeout to the context.
+// WithHeartbeatTimeout adds a timeout to the copy of the context.
 func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = int32(d.Seconds())
 	return ctx1
 }
 
-// WithWaitForCancellation adds wait for the cacellation to the context.
+// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
 func WithWaitForCancellation(ctx Context, wait bool) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).WaitForCancellation = wait

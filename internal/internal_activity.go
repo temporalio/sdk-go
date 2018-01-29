@@ -324,15 +324,19 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}) err
 }
 
 func setActivityParametersIfNotExist(ctx Context) Context {
-	if valCtx := getActivityOptions(ctx); valCtx == nil {
-		return WithValue(ctx, activityOptionsContextKey, &executeActivityParameters{})
+	params := getActivityOptions(ctx)
+	var newParams executeActivityParameters
+	if params != nil {
+		newParams = *params
 	}
-	return ctx
+	return WithValue(ctx, activityOptionsContextKey, &newParams)
 }
 
 func setLocalActivityParametersIfNotExist(ctx Context) Context {
-	if valCtx := getLocalActivityOptions(ctx); valCtx == nil {
-		return WithValue(ctx, localActivityOptionsContextKey, &executeLocalActivityParams{})
+	params := getLocalActivityOptions(ctx)
+	var newParams executeLocalActivityParams
+	if params != nil {
+		newParams = *params
 	}
-	return ctx
+	return WithValue(ctx, localActivityOptionsContextKey, &newParams)
 }
