@@ -934,7 +934,7 @@ func newWorkflowDefinition(workflow workflow) workflowDefinition {
 func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}) (*WorkflowType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
-	switch fType.Kind() {
+	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(workflowFunc).String()
 

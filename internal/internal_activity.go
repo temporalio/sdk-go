@@ -175,7 +175,7 @@ func getValidatedLocalActivityOptions(ctx Context) (*executeLocalActivityParams,
 
 func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {
 	fType := reflect.TypeOf(f)
-	if fType.Kind() != reflect.Func {
+	if fType == nil || fType.Kind() != reflect.Func {
 		return fmt.Errorf("Provided type: %v is not a function type", f)
 	}
 	fnName := getFunctionName(f)
@@ -215,7 +215,7 @@ func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) er
 func getValidatedActivityFunction(f interface{}, args []interface{}) (*ActivityType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(f)
-	switch fType.Kind() {
+	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(f).String()
 
@@ -240,9 +240,16 @@ func getValidatedActivityFunction(f interface{}, args []interface{}) (*ActivityT
 	return &ActivityType{Name: fnName}, input, nil
 }
 
+func getKind(fType reflect.Type) reflect.Kind {
+	if fType == nil {
+		return reflect.Invalid
+	}
+	return fType.Kind()
+}
+
 func isActivityContext(inType reflect.Type) bool {
 	contextElem := reflect.TypeOf((*context.Context)(nil)).Elem()
-	return inType.Implements(contextElem)
+	return inType != nil && inType.Implements(contextElem)
 }
 
 func validateFunctionAndGetResults(f interface{}, values []reflect.Value) ([]byte, error) {
@@ -306,7 +313,7 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interf
 func deSerializeFunctionResult(f interface{}, result []byte, to interface{}) error {
 	fType := reflect.TypeOf(f)
 
-	switch fType.Kind() {
+	switch getKind(fType) {
 	case reflect.Func:
 		// We already validated that it either have (result, error) (or) just error.
 		return deSerializeFnResultFromFnType(fType, result, to)

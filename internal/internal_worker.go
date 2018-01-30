@@ -1099,7 +1099,7 @@ func isValidResultType(inType reflect.Type) bool {
 
 func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeOf((*error)(nil)).Elem()
-	return inType.Implements(errorElem)
+	return inType != nil && inType.Implements(errorElem)
 }
 
 func getFunctionName(i interface{}) string {
