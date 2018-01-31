@@ -123,6 +123,8 @@ type (
 //     StartWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
 //     StartWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func (wc *workflowClient) StartWorkflow(
 	ctx context.Context,
 	options StartWorkflowOptions,
@@ -138,12 +140,12 @@ func (wc *workflowClient) StartWorkflow(
 		return nil, errors.New("missing TaskList")
 	}
 
-	executionTimeout := int32(options.ExecutionStartToCloseTimeout.Seconds())
+	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
 	if executionTimeout <= 0 {
 		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
 	}
 
-	decisionTaskTimeout := int32(options.DecisionTaskStartToCloseTimeout.Seconds())
+	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
 	if decisionTaskTimeout < 0 {
 		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
 	}
@@ -204,6 +206,8 @@ func (wc *workflowClient) StartWorkflow(
 //     RunWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
 //     RunWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
 

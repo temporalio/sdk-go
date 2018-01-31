@@ -24,7 +24,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -394,7 +393,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	params := executeLocalActivityParams{
 		ActivityFn:                    activityFn,
 		InputArgs:                     args,
-		ScheduleToCloseTimeoutSeconds: int32(math.Ceil(env.testTimeout.Seconds())),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
 		WorkflowInfo:                  env.workflowInfo,
 	}
 	task := &localActivityTask{

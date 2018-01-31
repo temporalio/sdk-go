@@ -43,6 +43,8 @@ type (
 	}
 
 	// WorkerOptions is used to configure a worker instance.
+	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+	// subjected to change in the future.
 	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this host can have.
 		// The zero value of this uses the default value.

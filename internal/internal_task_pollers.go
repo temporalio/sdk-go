@@ -283,7 +283,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
 					request.StickyAttributes = &s.StickyExecutionAttributes{
 						WorkerTaskList:                &s.TaskList{Name: common.StringPtr(getWorkerTaskList())},
-						ScheduleToStartTimeoutSeconds: common.Int32Ptr(int32(wtp.StickyScheduleToStartTimeout.Seconds())),
+						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
 					}
 				}
 				err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)

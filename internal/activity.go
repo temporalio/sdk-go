@@ -173,6 +173,8 @@ func WithActivityTask(
 }
 
 // ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 type ActivityOptions struct {
 	// TaskList that the activity needs to be scheduled on.
 	// optional: The default task list with the same name as the workflow task list.
@@ -215,26 +217,30 @@ type LocalActivityOptions struct {
 }
 
 // WithActivityOptions adds all options to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
 
 	eap.TaskListName = options.TaskList
-	eap.ScheduleToCloseTimeoutSeconds = int32(options.ScheduleToCloseTimeout.Seconds())
-	eap.StartToCloseTimeoutSeconds = int32(options.StartToCloseTimeout.Seconds())
-	eap.ScheduleToStartTimeoutSeconds = int32(options.ScheduleToStartTimeout.Seconds())
-	eap.HeartbeatTimeoutSeconds = int32(options.HeartbeatTimeout.Seconds())
+	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
+	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
+	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = common.StringPtr(options.ActivityID)
 	return ctx1
 }
 
 // WithLocalActivityOptions adds local activity options to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
 	ctx1 := setLocalActivityParametersIfNotExist(ctx)
 	opts := getLocalActivityOptions(ctx1)
 
-	opts.ScheduleToCloseTimeoutSeconds = int32(options.ScheduleToCloseTimeout.Seconds())
+	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
 	return ctx1
 }
 
@@ -246,30 +252,38 @@ func WithTaskList(ctx Context, name string) Context {
 }
 
 // WithScheduleToCloseTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = int32(d.Seconds())
+	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
 // WithScheduleToStartTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = int32(d.Seconds())
+	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
 // WithStartToCloseTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = int32(d.Seconds())
+	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
 // WithHeartbeatTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = int32(d.Seconds())
+	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 

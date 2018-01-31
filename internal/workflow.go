@@ -134,6 +134,8 @@ type (
 	Version int
 
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
+	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+	// subjected to change in the future.
 	ChildWorkflowOptions struct {
 		// Domain of the child workflow.
 		// Optional: the current workflow (parent)'s domain will be used if this is not provided.
@@ -595,14 +597,16 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 }
 
 // WithChildWorkflowOptions adds all workflow options to the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
 	wfOptions.domain = common.StringPtr(cwo.Domain)
 	wfOptions.taskListName = common.StringPtr(cwo.TaskList)
 	wfOptions.workflowID = cwo.WorkflowID
-	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ptr(int32(cwo.ExecutionStartToCloseTimeout.Seconds()))
-	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(cwo.TaskStartToCloseTimeout.Seconds()))
+	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds()))
+	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds()))
 	wfOptions.childPolicy = cwo.ChildPolicy
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
@@ -639,16 +643,20 @@ func WithChildPolicy(ctx Context, childPolicy ChildWorkflowPolicy) Context {
 }
 
 // WithExecutionStartToCloseTimeout adds a workflow execution timeout to the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
+	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(d.Seconds()))
 	return ctx1
 }
 
 // WithWorkflowTaskStartToCloseTimeout adds a decision timeout to the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
 func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(int32(d.Seconds()))
+	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(d.Seconds()))
 	return ctx1
 }
 

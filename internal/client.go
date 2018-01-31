@@ -52,6 +52,8 @@ type (
 		//	- BadRequestError
 		//	- WorkflowExecutionAlreadyStartedError
 		//	- InternalServiceError
+		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+		// subjected to change in the future.
 		StartWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WorkflowExecution, error)
 
 		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
@@ -65,6 +67,9 @@ type (
 		//	- BadRequestError
 		//	- WorkflowExecutionAlreadyStartedError
 		//	- InternalServiceError
+		//
+		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+		// subjected to change in the future.
 		//
 		// WorkflowRun has 2 methods:
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
@@ -222,6 +227,8 @@ type (
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
+	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+	// subjected to change in the future.
 	StartWorkflowOptions struct {
 		// ID - The business identifier of the workflow execution.
 		// Optional: defaulted to a uuid.

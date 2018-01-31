@@ -146,6 +146,8 @@ type (
 		closed           bool
 	}
 
+	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
+	// subjected to change in the future.
 	workflowOptions struct {
 		workflowType                        *WorkflowType
 		input                               []byte

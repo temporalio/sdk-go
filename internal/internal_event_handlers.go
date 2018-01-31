@@ -25,7 +25,6 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -409,7 +408,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 	timerID := wc.GenerateSequenceID()
 	startTimerAttr := &m.StartTimerDecisionAttributes{}
 	startTimerAttr.TimerId = common.StringPtr(timerID)
-	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ptr(int64(math.Ceil(d.Seconds())))
+	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ptr(common.Int64Ceil(d.Seconds()))
 
 	decision := wc.decisionsHelper.startTimer(startTimerAttr)
 	decision.setData(&scheduledTimer{callback: callback})
