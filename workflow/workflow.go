@@ -301,13 +301,26 @@ const DefaultVersion Version = internal.DefaultVersion
 //      err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
 //  }
 //
-// Currently there is no supported way to completely remove GetVersion call after it was introduced.
-// Keep it even if single branch is left:
+// It is recommended to keep the GetVersion() call even if single branch is left:
 //  GetVersion(ctx, "fooChange", 2, 2)
 //  err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
 //
-// It is necessary as GetVersion performs validation of a version against a workflow history and fails decisions if
-// a workflow code is not compatible with it.
+// The reason to keep it is: 1) it ensures that if there is older version execution still running, it will fail here
+// and not proceed; 2) if you ever need to make more changes for “fooChange”, for example change activity from baz to qux,
+// you just need to update the maxVersion from 2 to 3.
+//
+// Note that, you only need to preserve the first call to GetVersion() for each changeID. All subsequent call to GetVersion()
+// with same changeID are safe to remove. However, if you really want to get rid of the first GetVersion() call as well,
+// you can do so, but you need to make sure: 1) all older version executions are completed; 2) you can no longer use “fooChange”
+// as changeID. If you ever need to make changes to that same part like change from baz to qux, you would need to use a
+// different changeID like “fooChange-fix2”, and start minVersion from DefaultVersion again. The code would looks like:
+//
+//  v := workflow.GetVersion(ctx, "fooChange-fix2", workflow.DefaultVersion, 1)
+//  if v == workflow.DefaultVersion {
+//    err = workflow.ExecuteActivity(ctx, baz, data).Get(ctx, nil)
+//  } else {
+//    err = workflow.ExecuteActivity(ctx, qux, data).Get(ctx, nil)
+//  }
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return internal.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
