@@ -591,7 +591,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	resultCallback := func(result []byte, err error) {
 		settable.Set(result, err)
 	}
-	getWorkflowEnvironment(ctx).SignalExternalWorkflow(*options.domain, workflowID, runID, signalName, input, resultCallback)
+	getWorkflowEnvironment(ctx).SignalExternalWorkflow(*options.domain, workflowID, runID, signalName, input, arg, resultCallback)
 
 	return future
 }

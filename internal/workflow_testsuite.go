@@ -190,6 +190,32 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 	return t.wrapCall(call)
 }
 
+const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
+
+// OnSignalExternalWorkflow setup a mock for sending signal to external workflow.
+// This TestWorkflowEnvironment handles sending signals between the workflows that are started from the root workflow.
+// For example, sending signals between parent and child workflows. Or sending signals between 2 child workflows.
+// However, it does not know what to do if your tested workflow code is sending signal to external unknown workflows.
+// In that case, you will need to setup mock for those signal calls.
+// Some examples of how to setup mock:
+//
+// * mock for specific target workflow that matches specific signal name and signal data
+// 	 env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1", "test-signal", "test-data").Return(nil).Once()
+// * mock for anything and succeed the send
+// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+// * mock for anything and fail the send
+// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
+// * mock function for SignalExternalWorkflow
+//   env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+//     func(domainName, workflowID, runID, signalName string, arg interface{}) error {
+//       // you can do differently based on the parameters
+//       return nil
+//     })
+func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(domainName, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
+	call := t.Mock.On(mockMethodForSignalExternalWorkflow, domainName, workflowID, runID, signalName, arg)
+	return t.wrapCall(call)
+}
+
 func (t *TestWorkflowEnvironment) wrapCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: t}
 	call.Run(t.impl.getMockRunFn(callWrapper))

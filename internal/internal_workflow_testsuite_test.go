@@ -1247,3 +1247,124 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.NoError(err)
 	s.Equal("hello mock", result)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
+	// This test will send signal from parent to child, and then child will send back signal to ack. No mock is needed.
+	signalName := "test-signal-name"
+	signalData := "test-signal-data"
+	childWorkflowFn := func(ctx Context, parentExec WorkflowExecution) (string, error) {
+		var data string
+		GetSignalChannel(ctx, signalName).Receive(ctx, &data)
+
+		err := SignalExternalWorkflow(ctx, parentExec.ID, parentExec.RunID, signalName, data+"-received").Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+
+		return data + "-processed", nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, GetWorkflowInfo(ctx).WorkflowExecution)
+
+		// wait until child starts
+		var childWE WorkflowExecution
+		if err := childFuture.GetChildWorkflowExecution().Get(ctx, &childWE); err != nil {
+			return err
+		}
+
+		// send signal to child workflow
+		signalFuture := SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, signalName, signalData)
+		if err := signalFuture.Get(ctx, nil); err != nil {
+			return err
+		}
+
+		// receiving ack signal from child
+		c := GetSignalChannel(ctx, signalName)
+		var ackMsg string
+		c.Receive(ctx, &ackMsg)
+		s.Equal(signalData+"-received", ackMsg)
+
+		var childResult string
+		if err := childFuture.Get(ctx, &childResult); err != nil {
+			return err
+		}
+
+		s.Equal(signalData+"-processed", childResult)
+		return nil
+	}
+
+	RegisterWorkflow(childWorkflowFn)
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
+	signalName := "test-signal-name"
+	signalData := "test-signal-data"
+	workflowFn := func(ctx Context) error {
+		// set domain to be more specific
+		ctx = WithWorkflowDomain(ctx, "test-domain")
+		f1 := SignalExternalWorkflow(ctx, "test-workflow-id1", "test-runid1", signalName, signalData)
+		f2 := SignalExternalWorkflow(ctx, "test-workflow-id2", "test-runid2", signalName, signalData)
+		f3 := SignalExternalWorkflow(ctx, "test-workflow-id3", "test-runid3", signalName, signalData)
+
+		// signal1 succeed
+		err1 := f1.Get(ctx, nil)
+		if err1 != nil {
+			return err1
+		}
+
+		// signal2 failed
+		err2 := f2.Get(ctx, nil)
+		if err2 == nil {
+			return errors.New("signal2 should fail")
+		}
+
+		// signal3 succeed with delay
+		t := NewTimer(ctx, time.Second*30)
+		timerFired, signalSend := false, false
+
+		NewSelector(ctx).AddFuture(t, func(f Future) {
+			timerFired = true
+		}).AddFuture(f3, func(f Future) {
+			signalSend = true
+		}).Select(ctx)
+
+		// verify that timer fired first because the signal will delay 1 minute
+		s.True(timerFired)
+		s.False(signalSend)
+
+		err3 := f3.Get(ctx, nil)
+		if err3 != nil {
+			return err3
+		}
+
+		return nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	// signal1 should succeed
+	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1", signalName, signalData).Return(nil).Once()
+
+	// signal2 should fail
+	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id2", "test-runid2", signalName, signalData).Return(
+		func(domainName, workflowID, runID, signalName string, arg interface{}) error {
+			return errors.New("unknown external workflow")
+		}).Once()
+
+	// signal3 should succeed with delay, mock match exactly the parameters
+	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id3", "test-runid3", signalName, signalData).After(time.Minute).Return(nil).Once()
+
+	env.ExecuteWorkflow(workflowFn)
+	env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}

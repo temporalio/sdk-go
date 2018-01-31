@@ -65,9 +65,10 @@ type (
 		activityType string
 	}
 
-	testChildWorkflowHandle struct {
+	testWorkflowHandle struct {
 		env      *testWorkflowEnvironmentImpl
 		callback resultHandler
+		handled  bool
 	}
 
 	testCallbackHandle struct {
@@ -116,11 +117,11 @@ type (
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
 
-		counterID       int
-		activities      map[string]*testActivityHandle
-		localActivities map[string]*localActivityTask
-		timers          map[string]*testTimerHandle
-		childWorkflows  map[string]*testChildWorkflowHandle
+		counterID        int
+		activities       map[string]*testActivityHandle
+		localActivities  map[string]*localActivityTask
+		timers           map[string]*testTimerHandle
+		runningWorkflows map[string]*testWorkflowHandle
 
 		runningCount int
 
@@ -153,6 +154,7 @@ type (
 		workflowCancelHandler func()
 		signalHandler         func(name string, input []byte)
 		queryHandler          func(string, []byte) ([]byte, error)
+		startedHandler        func(r WorkflowExecution, e error)
 
 		isTestCompleted bool
 		testResult      EncodedValue
@@ -167,16 +169,16 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			testSuite:                  s,
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
-			logger:          s.logger,
-			metricsScope:    s.scope,
-			mockClock:       clock.NewMock(),
-			wallClock:       clock.New(),
-			timers:          make(map[string]*testTimerHandle),
-			activities:      make(map[string]*testActivityHandle),
-			localActivities: make(map[string]*localActivityTask),
-			childWorkflows:  make(map[string]*testChildWorkflowHandle),
-			callbackChannel: make(chan testCallbackHandle, 1000),
-			testTimeout:     time.Second * 3,
+			logger:           s.logger,
+			metricsScope:     s.scope,
+			mockClock:        clock.NewMock(),
+			wallClock:        clock.New(),
+			timers:           make(map[string]*testTimerHandle),
+			activities:       make(map[string]*testActivityHandle),
+			localActivities:  make(map[string]*localActivityTask),
+			runningWorkflows: make(map[string]*testWorkflowHandle),
+			callbackChannel:  make(chan testCallbackHandle, 1000),
+			testTimeout:      time.Second * 3,
 
 			expectedMockCalls: make(map[string]struct{}),
 		},
@@ -197,6 +199,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 		doneChannel: make(chan struct{}),
 	}
+
+	// put current workflow as a running workflow so child can send signal to parent
+	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result []byte, err error) {}}
 
 	if env.logger == nil {
 		logger, _ := zap.NewDevelopment()
@@ -257,10 +262,11 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	return env
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(options *workflowOptions, callback resultHandler) *testWorkflowEnvironmentImpl {
+func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(options *workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) *testWorkflowEnvironmentImpl {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite)
 	childEnv.parentEnv = env
+	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 
 	if options.workflowID == "" {
@@ -273,7 +279,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(optio
 	childEnv.workflowInfo.TaskListName = *options.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *options.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *options.taskStartToCloseTimeoutSeconds
-	env.childWorkflows[options.workflowID] = &testChildWorkflowHandle{env: childEnv, callback: callback}
+	env.runningWorkflows[options.workflowID] = &testWorkflowHandle{env: childEnv, callback: callback}
 
 	return childEnv
 }
@@ -321,6 +327,13 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType str
 	// In case of child workflow, this executeWorkflowInternal() is run in separate goroutinue, so use postCallback
 	// to make sure workflowDef.Execute() is run in main loop.
 	env.postCallback(func() {
+		if env.isChildWorkflow() {
+			// notify parent that child workflow is started
+			env.parentEnv.postCallback(func() {
+				env.startedHandler(env.workflowInfo.WorkflowExecution, nil)
+			}, true)
+		}
+
 		env.workflowDef.Execute(env, input)
 	}, false)
 	env.startMainLoop()
@@ -610,10 +623,10 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 	if env.isChildWorkflow() {
 		// this is completion of child workflow
 		childWorkflowID := env.workflowInfo.WorkflowExecution.ID
-		if childWorkflowHandle, ok := env.childWorkflows[childWorkflowID]; ok {
+		if childWorkflowHandle, ok := env.runningWorkflows[childWorkflowID]; ok && !childWorkflowHandle.handled {
 			// It is possible that child workflow could complete after cancellation. In that case, childWorkflowHandle
-			// would have already been removed from the childWorkflows map by RequestCancelWorkflow().
-			delete(env.childWorkflows, childWorkflowID)
+			// would have already been removed from the runningWorkflows map by RequestCancelWorkflow().
+			childWorkflowHandle.handled = true
 			env.parentEnv.postCallback(func() {
 				// deliver result
 				childWorkflowHandle.callback(env.testResult, env.testError)
@@ -1189,25 +1202,57 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workfl
 				env.onChildWorkflowCanceledListener(env.workflowInfo)
 			}, false)
 		}
-	} else if childHandle, ok := env.childWorkflows[workflowID]; ok {
+	} else if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
-		delete(env.childWorkflows, workflowID)
+		childHandle.handled = true
 		childEnv := childHandle.env
 		childEnv.cancelWorkflow()
 	}
 	return nil
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, callback resultHandler) {
-	// TODO: add tests for signal external workflow
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, callback resultHandler) {
+	// check if target workflow is a known workflow
+	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
+		// target workflow is a child
+		childEnv := childHandle.env
+		if childEnv.isTestCompleted {
+			// child already completed (NOTE: we have only one failed cause now)
+			err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
+			callback(nil, err)
+		} else {
+			childEnv.signalHandler(signalName, input)
+			callback(nil, nil)
+		}
+		return
+	}
+
+	// target workflow is not child workflow, we need the mock. The mock needs to be called in a separate goroutinue
+	// so it can block and wait on the requested delay time (if configured). If we run it in main thread, and the mock
+	// configured to delay, it will block the main loop which stops the world.
+	env.runningCount++
+	go func() {
+		args := []interface{}{domainName, workflowID, runID, signalName, arg}
+		// below call will panic if mock is not properly setup.
+		mockRet := env.mock.MethodCalled(mockMethodForSignalExternalWorkflow, args...)
+		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
+		var err error
+		if mockFn := m.getMockFn(mockRet); mockFn != nil {
+			executor := &activityExecutor{name: mockMethodForSignalExternalWorkflow, fn: mockFn}
+			_, err = executor.ExecuteWithActualArgs(nil, args)
+		} else {
+			_, err = m.getMockValue(mockRet)
+		}
+		env.postCallback(func() {
+			callback(nil, err)
+			env.runningCount--
+		}, true)
+	}()
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	childEnv := env.newTestWorkflowEnvironmentForChild(&options, callback)
+	childEnv := env.newTestWorkflowEnvironmentForChild(&options, callback, startedHandler)
 	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", options.workflowType.Name)
-
-	// start immediately
-	startedHandler(childEnv.workflowInfo.WorkflowExecution, nil)
 	env.runningCount++
 
 	// run child workflow in separate goroutinue
@@ -1287,6 +1332,11 @@ func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrappe
 	return func(args mock.Arguments) {
 		env.runBeforeMockCallReturns(callWrapper, args)
 	}
+}
+
+// function signature for mock SignalExternalWorkflow
+func mockFnSignalExternalWorkflow(domainName, workflowID, runID, signalName string, arg interface{}) error {
+	return nil
 }
 
 // make sure interface is implemented

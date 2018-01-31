@@ -251,7 +251,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID,
 }
 
 func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string,
-	input []byte, callback resultHandler) {
+	input []byte, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, callback resultHandler) {
 
 	signalID := wc.GenerateSequenceID()
 	decision := wc.decisionsHelper.signalExternalWorkflowExecution(domainName, workflowID, runID, signalName, input, signalID)

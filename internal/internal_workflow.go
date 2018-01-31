@@ -439,7 +439,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher) {
 
 	us := getWorkflowEnvOptions(ctx).getUnhandledSignals()
 	if len(us) > 0 {
-		env.GetLogger().Warn("Workflow has unhandled signals", zap.Strings("SignalNames", us))
+		env.GetLogger().Info("Workflow has unhandled signals", zap.Strings("SignalNames", us))
 		env.GetMetricsScope().Counter(metrics.UnhandledSignalsCounter).Inc(1)
 	}
 

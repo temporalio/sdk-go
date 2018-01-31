@@ -65,7 +65,7 @@ type (
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input []byte))
-		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, callback resultHandler)
+		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, callback resultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 	}
 
