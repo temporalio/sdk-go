@@ -21,6 +21,7 @@
 package internal
 
 import (
+	"container/list"
 	"fmt"
 
 	s "go.uber.org/cadence/.gen/go/shared"
@@ -102,7 +103,7 @@ type (
 	}
 
 	decisionsHelper struct {
-		orderedDecisions []decisionStateMachine
+		orderedDecisions *list.List
 		decisions        map[decisionID]decisionStateMachine
 
 		scheduledEventIDToActivityID map[int64]string
@@ -132,15 +133,15 @@ const (
 )
 
 const (
-	eventCancel           string = "cancel"
-	eventDecisionSent     string = "handleDecisionSent"
-	eventInitiated        string = "handleInitiatedEvent"
-	eventInitiationFailed string = "handleInitiationFailedEvent"
-	eventStarted          string = "handleStartedEvent"
-	eventCompletion       string = "handleCompletionEvent"
-	eventCancelInitiated  string = "handleCancelInitiatedEvent"
-	eventCancelFailed     string = "handleCancelFailedEvent"
-	eventCanceled         string = "handleCanceledEvent"
+	eventCancel           = "cancel"
+	eventDecisionSent     = "handleDecisionSent"
+	eventInitiated        = "handleInitiatedEvent"
+	eventInitiationFailed = "handleInitiationFailedEvent"
+	eventStarted          = "handleStartedEvent"
+	eventCompletion       = "handleCompletionEvent"
+	eventCancelInitiated  = "handleCancelInitiatedEvent"
+	eventCancelFailed     = "handleCancelFailedEvent"
+	eventCanceled         = "handleCanceledEvent"
 )
 
 const (
@@ -629,7 +630,8 @@ func (d *markerDecisionStateMachine) handleCompletionEvent() {
 
 func newDecisionsHelper() *decisionsHelper {
 	return &decisionsHelper{
-		decisions: make(map[decisionID]decisionStateMachine),
+		orderedDecisions: list.New(),
+		decisions:        make(map[decisionID]decisionStateMachine),
 
 		scheduledEventIDToActivityID: make(map[int64]string),
 	}
@@ -646,7 +648,7 @@ func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 }
 
 func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
-	h.orderedDecisions = append(h.orderedDecisions, decision)
+	h.orderedDecisions.PushBack(decision)
 	h.decisions[decision.getID()] = decision
 }
 
@@ -917,22 +919,26 @@ func (h *decisionsHelper) handleChildWorkflowExecutionCanceled(workflowID string
 
 func (h *decisionsHelper) getDecisions(markAsSent bool) []*s.Decision {
 	var result []*s.Decision
-	for _, d := range h.orderedDecisions {
+	for curr := h.orderedDecisions.Front(); curr != nil; {
+		next := curr.Next() // get next item here as we might need to remove curr in the loop
+		d := curr.Value.(decisionStateMachine)
 		decision := d.getDecision()
 		if decision != nil {
 			result = append(result, decision)
 		}
-	}
 
-	if markAsSent {
-		h.handleDecisionsSent()
+		if markAsSent {
+			d.handleDecisionSent()
+		}
+
+		// remove completed decision state machines
+		if d.getState() == decisionStateCompleted {
+			h.orderedDecisions.Remove(curr)
+			delete(h.decisions, d.getID())
+		}
+
+		curr = next
 	}
 
 	return result
-}
-
-func (h *decisionsHelper) handleDecisionsSent() {
-	for _, d := range h.orderedDecisions {
-		d.handleDecisionSent()
-	}
 }

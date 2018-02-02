@@ -118,7 +118,7 @@ func Test_TimerStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	}
 	h := newDecisionsHelper()
 	h.startTimer(attributes)
-	h.handleDecisionsSent()
+	h.getDecisions(true)
 	h.handleTimerStarted(timerID)
 	h.handleTimerClosed(timerID)
 
@@ -254,7 +254,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	require.NotNil(t, err)
 
 	// send schedule decision
-	h.handleDecisionsSent()
+	h.getDecisions(true)
 	// activity scheduled
 	h.handleActivityTaskScheduled(1, activityID)
 
@@ -425,7 +425,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	// start child workflow
 	d := h.startChildWorkflowExecution(attributes)
 	// send decision
-	h.handleDecisionsSent()
+	h.getDecisions(true)
 	// child workflow initiated
 	h.handleStartChildWorkflowExecutionInitiated(workflowID)
 	// child workflow started
@@ -433,7 +433,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	// cancel child workflow
 	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID)
 	// send cancel request
-	h.handleDecisionsSent()
+	h.getDecisions(true)
 	// cancel request initiated
 	h.handleRequestCancelExternalWorkflowExecutionInitiated(workflowID)
 
