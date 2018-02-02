@@ -1269,14 +1269,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, GetWorkflowInfo(ctx).WorkflowExecution)
 
-		// wait until child starts
-		var childWE WorkflowExecution
-		if err := childFuture.GetChildWorkflowExecution().Get(ctx, &childWE); err != nil {
-			return err
-		}
-
 		// send signal to child workflow
-		signalFuture := SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, signalName, signalData)
+		signalFuture := childFuture.SignalChildWorkflow(ctx, signalName, signalData)
 		if err := signalFuture.Get(ctx, nil); err != nil {
 			return err
 		}

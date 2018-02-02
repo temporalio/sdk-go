@@ -114,6 +114,9 @@ type (
 		//      // child workflow started, you can use childWE to get the WorkflowID and RunID of child workflow
 		//  }
 		GetChildWorkflowExecution() Future
+
+		// SignalChildWorkflow sends a signal to the child workflow. This call will block until child workflow is started.
+		SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future
 	}
 
 	// WorkflowType identifies a workflow type.
