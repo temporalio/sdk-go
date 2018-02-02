@@ -87,7 +87,7 @@ type (
 	// CustomError returned from workflow and activity implementations with reason and optional details.
 	CustomError struct {
 		reason  string
-		details []byte
+		details EncodedValues
 	}
 
 	// GenericError returned from workflow/workflow when the implementations return errors other than from NewCustomError() API.
@@ -98,12 +98,12 @@ type (
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		timeoutType shared.TimeoutType
-		details     []byte
+		details     EncodedValues
 	}
 
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
-		details []byte
+		details EncodedValues
 	}
 
 	// TerminatedError returned when workflow was terminated.
@@ -130,6 +130,9 @@ const (
 	errReasonCanceled = "cadenceInternal:Canceled"
 	errReasonTimeout  = "cadenceInternal:Timeout"
 )
+
+// ErrNoData is returned when trying to extract strong typed data while there is no data available.
+var ErrNoData = errors.New("no data available")
 
 // ErrActivityResultPending is returned from activity's implementation to indicate the activity is not completed when
 // activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
@@ -222,11 +225,14 @@ func (e *CustomError) Reason() string {
 	return e.reason
 }
 
-// Details extracts strong typed detail data of this custom error
-func (e *CustomError) Details(d ...interface{}) {
-	if err := getHostEnvironment().decode(e.details, d); err != nil {
-		panic(err)
-	}
+// HasDetails return if this error has strong typed detail data.
+func (e *CustomError) HasDetails() bool {
+	return e.details.HasValues()
+}
+
+// Details extracts strong typed detail data of this custom error. If there is no details, it will return ErrNoData.
+func (e *CustomError) Details(d ...interface{}) error {
+	return e.details.Get(d...)
 }
 
 // Error from error interface
@@ -244,11 +250,14 @@ func (e *TimeoutError) TimeoutType() shared.TimeoutType {
 	return e.timeoutType
 }
 
-// Details extracts strong typed detail data of this error
-func (e *TimeoutError) Details(d ...interface{}) {
-	if err := getHostEnvironment().decode(e.details, d); err != nil {
-		panic(err)
-	}
+// HasDetails return if this error has strong typed detail data.
+func (e *TimeoutError) HasDetails() bool {
+	return e.details.HasValues()
+}
+
+// Details extracts strong typed detail data of this error. If there is no details, it will return ErrNoData.
+func (e *TimeoutError) Details(d ...interface{}) error {
+	return e.details.Get(d...)
 }
 
 // Error from error interface
@@ -256,11 +265,14 @@ func (e *CanceledError) Error() string {
 	return "CanceledError"
 }
 
+// HasDetails return if this error has strong typed detail data.
+func (e *CanceledError) HasDetails() bool {
+	return e.details.HasValues()
+}
+
 // Details extracts strong typed detail data of this error.
-func (e *CanceledError) Details(d ...interface{}) {
-	if err := getHostEnvironment().decode(e.details, d); err != nil {
-		panic(err)
-	}
+func (e *CanceledError) Details(d ...interface{}) error {
+	return e.details.Get(d...)
 }
 
 func newPanicError(value interface{}, stackTrace string) *PanicError {

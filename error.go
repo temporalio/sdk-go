@@ -32,6 +32,9 @@ type (
 	CanceledError = internal.CanceledError
 )
 
+// ErrNoData is returned when trying to extract strong typed data while there is no data available.
+var ErrNoData = internal.ErrNoData
+
 // NewCustomError create new instance of *CustomError with reason and optional details.
 // Use CustomError for any use case specific errors that cross activity and child workflow boundaries.
 func NewCustomError(reason string, details ...interface{}) *CustomError {

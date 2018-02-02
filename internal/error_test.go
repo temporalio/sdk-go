@@ -22,10 +22,10 @@ package internal
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
 
@@ -53,7 +53,6 @@ func Test_ActivityError(t *testing.T) {
 		env := s.NewTestActivityEnvironment()
 		_, err := env.ExecuteActivity(errorActivityFn, i)
 		require.Error(t, err)
-		printError(err)
 		require.Equal(t, errs[i][1], err)
 	}
 }
@@ -67,7 +66,6 @@ func Test_ActivityPanic(t *testing.T) {
 	s.SetLogger(zap.NewNop())
 	env := s.NewTestActivityEnvironment()
 	_, err := env.ExecuteActivity(panicActivityFn)
-	printError(err)
 	require.Error(t, err)
 	panicErr, ok := err.(*PanicError)
 	require.True(t, ok)
@@ -85,30 +83,18 @@ func Test_WorkflowError(t *testing.T) {
 		wfEnv.ExecuteWorkflow(errorWorkflowFn, i)
 		err := wfEnv.GetWorkflowError()
 		require.Error(t, err)
-		printError(err)
 		require.Equal(t, errs[i][1], err)
 	}
-
 }
 
-func printError(err error) {
-	switch err := err.(type) {
-	case *CanceledError:
-		fmt.Printf("CanceledError: %v\n", err)
-	case *TimeoutError:
-		fmt.Printf("TimeoutError: %v\n", err)
-	case *PanicError:
-		fmt.Printf("PanicError: %v\n", err.Error())
-	case *GenericError:
-		fmt.Printf("GenericError: %v\n", err.Error())
-	case *CustomError:
-		switch err.Reason() {
-		case customErrReasonA:
-			var detailsMsg string
-			err.Details(&detailsMsg)
-			fmt.Printf("CustomError: reason:A %v\n", err)
-		default:
-			fmt.Printf("CustomError: unexpected reason %v\n", err)
-		}
-	}
+func Test_ErrorDetails(t *testing.T) {
+	timeoutErr := NewTimeoutError(shared.TimeoutTypeScheduleToStart)
+	require.False(t, timeoutErr.HasDetails())
+	var data string
+	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
+
+	heartbeatErr := NewHeartbeatTimeoutError("detailed-info")
+	require.True(t, heartbeatErr.HasDetails())
+	require.NoError(t, heartbeatErr.Details(&data))
+	require.Equal(t, "detailed-info", data)
 }
