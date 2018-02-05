@@ -378,7 +378,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	// ensure activityFn is registered to defaultTestTaskList
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
-	result, err := taskHandler.Execute(task)
+	result, err := taskHandler.Execute(defaultTestTaskList, task)
 	if err != nil {
 		panic(err)
 	}
@@ -696,7 +696,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	go func() {
-		result, err := taskHandler.Execute(task)
+		result, err := taskHandler.Execute(parameters.TaskListName, task)
 		if err != nil {
 			panic(err)
 		}
@@ -1136,6 +1136,7 @@ func newTestActivityTask(workflowID, runID, activityID string, params executeAct
 		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(params.ScheduleToCloseTimeoutSeconds),
 		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
 		StartToCloseTimeoutSeconds:    common.Int32Ptr(params.StartToCloseTimeoutSeconds),
+		HeartbeatTimeoutSeconds:       common.Int32Ptr(params.HeartbeatTimeoutSeconds),
 	}
 	return task
 }

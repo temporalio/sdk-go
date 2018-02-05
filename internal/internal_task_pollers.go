@@ -700,7 +700,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	executionStartTime := time.Now()
 	// Process the activity task.
-	request, err := atp.taskHandler.Execute(activityTask.task)
+	request, err := atp.taskHandler.Execute(atp.taskListName, activityTask.task)
 	if err != nil {
 		atp.metricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err

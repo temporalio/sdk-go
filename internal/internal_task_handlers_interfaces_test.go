@@ -62,7 +62,7 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(task *m.PollForActivityTaskResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(taskList string, task *m.PollForActivityTaskResponse) (interface{}, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 
 	// Execute activity task and respond to the service.
 	taskHandler := newSampleActivityTaskHandler()
-	request, err := taskHandler.Execute(response)
+	request, err := taskHandler.Execute(tasklist, response)
 	s.NoError(err)
 	switch request.(type) {
 	case m.RespondActivityTaskCompletedRequest:

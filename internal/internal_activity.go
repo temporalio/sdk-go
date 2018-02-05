@@ -30,6 +30,7 @@ import (
 
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"time"
 )
 
 type (
@@ -90,14 +91,19 @@ type (
 	}
 
 	activityEnvironment struct {
-		taskToken         []byte
-		workflowExecution WorkflowExecution
-		activityID        string
-		activityType      ActivityType
-		serviceInvoker    ServiceInvoker
-		logger            *zap.Logger
-		metricsScope      tally.Scope
-		isLocalActivity   bool
+		taskToken          []byte
+		workflowExecution  WorkflowExecution
+		activityID         string
+		activityType       ActivityType
+		serviceInvoker     ServiceInvoker
+		logger             *zap.Logger
+		metricsScope       tally.Scope
+		isLocalActivity    bool
+		heartbeatTimeout   time.Duration
+		deadline           time.Time
+		scheduledTimestamp time.Time
+		startedTimestamp   time.Time
+		taskList           string
 	}
 )
 

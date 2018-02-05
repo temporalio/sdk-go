@@ -573,7 +573,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			StartToCloseTimeoutSeconds:    common.Int32Ptr(d.StartDuration),
 		}
 		td := fmt.Sprintf("testIndex: %v, testDetails: %v", i, d)
-		r, err := activityHandler.Execute(pats)
+		r, err := activityHandler.Execute(tasklist, pats)
 		t.logger.Info(fmt.Sprintf("test: %v, result: %v err: %v", td, r, err))
 		t.Equal(d.err, err, td)
 		if err != nil {

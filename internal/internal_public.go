@@ -58,7 +58,7 @@ type (
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCancelRequest
-		Execute(task *s.PollForActivityTaskResponse) (interface{}, error)
+		Execute(taskList string, task *s.PollForActivityTaskResponse) (interface{}, error)
 	}
 )
 

@@ -38,10 +38,15 @@ type (
 
 	// ActivityInfo contains information about currently executing activity.
 	ActivityInfo struct {
-		TaskToken         []byte
-		WorkflowExecution WorkflowExecution
-		ActivityID        string
-		ActivityType      ActivityType
+		TaskToken          []byte
+		WorkflowExecution  WorkflowExecution
+		ActivityID         string
+		ActivityType       ActivityType
+		TaskList           string
+		HeartbeatTimeout   time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
+		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
+		StartedTimestamp   time.Time     // Time of activity start
+		Deadline           time.Time     // Time of activity timeout
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity
@@ -92,10 +97,15 @@ func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivity
 func GetActivityInfo(ctx context.Context) ActivityInfo {
 	env := getActivityEnv(ctx)
 	return ActivityInfo{
-		ActivityID:        env.activityID,
-		ActivityType:      env.activityType,
-		TaskToken:         env.taskToken,
-		WorkflowExecution: env.workflowExecution,
+		ActivityID:         env.activityID,
+		ActivityType:       env.activityType,
+		TaskToken:          env.taskToken,
+		WorkflowExecution:  env.workflowExecution,
+		HeartbeatTimeout:   env.heartbeatTimeout,
+		Deadline:           env.deadline,
+		ScheduledTimestamp: env.scheduledTimestamp,
+		StartedTimestamp:   env.startedTimestamp,
+		TaskList:           env.taskList,
 	}
 }
 
@@ -154,11 +164,25 @@ type ServiceInvoker interface {
 func WithActivityTask(
 	ctx context.Context,
 	task *shared.PollForActivityTaskResponse,
+	taskList string,
 	invoker ServiceInvoker,
 	logger *zap.Logger,
 	scope tally.Scope,
 ) context.Context {
-	// TODO: Add activity start to close timeout to activity task and use it as the deadline
+	var deadline time.Time
+	scheduled := time.Unix(0, task.GetScheduledTimestamp())
+	started := time.Unix(0, task.GetStartedTimestamp())
+	scheduleToCloseTimeout := time.Duration(task.GetScheduleToCloseTimeoutSeconds()) * time.Second
+	startToCloseTimeout := time.Duration(task.GetStartToCloseTimeoutSeconds()) * time.Second
+	heartbeatTimeout := time.Duration(task.GetHeartbeatTimeoutSeconds()) * time.Second
+	scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+	startToCloseDeadline := started.Add(startToCloseTimeout)
+	// Minimum of the two deadlines.
+	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
+		deadline = scheduleToCloseDeadline
+	} else {
+		deadline = startToCloseDeadline
+	}
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
@@ -167,8 +191,13 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: *task.WorkflowExecution.RunId,
 			ID:    *task.WorkflowExecution.WorkflowId},
-		logger:       logger,
-		metricsScope: scope,
+		logger:             logger,
+		metricsScope:       scope,
+		deadline:           deadline,
+		heartbeatTimeout:   heartbeatTimeout,
+		scheduledTimestamp: scheduled,
+		startedTimestamp:   started,
+		taskList:           taskList,
 	})
 }
 

@@ -58,6 +58,7 @@ func (s *WorkflowUnitTest) SetupSuite() {
 		HeartbeatTimeout:       20 * time.Second,
 	}
 	RegisterActivity(testAct)
+	RegisterActivity(helloWorldAct)
 	RegisterActivity(getGreetingActivity)
 	RegisterActivity(getNameActivity)
 	RegisterActivity(sayGreetingActivity)
@@ -78,14 +79,24 @@ func (s *WorkflowUnitTest) Test_WorldWorkflow() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func helloWorldAct(ctx context.Context) (string, error) {
+	s := ctx.Value(unitTestKey).(*WorkflowUnitTest)
+	info := GetActivityInfo(ctx)
+	s.Equal(tasklist, info.TaskList)
+	s.Equal(2*time.Second, info.HeartbeatTimeout)
+	return "test", nil
+}
+
 func helloWorldActivityWorkflow(ctx Context, input string) (result string, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
+		HeartbeatTimeout:       2 * time.Second,
 		ActivityID:             "id1",
+		TaskList:               tasklist,
 	}
 	ctx1 := WithActivityOptions(ctx, ao)
-	f := ExecuteActivity(ctx1, testAct)
+	f := ExecuteActivity(ctx1, helloWorldAct)
 	var r1 string
 	err = f.Get(ctx, &r1)
 	if err != nil {
@@ -94,8 +105,14 @@ func helloWorldActivityWorkflow(ctx Context, input string) (result string, err e
 	return r1, nil
 }
 
+type key int
+
+const unitTestKey key = 1
+
 func (s *WorkflowUnitTest) Test_SingleActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
+	ctx := context.WithValue(context.Background(), unitTestKey, s)
+	env.SetWorkerOptions(WorkerOptions{BackgroundActivityContext: ctx})
 	env.ExecuteWorkflow(helloWorldActivityWorkflow, "Hello")
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())

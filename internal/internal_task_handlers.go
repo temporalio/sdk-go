@@ -284,7 +284,7 @@ OrderEvents:
 			concurrentToDecision = false
 
 		case s.EventTypeDecisionTaskScheduled, s.EventTypeDecisionTaskTimedOut, s.EventTypeDecisionTaskFailed:
-		// Skip
+			// Skip
 		default:
 			if concurrentToDecision {
 				decisionStartToCompletionEvents = append(decisionStartToCompletionEvents, event)
@@ -1203,7 +1203,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivityTaskResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
@@ -1218,7 +1218,7 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 	canCtx, cancel := context.WithCancel(rootCtx)
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds())
 	defer invoker.Close()
-	ctx := WithActivityTask(canCtx, t, invoker, ath.logger, ath.metricsScope)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope)
 	activityType := *t.ActivityType
 	activityImplementation := ath.getActivity(activityType.GetName())
 	if activityImplementation == nil {
@@ -1239,17 +1239,8 @@ func (ath *activityTaskHandlerImpl) Execute(t *s.PollForActivityTaskResponse) (r
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
 		}
 	}()
-
-	var deadline time.Time
-	scheduleToCloseDeadline := time.Unix(0, t.GetScheduledTimestamp()).Add(time.Duration(t.GetScheduleToCloseTimeoutSeconds()) * time.Second)
-	startToCloseDeadline := time.Unix(0, t.GetStartedTimestamp()).Add(time.Duration(t.GetStartToCloseTimeoutSeconds()) * time.Second)
-	// Minimum of the two deadlines.
-	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
-		deadline = scheduleToCloseDeadline
-	} else {
-		deadline = startToCloseDeadline
-	}
-	ctx, dlCancelFunc := context.WithDeadline(ctx, deadline)
+	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
+	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
