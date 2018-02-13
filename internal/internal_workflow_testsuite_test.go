@@ -279,11 +279,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	})
 	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result encoded.Value, err error) {
 		completedActivityID = activityInfo.ActivityID
-		fmt.Printf("OnActivityCompletedListener %+v", activityInfo)
 	})
 	env.SetOnActivityCanceledListener(func(activityInfo *ActivityInfo) {
 		cancelledActivityID = activityInfo.ActivityID
-		fmt.Printf("OnActivityCanceledListener %+v", activityInfo)
 	})
 	env.ExecuteWorkflow(workflowFn)
 
@@ -1361,4 +1359,54 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 	env.AssertExpectations(s.T())
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_DisconnectedContext() {
+	childWorkflowFn := func(ctx Context) (string, error) {
+		err := NewTimer(ctx, time.Minute*10).Get(ctx, nil)
+		if _, ok := err.(*CanceledError); ok {
+			dCtx, _ := NewDisconnectedContext(ctx)
+			dCtx = WithActivityOptions(dCtx, s.activityOptions)
+			var cleanupResult string
+			err := ExecuteActivity(dCtx, testActivityHello, "cleanup").Get(dCtx, &cleanupResult)
+			return cleanupResult, err
+		}
+
+		// unexpected
+		return "", errors.New("should not reach here")
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		cwo := ChildWorkflowOptions{
+			ExecutionStartToCloseTimeout: time.Hour,
+			WaitForCancellation:          true,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		childCtx, cancelChild := WithCancel(ctx)
+		childFuture := ExecuteChildWorkflow(childCtx, childWorkflowFn) // execute child workflow which in turn execute another child
+		NewSelector(ctx).AddFuture(childFuture, func(f Future) {
+			s.Fail("f1 should not complete before t1")
+		}).AddFuture(NewTimer(ctx, time.Minute), func(f Future) {
+			cancelChild() // child workflow takes too long, cancel child workflow
+		}).Select(ctx)
+
+		var result string
+		err := childFuture.Get(childCtx, &result)
+		return result, err
+	}
+
+	RegisterWorkflow(workflowFn)
+	RegisterWorkflow(childWorkflowFn)
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var workflowResult string
+	err := env.GetWorkflowResult(&workflowResult)
+	s.NoError(err)
+	s.Equal("hello_cleanup", workflowResult)
 }

@@ -62,3 +62,16 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 func WithValue(parent Context, key interface{}, val interface{}) Context {
 	return internal.WithValue(parent, key, val)
 }
+
+// NewDisconnectedContext returns a new context that won't propagate parent's cancellation to the new child context.
+// One common use case is to do cleanup work after workflow is cancelled.
+//  err := workflow.ExecuteActivity(ctx, ActivityFoo).Get(ctx, &activityFooResult)
+//  if err != nil && cadence.IsCanceledError(ctx.Err()) {
+//    // activity failed, and workflow context is canceled
+//    disconnectedCtx, _ := workflow.newDisconnectedContext(ctx);
+//    workflow.ExecuteActivity(disconnectedCtx, handleCancellationActivity).Get(disconnectedCtx, nil)
+//    return err // workflow return CanceledError
+//  }
+func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
+	return internal.NewDisconnectedContext(parent)
+}

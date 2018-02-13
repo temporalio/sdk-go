@@ -69,6 +69,7 @@ type (
 		env      *testWorkflowEnvironmentImpl
 		callback resultHandler
 		handled  bool
+		options  *workflowOptions
 	}
 
 	testCallbackHandle struct {
@@ -279,7 +280,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(optio
 	childEnv.workflowInfo.TaskListName = *options.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *options.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *options.taskStartToCloseTimeoutSeconds
-	env.runningWorkflows[options.workflowID] = &testWorkflowHandle{env: childEnv, callback: callback}
+	env.runningWorkflows[options.workflowID] = &testWorkflowHandle{env: childEnv, callback: callback, options: options}
 
 	return childEnv
 }
@@ -1205,7 +1206,9 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workfl
 		}
 	} else if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
-		childHandle.handled = true
+		if !childHandle.options.waitForCancellation {
+			childHandle.env.Complete(nil, ErrCanceled)
+		}
 		childEnv := childHandle.env
 		childEnv.cancelWorkflow()
 	}
