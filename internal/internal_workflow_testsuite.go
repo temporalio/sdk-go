@@ -70,6 +70,7 @@ type (
 		callback resultHandler
 		handled  bool
 		options  *workflowOptions
+		err      error
 	}
 
 	testCallbackHandle struct {
@@ -263,7 +264,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	return env
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(options *workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) *testWorkflowEnvironmentImpl {
+func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(options *workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite)
 	childEnv.parentEnv = env
@@ -280,9 +281,22 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(optio
 	childEnv.workflowInfo.TaskListName = *options.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *options.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *options.taskStartToCloseTimeoutSeconds
+	if workflowHandler, ok := env.runningWorkflows[options.workflowID]; ok {
+		// duplicate workflow ID
+		if !workflowHandler.handled {
+			return nil, errors.New("child workflow already running")
+		}
+		if options.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
+			return nil, errors.New("duplicate workflow id not allowed")
+		}
+		if workflowHandler.err == nil && options.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
+			return nil, errors.New("child workflow with specified workflow id already completed")
+		}
+	}
+
 	env.runningWorkflows[options.workflowID] = &testWorkflowHandle{env: childEnv, callback: callback, options: options}
 
-	return childEnv
+	return childEnv, nil
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
@@ -630,6 +644,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			childWorkflowHandle.handled = true
 			env.parentEnv.postCallback(func() {
 				// deliver result
+				childWorkflowHandle.err = env.testError
 				childWorkflowHandle.callback(env.testResult, env.testError)
 				if env.onChildWorkflowCompletedListener != nil {
 					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, env.testError)
@@ -1255,7 +1270,12 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	childEnv := env.newTestWorkflowEnvironmentForChild(&options, callback, startedHandler)
+	childEnv, err := env.newTestWorkflowEnvironmentForChild(&options, callback, startedHandler)
+	if err != nil {
+		env.logger.Sugar().Infof("ExecuteChildWorkflow failed: %v", err)
+		return err
+	}
+
 	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", options.workflowType.Name)
 	env.runningCount++
 

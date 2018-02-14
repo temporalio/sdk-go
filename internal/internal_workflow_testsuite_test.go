@@ -1399,8 +1399,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_DisconnectedContext() {
 	RegisterWorkflow(childWorkflowFn)
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(time.Hour)
-
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -1409,4 +1407,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_DisconnectedContext() {
 	err := env.GetWorkflowResult(&workflowResult)
 	s.NoError(err)
 	s.Equal("hello_cleanup", workflowResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowIDReusePolicy() {
+	workflowFn := func(ctx Context) (string, error) {
+		cwo := ChildWorkflowOptions{
+			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowID:                   "test-child-workflow-id",
+			WorkflowIDReusePolicy:        WorkflowIDReusePolicyRejectDuplicate,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		f := ExecuteChildWorkflow(ctx, testWorkflowHello)
+		err := f.GetChildWorkflowExecution().Get(ctx, nil)
+		s.NoError(err)
+		err = f.Get(ctx, &helloWorkflowResult)
+		s.NoError(err)
+
+		// start child with duplicate workflow id, but with policy that won't allow duplicate
+		f = ExecuteChildWorkflow(ctx, testWorkflowHello)
+		err = f.GetChildWorkflowExecution().Get(ctx, nil)
+		s.Error(err)
+		err = f.Get(ctx, &helloWorkflowResult)
+		s.Error(err)
+
+		// now with policy allow duplicate
+		cwo.WorkflowIDReusePolicy = WorkflowIDReusePolicyAllowDuplicate
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		f = ExecuteChildWorkflow(ctx, testWorkflowHello)
+		err = f.GetChildWorkflowExecution().Get(ctx, nil)
+		s.NoError(err)
+		err = f.Get(ctx, &helloWorkflowResult)
+		s.NoError(err)
+
+		return helloWorkflowResult, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_world", actualResult)
 }

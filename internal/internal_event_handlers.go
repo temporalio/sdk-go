@@ -883,6 +883,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 	}
 
 	err := fmt.Errorf("ChildWorkflowFailed: %v", attributes.GetCause())
+	childWorkflow.startedCallback(WorkflowExecution{}, err)
 	childWorkflow.handle(nil, err)
 
 	return nil
