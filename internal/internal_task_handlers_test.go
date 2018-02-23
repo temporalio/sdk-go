@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
@@ -580,4 +581,21 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			t.Nil(r, td)
 		}
 	}
+}
+
+func Test_NonDeterministicCheck(t *testing.T) {
+	decisionTypes := s.DecisionType_Values()
+	require.Equal(t, 12, len(decisionTypes), "If you see this error, you are adding new decision type. "+
+		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
+		"to check the new decision type. Otherwise the replay will fail on the new decision event.")
+
+	eventTypes := s.EventType_Values()
+	decisionEventTypeCount := 0
+	for _, et := range eventTypes {
+		if isDecisionEvent(et) {
+			decisionEventTypeCount++
+		}
+	}
+	require.Equal(t, len(decisionTypes), decisionEventTypeCount, "Every decision type must have one matching event type. "+
+		"If you add new decision type, you need to update isDecisionEvent() method to include that new event type as well.")
 }

@@ -902,8 +902,21 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		eventAttributes := e.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.RequestCancelExternalWorkflowExecutionDecisionAttributes
 		if eventAttributes.GetDomain() != decisionAttributes.GetDomain() ||
-			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() ||
-			eventAttributes.WorkflowExecution.GetRunId() != decisionAttributes.GetRunId() {
+			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
+			return false
+		}
+
+		return true
+
+	case s.DecisionTypeSignalExternalWorkflowExecution:
+		if e.GetEventType() != s.EventTypeSignalExternalWorkflowExecutionInitiated {
+			return false
+		}
+		eventAttributes := e.SignalExternalWorkflowExecutionInitiatedEventAttributes
+		decisionAttributes := d.SignalExternalWorkflowExecutionDecisionAttributes
+		if eventAttributes.GetDomain() != decisionAttributes.GetDomain() ||
+			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
+			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
 			return false
 		}
 
