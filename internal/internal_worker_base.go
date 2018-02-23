@@ -82,6 +82,7 @@ type (
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
 		pollerCount       int
+		pollerRate        int
 		maxConcurrentTask int
 		maxTaskPerSecond  float64
 		taskWorker        taskPoller
@@ -122,10 +123,9 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 
 func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &baseWorker{
+	bw := &baseWorker{
 		options:         options,
 		shutdownCh:      make(chan struct{}),
-		pollLimiter:     rate.NewLimiter(rate.Limit(1000), 1),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
@@ -136,6 +136,11 @@ func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope t
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
 	}
+	if options.pollerRate > 0 {
+		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
+	}
+
+	return bw
 }
 
 // Start starts a fixed set of routines to do the work.
@@ -226,7 +231,7 @@ func (bw *baseWorker) pollTask() {
 	var err error
 	var task interface{}
 	bw.retrier.Throttle()
-	if bw.pollLimiter.Wait(bw.limiterContext) == nil {
+	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
 		if err != nil && enableVerboseLogging {
 			bw.logger.Debug("Failed to poll for task.", zap.Error(err))

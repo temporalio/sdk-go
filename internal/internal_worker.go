@@ -52,12 +52,17 @@ const (
 	defaultConcurrentPollRoutineSize = 2
 
 	defaultMaxConcurrentActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
-	_defaultWorkerActivitiesPerSecond         = 100000 // Large activity executions/sec (unlimited)
+	defaultWorkerActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
 
-	_defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
+	defaultMaxConcurrentLocalActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
+	defaultWorkerLocalActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
+
+	defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
 
 	defaultMaxConcurrentWorkflowExecutionSize = 50     // hardcoded max workflow execution size.
 	defaultMaxWorkflowExecutionRate           = 100000 // Large workflow execution rate (unlimited)
+
+	defaultPollerRate = 1000
 
 	testTagsContextKey = "cadence-testTags"
 )
@@ -104,11 +109,17 @@ type (
 		// Defines how many concurrent poll requests for the task list by this worker.
 		ConcurrentPollRoutineSize int
 
-		// Defines how many concurrent executions for task list by this worker.
+		// Defines how many concurrent activity executions by this worker.
 		ConcurrentActivityExecutionSize int
 
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
+
+		// Defines how many concurrent local activity executions by this worker.
+		ConcurrentLocalActivityExecutionSize int
+
+		// Defines rate limiting on number of local activities that can be executed per second per worker.
+		WorkerLocalActivitiesPerSecond float64
 
 		// TaskListActivitiesPerSecond is the throttling limit for activity tasks controlled by the server
 		TaskListActivitiesPerSecond float64
@@ -232,6 +243,7 @@ func newWorkflowTaskWorkerInternal(
 	)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.ConcurrentPollRoutineSize,
+		pollerRate:        defaultPollerRate,
 		maxConcurrentTask: defaultMaxConcurrentWorkflowExecutionSize,
 		maxTaskPerSecond:  defaultMaxWorkflowExecutionRate,
 		taskWorker:        poller,
@@ -256,8 +268,8 @@ func newWorkflowTaskWorkerInternal(
 	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       1, // 1 poller (from local channel) is enough for local activity
-		maxConcurrentTask: params.ConcurrentActivityExecutionSize,
-		maxTaskPerSecond:  params.WorkerActivitiesPerSecond,
+		maxConcurrentTask: params.ConcurrentLocalActivityExecutionSize,
+		maxTaskPerSecond:  params.WorkerLocalActivitiesPerSecond,
 		taskWorker:        localActivityTaskPoller,
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker"},
@@ -342,6 +354,7 @@ func newActivityTaskWorker(
 	base := newBaseWorker(
 		baseWorkerOptions{
 			pollerCount:       workerParams.ConcurrentPollRoutineSize,
+			pollerRate:        defaultPollerRate,
 			maxConcurrentTask: workerParams.ConcurrentActivityExecutionSize,
 			maxTaskPerSecond:  workerParams.WorkerActivitiesPerSecond,
 			taskWorker:        poller,
@@ -989,18 +1002,20 @@ func newAggregatedWorker(
 ) (worker Worker) {
 	wOptions := fillWorkerOptionsDefaults(options)
 	workerParams := workerExecutionParameters{
-		TaskList:                        taskList,
-		ConcurrentPollRoutineSize:       defaultConcurrentPollRoutineSize,
-		ConcurrentActivityExecutionSize: wOptions.MaxConcurrentActivityExecutionSize,
-		WorkerActivitiesPerSecond:       wOptions.WorkerActivitiesPerSecond,
-		Identity:                        wOptions.Identity,
-		MetricsScope:                    wOptions.MetricsScope,
-		Logger:                          wOptions.Logger,
-		EnableLoggingInReplay:           wOptions.EnableLoggingInReplay,
-		UserContext:                     wOptions.BackgroundActivityContext,
-		DisableStickyExecution:          wOptions.DisableStickyExecution,
-		StickyScheduleToStartTimeout:    wOptions.StickyScheduleToStartTimeout,
-		TaskListActivitiesPerSecond:     wOptions.TaskListActivitiesPerSecond,
+		TaskList:                             taskList,
+		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
+		ConcurrentActivityExecutionSize:      wOptions.MaxConcurrentActivityExecutionSize,
+		WorkerActivitiesPerSecond:            wOptions.WorkerActivitiesPerSecond,
+		ConcurrentLocalActivityExecutionSize: wOptions.MaxConcurrentLocalActivityExecutionSize,
+		WorkerLocalActivitiesPerSecond:       wOptions.WorkerLocalActivitiesPerSecond,
+		Identity:                             wOptions.Identity,
+		MetricsScope:                         wOptions.MetricsScope,
+		Logger:                               wOptions.Logger,
+		EnableLoggingInReplay:                wOptions.EnableLoggingInReplay,
+		UserContext:                          wOptions.BackgroundActivityContext,
+		DisableStickyExecution:               wOptions.DisableStickyExecution,
+		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
+		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1248,10 +1263,16 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
 	if options.WorkerActivitiesPerSecond == 0 {
-		options.WorkerActivitiesPerSecond = _defaultWorkerActivitiesPerSecond
+		options.WorkerActivitiesPerSecond = defaultWorkerActivitiesPerSecond
+	}
+	if options.MaxConcurrentLocalActivityExecutionSize == 0 {
+		options.MaxConcurrentLocalActivityExecutionSize = defaultMaxConcurrentLocalActivityExecutionSize
+	}
+	if options.WorkerLocalActivitiesPerSecond == 0 {
+		options.WorkerLocalActivitiesPerSecond = defaultWorkerLocalActivitiesPerSecond
 	}
 	if options.TaskListActivitiesPerSecond == 0 {
-		options.TaskListActivitiesPerSecond = _defaultTaskListActivitiesPerSecond
+		options.TaskListActivitiesPerSecond = defaultTaskListActivitiesPerSecond
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
