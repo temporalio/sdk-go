@@ -455,19 +455,9 @@ func Test_MarkerStateMachine(t *testing.T) {
 
 	// send decisions
 	decisions := h.getDecisions(true)
-	require.Equal(t, decisionStateDecisionSent, d.getState())
+	require.Equal(t, decisionStateCompleted, d.getState())
 	require.Equal(t, 1, len(decisions))
 	require.Equal(t, s.DecisionTypeRecordMarker, decisions[0].GetDecisionType())
-
-	// marker recorded
-	h.handleSideEffectMarkerRecorded(1)
-	require.Equal(t, decisionStateCompleted, d.getState())
-
-	// one more marker recorded event will make it invalid state transition
-	err := runAndCatchPanic(func() {
-		h.handleSideEffectMarkerRecorded(1)
-	})
-	require.NotNil(t, err)
 }
 
 func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {

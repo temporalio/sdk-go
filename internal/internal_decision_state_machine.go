@@ -618,13 +618,15 @@ func (d *signalExternalWorkflowDecisionStateMachine) handleCompletionEvent() {
 	}
 }
 
-func (d *markerDecisionStateMachine) handleCompletionEvent() {
-	// Marker decision transit from SENT to COMPLETED on EventType_MarkerRecorded event
+func (d *markerDecisionStateMachine) handleDecisionSent() {
+	// Marker decision state machine is considered as completed once decision is sent.
+	// For SideEffect/Version markers, when the history event is applied, there is no marker decision state machine yet
+	// because we preload those marker events.
+	// For local activity, when we apply the history event, we use it to create the marker state machine, there is no
+	// other event to drive it to completed state.
 	switch d.state {
-	case decisionStateDecisionSent:
-		d.moveState(decisionStateCompleted, eventInitiated)
-	default:
-		d.failStateTransition(eventInitiated)
+	case decisionStateCreated:
+		d.moveState(decisionStateCompleted, eventDecisionSent)
 	}
 }
 
@@ -751,13 +753,6 @@ func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result []
 	}
 	decision := newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
-	return decision
-}
-
-func (h *decisionsHelper) handleSideEffectMarkerRecorded(sideEffectID int32) decisionStateMachine {
-	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
-	decision := h.getDecision(makeDecisionID(decisionTypeMarker, markerID))
-	decision.handleCompletionEvent()
 	return decision
 }
 
