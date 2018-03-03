@@ -35,8 +35,7 @@ $(foreach tsrc,$(THRIFTRW_SRCS),$(eval $(call \
 # Automatically gather all srcs
 ALL_SRC := $(shell find . -name "*.go" | grep -v -e Godeps -e vendor \
 	-e ".*/\..*" \
-	-e ".*/_.*" \
-	-e ".*/mocks.*")
+	-e ".*/_.*")
 
 # Files that needs to run lint, exclude testify mock from lint
 LINT_SRC := $(filter-out ./mock%,$(ALL_SRC))

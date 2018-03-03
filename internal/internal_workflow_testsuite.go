@@ -239,7 +239,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	}
 
 	var callOptions []interface{}
-	for _ = range yarpcCallOptions {
+	for range yarpcCallOptions {
 		callOptions = append(callOptions, gomock.Any())
 	}
 	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).

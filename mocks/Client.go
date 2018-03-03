@@ -27,6 +27,7 @@ import (
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/client"
 	"go.uber.org/cadence/encoded"
+	"go.uber.org/cadence/internal"
 	"go.uber.org/cadence/workflow"
 )
 
@@ -130,17 +131,17 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
 
-	var r0 client.WorkflowRun
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) client.WorkflowRun); ok {
+	var r0 internal.WorkflowRun
+	if rf, ok := ret.Get(0).(func(context.Context, internal.StartWorkflowOptions, interface{}, ...interface{}) internal.WorkflowRun); ok {
 		r0 = rf(ctx, options, workflow, args...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.WorkflowRun)
+			r0 = ret.Get(0).(internal.WorkflowRun)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, internal.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
 		r1 = rf(ctx, options, workflow, args...)
 	} else {
 		r1 = ret.Error(1)
@@ -153,12 +154,12 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType shared.HistoryEventFilterType) client.HistoryEventIterator {
 	ret := _m.Called(ctx, workflowID, runID, isLongPoll, filterType)
 
-	var r0 client.HistoryEventIterator
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, shared.HistoryEventFilterType) client.HistoryEventIterator); ok {
+	var r0 internal.HistoryEventIterator
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, shared.HistoryEventFilterType) internal.HistoryEventIterator); ok {
 		r0 = rf(ctx, workflowID, runID, isLongPoll, filterType)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.HistoryEventIterator)
+			r0 = ret.Get(0).(internal.HistoryEventIterator)
 		}
 	}
 
@@ -275,17 +276,17 @@ func (_m *Client) StartWorkflow(ctx context.Context, options client.StartWorkflo
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
 
-	var r0 *workflow.Execution
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) *workflow.Execution); ok {
+	var r0 *internal.WorkflowExecution
+	if rf, ok := ret.Get(0).(func(context.Context, internal.StartWorkflowOptions, interface{}, ...interface{}) *internal.WorkflowExecution); ok {
 		r0 = rf(ctx, options, workflow, args...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*workflow.Execution)
+			r0 = ret.Get(0).(*internal.WorkflowExecution)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, internal.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
 		r1 = rf(ctx, options, workflow, args...)
 	} else {
 		r1 = ret.Error(1)
