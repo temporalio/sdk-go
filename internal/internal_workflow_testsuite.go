@@ -43,6 +43,7 @@ import (
 )
 
 const (
+	defaultTestDomain     = "default-test-domain"
 	defaultTestTaskList   = "default-test-tasklist"
 	defaultTestWorkflowID = "default-test-workflow-id"
 	defaultTestRunID      = "default-test-run-id"
@@ -186,6 +187,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		},
 
 		workflowInfo: &WorkflowInfo{
+			Domain: defaultTestDomain,
 			WorkflowExecution: WorkflowExecution{
 				ID:    defaultTestWorkflowID,
 				RunID: defaultTestRunID,
@@ -1208,29 +1210,63 @@ func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string
 	env.queryHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelWorkflow(domainName, workflowID, runID string) error {
+func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(domainName, workflowID string) {
+	if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
+		// current workflow is a parent workflow, and we are canceling a child workflow
+		childEnv := childHandle.env
+		childEnv.cancelWorkflow(func(result []byte, err error) {})
+		return
+	}
+}
+
+func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName, workflowID, runID string, callback resultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		// cancel current workflow
 		env.workflowCancelHandler()
-
 		// check if current workflow is a child workflow
 		if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
 			env.postCallback(func() {
 				env.onChildWorkflowCanceledListener(env.workflowInfo)
 			}, false)
 		}
+		return
 	} else if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
 		if !childHandle.options.waitForCancellation {
 			childHandle.env.Complete(nil, ErrCanceled)
 		}
 		childEnv := childHandle.env
-		childEnv.cancelWorkflow()
+		env.postCallback(func() {
+			callback(nil, nil)
+		}, true)
+		childEnv.cancelWorkflow(callback)
+		return
 	}
-	return nil
+
+	// target workflow is not child workflow, we need the mock. The mock needs to be called in a separate goroutinue
+	// so it can block and wait on the requested delay time (if configured). If we run it in main thread, and the mock
+	// configured to delay, it will block the main loop which stops the world.
+	env.runningCount++
+	go func() {
+		args := []interface{}{domainName, workflowID, runID}
+		// below call will panic if mock is not properly setup.
+		mockRet := env.mock.MethodCalled(mockMethodForRequestCancelExternalWorkflow, args...)
+		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
+		var err error
+		if mockFn := m.getMockFn(mockRet); mockFn != nil {
+			executor := &activityExecutor{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFn}
+			_, err = executor.ExecuteWithActualArgs(nil, args)
+		} else {
+			_, err = m.getMockValue(mockRet)
+		}
+		env.postCallback(func() {
+			callback(nil, err)
+			env.runningCount--
+		}, true)
+	}()
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -1243,6 +1279,16 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 			childEnv.signalHandler(signalName, input)
 			callback(nil, nil)
 		}
+		return
+	}
+
+	// here we signal a child workflow but we cannot find it
+	if childWorkflowOnly {
+		env.postCallback(func() {
+			// currently the only cause
+			err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
+			callback(nil, err)
+		}, true)
 		return
 	}
 
@@ -1317,12 +1363,15 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) cancelWorkflow() {
+func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
 	env.postCallback(func() {
 		// RequestCancelWorkflow needs to be run in main thread
-		env.RequestCancelWorkflow(env.workflowInfo.Domain,
+		env.RequestCancelExternalWorkflow(
+			env.workflowInfo.Domain,
 			env.workflowInfo.WorkflowExecution.ID,
-			env.workflowInfo.WorkflowExecution.RunID)
+			env.workflowInfo.WorkflowExecution.RunID,
+			callback,
+		)
 	}, true)
 }
 
@@ -1360,6 +1409,11 @@ func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrappe
 
 // function signature for mock SignalExternalWorkflow
 func mockFnSignalExternalWorkflow(domainName, workflowID, runID, signalName string, arg interface{}) error {
+	return nil
+}
+
+// function signature for mock RequestCancelExternalWorkflow
+func mockFnRequestCancelExternalWorkflow(domainName, workflowID, runID string) error {
 	return nil
 }
 

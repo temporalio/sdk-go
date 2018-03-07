@@ -199,6 +199,7 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 }
 
 const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
+const mockMethodForRequestCancelExternalWorkflow = "workflow.RequestCancelExternalWorkflow"
 
 // OnSignalExternalWorkflow setup a mock for sending signal to external workflow.
 // This TestWorkflowEnvironment handles sending signals between the workflows that are started from the root workflow.
@@ -221,6 +222,30 @@ const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
 //     })
 func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(domainName, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
 	call := t.Mock.On(mockMethodForSignalExternalWorkflow, domainName, workflowID, runID, signalName, arg)
+	return t.wrapCall(call)
+}
+
+// OnRequestCancelExternalWorkflow setup a mock for cancellation of external workflow.
+// This TestWorkflowEnvironment handles cancellation of workflows that are started from the root workflow.
+// For example, cancellation sent from parent to child workflows. Or cancellation between 2 child workflows.
+// However, it does not know what to do if your tested workflow code is sending cancellation to external unknown workflows.
+// In that case, you will need to setup mock for those signal calls.
+// Some examples of how to setup mock:
+//
+// * mock for specific target workflow that matches specific workflow ID and run ID
+// 	 env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1").Return(nil).Once()
+// * mock for anything and succeed the cancellation
+// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+// * mock for anything and fail the cancellation
+// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
+// * mock function for SignalExternalWorkflow
+//   env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
+//     func(domainName, workflowID, runID) error {
+//       // you can do differently based on the parameters
+//       return nil
+//     })
+func (t *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(domainName, workflowID, runID string) *MockCallWrapper {
+	call := t.Mock.On(mockMethodForRequestCancelExternalWorkflow, domainName, workflowID, runID)
 	return t.wrapCall(call)
 }
 
@@ -420,7 +445,7 @@ func (t *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result inte
 
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (t *TestWorkflowEnvironment) CancelWorkflow() {
-	t.impl.cancelWorkflow()
+	t.impl.cancelWorkflow(func(result []byte, err error) {})
 }
 
 // SignalWorkflow sends signal to the currently running test workflow.

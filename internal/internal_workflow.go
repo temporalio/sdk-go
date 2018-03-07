@@ -325,17 +325,19 @@ func (f *futureImpl) GetValueAndError() (interface{}, error) {
 	return f.value, f.err
 }
 
-func (f childWorkflowFutureImpl) GetChildWorkflowExecution() Future {
+func (f *childWorkflowFutureImpl) GetChildWorkflowExecution() Future {
 	return f.executionFuture
 }
 
-func (f childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future {
+func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future {
 	var childExec WorkflowExecution
 	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
 		return f.GetChildWorkflowExecution()
 	}
 
-	return SignalExternalWorkflow(ctx, childExec.ID, childExec.RunID, signalName, data)
+	childWorkflowOnly := true // this means we are targeting child workflow
+	// below we use empty run ID indicating the current running one, in case child do continue-as-new
+	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {

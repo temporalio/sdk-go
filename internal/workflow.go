@@ -33,6 +33,8 @@ import (
 )
 
 var (
+	errDomainNotSet                  = errors.New("domain is not set")
+	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
 	errActivityParamsBadRequest      = errors.New("missing activity parameters through context, check ActivityOptions")
 	errWorkflowOptionBadRequest      = errors.New("missing workflow options through context, check WorkflowOptions")
@@ -429,9 +431,10 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflow)
 	executionFuture, executionSettable := NewFuture(ctx)
-	result := childWorkflowFutureImpl{
+	result := &childWorkflowFutureImpl{
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
-		executionFuture:  executionFuture.(*futureImpl)}
+		executionFuture:  executionFuture.(*futureImpl),
+	}
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflow, args)
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -467,8 +470,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
 				if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
 					// child workflow started, and ctx cancelled
-					getWorkflowEnvironment(ctx).RequestCancelWorkflow(
-						*options.domain, childWorkflowExecution.ID, childWorkflowExecution.RunID)
+					getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(*options.domain, childWorkflowExecution.ID)
 				}
 			}).AddFuture(mainFuture, func(f Future) {
 				// childWorkflow is done, no-op
@@ -557,20 +559,41 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 	return
 }
 
-// RequestCancelWorkflow can be used to request cancellation of an external workflow.
+// RequestCancelExternalWorkflow can be used to request cancellation of an external workflow.
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
 // then the currently running instance of that workflowID will be used.
 // By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
 // of the target workflow using the context like:
 //	ctx := WithWorkflowDomain(ctx, "domain-name")
-func RequestCancelWorkflow(ctx Context, workflowID, runID string) error {
+// RequestCancelExternalWorkflow return Future with failure or empty success result.
+func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
-	if options.domain == nil {
-		return errors.New("need a valid domain")
+	future, settable := NewFuture(ctx1)
+
+	if options.domain == nil || *options.domain == "" {
+		settable.Set(nil, errDomainNotSet)
+		return future
 	}
-	return getWorkflowEnvironment(ctx).RequestCancelWorkflow(*options.domain, workflowID, runID)
+
+	if workflowID == "" {
+		settable.Set(nil, errWorkflowIDNotSet)
+		return future
+	}
+
+	resultCallback := func(result []byte, err error) {
+		settable.Set(result, err)
+	}
+
+	getWorkflowEnvironment(ctx).RequestCancelExternalWorkflow(
+		*options.domain,
+		workflowID,
+		runID,
+		resultCallback,
+	)
+
+	return future
 }
 
 // SignalExternalWorkflow can be used to send signal info to an external workflow.
@@ -582,16 +605,22 @@ func RequestCancelWorkflow(ctx Context, workflowID, runID string) error {
 //	ctx := WithWorkflowDomain(ctx, "domain-name")
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+	childWorkflowOnly := false // this means we are not limited to child workflow
+	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
+}
+
+func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}, childWorkflowOnly bool) Future {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.domain == nil {
-		settable.Set(nil, errors.New("domain is nil"))
+	if options.domain == nil || *options.domain == "" {
+		settable.Set(nil, errDomainNotSet)
 		return future
 	}
+
 	if workflowID == "" {
-		settable.Set(nil, errors.New("workflowId is empty"))
+		settable.Set(nil, errWorkflowIDNotSet)
 		return future
 	}
 
@@ -604,7 +633,16 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	resultCallback := func(result []byte, err error) {
 		settable.Set(result, err)
 	}
-	getWorkflowEnvironment(ctx).SignalExternalWorkflow(*options.domain, workflowID, runID, signalName, input, arg, resultCallback)
+	getWorkflowEnvironment(ctx).SignalExternalWorkflow(
+		*options.domain,
+		workflowID,
+		runID,
+		signalName,
+		input,
+		arg,
+		childWorkflowOnly,
+		resultCallback,
+	)
 
 	return future
 }
