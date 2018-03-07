@@ -107,6 +107,8 @@ type (
 		decisions        map[decisionID]decisionStateMachine
 
 		scheduledEventIDToActivityID map[int64]string
+
+		scheduledEventIDToSignalID map[int64]string
 	}
 )
 
@@ -636,6 +638,8 @@ func newDecisionsHelper() *decisionsHelper {
 		decisions:        make(map[decisionID]decisionStateMachine),
 
 		scheduledEventIDToActivityID: make(map[int64]string),
+
+		scheduledEventIDToSignalID: make(map[int64]string),
 	}
 }
 
@@ -844,21 +848,30 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(domain, workflowID, ru
 	return decision
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionInitiated(signalID string) {
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionInitiated(initiatedEventID int64, signalID string) {
+	h.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
 	decision.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionCompleted(signalID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionCompleted(initiatedEventID int64) decisionStateMachine {
+	decision := h.getDecision(makeDecisionID(decisionTypeSignal, h.getSignalID(initiatedEventID)))
 	decision.handleCompletionEvent()
 	return decision
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionFailed(signalID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
+func (h *decisionsHelper) handleSignalExternalWorkflowExecutionFailed(initiatedEventID int64) decisionStateMachine {
+	decision := h.getDecision(makeDecisionID(decisionTypeSignal, h.getSignalID(initiatedEventID)))
 	decision.handleCompletionEvent()
 	return decision
+}
+
+func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
+	signalID, ok := h.scheduledEventIDToSignalID[initiatedEventID]
+	if !ok {
+		panic(fmt.Sprintf("unable to find signal ID: %v", initiatedEventID))
+	}
+	return signalID
 }
 
 func (h *decisionsHelper) startTimer(attributes *s.StartTimerDecisionAttributes) decisionStateMachine {
