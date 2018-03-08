@@ -880,6 +880,11 @@ func (s *selectorImpl) Select(ctx Context) {
 			}
 			v, ok, more := pair.channel.receiveAsyncImpl(callback)
 			if ok || !more {
+				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
+				// will be called for previous cases/branches. We should set readyBranch so that when other case/branch
+				// become ready they won't consume the value for this Select() call.
+				readyBranch = func() {
+				}
 				c.recValue = &v
 				f(c, more)
 				return
@@ -900,6 +905,11 @@ func (s *selectorImpl) Select(ctx Context) {
 			}
 			ok := pair.channel.sendAsyncImpl(*pair.sendValue, p)
 			if ok {
+				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
+				// will be called for previous cases/branches. We should set readyBranch so that when other case/branch
+				// become ready they won't consume the value for this Select() call.
+				readyBranch = func() {
+				}
 				f()
 				return
 			}
@@ -918,6 +928,11 @@ func (s *selectorImpl) Select(ctx Context) {
 			}
 			_, ok, _ := p.future.GetAsync(callback)
 			if ok {
+				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
+				// will be called for previous cases/branches. We should set readyBranch so that when other case/branch
+				// become ready they won't consume the value for this Select() call.
+				readyBranch = func() {
+				}
 				p.futureFunc = nil
 				f(p.future)
 				return

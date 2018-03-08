@@ -353,6 +353,51 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
+func TestBlockingSelectAsyncSend2(t *testing.T) {
+	var history []string
+	d := newDispatcher(background, func(ctx Context) {
+		c1 := NewBufferedChannel(ctx, 100)
+		c2 := NewBufferedChannel(ctx, 100)
+		s := NewSelector(ctx)
+		s.
+			AddReceive(c1, func(c Channel, more bool) {
+				assert.True(t, more)
+				var v string
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddReceive(c2, func(c Channel, more bool) {
+				assert.True(t, more)
+				var v string
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
+
+		history = append(history, "send-s2")
+		c2.SendAsync("s2")
+		history = append(history, "select-0")
+		s.Select(ctx)
+		history = append(history, "send-s1")
+		c1.SendAsync("s1")
+		history = append(history, "select-1")
+		s.Select(ctx)
+		history = append(history, "done")
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+
+	expected := []string{
+		"send-s2",
+		"select-0",
+		"c2-s2",
+		"send-s1",
+		"select-1",
+		"c1-s1",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
 func TestSendSelect(t *testing.T) {
 	var history []string
 	d := newDispatcher(background, func(ctx Context) {

@@ -1536,3 +1536,69 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowIDReusePolicy() {
 	s.NoError(env.GetWorkflowResult(&actualResult))
 	s.Equal("hello_world", actualResult)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
+	workflowFn := func(ctx Context) error {
+
+		signalCh := GetSignalChannel(ctx, "test-signal")
+		doneCh := NewBufferedChannel(ctx, 100)
+		selector := NewSelector(ctx)
+
+		selector.AddReceive(signalCh, func(c Channel, more bool) {
+		}).AddReceive(doneCh, func(c Channel, more bool) {
+			var doneSignal string
+			c.Receive(ctx, &doneSignal)
+		})
+
+		fanoutChs := []Channel{NewBufferedChannel(ctx, 100), NewBufferedChannel(ctx, 100)}
+
+		processedCount := 0
+		runningCount := 0
+
+	mainLoop:
+		for {
+			selector.Select(ctx)
+			var signal string
+			if !signalCh.ReceiveAsync(&signal) {
+				if runningCount > 0 {
+					continue mainLoop
+				}
+
+				if processedCount < 4 {
+					continue mainLoop
+				}
+
+				// continue as new
+				return NewContinueAsNewError(ctx, "this-workflow-fn")
+			}
+
+			for i := range fanoutChs {
+				ch := fanoutChs[i]
+				ch.SendAsync(signal)
+				processedCount++
+				runningCount++
+				Go(ctx, func(ctx Context) {
+					doneCh.SendAsync("done")
+					runningCount--
+				})
+			}
+		}
+
+		return nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", "s1")
+		env.SignalWorkflow("test-signal", "s2")
+	}, time.Minute)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	_, ok := env.GetWorkflowError().(*ContinueAsNewError)
+	s.True(ok)
+}
