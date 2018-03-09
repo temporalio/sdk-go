@@ -255,6 +255,23 @@ func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte,
 	return r0
 }
 
+// RecordActivityHeartbeatByID provides a mock function with given fields: ctx, domain, workflowID, runID, activityID, details
+func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, domain, workflowID, runID, activityID string, details ...interface{}) error {
+	var _ca []interface{}
+	_ca = append(_ca, ctx, domain, workflowID, runID, activityID)
+	_ca = append(_ca, details...)
+	ret := _m.Called(_ca...)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...interface{}) error); ok {
+		r0 = rf(ctx, domain, workflowID, runID, activityID, details...)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // SignalWorkflow provides a mock function with given fields: ctx, workflowID, runID, signalName, arg
 func (_m *Client) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
 	ret := _m.Called(ctx, workflowID, runID, signalName, arg)

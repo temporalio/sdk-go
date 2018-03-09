@@ -397,6 +397,16 @@ func (wc *workflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 	return recordActivityHeartbeat(ctx, wc.workflowService, wc.identity, taskToken, data, serviceOperationRetryPolicy)
 }
 
+// RecordActivityHeartbeatByID records heartbeat for an activity.
+func (wc *workflowClient) RecordActivityHeartbeatByID(ctx context.Context,
+	domain, workflowID, runID, activityID string, details ...interface{}) error {
+	data, err := getHostEnvironment().encodeArgs(details)
+	if err != nil {
+		return err
+	}
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, domain, workflowID, runID, activityID, data, serviceOperationRetryPolicy)
+}
+
 // ListClosedWorkflow gets closed workflow executions based on request filters
 // The errors it can throw:
 //  - BadRequestError

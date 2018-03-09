@@ -1313,6 +1313,40 @@ func recordActivityHeartbeat(
 	return heartbeatErr
 }
 
+func recordActivityHeartbeatByID(
+	ctx context.Context,
+	service workflowserviceclient.Interface,
+	identity string,
+	domain, workflowID, runID, activityID string,
+	details []byte,
+	retryPolicy backoff.RetryPolicy,
+) error {
+	request := &s.RecordActivityTaskHeartbeatByIDRequest{
+		Domain:     common.StringPtr(domain),
+		WorkflowID: common.StringPtr(workflowID),
+		RunID:      common.StringPtr(runID),
+		ActivityID: common.StringPtr(activityID),
+		Details:    details,
+		Identity:   common.StringPtr(identity)}
+
+	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
+	heartbeatErr := backoff.Retry(ctx,
+		func() error {
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+
+			var err error
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request, opt...)
+			return err
+		}, retryPolicy, isServiceTransientError)
+
+	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
+		return NewCanceledError()
+	}
+
+	return heartbeatErr
+}
+
 // This enables verbose logging in the client library.
 // check worker.EnableVerboseLogging()
 func traceLog(fn func()) {

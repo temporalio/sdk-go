@@ -54,6 +54,7 @@ const (
 	scopeNamePollForActivityTask              = CadenceMetricsPrefix + "PollForActivityTask"
 	scopeNamePollForDecisionTask              = CadenceMetricsPrefix + "PollForDecisionTask"
 	scopeNameRecordActivityTaskHeartbeat      = CadenceMetricsPrefix + "RecordActivityTaskHeartbeat"
+	scopeNameRecordActivityTaskHeartbeatByID  = CadenceMetricsPrefix + "RecordActivityTaskHeartbeatByID"
 	scopeNameRegisterDomain                   = CadenceMetricsPrefix + "RegisterDomain"
 	scopeNameRequestCancelWorkflowExecution   = CadenceMetricsPrefix + "RequestCancelWorkflowExecution"
 	scopeNameRespondActivityTaskCanceled      = CadenceMetricsPrefix + "RespondActivityTaskCanceled"
@@ -174,6 +175,13 @@ func (w *workflowServiceMetricsWrapper) PollForDecisionTask(ctx context.Context,
 func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeat(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) (*shared.RecordActivityTaskHeartbeatResponse, error) {
 	scope := w.getOperationScope(scopeNameRecordActivityTaskHeartbeat)
 	result, err := w.service.RecordActivityTaskHeartbeat(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeatByID(ctx context.Context, request *shared.RecordActivityTaskHeartbeatByIDRequest, opts ...yarpc.CallOption) (*shared.RecordActivityTaskHeartbeatResponse, error) {
+	scope := w.getOperationScope(scopeNameRecordActivityTaskHeartbeatByID)
+	result, err := w.service.RecordActivityTaskHeartbeatByID(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }

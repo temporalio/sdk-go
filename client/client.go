@@ -180,6 +180,13 @@ type (
 		//	- InternalServiceError
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
+		// RecordActivityHeartbeatByID records heartbeat for an activity.
+		// details - is the progress you want to record along with heart beat for this activity.
+		// The errors it can return:
+		//	- EntityNotExistsError
+		//	- InternalServiceError
+		RecordActivityHeartbeatByID(ctx context.Context, domain, workflowID, runID, activityID string, details ...interface{}) error
+
 		// ListClosedWorkflow gets closed workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError

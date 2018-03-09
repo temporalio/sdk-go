@@ -389,6 +389,26 @@ func TestRecordActivityHeartbeat(t *testing.T) {
 	require.NotNil(t, heartbeatRequest)
 }
 
+func TestRecordActivityHeartbeatByID(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
+
+	domain := "testDomain"
+	wfClient := NewClient(mockService, domain, nil)
+	var heartbeatRequest *s.RecordActivityTaskHeartbeatByIDRequest
+	cancelRequested := false
+	heartbeatResponse := s.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	mockService.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
+		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatByIDRequest, opts ...yarpc.CallOption) {
+			heartbeatRequest = request
+		}).Times(2)
+
+	wfClient.RecordActivityHeartbeatByID(context.Background(), domain, "wid", "rid", "aid")
+	wfClient.RecordActivityHeartbeatByID(context.Background(), domain, "wid", "rid", "aid",
+		"testStack", "customerObjects", 4)
+	require.NotNil(t, heartbeatRequest)
+}
+
 func testEncodeFunction(t *testing.T, f interface{}, args ...interface{}) string {
 	input, err := getHostEnvironment().Encoder().Marshal(args)
 	require.NoError(t, err, err)

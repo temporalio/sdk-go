@@ -96,6 +96,8 @@ func Test_Wrapper(t *testing.T) {
 			mockService.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "RecordActivityTaskHeartbeat":
 			mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "RecordActivityTaskHeartbeatByID":
+			mockService.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "RegisterDomain":
 			mockService.EXPECT().RegisterDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "RequestCancelWorkflowExecution":
