@@ -315,6 +315,10 @@ func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return wc.metricsScope
 }
 
+func (wc *workflowEnvironmentImpl) IsReplaying() bool {
+	return wc.isReplay
+}
+
 func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
 	return fmt.Sprintf("%d", wc.GenerateSequence())
 }

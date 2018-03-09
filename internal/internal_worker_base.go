@@ -69,6 +69,7 @@ type (
 		RegisterSignalHandler(handler func(name string, input []byte))
 		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
+		IsReplaying() bool
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

@@ -1266,6 +1266,11 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName
 	}()
 }
 
+func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
+	// this test environment never replay
+	return false
+}
+
 func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
