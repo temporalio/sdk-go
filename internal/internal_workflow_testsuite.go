@@ -38,6 +38,7 @@ import (
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
+	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )
@@ -113,7 +114,7 @@ type (
 		service       workflowserviceclient.Interface
 		workerOptions WorkerOptions
 		logger        *zap.Logger
-		metricsScope  tally.Scope
+		metricsScope  *metrics.TaggedScope
 		mockClock     *clock.Mock
 		wallClock     clock.Clock
 
@@ -173,7 +174,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
 			logger:           s.logger,
-			metricsScope:     s.scope,
+			metricsScope:     metrics.NewTaggedScope(nil),
 			mockClock:        clock.NewMock(),
 			wallClock:        clock.New(),
 			timers:           make(map[string]*testTimerHandle),
@@ -212,7 +213,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		env.logger = logger
 	}
 	if env.metricsScope == nil {
-		env.metricsScope = tally.NoopScope
+		env.metricsScope = metrics.NewTaggedScope(s.scope)
 	}
 
 	// setup mock service

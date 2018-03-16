@@ -326,7 +326,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	return &workflowClient{
 		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
 		domain:          domain,
-		metricsScope:    metricScope,
+		metricsScope:    metrics.NewTaggedScope(metricScope),
 		identity:        identity,
 	}
 }

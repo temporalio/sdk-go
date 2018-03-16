@@ -1019,7 +1019,7 @@ func newAggregatedWorker(
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.MetricsScope = tagScope(workerParams.MetricsScope, tagDomain, domain)
+	workerParams.MetricsScope = tagScope(workerParams.MetricsScope, tagDomain, domain, tagTaskList, taskList)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
@@ -1073,11 +1073,19 @@ func newAggregatedWorker(
 	}
 }
 
-func tagScope(metricsScope tally.Scope, tagName, tagValue string) tally.Scope {
+// tagScope with one or multiple tags, like
+// tagScope(scope, tag1, val1, tag2, val2)
+func tagScope(metricsScope tally.Scope, keyValueinPairs ...string) tally.Scope {
 	if metricsScope == nil {
 		metricsScope = tally.NoopScope
 	}
-	tagsMap := map[string]string{tagName: tagValue}
+	if len(keyValueinPairs)%2 != 0 {
+		panic("tagScope key value are not in pairs")
+	}
+	tagsMap := map[string]string{}
+	for i := 0; i < len(keyValueinPairs); i += 2 {
+		tagsMap[keyValueinPairs[i]] = keyValueinPairs[i+1]
+	}
 	return metricsScope.Tagged(tagsMap)
 }
 

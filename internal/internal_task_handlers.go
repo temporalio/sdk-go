@@ -116,7 +116,7 @@ type (
 		taskListName     string
 		identity         string
 		service          workflowserviceclient.Interface
-		metricsScope     tally.Scope
+		metricsScope     *metrics.TaggedScope
 		logger           *zap.Logger
 		userContext      context.Context
 		hostEnv          *hostEnvImpl
@@ -1089,7 +1089,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		identity:         params.Identity,
 		service:          service,
 		logger:           params.Logger,
-		metricsScope:     params.MetricsScope,
+		metricsScope:     metrics.NewTaggedScope(params.MetricsScope),
 		userContext:      params.UserContext,
 		hostEnv:          env,
 		activityProvider: activityProvider,
@@ -1247,7 +1247,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 			ath.logger.Error("Activity panic.",
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
-			ath.metricsScope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
+			scope := ath.metricsScope.GetTaggedScope(tagActivityType, t.ActivityType.GetName())
+			scope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
 		}

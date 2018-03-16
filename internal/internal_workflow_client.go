@@ -50,7 +50,7 @@ type (
 	workflowClient struct {
 		workflowService workflowserviceclient.Interface
 		domain          string
-		metricsScope    tally.Scope
+		metricsScope    *metrics.TaggedScope
 		identity        string
 	}
 
@@ -190,7 +190,8 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	if wc.metricsScope != nil {
-		wc.metricsScope.Counter(metrics.WorkflowStartCounter).Inc(1)
+		scope := wc.metricsScope.GetTaggedScope(tagWorkflowType, workflowType.Name)
+		scope.Counter(metrics.WorkflowStartCounter).Inc(1)
 	}
 
 	executionInfo := &WorkflowExecution{
@@ -534,7 +535,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 // DescribeTaskList returns information about the target tasklist, right now this API returns the
 // pollers which polled this tasklist in last few minutes.
 // - tasklist name of tasklist
-// - tasklistType type of tasklist, can be decition or activity
+// - tasklistType type of tasklist, can be decision or activity
 // The errors it can return:
 //  - BadRequestError
 //  - InternalServiceError

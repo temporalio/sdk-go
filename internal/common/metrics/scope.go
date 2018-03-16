@@ -21,6 +21,7 @@
 package metrics
 
 import (
+	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -68,6 +69,12 @@ type (
 		isReplay *bool
 		recorder durationRecorder
 		clock    Clock
+	}
+
+	// TaggedScope provides metricScope with tags
+	TaggedScope struct {
+		tally.Scope
+		*sync.Map
 	}
 )
 
@@ -185,4 +192,31 @@ func (s *replayAwareScope) SubScope(name string) tally.Scope {
 // Capabilities returns a description of metrics reporting capabilities.
 func (s *replayAwareScope) Capabilities() tally.Capabilities {
 	return s.scope.Capabilities()
+}
+
+// GetTaggedScope return a scope with tag
+func (ts *TaggedScope) GetTaggedScope(tagName, tagValue string) tally.Scope {
+	if ts.Map == nil {
+		ts.Map = &sync.Map{}
+	}
+
+	key := tagName + ":" + tagValue // used to prevent collision of tagValue (map key) for different tagName
+	taggedScope, ok := ts.Load(key)
+	if !ok {
+		ts.Store(key, ts.Scope.Tagged(map[string]string{tagName: tagValue}))
+		taggedScope, _ = ts.Load(key)
+	}
+	if taggedScope == nil {
+		panic("metric scope cannot be tagged") // This should never happen
+	}
+
+	return taggedScope.(tally.Scope)
+}
+
+// NewTaggedScope create a new TaggedScope
+func NewTaggedScope(scope tally.Scope) *TaggedScope {
+	if scope == nil {
+		scope = tally.NoopScope
+	}
+	return &TaggedScope{Scope: scope, Map: &sync.Map{}}
 }

@@ -176,7 +176,8 @@ func newWorkflowExecutionEventHandler(
 	).WithOptions(zap.WrapCore(wrapLogger(&context.isReplay, &context.enableLoggingInReplay)))
 
 	if scope != nil {
-		context.metricsScope = metrics.WrapScope(&context.isReplay, scope, context)
+		context.metricsScope = tagScope(metrics.WrapScope(&context.isReplay, scope, context),
+			tagWorkflowType, workflowInfo.WorkflowType.Name)
 	}
 
 	return &workflowExecutionEventHandlerImpl{context, nil}
