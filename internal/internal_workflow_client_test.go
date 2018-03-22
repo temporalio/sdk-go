@@ -503,3 +503,81 @@ func getGetWorkflowExecutionHistoryRequest(filterType shared.HistoryEventFilterT
 
 	return request
 }
+
+// workflow client test suite
+type (
+	workflowClientTestSuite struct {
+		suite.Suite
+		service *workflowservicetest.MockClient
+		client  Client
+	}
+)
+
+func TestWorkflowClientSuite(t *testing.T) {
+	suite.Run(t, new(workflowClientTestSuite))
+}
+
+func (s *workflowClientTestSuite) SetupSuite() {
+	if testing.Verbose() {
+		log.SetOutput(os.Stdout)
+	}
+}
+
+func (s *workflowClientTestSuite) SetupTest() {
+	mockCtrl := gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(mockCtrl)
+	s.client = NewClient(s.service, domain, nil)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
+	signalName := "my signal"
+	signalInput := []byte("my signal input")
+	options := StartWorkflowOptions{
+		ID:                              workflowID,
+		TaskList:                        tasklist,
+		ExecutionStartToCloseTimeout:    timeoutInSeconds,
+		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+	}
+
+	createResponse := &shared.StartWorkflowExecutionResponse{
+		RunId: common.StringPtr(runID),
+	}
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(2)
+
+	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
+		options, workflowType)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.RunID)
+
+	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
+		options, workflowType)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.RunID)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
+	signalName := "my signal"
+	signalInput := []byte("my signal input")
+	options := StartWorkflowOptions{}
+
+	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
+		options, workflowType)
+	s.NotNil(err)
+	s.Nil(resp)
+
+	options.TaskList = tasklist
+	resp, err = s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
+		options, workflowType)
+	s.NotNil(err)
+	s.Nil(resp)
+
+	options.ExecutionStartToCloseTimeout = timeoutInSeconds
+	createResponse := &shared.StartWorkflowExecutionResponse{
+		RunId: common.StringPtr(runID),
+	}
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(2)
+	resp, err = s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
+		options, workflowType)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.RunID)
+}

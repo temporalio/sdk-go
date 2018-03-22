@@ -104,6 +104,18 @@ type (
 		//	- InternalServiceError
 		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
 
+		// SignalWithStartWorkflow sends a signal to a running workflow.
+		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
+		// - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
+		// - workflow, workflowArgs are same as StartWorkflow's parameters
+		// - options.WorkflowIDReusePolicy will be ignored, and WorkflowIDReusePolicyAllowDuplicate will be used as the policy
+		// The errors it can return:
+		//  - EntityNotExistsError, if domain does not exist
+		//  - BadRequestError
+		//	- InternalServiceError
+		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
+			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (*workflow.Execution, error)
+
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.

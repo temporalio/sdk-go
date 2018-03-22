@@ -263,6 +263,85 @@ func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 }
 
+// SignalWithStartWorkflow sends a signal to a running workflow.
+// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
+func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
+	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (*WorkflowExecution, error) {
+
+	signalInput, err := getEncodedArg(signalArg)
+	if err != nil {
+		return nil, err
+	}
+
+	if workflowID == "" {
+		workflowID = uuid.NewRandom().String()
+	}
+
+	if options.TaskList == "" {
+		return nil, errors.New("missing TaskList")
+	}
+
+	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
+	if executionTimeout <= 0 {
+		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
+	}
+
+	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
+	if decisionTaskTimeout < 0 {
+		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
+	}
+	if decisionTaskTimeout == 0 {
+		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
+	}
+
+	// Validate type and its arguments.
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
+		Domain:       common.StringPtr(wc.domain),
+		RequestId:    common.StringPtr(uuid.New()),
+		WorkflowId:   common.StringPtr(workflowID),
+		WorkflowType: workflowTypePtr(*workflowType),
+		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+		Input:        input,
+		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
+		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
+		SignalName:                          common.StringPtr(signalName),
+		SignalInput:                         signalInput,
+		Identity:                            common.StringPtr(wc.identity),
+	}
+
+	var response *s.StartWorkflowExecutionResponse
+
+	// Start creating workflow request.
+	err = backoff.Retry(ctx,
+		func() error {
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+
+			var err1 error
+			response, err1 = wc.workflowService.SignalWithStartWorkflowExecution(tchCtx, signalWithStartRequest, opt...)
+			return err1
+		}, serviceOperationRetryPolicy, isServiceTransientError)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if wc.metricsScope != nil {
+		scope := wc.metricsScope.GetTaggedScope(tagWorkflowType, workflowType.Name)
+		scope.Counter(metrics.WorkflowSingalWithStartCounter).Inc(1)
+	}
+
+	executionInfo := &WorkflowExecution{
+		ID:    options.ID,
+		RunID: response.GetRunId()}
+	return executionInfo, nil
+}
+
 // CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.

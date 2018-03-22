@@ -66,6 +66,7 @@ const (
 	scopeNameRespondDecisionTaskCompleted     = CadenceMetricsPrefix + "RespondDecisionTaskCompleted"
 	scopeNameRespondDecisionTaskFailed        = CadenceMetricsPrefix + "RespondDecisionTaskFailed"
 	scopeNameSignalWorkflowExecution          = CadenceMetricsPrefix + "SignalWorkflowExecution"
+	scopeNameSignalWithStartWorkflowExecution = CadenceMetricsPrefix + "SignalWithStartWorkflowExecution"
 	scopeNameStartWorkflowExecution           = CadenceMetricsPrefix + "StartWorkflowExecution"
 	scopeNameTerminateWorkflowExecution       = CadenceMetricsPrefix + "TerminateWorkflowExecution"
 	scopeNameUpdateDomain                     = CadenceMetricsPrefix + "UpdateDomain"
@@ -261,6 +262,13 @@ func (w *workflowServiceMetricsWrapper) SignalWorkflowExecution(ctx context.Cont
 	err := w.service.SignalWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return err
+}
+
+func (w *workflowServiceMetricsWrapper) SignalWithStartWorkflowExecution(ctx context.Context, request *shared.SignalWithStartWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.StartWorkflowExecutionResponse, error) {
+	scope := w.getOperationScope(scopeNameSignalWithStartWorkflowExecution)
+	result, err := w.service.SignalWithStartWorkflowExecution(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) StartWorkflowExecution(ctx context.Context, request *shared.StartWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.StartWorkflowExecutionResponse, error) {
