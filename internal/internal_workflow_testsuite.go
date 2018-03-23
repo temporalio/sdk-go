@@ -117,6 +117,7 @@ type (
 		metricsScope  *metrics.TaggedScope
 		mockClock     *clock.Mock
 		wallClock     clock.Clock
+		startTime     time.Time
 
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
@@ -204,6 +205,14 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 		doneChannel: make(chan struct{}),
 	}
+
+	// move forward the mock clock to start time.
+	startTime := env.startTime
+	if startTime == time.Unix(0, 0) {
+		// if start time not set, use current clock time
+		startTime = env.wallClock.Now()
+	}
+	env.mockClock.Add(startTime.Sub(env.mockClock.Now()))
 
 	// put current workflow as a running workflow so child can send signal to parent
 	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result []byte, err error) {}}
