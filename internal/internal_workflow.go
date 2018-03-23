@@ -33,6 +33,7 @@ import (
 	"unicode"
 
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -158,7 +159,7 @@ type (
 		workflowID                          string
 		childPolicy                         ChildWorkflowPolicy
 		waitForCancellation                 bool
-		signalChannels                      map[string]Channel
+		signalChannels                      map[string]SignalChannel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 	}
@@ -471,6 +472,27 @@ func getState(ctx Context) *coroutineState {
 		panic(panicIllegalAccessCoroutinueState)
 	}
 	return state
+}
+
+func (c *channelImpl) ReceiveEncodedValue(ctx Context) (value encoded.Value, more bool) {
+	var blob []byte
+	more = c.Receive(ctx, &blob)
+	value = EncodedValue(blob)
+	return
+}
+
+func (c *channelImpl) ReceiveEncodedValueAsync() (value encoded.Value, ok bool) {
+	var blob []byte
+	ok = c.ReceiveAsync(&blob)
+	value = EncodedValue(blob)
+	return
+}
+
+func (c *channelImpl) ReceiveEncodedValueAsyncWithMoreFlag() (value encoded.Value, ok bool, more bool) {
+	var blob []byte
+	ok, more = c.ReceiveAsyncWithMoreFlag(&blob)
+	value = EncodedValue(blob)
+	return
 }
 
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
@@ -1030,18 +1052,18 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	if options != nil {
 		newOptions = *options
 	} else {
-		newOptions.signalChannels = make(map[string]Channel)
+		newOptions.signalChannels = make(map[string]SignalChannel)
 		newOptions.queryHandlers = make(map[string]func([]byte) ([]byte, error))
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
 // getSignalChannel finds the assosciated channel for the signal.
-func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Channel {
+func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) SignalChannel {
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
 	}
-	ch := NewBufferedChannel(ctx, defaultSignalChannelSize)
+	ch := NewBufferedChannel(ctx, defaultSignalChannelSize).(SignalChannel)
 	w.signalChannels[signalName] = ch
 	return ch
 }

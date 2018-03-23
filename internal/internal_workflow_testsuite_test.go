@@ -1602,3 +1602,27 @@ func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
 	_, ok := env.GetWorkflowError().(*ContinueAsNewError)
 	s.True(ok)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalChannel() {
+	workflowFn := func(ctx Context) error {
+		signalCh := GetSignalChannel(ctx, "test-signal")
+		encodedValue, _ := signalCh.ReceiveEncodedValue(ctx)
+
+		var signal string
+		err := encodedValue.Get(&signal)
+		return err
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", 123)
+	}, time.Minute)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "decode")
+}
