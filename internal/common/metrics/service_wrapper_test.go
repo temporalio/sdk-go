@@ -118,6 +118,8 @@ func Test_Wrapper(t *testing.T) {
 			mockService.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "SignalWorkflowExecution":
 			mockService.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
+		case "SignaWithStartlWorkflowExecution":
+			mockService.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "StartWorkflowExecution":
 			mockService.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		case "TerminateWorkflowExecution":
