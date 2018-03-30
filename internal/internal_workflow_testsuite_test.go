@@ -1626,3 +1626,27 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChannel() {
 	s.Error(env.GetWorkflowError())
 	s.Contains(env.GetWorkflowError().Error(), "decode")
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_ContextMisuse() {
+	workflowFn := func(ctx Context) error {
+		ch := NewChannel(ctx)
+
+		Go(ctx, func(shouldUseThisCtx Context) {
+			Sleep(ctx, time.Hour)
+			ch.Send(ctx, "done")
+		})
+
+		var done string
+		ch.Receive(ctx, &done)
+
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "block on coroutine which is already blocked")
+}

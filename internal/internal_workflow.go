@@ -32,6 +32,7 @@ import (
 	"time"
 	"unicode"
 
+	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
@@ -134,7 +135,8 @@ type (
 		unblock      chan unblockFunc // used to notify coroutine that it should continue executing.
 		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
 		closed       bool             // indicates that owning coroutine has finished execution
-		panicError   *PanicError      // non nil if coroutine had unhandled panic
+		blocked      atomic.Bool
+		panicError   *PanicError // non nil if coroutine had unhandled panic
 	}
 
 	dispatcherImpl struct {
@@ -341,20 +343,25 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
-	d.rootCtx = WithValue(background, workflowEnvironmentContextKey, env)
+func newWorkflowContext(env workflowEnvironment) Context {
+	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
 	var resultPtr *workflowResult
-	d.rootCtx = WithValue(d.rootCtx, workflowResultContextKey, &resultPtr)
+	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
 
 	// Set default values for the workflow execution.
 	wInfo := env.WorkflowInfo()
-	d.rootCtx = WithWorkflowDomain(d.rootCtx, wInfo.Domain)
-	d.rootCtx = WithWorkflowTaskList(d.rootCtx, wInfo.TaskListName)
-	d.rootCtx = WithExecutionStartToCloseTimeout(d.rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
-	d.rootCtx = WithWorkflowTaskStartToCloseTimeout(d.rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
-	d.rootCtx = WithTaskList(d.rootCtx, wInfo.TaskListName)
+	rootCtx = WithWorkflowDomain(rootCtx, wInfo.Domain)
+	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
+	rootCtx = WithExecutionStartToCloseTimeout(rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
+	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
+	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
+	return rootCtx
+}
+
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
+	d.rootCtx = newWorkflowContext(env)
 	activityOptions := getActivityOptions(d.rootCtx)
-	activityOptions.OriginalTaskListName = wInfo.TaskListName
+	activityOptions.OriginalTaskListName = env.WorkflowInfo().TaskListName
 
 	d.dispatcher = newDispatcher(d.rootCtx, func(ctx Context) {
 		d.rootCtx, d.cancel = WithCancel(ctx)
@@ -639,11 +646,16 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) {
 // stackDepth is the depth of top of the stack to omit when stack trace is generated
 // to hide frames internal to the framework.
 func (s *coroutineState) initialYield(stackDepth int, status string) {
+	if s.blocked.Swap(true) {
+		panic("trying to block on coroutine which is already blocked, most likely a wrong Context is used to do blocking" +
+			" call (like Future.Get() or Channel.Receive()")
+	}
 	keepBlocked := true
 	for keepBlocked {
 		f := <-s.unblock
 		keepBlocked = f(status, stackDepth+1)
 	}
+	s.blocked.Swap(false)
 }
 
 // yield indicates that coroutine cannot make progress and should sleep

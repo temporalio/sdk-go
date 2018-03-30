@@ -944,11 +944,13 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
+	// make a copy of the context for getMockReturn() call to avoid race condition
+	ctxCopy := newWorkflowContext(w.env)
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
 		// the returned mockRet by calling executeMock() later in the main thread after it is send over via mockReadyChannel.
-		mockRet := m.getMockReturn(ctx, input)
+		mockRet := m.getMockReturn(ctxCopy, input)
 		env.postCallback(func() {
 			mockReadyChannel.SendAsync(mockRet)
 		}, true /* true to trigger the dispatcher for this workflow so it resume from mockReadyChannel block*/)
