@@ -726,18 +726,22 @@ func (w *workflowExecutionContext) CompleteDecisionTask() interface{} {
 	return completeRequest
 }
 
-func isVersionMarkerDecision(d *s.Decision) bool {
-	if d.GetDecisionType() == s.DecisionTypeRecordMarker &&
-		d.RecordMarkerDecisionAttributes.GetMarkerName() == versionMarkerName {
-		return true
+func skipDeterministicCheckForDecision(d *s.Decision) bool {
+	if d.GetDecisionType() == s.DecisionTypeRecordMarker {
+		markerName := d.RecordMarkerDecisionAttributes.GetMarkerName()
+		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
+			return true
+		}
 	}
 	return false
 }
 
-func isVersionMarkerEvent(e *s.HistoryEvent) bool {
-	if e.GetEventType() == s.EventTypeMarkerRecorded &&
-		e.MarkerRecordedEventAttributes.GetMarkerName() == versionMarkerName {
-		return true
+func skipDeterministicCheckForEvent(e *s.HistoryEvent) bool {
+	if e.GetEventType() == s.EventTypeMarkerRecorded {
+		markerName := e.MarkerRecordedEventAttributes.GetMarkerName()
+		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
+			return true
+		}
 	}
 	return false
 }
@@ -752,7 +756,7 @@ matchLoop:
 		var e *s.HistoryEvent
 		if hi < hSize {
 			e = historyEvents[hi]
-			if isVersionMarkerEvent(e) {
+			if skipDeterministicCheckForEvent(e) {
 				hi++
 				continue matchLoop
 			}
@@ -761,7 +765,7 @@ matchLoop:
 		var d *s.Decision
 		if di < dSize {
 			d = replayDecisions[di]
-			if isVersionMarkerDecision(d) {
+			if skipDeterministicCheckForDecision(d) {
 				di++
 				continue matchLoop
 			}

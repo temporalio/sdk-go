@@ -23,13 +23,16 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
 	m "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -82,11 +85,12 @@ type (
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
-		decisionsHelper  *decisionsHelper
-		sideEffectResult map[int32][]byte
-		changeVersions   map[string]Version
-		pendingLaTasks   map[string]*localActivityTask
-		unstartedLaTasks map[string]struct{}
+		decisionsHelper   *decisionsHelper
+		sideEffectResult  map[int32][]byte
+		changeVersions    map[string]Version
+		pendingLaTasks    map[string]*localActivityTask
+		mutableSideEffect map[string][]byte
+		unstartedLaTasks  map[string]struct{}
 
 		counterID         int32     // To generate sequence IDs for activity/timer etc.
 		currentReplayTime time.Time // Indicates current replay time of the decision.
@@ -162,6 +166,7 @@ func newWorkflowExecutionEventHandler(
 		workflowInfo:          workflowInfo,
 		decisionsHelper:       newDecisionsHelper(),
 		sideEffectResult:      make(map[int32][]byte),
+		mutableSideEffect:     make(map[string][]byte),
 		changeVersions:        make(map[string]Version),
 		pendingLaTasks:        make(map[string]*localActivityTask),
 		unstartedLaTasks:      make(map[string]struct{}),
@@ -512,6 +517,68 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 	wc.logger.Debug("SideEffect Marker added", zap.Int32(tagSideEffectID, sideEffectID))
 }
 
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
+	if result, ok := wc.mutableSideEffect[id]; ok {
+		encodedResult := EncodedValue(result)
+		if wc.isReplay {
+			return encodedResult
+		}
+
+		newValue := f()
+		if isEqualValue(newValue, result, equals) {
+			return encodedResult
+		}
+
+		return wc.recordMutableSideEffect(id, encodeValue(newValue))
+	}
+
+	if wc.isReplay {
+		// This should not happen
+		panic("MutableSideEffect with given ID not found during replay")
+	}
+
+	return wc.recordMutableSideEffect(id, encodeValue(f()))
+}
+
+func isEqualValue(newValue interface{}, encodedOldValue []byte, equals func(a, b interface{}) bool) bool {
+	if newValue == nil {
+		// new value is nil
+		newEncodedValue := encodeValue(nil)
+		return bytes.Equal(newEncodedValue, encodedOldValue)
+	}
+
+	oldValue := decodeValue(encodedOldValue, newValue)
+	return equals(newValue, oldValue)
+}
+
+func decodeValue(encodedValue EncodedValue, value interface{}) interface{} {
+	// We need to decode oldValue out of encodedValue, first we need to prepare valuePtr as the same type as value
+	valuePtr := reflect.New(reflect.TypeOf(value)).Interface()
+	if err := encodedValue.Get(valuePtr); err != nil {
+		panic(err)
+	}
+	decodedValue := reflect.ValueOf(valuePtr).Elem().Interface()
+	return decodedValue
+}
+
+func encodeValue(value interface{}) []byte {
+	blob, err := getHostEnvironment().encodeArg(value)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byte) encoded.Value {
+	details, err := wc.hostEnv.encodeArgs([]interface{}{id, string(data)})
+	if err != nil {
+		panic(err)
+	}
+	wc.decisionsHelper.recordMutableSideEffectMarker(id, details)
+	wc.mutableSideEffect[id] = data
+	return EncodedValue(data)
+}
+
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	event *m.HistoryEvent,
 	isReplay bool,
@@ -809,6 +876,12 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		return nil
 	case localActivityMarkerName:
 		return weh.handleLocalActivityMarker(attributes.Details)
+	case mutableSideEffectMarkerName:
+		var fixedID string
+		var result string
+		encodedValues.Get(&fixedID, &result)
+		weh.mutableSideEffect[fixedID] = []byte(result)
+		return nil
 	default:
 		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
 			attributes.GetMarkerName(), eventID)

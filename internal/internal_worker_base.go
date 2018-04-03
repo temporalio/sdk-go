@@ -30,6 +30,7 @@ import (
 	"fmt"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -70,6 +71,7 @@ type (
 		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 		IsReplaying() bool
+		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

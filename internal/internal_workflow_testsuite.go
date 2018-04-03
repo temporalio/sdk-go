@@ -1361,6 +1361,10 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 	return maxSupported
 }
 
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
+	return EncodedValue(encodeValue(f()))
+}
+
 func (env *testWorkflowEnvironmentImpl) nextID() int {
 	activityID := env.counterID
 	env.counterID++

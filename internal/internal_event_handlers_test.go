@@ -65,3 +65,56 @@ func TestReplayAwareLogger(t *testing.T) {
 	require.True(t, strings.Contains(logs, "normal2 info"), "normal2 info should show")
 	require.True(t, strings.Contains(logs, "replay2 info"), "replay2 info should show")
 }
+
+func Test_DecodedValue(t *testing.T) {
+	equals := func(a, b interface{}) bool {
+		ao := a.(ActivityOptions)
+		bo := b.(ActivityOptions)
+		return ao.TaskList == bo.TaskList
+	}
+	value := ActivityOptions{TaskList: "test-tasklist"}
+	blob := encodeValue(value)
+	isEqual := isEqualValue(value, blob, equals)
+	require.True(t, isEqual)
+
+	value.TaskList = "value-changed"
+	isEqual = isEqualValue(value, blob, equals)
+	require.False(t, isEqual)
+}
+
+func Test_DecodedValuePtr(t *testing.T) {
+	equals := func(a, b interface{}) bool {
+		ao := a.(*ActivityOptions)
+		bo := b.(*ActivityOptions)
+		return ao.TaskList == bo.TaskList
+	}
+	value := &ActivityOptions{TaskList: "test-tasklist"}
+	blob := encodeValue(value)
+	isEqual := isEqualValue(value, blob, equals)
+	require.True(t, isEqual)
+
+	value.TaskList = "value-changed"
+	isEqual = isEqualValue(value, blob, equals)
+	require.False(t, isEqual)
+}
+
+func Test_DecodedValueNil(t *testing.T) {
+	equals := func(a, b interface{}) bool {
+		return a == nil && b == nil
+	}
+	// newValue is nil, old value is nil
+	var value interface{}
+	blob := encodeValue(value)
+	isEqual := isEqualValue(value, blob, equals)
+	require.True(t, isEqual)
+
+	// newValue is nil, oldValue is not nil
+	blob = encodeValue("any-non-nil-value")
+	isEqual = isEqualValue(value, blob, equals)
+	require.False(t, isEqual)
+
+	// newValue is not nil, oldValue is nil
+	blob = encodeValue(nil)
+	isEqual = isEqualValue("non-nil-value", blob, equals)
+	require.False(t, isEqual)
+}
