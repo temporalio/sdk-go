@@ -91,13 +91,25 @@ cover: cover_profile
 cover_ci: cover_profile
 	goveralls -coverprofile=$(BUILD)/cover.out -service=travis-ci || echo -e "\x1b[31mCoveralls failed\x1b[m";
 
+# golint fails to report many lint failures if it is only given a single file
+# to work on at a time.  and we can't exclude files from its checks, so for
+# best results we need to give it a whitelist of every file in every package
+# that we want linted.
+#
+# so lint + this golint func works like:
+# - iterate over all dirs (outputs "./folder/")
+# - find .go files in a dir (via wildcard, so not recursively)
+# - filter to only files in LINT_SRC
+# - if it's not empty, run golint against the list
+define lint_if_present
+test -n "$1" && golint -set_exit_status $1
+endef
 
 lint:
-	@lintFail=0; for file in $(LINT_SRC); do \
-		golint -set_exit_status "$$file"; \
-		if [ $$? -eq 1 ]; then lintFail=1; fi; \
-	done; \
-	if [ $$lintFail -eq 1 ]; then exit 1; fi;
+	@$(foreach pkg,\
+		$(sort $(dir $(LINT_SRC))), \
+		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
+	) test -z "$$ERR" || exit 1
 	@OUTPUT=`gofmt -l $(ALL_SRC) 2>&1`; \
 	if [ "$$OUTPUT" ]; then \
 		echo "Run 'make fmt'. gofmt must be run on the following files:"; \
