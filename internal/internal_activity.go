@@ -105,12 +105,15 @@ type (
 		startedTimestamp   time.Time
 		taskList           string
 	}
+
+	// context.WithValue need this type instead of basic type string to avoid lint error
+	contextKey string
 )
 
 const (
-	activityEnvContextKey          = "activityEnv"
-	activityOptionsContextKey      = "activityOptions"
-	localActivityOptionsContextKey = "localActivityOptions"
+	activityEnvContextKey          contextKey = "activityEnv"
+	activityOptionsContextKey      contextKey = "activityOptions"
+	localActivityOptionsContextKey contextKey = "localActivityOptions"
 )
 
 func getActivityEnv(ctx context.Context) *activityEnvironment {
