@@ -161,7 +161,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 // ExecuteChildWorkflow requests child workflow execution in the context of a workflow.
 // Context can be used to pass the settings for the child workflow.
 // For example: task list that this child workflow should be routed, timeouts that need to be configured.
-// Use ChildWorkflowOptions to pass down th`e options.
+// Use ChildWorkflowOptions to pass down the options.
 //  cwo := ChildWorkflowOptions{
 // 	    ExecutionStartToCloseTimeout: 10 * time.Minute,
 // 	    TaskStartToCloseTimeout: time.Minute,

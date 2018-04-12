@@ -308,3 +308,24 @@ var _ Client = internal.Client(nil)
 var _ internal.Client = Client(nil)
 var _ DomainClient = internal.DomainClient(nil)
 var _ internal.DomainClient = DomainClient(nil)
+
+// NewValue creates a new encoded.Value which can be used to decode binary data returned by Cadence.  For example:
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
+// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// which can be decoded by using:
+//   var result string // This need to be same type as the one passed to RecordHeartbeat
+//   NewValue(data).Get(&result)
+func NewValue(data []byte) encoded.Value {
+	return internal.NewValue(data)
+}
+
+// NewValues creates a new encoded.Values which can be used to decode binary data returned by Cadence. For example:
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
+// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// which can be decoded by using:
+//   var result1 string
+//   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
+//   NewValues(data).Get(&result1, &result2)
+func NewValues(data []byte) encoded.Values {
+	return internal.NewValues(data)
+}

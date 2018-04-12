@@ -29,7 +29,7 @@ import (
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
-// A Context carries a deadline, a cancelation signal, and other values across
+// A Context carries a deadline, a cancellation signal, and other values across
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
@@ -69,7 +69,7 @@ type Context interface {
 	//  }
 	//
 	// See http://blog.golang.org/pipelines for more examples of how to use
-	// a Done channel for cancelation.
+	// a Done channel for cancellation.
 	Done() Channel
 
 	// Err returns a non-nil error value after Done is closed.  Err returns

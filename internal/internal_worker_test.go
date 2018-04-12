@@ -841,14 +841,6 @@ type encodingTest struct {
 	input    []interface{}
 }
 
-var encodingTests = []encodingTest{
-	{&gobEncoding{}, []interface{}{"test"}},
-	{&gobEncoding{}, []interface{}{"test1", "test2"}},
-	{&gobEncoding{}, []interface{}{"test1", 1, false}},
-	{&gobEncoding{}, []interface{}{"test1", testWorkflowResult{V: 10}, false}},
-	{&gobEncoding{}, []interface{}{"test2", &testWorkflowResult{V: 20}, 4}},
-}
-
 // duplicate of GetHostEnvironment().registerType()
 func testRegisterType(enc encoding, v interface{}) error {
 	t := reflect.Indirect(reflect.ValueOf(v)).Type()
@@ -857,30 +849,6 @@ func testRegisterType(enc encoding, v interface{}) error {
 	}
 	arg := reflect.Zero(t).Interface()
 	return enc.Register(arg)
-}
-
-func TestGobEncoding(t *testing.T) {
-	for _, et := range encodingTests {
-		for _, obj := range et.input {
-			err := testRegisterType(et.encoding, obj)
-			require.NoError(t, err, err)
-		}
-		data, err := et.encoding.Marshal(et.input)
-		require.NoError(t, err, err)
-
-		var result []interface{}
-		for _, v := range et.input {
-			arg := reflect.New(reflect.TypeOf(v)).Interface()
-			result = append(result, arg)
-		}
-		err = et.encoding.Unmarshal(data, result)
-		require.NoError(t, err, err)
-
-		for i := 0; i < len(et.input); i++ {
-			vat := reflect.ValueOf(result[i]).Elem().Interface()
-			require.Equal(t, et.input[i], vat)
-		}
-	}
 }
 
 func Test_ActivityNilArgs(t *testing.T) {

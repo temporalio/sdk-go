@@ -25,7 +25,6 @@ package internal
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1138,43 +1137,6 @@ type encoding interface {
 	Register(obj interface{}) error
 	Marshal([]interface{}) ([]byte, error)
 	Unmarshal([]byte, []interface{}) error
-}
-
-// gobEncoding encapsulates gob encoding and decoding
-type gobEncoding struct {
-}
-
-// Register implements the encoding interface
-func (g gobEncoding) Register(obj interface{}) error {
-	gob.Register(obj)
-	return nil
-}
-
-// Marshal encodes an array of object into bytes
-func (g gobEncoding) Marshal(objs []interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	for i, obj := range objs {
-		if err := enc.Encode(obj); err != nil {
-			return nil, fmt.Errorf(
-				"unable to encode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-// Unmarshal decodes a byte array into the passed in objects
-// TODO: To deal with different number of arguments, may be encode number of arguments as a first value as well.
-// so we can decode if a ssubset of them are asked.
-func (g gobEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(data))
-	for i, obj := range objs {
-		if err := dec.Decode(obj); err != nil {
-			return fmt.Errorf(
-				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return nil
 }
 
 // jsonEncoding encapsulates json encoding and decoding
