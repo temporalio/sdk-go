@@ -52,6 +52,7 @@ const (
 type (
 	historyEventIteratorSuite struct {
 		suite.Suite
+		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicetest.MockClient
 		historyEventIterator  HistoryEventIterator
 	}
@@ -66,17 +67,12 @@ func (s *historyEventIteratorSuite) SetupSuite() {
 	if testing.Verbose() {
 		log.SetOutput(os.Stdout)
 	}
-
-}
-
-func (s *historyEventIteratorSuite) TearDownSuite() {
-
 }
 
 func (s *historyEventIteratorSuite) SetupTest() {
 	// Create service endpoint
-	mockCtrl := gomock.NewController(s.T())
-	s.workflowServiceClient = workflowservicetest.NewMockClient(mockCtrl)
+	s.mockCtrl = gomock.NewController(s.T())
+	s.workflowServiceClient = workflowservicetest.NewMockClient(s.mockCtrl)
 
 	paginate := func(nexttoken []byte) (*shared.GetWorkflowExecutionHistoryResponse, error) {
 		filterType := shared.HistoryEventFilterTypeAllEvent
@@ -91,7 +87,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 }
 
 func (s *historyEventIteratorSuite) TearDownTest() {
-
+	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
 func (s *historyEventIteratorSuite) TestIterator_NoError() {
@@ -164,6 +160,7 @@ func (s *historyEventIteratorSuite) TestIterator_Error() {
 type (
 	workflowRunSuite struct {
 		suite.Suite
+		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicetest.MockClient
 		workflowClient        Client
 	}
@@ -178,7 +175,6 @@ func (s *workflowRunSuite) SetupSuite() {
 	if testing.Verbose() {
 		log.SetOutput(os.Stdout)
 	}
-
 }
 
 func (s *workflowRunSuite) TearDownSuite() {
@@ -187,8 +183,8 @@ func (s *workflowRunSuite) TearDownSuite() {
 
 func (s *workflowRunSuite) SetupTest() {
 	// Create service endpoint
-	mockCtrl := gomock.NewController(s.T())
-	s.workflowServiceClient = workflowservicetest.NewMockClient(mockCtrl)
+	s.mockCtrl = gomock.NewController(s.T())
+	s.workflowServiceClient = workflowservicetest.NewMockClient(s.mockCtrl)
 
 	metricsScope := metrics.NewTaggedScope(nil)
 	s.workflowClient = &workflowClient{
@@ -200,7 +196,7 @@ func (s *workflowRunSuite) SetupTest() {
 }
 
 func (s *workflowRunSuite) TearDownTest() {
-
+	s.mockCtrl.Finish()
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
@@ -508,8 +504,9 @@ func getGetWorkflowExecutionHistoryRequest(filterType shared.HistoryEventFilterT
 type (
 	workflowClientTestSuite struct {
 		suite.Suite
-		service *workflowservicetest.MockClient
-		client  Client
+		mockCtrl *gomock.Controller
+		service  *workflowservicetest.MockClient
+		client   Client
 	}
 )
 
@@ -524,9 +521,13 @@ func (s *workflowClientTestSuite) SetupSuite() {
 }
 
 func (s *workflowClientTestSuite) SetupTest() {
-	mockCtrl := gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(mockCtrl)
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
 	s.client = NewClient(s.service, domain, nil)
+}
+
+func (s *workflowClientTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
@@ -562,7 +563,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
 
 	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
 		options, workflowType)
-	s.NotNil(err)
+	s.Equal(errors.New("missing TaskList"), err)
 	s.Nil(resp)
 
 	options.TaskList = tasklist
@@ -575,7 +576,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
 	createResponse := &shared.StartWorkflowExecutionResponse{
 		RunId: common.StringPtr(runID),
 	}
-	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(2)
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)

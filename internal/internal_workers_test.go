@@ -34,11 +34,19 @@ import (
 type (
 	WorkersTestSuite struct {
 		suite.Suite
+		mockCtrl *gomock.Controller
+		service  *workflowservicetest.MockClient
 	}
 )
 
 // Test suite.
 func (s *WorkersTestSuite) SetupTest() {
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+}
+
+func (s *WorkersTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
 func TestWorkersTestSuite(t *testing.T) {
@@ -52,14 +60,11 @@ func TestWorkersTestSuite(t *testing.T) {
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
 	domain := "testDomain"
-	// mocks
 	logger, _ := zap.NewDevelopment()
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil)
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -68,7 +73,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		service, domain, executionParameters, nil, overrides, getHostEnvironment(),
+		s.service, domain, executionParameters, nil, overrides, getHostEnvironment(),
 	)
 	workflowWorker.Start()
 	workflowWorker.Stop()
@@ -76,14 +81,11 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 func (s *WorkersTestSuite) TestActivityWorker() {
 	domain := "testDomain"
-	// mocks
 	logger, _ := zap.NewDevelopment()
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil)
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -95,7 +97,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	hostEnv := getHostEnvironment()
 	hostEnv.addActivity(a.ActivityType().Name, a)
 	activityWorker := newActivityWorker(
-		service, domain, executionParameters, overrides, hostEnv,
+		s.service, domain, executionParameters, overrides, hostEnv,
 	)
 	activityWorker.Start()
 	activityWorker.Stop()
@@ -103,12 +105,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
-	// mocks
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{})
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{}).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -116,7 +115,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		service, domain, executionParameters, nil, overrides, getHostEnvironment(),
+		s.service, domain, executionParameters, nil, overrides, getHostEnvironment(),
 	)
 	workflowWorker.Start()
 	workflowWorker.Stop()

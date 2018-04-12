@@ -34,6 +34,8 @@ import (
 type (
 	PollLayerInterfacesTestSuite struct {
 		suite.Suite
+		mockCtrl *gomock.Controller
+		service  *workflowservicetest.MockClient
 	}
 )
 
@@ -79,24 +81,27 @@ func (ath sampleActivityTaskHandler) Execute(taskList string, task *m.PollForAct
 }
 
 // Test suite.
-func (s *PollLayerInterfacesTestSuite) SetupTest() {
-}
-
 func TestPollLayerInterfacesTestSuite(t *testing.T) {
 	suite.Run(t, new(PollLayerInterfacesTestSuite))
 }
 
+func (s *PollLayerInterfacesTestSuite) SetupTest() {
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+}
+
+func (s *PollLayerInterfacesTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
+}
+
 func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
-	// Create service endpoint and get a workflow task.
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
 	ctx, _ := thrift.NewContext(10)
 
 	// mocks
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
-	response, err := service.PollForDecisionTask(ctx, &m.PollForDecisionTaskRequest{})
+	response, err := s.service.PollForDecisionTask(ctx, &m.PollForDecisionTaskRequest{})
 	s.NoError(err)
 
 	// Process task and respond to the service.
@@ -105,22 +110,18 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	completionRequest := request.(*m.RespondDecisionTaskCompletedRequest)
 	s.NoError(err)
 
-	err = service.RespondDecisionTaskCompleted(ctx, completionRequest)
+	err = s.service.RespondDecisionTaskCompleted(ctx, completionRequest)
 	s.NoError(err)
 }
 
 func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
-	// Create service endpoint and get a activity task.
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
 	ctx, _ := thrift.NewContext(10)
 
 	// mocks
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
 
-	response, err := service.PollForActivityTask(ctx, &m.PollForActivityTaskRequest{})
+	response, err := s.service.PollForActivityTask(ctx, &m.PollForActivityTaskRequest{})
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
@@ -128,11 +129,11 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	request, err := taskHandler.Execute(tasklist, response)
 	s.NoError(err)
 	switch request.(type) {
-	case m.RespondActivityTaskCompletedRequest:
-		err = service.RespondActivityTaskCompleted(ctx, request.(*m.RespondActivityTaskCompletedRequest))
+	case *m.RespondActivityTaskCompletedRequest:
+		err = s.service.RespondActivityTaskCompleted(ctx, request.(*m.RespondActivityTaskCompletedRequest))
 		s.NoError(err)
-	case m.RespondActivityTaskFailedRequest:
-		err = service.RespondActivityTaskFailed(ctx, request.(*m.RespondActivityTaskFailedRequest))
+	case *m.RespondActivityTaskFailedRequest: // shouldn't happen
+		err = s.service.RespondActivityTaskFailed(ctx, request.(*m.RespondActivityTaskFailedRequest))
 		s.NoError(err)
 	}
 }

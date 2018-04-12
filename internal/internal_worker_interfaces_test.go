@@ -40,6 +40,8 @@ type (
 
 	InterfacesTestSuite struct {
 		suite.Suite
+		mockCtrl *gomock.Controller
+		service  *workflowservicetest.MockClient
 	}
 )
 
@@ -105,11 +107,17 @@ func greeterActivityFunc(ctx context.Context, input []byte) ([]byte, error) {
 }
 
 // Test suite.
-func (s *InterfacesTestSuite) SetupTest() {
-}
-
 func TestInterfacesTestSuite(t *testing.T) {
 	suite.Run(t, new(InterfacesTestSuite))
+}
+
+func (s *InterfacesTestSuite) SetupTest() {
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+}
+
+func (s *InterfacesTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
 func (s *InterfacesTestSuite) TestInterface() {
@@ -122,10 +130,6 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Logger: logger,
 	}
 
-	// Create service endpoint
-	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
 	domainStatus := m.DomainStatusRegistered
 	domainDesc := &m.DescribeDomainResponse{
 		DomainInfo: &m.DomainInfo{
@@ -135,16 +139,16 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// mocks
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
-	service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
-	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	env := getHostEnvironment()
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(service, domain, workflowExecutionParameters, nil, env)
+	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, env)
 	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
@@ -156,7 +160,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker(service, domain, activityExecutionParameters, nil, env)
+	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, env)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 
@@ -167,7 +171,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeout:    10 * time.Second,
 		DecisionTaskStartToCloseTimeout: 10 * time.Second,
 	}
-	workflowClient := NewClient(service, domain, nil)
+	workflowClient := NewClient(s.service, domain, nil)
 	wfExecution, err := workflowClient.StartWorkflow(context.Background(), workflowOptions, "workflowType")
 	s.NoError(err)
 	fmt.Printf("Started workflow: %v \n", wfExecution)

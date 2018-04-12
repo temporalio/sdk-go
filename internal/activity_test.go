@@ -29,139 +29,146 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
-	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/yarpc"
 )
 
+type activityTestSuite struct {
+	suite.Suite
+	mockCtrl *gomock.Controller
+	service  *workflowservicetest.MockClient
+}
+
+func TestActivityTestSuite(t *testing.T) {
+	s := new(activityTestSuite)
+	suite.Run(t, s)
+}
+
+func (s *activityTestSuite) SetupTest() {
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+}
+
+func (s *activityTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
+}
+
 // this is the mock for yarpcCallOptions, make sure length are the same
 var callOptions = []interface{}{gomock.Any(), gomock.Any(), gomock.Any()}
 
-func TestActivityHeartbeat(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
+func (s *activityTestSuite) TestActivityHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 }
 
-func TestActivityHeartbeat_InternalError(t *testing.T) {
+func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 	p := backoff.NewExponentialRetryPolicy(time.Millisecond)
 	p.SetMaximumInterval(100 * time.Millisecond)
 	p.SetExpirationInterval(100 * time.Millisecond)
 
-	mockCtrl := gomock.NewController(t)
-	service := workflowservicetest.NewMockClient(mockCtrl)
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
 	invoker.(*cadenceInvoker).retryPolicy = p
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(nil, &s.InternalServiceError{}).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(nil, &shared.InternalServiceError{}).
+		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			fmt.Println("MOCK RecordActivityTaskHeartbeat executed")
 		}).AnyTimes()
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 }
 
-func TestActivityHeartbeat_CancelRequested(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
+func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(true)}, nil).Times(1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(true)}, nil).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 	<-ctx.Done()
-	require.Equal(t, ctx.Err(), context.Canceled)
+	require.Equal(s.T(), ctx.Err(), context.Canceled)
 }
 
-func TestActivityHeartbeat_EntityNotExist(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
+func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, &s.EntityNotExistsError{}).Times(1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, &shared.EntityNotExistsError{}).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 	<-ctx.Done()
-	require.Equal(t, ctx.Err(), context.Canceled)
+	require.Equal(s.T(), ctx.Err(), context.Canceled)
 }
 
-func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	service := workflowservicetest.NewMockClient(mockCtrl)
-
+func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", service, cancel, 2)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 2)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
 
 	// Multiple calls but only one call is made.
-	service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
 	invoker.Close()
 
 	// No HB timeout configured.
-	service2 := workflowservicetest.NewMockClient(mockCtrl)
+	service2 := workflowservicetest.NewMockClient(s.mockCtrl)
 	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker2,
 		logger:         getLogger()})
 	service2.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
 	invoker2.Close()
 
 	// simulate batch picks before expiry.
 	waitCh := make(chan struct{})
-	service3 := workflowservicetest.NewMockClient(mockCtrl)
+	service3 := workflowservicetest.NewMockClient(s.mockCtrl)
 	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker3,
 		logger:         getLogger()})
 	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 
 	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			ev := EncodedValues(request.Details)
 			var progress string
 			err := ev.Get(&progress)
 			if err != nil {
 				panic(err)
 			}
-			require.Equal(t, "testDetails-expected", progress)
+			require.Equal(s.T(), "testDetails-expected", progress)
 			waitCh <- struct{}{}
 		}).Times(1)
 
@@ -174,17 +181,17 @@ func TestActivityHeartbeat_SuppressContinousInvokes(t *testing.T) {
 
 	// simulate batch picks before expiry, with out any progress specified.
 	waitCh2 := make(chan struct{})
-	service4 := workflowservicetest.NewMockClient(mockCtrl)
+	service4 := workflowservicetest.NewMockClient(s.mockCtrl)
 	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker4,
 		logger:         getLogger()})
 	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&s.RecordActivityTaskHeartbeatResponse{}, nil).
-		Do(func(ctx context.Context, request *s.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
-			require.Nil(t, request.Details)
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+			require.Nil(s.T(), request.Details)
 			waitCh2 <- struct{}{}
 		}).Times(1)
 
