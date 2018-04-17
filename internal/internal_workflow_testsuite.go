@@ -407,8 +407,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
 	result, err := taskHandler.Execute(defaultTestTaskList, task)
 	if err != nil {
-		panic(err)
+		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
+		st := getStackTraceRaw(topLine, 7, 0)
+		return nil, newPanicError(err.Error(), st)
 	}
+
 	if result == ErrActivityResultPending {
 		return nil, ErrActivityResultPending
 	}

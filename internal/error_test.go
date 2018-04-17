@@ -22,11 +22,11 @@ package internal
 
 import (
 	"errors"
-	"testing"
-
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
+	"testing"
 )
 
 const (
@@ -70,6 +70,18 @@ func Test_ActivityPanic(t *testing.T) {
 	panicErr, ok := err.(*PanicError)
 	require.True(t, ok)
 	require.Equal(t, "panic-blabla", panicErr.Error())
+}
+
+func Test_ActivityNotRegistered(t *testing.T) {
+	registeredActivityFn, unregisteredActivitFn := "RegisteredActivity", "UnregisteredActivityFn"
+	RegisterActivityWithOptions(func() error { return nil }, RegisterActivityOptions{Name: registeredActivityFn})
+	s := &WorkflowTestSuite{}
+	s.SetLogger(zap.NewNop())
+	env := s.NewTestActivityEnvironment()
+	_, err := env.ExecuteActivity(unregisteredActivitFn)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), fmt.Sprintf("unable to find activityType=%v", unregisteredActivitFn))
+	require.Contains(t, err.Error(), registeredActivityFn)
 }
 
 func Test_WorkflowError(t *testing.T) {

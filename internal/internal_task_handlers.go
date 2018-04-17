@@ -1240,7 +1240,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	activityImplementation := ath.getActivity(activityType.GetName())
 	if activityImplementation == nil {
 		// Couldn't find the activity implementation.
-		return nil, fmt.Errorf("unable to find activityType=%v", activityType.GetName())
+		supported := strings.Join(ath.getRegisteredActivityNames(), ", ")
+		return nil, fmt.Errorf("unable to find activityType=%v. Supported types: [%v]", activityType.GetName(), supported)
 	}
 
 	// panic handler
@@ -1280,6 +1281,13 @@ func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
 	}
 
 	return nil
+}
+
+func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames []string) {
+	for _, a := range ath.hostEnv.activityFuncMap {
+		activityNames = append(activityNames, a.ActivityType().Name)
+	}
+	return
 }
 
 func createNewDecision(decisionType s.DecisionType) *s.Decision {
