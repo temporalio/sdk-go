@@ -402,7 +402,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 			for k := range eo.queryHandlers {
 				keys = append(keys, k)
 			}
-			return nil, fmt.Errorf("unkonwn queryType %v. KnownQueryTypes=%v", queryType, keys)
+			return nil, fmt.Errorf("unknown queryType %v. KnownQueryTypes=%v", queryType, keys)
 		}
 		return handler(queryArgs)
 	})

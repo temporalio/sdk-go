@@ -325,7 +325,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	queryResp, ok := response.(*s.RespondQueryTaskCompletedRequest)
 	t.True(ok)
 	t.NotNil(queryResp.ErrorMessage)
-	t.Contains(*queryResp.ErrorMessage, "unkonwn queryType")
+	t.Contains(*queryResp.ErrorMessage, "unknown queryType")
 }
 
 func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expectedResult string) {
