@@ -25,9 +25,7 @@ import:
   - transport/http
   - transport/tchannel
 - package: go.uber.org/zap
-  version: v1.4.0
-  subpackages:
-  - zapcore
+  version: ^1.8
 - package: golang.org/x/net
   subpackages:
   - context

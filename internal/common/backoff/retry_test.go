@@ -22,32 +22,16 @@ package backoff
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
 )
 
-type (
-	RetrySuite struct {
-		*require.Assertions // override suite.Suite.Assertions with require.Assertions; this means that s.NotNil(nil) will stop the test, not merely log an error
-		suite.Suite
-	}
+type someError struct{}
 
-	someError struct{}
-)
-
-func TestRetrySuite(t *testing.T) {
-	suite.Run(t, new(RetrySuite))
-}
-
-func (s *RetrySuite) SetupTest() {
-	s.Assertions = require.New(s.T()) // Have to define our overridden assertions in the test setup. If we did it earlier, s.T() will return nil
-}
-
-func (s *RetrySuite) TestRetrySuccess() {
+func TestRetrySuccess(t *testing.T) {
+	t.Parallel()
 	i := 0
 	op := func() error {
 		i++
@@ -64,11 +48,12 @@ func (s *RetrySuite) TestRetrySuccess() {
 	policy.SetMaximumAttempts(10)
 
 	err := Retry(context.Background(), op, policy, nil)
-	s.NoError(err)
-	s.Equal(5, i)
+	assert.NoError(t, err)
+	assert.Equal(t, 5, i)
 }
 
-func (s *RetrySuite) TestNoRetryAfterContextDone() {
+func TestNoRetryAfterContextDone(t *testing.T) {
+	t.Parallel()
 	i := 0
 	op := func() error {
 		i++
@@ -88,11 +73,12 @@ func (s *RetrySuite) TestNoRetryAfterContextDone() {
 	defer cancel()
 
 	err := Retry(ctx, op, policy, nil)
-	s.Error(err)
-	s.True(i >= 2) // verify that we did retried
+	assert.Error(t, err)
+	assert.True(t, i >= 2) // verify that we did retry
 }
 
-func (s *RetrySuite) TestRetryFailed() {
+func TestRetryFailed(t *testing.T) {
+	t.Parallel()
 	i := 0
 	op := func() error {
 		i++
@@ -109,10 +95,11 @@ func (s *RetrySuite) TestRetryFailed() {
 	policy.SetMaximumAttempts(5)
 
 	err := Retry(context.Background(), op, policy, nil)
-	s.Error(err)
+	assert.Error(t, err)
 }
 
-func (s *RetrySuite) TestIsRetryableSuccess() {
+func TestIsRetryableSuccess(t *testing.T) {
+	t.Parallel()
 	i := 0
 	op := func() error {
 		i++
@@ -137,11 +124,12 @@ func (s *RetrySuite) TestIsRetryableSuccess() {
 	policy.SetMaximumAttempts(10)
 
 	err := Retry(context.Background(), op, policy, isRetryable)
-	s.NoError(err, "Retry count: %v", i)
-	s.Equal(5, i)
+	assert.NoError(t, err, "Retry count: %v", i)
+	assert.Equal(t, 5, i)
 }
 
-func (s *RetrySuite) TestIsRetryableFailure() {
+func TestIsRetryableFailure(t *testing.T) {
+	t.Parallel()
 	i := 0
 	op := func() error {
 		i++
@@ -158,11 +146,13 @@ func (s *RetrySuite) TestIsRetryableFailure() {
 	policy.SetMaximumAttempts(10)
 
 	err := Retry(context.Background(), op, policy, IgnoreErrors([]error{&someError{}}))
-	s.Error(err)
-	s.Equal(1, i)
+	assert.Error(t, err)
+	assert.Equal(t, 1, i)
 }
 
-func (s *RetrySuite) TestConcurrentRetrier() {
+func TestConcurrentRetrier(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
 	policy := NewExponentialRetryPolicy(1 * time.Millisecond)
 	policy.SetMaximumInterval(10 * time.Millisecond)
 	policy.SetMaximumAttempts(4)
@@ -170,16 +160,16 @@ func (s *RetrySuite) TestConcurrentRetrier() {
 	// Basic checks
 	retrier := NewConcurrentRetrier(policy)
 	retrier.Failed()
-	s.Equal(int64(1), retrier.failureCount)
+	a.Equal(int64(1), retrier.failureCount)
 	retrier.Succeeded()
-	s.Equal(int64(0), retrier.failureCount)
+	a.Equal(int64(0), retrier.failureCount)
 	sleepDuration := retrier.throttleInternal()
-	s.Equal(done, sleepDuration)
+	a.Equal(done, sleepDuration)
 
 	// Multiple count check.
 	retrier.Failed()
 	retrier.Failed()
-	s.Equal(int64(2), retrier.failureCount)
+	a.Equal(int64(2), retrier.failureCount)
 	// Verify valid sleep times.
 	ch := make(chan time.Duration, 3)
 	go func() {
@@ -189,11 +179,11 @@ func (s *RetrySuite) TestConcurrentRetrier() {
 	}()
 	for i := 0; i < 3; i++ {
 		val := <-ch
-		fmt.Printf("Duration: %d\n", val)
-		s.True(val > 0)
+		t.Logf("Duration: %d\n", val)
+		a.True(val > 0)
 	}
 	retrier.Succeeded()
-	s.Equal(int64(0), retrier.failureCount)
+	a.Equal(int64(0), retrier.failureCount)
 	// Verify we don't have any sleep times.
 	go func() {
 		for i := 0; i < 3; i++ {
@@ -202,8 +192,8 @@ func (s *RetrySuite) TestConcurrentRetrier() {
 	}()
 	for i := 0; i < 3; i++ {
 		val := <-ch
-		fmt.Printf("Duration: %d\n", val)
-		s.Equal(done, val)
+		t.Logf("Duration: %d\n", val)
+		a.Equal(done, val)
 	}
 }
 

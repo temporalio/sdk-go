@@ -24,30 +24,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
 )
 
-type (
-	RetryPolicySuite struct {
-		*require.Assertions // override suite.Suite.Assertions with require.Assertions; this means that s.NotNil(nil) will stop the test, not merely log an error
-		suite.Suite
-	}
-
-	TestClock struct {
-		currentTime time.Time
-	}
-)
-
-func TestRetryPolicySuite(t *testing.T) {
-	suite.Run(t, new(RetryPolicySuite))
+type TestClock struct {
+	currentTime time.Time
 }
 
-func (s *RetryPolicySuite) SetupTest() {
-	s.Assertions = require.New(s.T()) // Have to define our overridden assertions in the test setup. If we did it earlier, s.T() will return nil
-}
-
-func (s *RetryPolicySuite) TestExponentialBackoff() {
+func TestExponentialBackoff(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(time.Second)
 	policy.SetMaximumInterval(10 * time.Second)
 
@@ -60,12 +45,13 @@ func (s *RetryPolicySuite) TestExponentialBackoff() {
 	for _, expected := range expectedResult {
 		min, max := getNextBackoffRange(expected)
 		next := r.NextBackOff()
-		s.True(next >= min, "NextBackoff too low")
-		s.True(next < max, "NextBackoff too high")
+		assert.True(t, next >= min, "NextBackoff too low")
+		assert.True(t, next < max, "NextBackoff too high")
 	}
 }
 
-func (s *RetryPolicySuite) TestNumberOfAttempts() {
+func TestNumberOfAttempts(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(time.Second)
 	policy.SetMaximumAttempts(5)
 
@@ -75,11 +61,12 @@ func (s *RetryPolicySuite) TestNumberOfAttempts() {
 		next = r.NextBackOff()
 	}
 
-	s.Equal(done, next)
+	assert.Equal(t, done, next)
 }
 
 // Test to make sure relative maximum interval for each retry is honoured
-func (s *RetryPolicySuite) TestMaximumInterval() {
+func TestMaximumInterval(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(time.Second)
 	policy.SetMaximumInterval(10 * time.Second)
 
@@ -92,12 +79,13 @@ func (s *RetryPolicySuite) TestMaximumInterval() {
 	for _, expected := range expectedResult {
 		min, max := getNextBackoffRange(expected)
 		next := r.NextBackOff()
-		s.True(next >= min, "NextBackoff too low")
-		s.True(next < max, "NextBackoff too high")
+		assert.True(t, next >= min, "NextBackoff too low")
+		assert.True(t, next < max, "NextBackoff too high")
 	}
 }
 
-func (s *RetryPolicySuite) TestBackoffCoefficient() {
+func TestBackoffCoefficient(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(2 * time.Second)
 	policy.SetBackoffCoefficient(1.0)
 
@@ -105,12 +93,13 @@ func (s *RetryPolicySuite) TestBackoffCoefficient() {
 	min, max := getNextBackoffRange(2 * time.Second)
 	for i := 0; i < 10; i++ {
 		next := r.NextBackOff()
-		s.True(next >= min, "NextBackoff too low")
-		s.True(next < max, "NextBackoff too high")
+		assert.True(t, next >= min, "NextBackoff too low")
+		assert.True(t, next < max, "NextBackoff too high")
 	}
 }
 
-func (s *RetryPolicySuite) TestExpirationInterval() {
+func TestExpirationInterval(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(2 * time.Second)
 	policy.SetExpirationInterval(5 * time.Minute)
 
@@ -118,28 +107,30 @@ func (s *RetryPolicySuite) TestExpirationInterval() {
 	clock.moveClock(6 * time.Minute)
 	next := r.NextBackOff()
 
-	s.Equal(done, next)
+	assert.Equal(t, done, next)
 }
 
-func (s *RetryPolicySuite) TestExpirationOverflow() {
+func TestExpirationOverflow(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(2 * time.Second)
 	policy.SetExpirationInterval(5 * time.Second)
 
 	r, clock := createRetrier(policy)
 	next := r.NextBackOff()
 	min, max := getNextBackoffRange(2 * time.Second)
-	s.True(next >= min, "NextBackoff too low")
-	s.True(next < max, "NextBackoff too high")
+	assert.True(t, next >= min, "NextBackoff too low")
+	assert.True(t, next < max, "NextBackoff too high")
 
 	clock.moveClock(2 * time.Second)
 
 	next = r.NextBackOff()
 	min, max = getNextBackoffRange(3 * time.Second)
-	s.True(next >= min, "NextBackoff too low")
-	s.True(next < max, "NextBackoff too high")
+	assert.True(t, next >= min, "NextBackoff too low")
+	assert.True(t, next < max, "NextBackoff too high")
 }
 
-func (s *RetryPolicySuite) TestDefaultPublishRetryPolicy() {
+func TestDefaultPublishRetryPolicy(t *testing.T) {
+	t.Parallel()
 	policy := NewExponentialRetryPolicy(50 * time.Millisecond)
 	policy.SetExpirationInterval(time.Minute)
 	policy.SetMaximumInterval(10 * time.Second)
@@ -166,17 +157,18 @@ func (s *RetryPolicySuite) TestDefaultPublishRetryPolicy() {
 	for _, expected := range expectedResult {
 		next := r.NextBackOff()
 		if expected == done {
-			s.Equal(done, next, "backoff not done yet!!!")
+			assert.Equal(t, done, next, "backoff not done yet!!!")
 		} else {
 			min, _ := getNextBackoffRange(expected)
-			s.True(next >= min, "NextBackoff too low: actual: %v, expected: %v", next, expected)
+			assert.True(t, next >= min, "NextBackoff too low: actual: %v, expected: %v", next, expected)
 			// s.True(next < max, "NextBackoff too high: actual: %v, expected: %v", next, expected)
 			clock.moveClock(expected)
 		}
 	}
 }
 
-func (s *RetryPolicySuite) TestNoMaxAttempts() {
+func TestNoMaxAttempts(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(50 * time.Millisecond)
 	policy.SetExpirationInterval(time.Minute)
 	policy.SetMaximumInterval(10 * time.Second)
@@ -184,20 +176,19 @@ func (s *RetryPolicySuite) TestNoMaxAttempts() {
 	r, clock := createRetrier(policy)
 	for i := 0; i < 100; i++ {
 		next := r.NextBackOff()
-		//print("Iter: ", i, ", Next Backoff: ", next.String(), "\n")
-		s.True(next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
+		assert.True(t, next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
 		clock.moveClock(next)
 	}
 }
 
-func (s *RetryPolicySuite) TestUnbounded() {
+func TestUnbounded(t *testing.T) {
+	t.Parallel()
 	policy := createPolicy(50 * time.Millisecond)
 
 	r, clock := createRetrier(policy)
 	for i := 0; i < 100; i++ {
 		next := r.NextBackOff()
-		//print("Iter: ", i, ", Next Backoff: ", next.String(), "\n")
-		s.True(next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
+		assert.True(t, next > 0 || next == done, "Unexpected value for next retry duration: %v", next)
 		clock.moveClock(next)
 	}
 }

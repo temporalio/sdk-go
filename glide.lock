@@ -1,30 +1,26 @@
-hash: 745b0872471ea2887cc9d082d9916ae03a0c0326565fa764bf97442833e3fe88
-updated: 2018-01-17T18:51:59.779661716-08:00
+hash: 40108e87b54f961cec8a59268489facb169b98108263aa2dfa3d1e4fbb121d84
+updated: 2018-04-13T19:49:08.575757163-07:00
 imports:
 - name: github.com/apache/thrift
   version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
   subpackages:
   - lib/go/thrift
 - name: github.com/beorn7/perks
-  version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
+  version: 3a771d992973f24aa725d07868b467d1ddfceafb
   subpackages:
   - quantile
 - name: github.com/davecgh/go-spew
-  version: ecdeabc65495df2dec95d7c4a4c3e021903035e5
+  version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
   - spew
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
-- name: github.com/gogo/protobuf
-  version: 342cbe0a04158f6dcb03ca0079991a51a4248c02
-  subpackages:
-  - proto
 - name: github.com/golang/mock
-  version: b3e60bcdc577185fce3cf625fc96b62857ce5574
+  version: c34cdb4725f4c3844d095133c6e40e448b86589b
   subpackages:
   - gomock
 - name: github.com/golang/protobuf
-  version: 1e59b77b52bf8e4b449a57e6f79f21226d571845
+  version: e09c5db296004fbe3f74490e84dcd62c3c5ddb1b
   subpackages:
   - proto
 - name: github.com/matttproud/golang_protobuf_extensions
@@ -52,19 +48,21 @@ imports:
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 89604d197083d4781071d3c65855d24ecfb0a563
+  version: 2f17f4a9d485bf34b4bfaccc273805040e4f86c8
   subpackages:
   - expfmt
   - internal/bitbucket.org/ww/goautoneg
   - model
 - name: github.com/prometheus/procfs
-  version: b15cd069a83443be3154b719d0cc9fe8117f09fb
+  version: 780932d4fbbe0e69b84c34c20f5c8d0981e109ea
   subpackages:
+  - internal/util
+  - nfs
   - xfs
 - name: github.com/stretchr/objx
-  version: bc43df392909781b3b7b1912fcf414b6e088936e
+  version: 8a3f7159479fbc75b30357fbc48f380b7320f08e
 - name: github.com/stretchr/testify
-  version: b91bfb9ebec76498946beb6af7c0230c7cc7ba6c
+  version: 12b6f73e6084dad08a7c6e575284b177ecafbc71
   subpackages:
   - assert
   - mock
@@ -89,12 +87,18 @@ imports:
   version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
 - name: go.uber.org/multierr
   version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
+- name: go.uber.org/net/metrics
+  version: 1e19de5b971489a45d178e12a0f72a78c70e300e
+  subpackages:
+  - bucket
+  - push
+  - tallypush
 - name: go.uber.org/thriftrw
-  version: 6216e5bb19132c14e979cf9c62abae6f022a0c0d
+  version: 43dfafd7bb1c99f0460d645a1959b73f6dfa536f
   subpackages:
   - version
 - name: go.uber.org/yarpc
-  version: fcda50e344855f55cc48369437d2ca1b37f8915a
+  version: 4ac8938c1046d4db2dc26a1436699935a8c5bb35
   subpackages:
   - api/encoding
   - api/middleware
@@ -108,23 +112,21 @@ imports:
   - internal/introspection
   - internal/observability
   - internal/outboundmiddleware
-  - internal/pally
   - internal/request
   - pkg/lifecycle
   - transport/http
   - transport/tchannel
   - yarpcerrors
 - name: go.uber.org/zap
-  version: fab453050a7a08c35f31fc5fff6f2dbd962285ab
+  version: eeedf312bc6c57391d84767a4cd413f02a917974
   subpackages:
   - buffer
   - internal/bufferpool
   - internal/color
   - internal/exit
-  - internal/multierror
   - zapcore
 - name: golang.org/x/net
-  version: 5ccada7d0a7ba9aeb5d3aca8d3501b4c2a509fec
+  version: 61147c48b25b599e5b561d2e9c4f3e1ef489ca41
   subpackages:
   - bpf
   - context
@@ -139,8 +141,3 @@ imports:
 testImports:
 - name: github.com/sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
-- name: golang.org/x/sys
-  version: 2c42eef0765b9837fbdab12011af7830f55f88f0
-  repo: https://github.com/golang/sys
-  subpackages:
-  - unix
