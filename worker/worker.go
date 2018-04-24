@@ -22,8 +22,13 @@
 package worker
 
 import (
+	"context"
+
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal"
+	"go.uber.org/cadence/workflow"
+	"go.uber.org/zap"
 )
 
 type (
@@ -54,4 +59,22 @@ func New(
 // Also there is no guarantee that this API is not going to change.
 func EnableVerboseLogging(enable bool) {
 	internal.EnableVerboseLogging(enable)
+}
+
+// ReplayWorkflowHistory executes a single decision task for the given history.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+//
+// The logger is an optional parameter. Defaults to the noop logger.
+// The response contains the decisions produced processing the decision task. It is either
+// RespondDecisionTaskCompletedRequest or RespondDecisionTaskFailedRequest.
+// The returned stackTrace contains the stack trace of the workflow at the end of the decision.
+func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
+	return internal.ReplayWorkflowHistory(logger, history)
+}
+
+// ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is the only optional parameter. Defaults to the noop logger.
+func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.Interface, logger *zap.Logger, domain string, execution workflow.Execution) error {
+	return internal.ReplayWorkflowExecution(ctx, service, logger, domain, execution)
 }

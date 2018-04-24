@@ -22,11 +22,17 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"math"
 	"time"
 
+	"github.com/golang/mock/gomock"
+	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -147,4 +153,125 @@ func NewWorker(
 	options WorkerOptions,
 ) Worker {
 	return newAggregatedWorker(service, domain, taskList, options)
+}
+
+// ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is the only optional parameter. Defaults to the noop logger.
+func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.Interface, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+	sharedExecution := &shared.WorkflowExecution{
+		RunId:      common.StringPtr(execution.RunID),
+		WorkflowId: common.StringPtr(execution.ID),
+	}
+	request := &shared.GetWorkflowExecutionHistoryRequest{
+		Domain:    common.StringPtr(domain),
+		Execution: sharedExecution,
+	}
+	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
+	if err != nil {
+		return err
+	}
+	events := hResponse.History.Events
+	if events == nil {
+		return errors.New("empty events")
+	}
+	if len(events) < 3 {
+		return errors.New("at least 3 events expected in the history")
+	}
+	first := events[0]
+	if first.GetEventType() != shared.EventTypeWorkflowExecutionStarted {
+		return errors.New("first event is not WorkflowExecutionStarted")
+	}
+	attr := first.WorkflowExecutionStartedEventAttributes
+	if attr == nil {
+		return errors.New("corrupted WorkflowExecutionStarted")
+	}
+	workflowType := attr.WorkflowType
+	task := &shared.PollForDecisionTaskResponse{
+		Attempt:           common.Int64Ptr(0),
+		TaskToken:         []byte("ReplayTaskToken"),
+		NextPageToken:     hResponse.NextPageToken,
+		WorkflowType:      workflowType,
+		WorkflowExecution: sharedExecution,
+	}
+	metricScope := tally.NoopScope
+	iterator := &historyIteratorImpl{
+		nextPageToken: task.NextPageToken,
+		execution:     task.WorkflowExecution,
+		domain:        "ReplayDomain",
+		service:       service,
+		metricsScope:  metricScope,
+		maxEventID:    task.GetStartedEventId(),
+	}
+	taskList := "ReplayTaskList"
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "replayID",
+		Logger:   logger,
+	}
+	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
+	_, _, err = taskHandler.ProcessWorkflowTask(task, iterator, false)
+	return err
+}
+
+// ReplayWorkflowHistory executes a single decision task for the given history.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
+	domain := "ReplayDomain"
+	taskList := "ReplayTaskList"
+	events := history.Events
+	if events == nil {
+		return errors.New("empty events")
+	}
+	if len(events) < 3 {
+		return errors.New("at least 3 events expected in the history")
+	}
+	first := events[0]
+	if first.GetEventType() != shared.EventTypeWorkflowExecutionStarted {
+		return errors.New("first event is not WorkflowExecutionStarted")
+	}
+	attr := first.WorkflowExecutionStartedEventAttributes
+	if attr == nil {
+		return errors.New("corrupted WorkflowExecutionStarted")
+	}
+	workflowType := attr.WorkflowType
+	execution := &shared.WorkflowExecution{
+		RunId:      common.StringPtr(uuid.NewUUID().String()),
+		WorkflowId: common.StringPtr("ReplayId"),
+	}
+	task := &shared.PollForDecisionTaskResponse{
+		Attempt:                common.Int64Ptr(0),
+		TaskToken:              []byte("ReplayTaskToken"),
+		WorkflowType:           workflowType,
+		WorkflowExecution:      execution,
+		History:                history,
+		PreviousStartedEventId: common.Int64Ptr(math.MaxInt64),
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	testReporter := logger.Sugar()
+	controller := gomock.NewController(testReporter)
+	service := workflowservicetest.NewMockClient(controller)
+	metricScope := tally.NoopScope
+	iterator := &historyIteratorImpl{
+		nextPageToken: task.NextPageToken,
+		execution:     task.WorkflowExecution,
+		domain:        domain,
+		service:       service,
+		metricsScope:  metricScope,
+		maxEventID:    task.GetStartedEventId(),
+	}
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "replayID",
+		Logger:   logger,
+	}
+	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
+	_, _, err := taskHandler.ProcessWorkflowTask(task, iterator, false)
+	return err
 }

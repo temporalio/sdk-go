@@ -24,12 +24,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"reflect"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +33,11 @@ import (
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"os"
+	"reflect"
+	"sync"
+	"testing"
+	"time"
 )
 
 func init() {
@@ -47,7 +46,6 @@ func init() {
 		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
 	)
 	RegisterWorkflow(testReplayWorkflow)
-
 	RegisterActivityWithOptions(
 		testActivity,
 		RegisterActivityOptions{Name: "testActivity"},
@@ -77,7 +75,7 @@ type internalWorkerTestSuite struct {
 	service  *workflowservicetest.MockClient
 }
 
-func TestinternalWorkferTestSuite(t *testing.T) {
+func TestInternalWorkerTestSuite(t *testing.T) {
 	s := new(internalWorkerTestSuite)
 	suite.Run(t, s)
 }
@@ -112,6 +110,31 @@ func testReplayWorkflow(ctx Context) error {
 
 func testActivity(ctx context.Context) error {
 	return nil
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
+	taskList := "taskList1"
+	testEvents := []*shared.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflow")},
+			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
+			Input:        testEncodeFunctionArgs(testReplayWorkflow),
+		}),
+		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &shared.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &shared.ActivityType{Name: common.StringPtr("testActivity")},
+			TaskList:     &shared.TaskList{Name: &taskList},
+		}),
+		createTestEventActivityTaskStarted(6, &shared.ActivityTaskStartedEventAttributes{}),
+	}
+
+	history := &shared.History{Events: testEvents}
+	logger := getLogger()
+	err := ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {
@@ -350,7 +373,8 @@ func (s *internalWorkerTestSuite) TestCompleteActivity() {
 	require.NotNil(t, failedRequest)
 }
 
-func (s *internalWorkerTestSuite) TestCompleteActivityById(t *testing.T) {
+func (s *internalWorkerTestSuite) TestCompleteActivityById() {
+	t := s.T()
 	mockService := s.service
 
 	domain := "testDomain"
