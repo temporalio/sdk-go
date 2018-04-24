@@ -22,13 +22,14 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
-	"go.uber.org/cadence/encoded"
-
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/zap"
 )
 
@@ -168,6 +169,10 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 	return t.wrapCall(call)
 }
 
+// ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
+// This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
+var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", shared.ChildWorkflowExecutionFailedCauseWorkflowAlreadyRunning)
+
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked workflow, or it should be
@@ -181,6 +186,8 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 //   })
 // OR return mock values with same types as workflow function's return types:
 //   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
+// You could also setup mock to simulate start child workflow failure case by returning ErrMockStartChildWorkflowFailed
+// as error.
 func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(workflow)
 	var call *mock.Call

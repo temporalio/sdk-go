@@ -354,13 +354,6 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType str
 	// In case of child workflow, this executeWorkflowInternal() is run in separate goroutinue, so use postCallback
 	// to make sure workflowDef.Execute() is run in main loop.
 	env.postCallback(func() {
-		if env.isChildWorkflow() {
-			// notify parent that child workflow is started
-			env.parentEnv.postCallback(func() {
-				env.startedHandler(env.workflowInfo.WorkflowExecution, nil)
-			}, true)
-		}
-
 		env.workflowDef.Execute(env, input)
 	}, false)
 	env.startMainLoop()
@@ -968,8 +961,25 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	// ExecuteUntilAllBlocked() returns).
 	env.runningCount--
 
+	childWE := env.workflowInfo.WorkflowExecution
+	var startedErr error
 	if mockRet != nil {
-		return m.executeMock(ctx, input, mockRet)
+		// workflow was mocked.
+		result, err = m.executeMock(ctx, input, mockRet)
+		if env.isChildWorkflow() && err == ErrMockStartChildWorkflowFailed {
+			childWE, startedErr = WorkflowExecution{}, err
+		}
+	}
+
+	if env.isChildWorkflow() {
+		// notify parent that child workflow is started
+		env.parentEnv.postCallback(func() {
+			env.startedHandler(childWE, startedErr)
+		}, true)
+	}
+
+	if mockRet != nil {
+		return result, err
 	}
 
 	// no mock, so call the actual workflow

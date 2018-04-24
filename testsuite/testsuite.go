@@ -38,3 +38,6 @@ type (
 	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
 	MockCallWrapper = internal.MockCallWrapper
 )
+
+// ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
+var ErrMockStartChildWorkflowFailed = internal.ErrMockStartChildWorkflowFailed

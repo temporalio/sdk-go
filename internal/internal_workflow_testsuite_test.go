@@ -565,6 +565,28 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
 	s.Equal("mock_msg mock_msg mock_heartbeat", actualResult)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
+	workflowFn := func(ctx Context) (string, error) {
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, testWorkflowHello).GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return "", errors.New("fail to start child")
+		}
+
+		return "should-not-go-here", nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything).Return("", ErrMockStartChildWorkflowFailed)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Equal("fail to start child", env.GetWorkflowError().Error())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
