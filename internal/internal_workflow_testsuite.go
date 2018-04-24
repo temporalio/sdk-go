@@ -1299,16 +1299,14 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 			childEnv.signalHandler(signalName, input)
 			callback(nil, nil)
 		}
+		childEnv.postCallback(func() {}, true) // resume child workflow since a signal is sent.
 		return
 	}
 
 	// here we signal a child workflow but we cannot find it
 	if childWorkflowOnly {
-		env.postCallback(func() {
-			// currently the only cause
-			err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
-			callback(nil, err)
-		}, true)
+		err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
+		callback(nil, err)
 		return
 	}
 
