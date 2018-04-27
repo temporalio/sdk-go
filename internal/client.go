@@ -285,23 +285,22 @@ type (
 		//	- InternalServiceError
 		Register(ctx context.Context, request *s.RegisterDomainRequest) error
 
-		// Describe a domain. The domain has two part of information.
-		// DomainInfo - Which has Name, Status, Description, Owner Email.
+		// Describe a domain. The domain has 3 part of information
+		// DomainInfo - Which has Name, Status, Description, Owner Email
 		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Describe(ctx context.Context, name string) (*s.DomainInfo, *s.DomainConfiguration, error)
+		Describe(ctx context.Context, name string) (*s.DescribeDomainResponse, error)
 
-		// Update a domain. The domain has two part of information.
-		// UpdateDomainInfo - To update domain Description and Owner Email.
-		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// Update a domain.
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Update(ctx context.Context, name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error
+		Update(ctx context.Context, request *s.UpdateDomainRequest) error
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.

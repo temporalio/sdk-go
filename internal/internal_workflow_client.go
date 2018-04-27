@@ -656,14 +656,15 @@ func (dc *domainClient) Register(ctx context.Context, request *s.RegisterDomainR
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 }
 
-// Describe a domain. The domain has two part of information
+// Describe a domain. The domain has 3 part of information
 // DomainInfo - Which has Name, Status, Description, Owner Email
 // DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+// ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Describe(ctx context.Context, name string) (*s.DomainInfo, *s.DomainConfiguration, error) {
+func (dc *domainClient) Describe(ctx context.Context, name string) (*s.DescribeDomainResponse, error) {
 	request := &s.DescribeDomainRequest{
 		Name: common.StringPtr(name),
 	}
@@ -678,25 +679,17 @@ func (dc *domainClient) Describe(ctx context.Context, name string) (*s.DomainInf
 			return err
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return response.DomainInfo, response.Configuration, nil
+	return response, nil
 }
 
-// Update a domain. The domain has two part of information
-// DomainInfo - Which has Name, Status, Description, Owner Email
-// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+// Update a domain.
 // The errors it can throw:
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Update(ctx context.Context, name string, domainInfo *s.UpdateDomainInfo, domainConfig *s.DomainConfiguration) error {
-	request := &s.UpdateDomainRequest{
-		Name:          common.StringPtr(name),
-		UpdatedInfo:   domainInfo,
-		Configuration: domainConfig,
-	}
-
+func (dc *domainClient) Update(ctx context.Context, request *s.UpdateDomainRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel, opt := newChannelContext(ctx)

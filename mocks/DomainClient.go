@@ -31,35 +31,26 @@ type DomainClient struct {
 }
 
 // Describe provides a mock function with given fields: ctx, name
-func (_m *DomainClient) Describe(ctx context.Context, name string) (*shared.DomainInfo, *shared.DomainConfiguration, error) {
+func (_m *DomainClient) Describe(ctx context.Context, name string) (*shared.DescribeDomainResponse, error) {
 	ret := _m.Called(ctx, name)
 
-	var r0 *shared.DomainInfo
-	if rf, ok := ret.Get(0).(func(context.Context, string) *shared.DomainInfo); ok {
+	var r0 *shared.DescribeDomainResponse
+	if rf, ok := ret.Get(0).(func(context.Context, string) *shared.DescribeDomainResponse); ok {
 		r0 = rf(ctx, name)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.DomainInfo)
+			r0 = ret.Get(0).(*shared.DescribeDomainResponse)
 		}
 	}
 
-	var r1 *shared.DomainConfiguration
-	if rf, ok := ret.Get(1).(func(context.Context, string) *shared.DomainConfiguration); ok {
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
 		r1 = rf(ctx, name)
 	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*shared.DomainConfiguration)
-		}
+		r1 = ret.Error(1)
 	}
 
-	var r2 error
-	if rf, ok := ret.Get(2).(func(context.Context, string) error); ok {
-		r2 = rf(ctx, name)
-	} else {
-		r2 = ret.Error(2)
-	}
-
-	return r0, r1, r2
+	return r0, r1
 }
 
 // Register provides a mock function with given fields: ctx, request
@@ -76,13 +67,13 @@ func (_m *DomainClient) Register(ctx context.Context, request *shared.RegisterDo
 	return r0
 }
 
-// Update provides a mock function with given fields: ctx, name, domainInfo, domainConfig
-func (_m *DomainClient) Update(ctx context.Context, name string, domainInfo *shared.UpdateDomainInfo, domainConfig *shared.DomainConfiguration) error {
-	ret := _m.Called(ctx, name, domainInfo, domainConfig)
+// Update provides a mock function with given fields: ctx, request
+func (_m *DomainClient) Update(ctx context.Context, request *shared.UpdateDomainRequest) error {
+	ret := _m.Called(ctx)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, *shared.UpdateDomainInfo, *shared.DomainConfiguration) error); ok {
-		r0 = rf(ctx, name, domainInfo, domainConfig)
+	if rf, ok := ret.Get(0).(func(context.Context, *shared.UpdateDomainRequest) error); ok {
+		r0 = rf(ctx, request)
 	} else {
 		r0 = ret.Error(0)
 	}
