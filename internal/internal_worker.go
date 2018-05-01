@@ -962,7 +962,9 @@ func (aw *aggregatedWorker) Start() error {
 		}
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
-			aw.workflowWorker.Stop()
+			if !isInterfaceNil(aw.workflowWorker) {
+				aw.workflowWorker.Stop()
+			}
 			return err
 		}
 	}
