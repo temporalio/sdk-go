@@ -79,7 +79,6 @@ type (
 	workflowExecutionContext struct {
 		sync.Mutex
 		workflowStartTime time.Time
-		runID             string
 		workflowInfo      *WorkflowInfo
 		wth               *workflowTaskHandlerImpl
 
@@ -384,7 +383,7 @@ func (w *workflowExecutionContext) release() {
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
 		// if the close decision failed, the next decision will have to rebuild the state.
 		w.destroyCachedState()
-		removeWorkflowContext(w.runID)
+		removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 	}
 
 	w.Unlock()
@@ -483,6 +482,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 			workflowContext.laTunnel = wth.laTunnel
 			workflowContext.decisionStartTime = time.Now()
 		}
+		wth.metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
 	}()
 
 	skipReplayCheck = task.Query != nil
