@@ -78,3 +78,14 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.Interface, logger *zap.Logger, domain string, execution workflow.Execution) error {
 	return internal.ReplayWorkflowExecution(ctx, service, logger, domain, execution)
 }
+
+// SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
+// between decision tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
+// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
+// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
+// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
+// between workers running within same process. This must be called before any worker is started. If not called, the
+// default size of 10K (might change in future) will be used.
+func SetStickyWorkflowCacheSize(cacheSize int) {
+	internal.SetStickyWorkflowCacheSize(cacheSize)
+}

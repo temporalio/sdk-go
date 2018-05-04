@@ -318,15 +318,43 @@ func newWorkflowTaskHandler(
 }
 
 // TODO: need a better eviction policy based on memory usage
-var workflowCache = cache.New(defaultStickyCacheSize, &cache.Options{
-	RemovedFunc: func(cachedEntity interface{}) {
-		wc := cachedEntity.(*workflowExecutionContext)
-		wc.onEviction()
-	},
-})
+var workflowCache cache.Cache
+var stickyCacheSize = defaultStickyCacheSize
+var initCacheOnce sync.Once
+var stickyCacheLock sync.Mutex
+
+// SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
+// between decision tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
+// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
+// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
+// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
+// between workers running within same process. This must be called before any worker is started. If not called, the
+// default size of 10K (might change in future) will be used.
+func SetStickyWorkflowCacheSize(cacheSize int) {
+	stickyCacheLock.Lock()
+	defer stickyCacheLock.Unlock()
+	if workflowCache != nil {
+		panic("cache already created, please set cache size before worker starts.")
+	}
+	stickyCacheSize = cacheSize
+}
+
+func getWorkflowCache() cache.Cache {
+	initCacheOnce.Do(func() {
+		stickyCacheLock.Lock()
+		defer stickyCacheLock.Unlock()
+		workflowCache = cache.New(stickyCacheSize, &cache.Options{
+			RemovedFunc: func(cachedEntity interface{}) {
+				wc := cachedEntity.(*workflowExecutionContext)
+				wc.onEviction()
+			},
+		})
+	})
+	return workflowCache
+}
 
 func getWorkflowContext(runID string) *workflowExecutionContext {
-	o := workflowCache.Get(runID)
+	o := getWorkflowCache().Get(runID)
 	if o == nil {
 		return nil
 	}
@@ -335,7 +363,7 @@ func getWorkflowContext(runID string) *workflowExecutionContext {
 }
 
 func putWorkflowContext(runID string, wc *workflowExecutionContext) (*workflowExecutionContext, error) {
-	existing, err := workflowCache.PutIfNotExist(runID, wc)
+	existing, err := getWorkflowCache().PutIfNotExist(runID, wc)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +371,7 @@ func putWorkflowContext(runID string, wc *workflowExecutionContext) (*workflowEx
 }
 
 func removeWorkflowContext(runID string) {
-	workflowCache.Delete(runID)
+	getWorkflowCache().Delete(runID)
 }
 
 func (w *workflowExecutionContext) release() {
