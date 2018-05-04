@@ -149,8 +149,7 @@ func TestDefaultPublishRetryPolicy(t *testing.T) {
 		10000 * time.Millisecond,
 		10000 * time.Millisecond,
 		10000 * time.Millisecond,
-		6000 * time.Millisecond,
-		1300 * time.Millisecond,
+		7250 * time.Millisecond,
 		done,
 	}
 
