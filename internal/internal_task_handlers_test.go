@@ -137,10 +137,12 @@ func createWorkflowTask(
 	previousStartEventID int64,
 	workflowName string,
 ) *s.PollForDecisionTaskResponse {
+	eventsCopy := make([]*s.HistoryEvent, len(events))
+	copy(eventsCopy, events)
 	return &s.PollForDecisionTaskResponse{
 		PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
 		WorkflowType:           workflowTypePtr(WorkflowType{workflowName}),
-		History:                &s.History{Events: events},
+		History:                &s.History{Events: eventsCopy},
 		WorkflowExecution: &s.WorkflowExecution{
 			WorkflowId: common.StringPtr("fake-workflow-id"),
 			RunId:      common.StringPtr(uuid.New()),

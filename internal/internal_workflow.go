@@ -775,6 +775,9 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx 
 		}()
 		crt.initialYield(1, "")
 		f(spawned)
+		// spawned is closure which seems harder for GC to re-claim,
+		// this help GC to re-claim the memory space used by the coroutinueState object
+		spawned.(*valueCtx).val = nil
 	}(state)
 }
 
