@@ -377,7 +377,7 @@ func removeWorkflowContext(runID string) {
 }
 
 func (w *workflowExecutionContext) release() {
-	if w.err != nil || w.isWorkflowCompleted {
+	if w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of error, ideally, we should notify server to clear the stickiness.
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
@@ -705,7 +705,7 @@ func (wth *workflowTaskHandlerImpl) ProcessLocalActivityResult(lar *localActivit
 }
 
 func (w *workflowExecutionContext) CompleteDecisionTask() interface{} {
-	if !w.isWorkflowCompleted && len(w.eventHandler.pendingLaTasks) > 0 {
+	if w.hasPendingLocalActivityWork() {
 		if len(w.eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
 			for activityID := range w.eventHandler.unstartedLaTasks {
@@ -724,6 +724,10 @@ func (w *workflowExecutionContext) CompleteDecisionTask() interface{} {
 	w.newDecisions = nil
 
 	return completeRequest
+}
+
+func (w *workflowExecutionContext) hasPendingLocalActivityWork() bool {
+	return !w.isWorkflowCompleted && len(w.eventHandler.pendingLaTasks) > 0
 }
 
 func skipDeterministicCheckForDecision(d *s.Decision) bool {
