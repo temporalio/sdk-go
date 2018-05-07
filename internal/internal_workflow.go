@@ -87,22 +87,24 @@ type (
 		Execute(ctx Context, input []byte) (result []byte, err error)
 	}
 
-	valueCallbackPair struct {
-		value    interface{}
-		callback func() bool // false indicates that callback didn't accept the value
+	sendCallback struct {
+		value interface{}
+		fn    func() bool // false indicates that callback didn't accept the value
 	}
 
-	// false result means that callback didn't accept the value and it is still up for delivery
-	receiveCallback func(v interface{}, more bool) bool
+	receiveCallback struct {
+		// false result means that callback didn't accept the value and it is still up for delivery
+		fn func(v interface{}, more bool) bool
+	}
 
 	channelImpl struct {
-		name            string              // human readable channel name
-		size            int                 // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}       // buffered messages
-		blockedSends    []valueCallbackPair // puts waiting when buffer is full.
-		blockedReceives []receiveCallback   // receives waiting when no messages are available.
-		closed          bool                // true if channel is closed.
-		recValue        *interface{}        // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		name            string             // human readable channel name
+		size            int                // Channel buffer size. 0 for non buffered.
+		buffer          []interface{}      // buffered messages
+		blockedSends    []*sendCallback    // puts waiting when buffer is full.
+		blockedReceives []*receiveCallback // receives waiting when no messages are available.
+		closed          bool               // true if channel is closed.
+		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 	}
 
 	// Single case statement of the Select
@@ -182,7 +184,10 @@ type (
 		// Used by selectorImpl
 		// If Future is ready returns its value immediately.
 		// If not registers callback which is called when it is ready.
-		GetAsync(callback receiveCallback) (v interface{}, ok bool, err error)
+		GetAsync(callback *receiveCallback) (v interface{}, ok bool, err error)
+
+		// Used by selectorImpl
+		RemoveReceiveCallback(callback *receiveCallback)
 
 		// This future will added to list of dependency futures.
 		ChainFuture(f Future)
@@ -256,7 +261,7 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 // Used by selectorImpl
 // If Future is ready returns its value immediately.
 // If not registers callback which is called when it is ready.
-func (f *futureImpl) GetAsync(callback receiveCallback) (v interface{}, ok bool, err error) {
+func (f *futureImpl) GetAsync(callback *receiveCallback) (v interface{}, ok bool, err error) {
 	_, _, more := f.channel.receiveAsyncImpl(callback)
 	// Future uses Channel.Close to indicate that it is ready.
 	// So more being true (channel is still open) indicates future is not ready.
@@ -267,6 +272,12 @@ func (f *futureImpl) GetAsync(callback receiveCallback) (v interface{}, ok bool,
 		panic("not ready")
 	}
 	return f.value, true, f.err
+}
+
+// RemoveReceiveCallback removes the callback from future's channel to avoid closure leak.
+// Used by selectorImpl
+func (f *futureImpl) RemoveReceiveCallback(callback *receiveCallback) {
+	f.channel.removeReceiveCallback(callback)
 }
 
 func (f *futureImpl) IsReady() bool {
@@ -506,11 +517,13 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
-	callback := func(v interface{}, m bool) bool {
-		result = v
-		hasResult = true
-		more = m
-		return true
+	callback := &receiveCallback{
+		fn: func(v interface{}, m bool) bool {
+			result = v
+			hasResult = true
+			more = m
+			return true
+		},
 	}
 	v, ok, more := c.receiveAsyncImpl(callback)
 	if ok || !more {
@@ -540,7 +553,7 @@ func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, m
 
 // ok = true means that value was received
 // more = true means that channel is not closed and more deliveries are possible
-func (c *channelImpl) receiveAsyncImpl(callback receiveCallback) (v interface{}, ok bool, more bool) {
+func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v interface{}, ok bool, more bool) {
 	if c.recValue != nil {
 		r := *c.recValue
 		c.recValue = nil
@@ -557,7 +570,7 @@ func (c *channelImpl) receiveAsyncImpl(callback receiveCallback) (v interface{},
 	for len(c.blockedSends) > 0 {
 		b := c.blockedSends[0]
 		c.blockedSends = c.blockedSends[1:]
-		if b.callback() {
+		if b.fn() {
 			return b.value, true, true
 		}
 	}
@@ -567,17 +580,35 @@ func (c *channelImpl) receiveAsyncImpl(callback receiveCallback) (v interface{},
 	return nil, false, true
 }
 
+func (c *channelImpl) removeReceiveCallback(callback *receiveCallback) {
+	for i, blockedCallback := range c.blockedReceives {
+		if callback == blockedCallback {
+			c.blockedReceives = append(c.blockedReceives[:i], c.blockedReceives[i+1:]...)
+			break
+		}
+	}
+}
+
+func (c *channelImpl) removeSendCallback(callback *sendCallback) {
+	for i, blockedCallback := range c.blockedSends {
+		if callback == blockedCallback {
+			c.blockedSends = append(c.blockedSends[:i], c.blockedSends[i+1:]...)
+			break
+		}
+	}
+}
+
 func (c *channelImpl) Send(ctx Context, v interface{}) {
 	state := getState(ctx)
 	valueConsumed := false
-	pair := &valueCallbackPair{
+	callback := &sendCallback{
 		value: v,
-		callback: func() bool {
+		fn: func() bool {
 			valueConsumed = true
 			return true
 		},
 	}
-	ok := c.sendAsyncImpl(v, pair)
+	ok := c.sendAsyncImpl(v, callback)
 	if ok {
 		state.unblocked()
 		return
@@ -599,12 +630,12 @@ func (c *channelImpl) SendAsync(v interface{}) (ok bool) {
 	return c.sendAsyncImpl(v, nil)
 }
 
-func (c *channelImpl) sendAsyncImpl(v interface{}, pair *valueCallbackPair) (ok bool) {
+func (c *channelImpl) sendAsyncImpl(v interface{}, pair *sendCallback) (ok bool) {
 	if c.closed {
 		panic("Closed channel")
 	}
 	for len(c.blockedReceives) > 0 {
-		blockedGet := c.blockedReceives[0]
+		blockedGet := c.blockedReceives[0].fn
 		c.blockedReceives = c.blockedReceives[1:]
 		// false from callback indicates that value wasn't consumed
 		if blockedGet(v, true) {
@@ -616,21 +647,19 @@ func (c *channelImpl) sendAsyncImpl(v interface{}, pair *valueCallbackPair) (ok 
 		return true
 	}
 	if pair != nil {
-		c.blockedSends = append(c.blockedSends, *pair)
+		c.blockedSends = append(c.blockedSends, pair)
 	}
 	return false
 }
 
 func (c *channelImpl) Close() {
 	c.closed = true
-	for i := 0; i < len(c.blockedReceives); i++ {
-		callback := c.blockedReceives[i]
-		callback(nil, false)
+	for _, callback := range c.blockedReceives {
+		callback.fn(nil, false)
 	}
 	// All blocked sends are going to panic
-	for i := 0; i < len(c.blockedSends); i++ {
-		b := c.blockedSends[i]
-		b.callback()
+	for _, callback := range c.blockedSends {
+		callback.fn()
 	}
 }
 
@@ -901,21 +930,30 @@ func (s *selectorImpl) AddDefault(f func()) {
 func (s *selectorImpl) Select(ctx Context) {
 	state := getState(ctx)
 	var readyBranch func()
+	var cleanups []func()
+	defer func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}()
+
 	for _, pair := range s.cases {
 		if pair.receiveFunc != nil {
 			f := *pair.receiveFunc
 			c := pair.channel
-			callback := func(v interface{}, more bool) bool {
-				if readyBranch != nil {
-					return false
-				}
-				readyBranch = func() {
-					c.recValue = &v
-					f(c, more)
-				}
-				return true
+			callback := &receiveCallback{
+				fn: func(v interface{}, more bool) bool {
+					if readyBranch != nil {
+						return false
+					}
+					readyBranch = func() {
+						c.recValue = &v
+						f(c, more)
+					}
+					return true
+				},
 			}
-			v, ok, more := pair.channel.receiveAsyncImpl(callback)
+			v, ok, more := c.receiveAsyncImpl(callback)
 			if ok || !more {
 				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
 				// will be called for previous cases/branches. We should set readyBranch so that when other case/branch
@@ -926,11 +964,16 @@ func (s *selectorImpl) Select(ctx Context) {
 				f(c, more)
 				return
 			}
+			// callback closure is added to channel's blockedReceives, we need to clean it up to avoid closure leak
+			cleanups = append(cleanups, func() {
+				c.removeReceiveCallback(callback)
+			})
 		} else if pair.sendFunc != nil {
 			f := *pair.sendFunc
-			p := &valueCallbackPair{
+			c := pair.channel
+			callback := &sendCallback{
 				value: *pair.sendValue,
-				callback: func() bool {
+				fn: func() bool {
 					if readyBranch != nil {
 						return false
 					}
@@ -940,7 +983,7 @@ func (s *selectorImpl) Select(ctx Context) {
 					return true
 				},
 			}
-			ok := pair.channel.sendAsyncImpl(*pair.sendValue, p)
+			ok := c.sendAsyncImpl(*pair.sendValue, callback)
 			if ok {
 				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
 				// will be called for previous cases/branches. We should set readyBranch so that when other case/branch
@@ -950,19 +993,26 @@ func (s *selectorImpl) Select(ctx Context) {
 				f()
 				return
 			}
+			// callback closure is added to channel's blockedSends, we need to clean it up to avoid closure leak
+			cleanups = append(cleanups, func() {
+				c.removeSendCallback(callback)
+			})
 		} else if pair.futureFunc != nil {
 			p := pair
 			f := *p.futureFunc
-			callback := func(v interface{}, more bool) bool {
-				if readyBranch != nil {
-					return false
-				}
-				readyBranch = func() {
-					p.futureFunc = nil
-					f(p.future)
-				}
-				return true
+			callback := &receiveCallback{
+				fn: func(v interface{}, more bool) bool {
+					if readyBranch != nil {
+						return false
+					}
+					readyBranch = func() {
+						p.futureFunc = nil
+						f(p.future)
+					}
+					return true
+				},
 			}
+
 			_, ok, _ := p.future.GetAsync(callback)
 			if ok {
 				// Select() returns in this case/branch. The callback won't be called for this case. However, callback
@@ -974,6 +1024,10 @@ func (s *selectorImpl) Select(ctx Context) {
 				f(p.future)
 				return
 			}
+			// callback closure is added to future's channel's blockedReceives, need to clean up to avoid leak
+			cleanups = append(cleanups, func() {
+				p.future.RemoveReceiveCallback(callback)
+			})
 		}
 	}
 	if s.defaultFunc != nil {
