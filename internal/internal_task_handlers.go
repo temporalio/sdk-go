@@ -720,6 +720,7 @@ func (w *workflowExecutionContext) CompleteDecisionTask() interface{} {
 
 	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions)
 	w.newDecisions = nil
+	w.currentDecisionTask = nil
 
 	return completeRequest
 }
