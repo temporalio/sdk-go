@@ -350,20 +350,28 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	parameters.ActivityType = *activityType
 	parameters.Input = input
 
+	ctxDone, cancellable := ctx.Done().(*channelImpl)
+	cancellationCallback := &receiveCallback{}
 	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
 		settable.Set(r, e)
-	})
-	Go(ctx, func(ctx Context) {
-		if ctxDone := ctx.Done(); ctxDone != nil {
-			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
-				if ctx.Err() == ErrCanceled && !future.IsReady() {
-					getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
-				}
-			}).AddFuture(future, func(f Future) {
-				// activity is done, no-op
-			}).Select(ctx)
+		if cancellable {
+			// future is done, we don't need the cancellation callback anymore.
+			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
 	})
+
+	if cancellable {
+		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			if ctx.Err() == ErrCanceled {
+				getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+			}
+			return false
+		}
+		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+		if ok || !more {
+			cancellationCallback.fn(nil, more)
+		}
+	}
 	return future
 }
 
@@ -415,21 +423,28 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	params.InputArgs = args
 	params.WorkflowInfo = GetWorkflowInfo(ctx)
 
+	ctxDone, cancellable := ctx.Done().(*channelImpl)
+	cancellationCallback := &receiveCallback{}
 	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(*params, func(r []byte, e error) {
 		settable.Set(r, e)
-	})
-
-	Go(ctx, func(ctx Context) {
-		if ctxDone := ctx.Done(); ctxDone != nil {
-			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
-				if ctx.Err() == ErrCanceled {
-					getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la.activityID)
-				}
-			}).AddFuture(future, func(f Future) {
-				// activity is done, no-op
-			}).Select(ctx)
+		if cancellable {
+			// future is done, we don't need cancellation anymore
+			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
 	})
+
+	if cancellable {
+		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			if ctx.Err() == ErrCanceled {
+				getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la.activityID)
+			}
+			return false
+		}
+		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+		if ok || !more {
+			cancellationCallback.fn(nil, more)
+		}
+	}
 
 	return future
 }
@@ -473,32 +488,41 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	options.input = input
 	options.workflowType = wfType
 	var childWorkflowExecution *WorkflowExecution
+
+	ctxDone, cancellable := ctx.Done().(*channelImpl)
+	cancellationCallback := &receiveCallback{}
 	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(*options, func(r []byte, e error) {
 		mainSettable.Set(r, e)
+		if cancellable {
+			// future is done, we don't need cancellation anymore
+			ctxDone.removeReceiveCallback(cancellationCallback)
+		}
 	}, func(r WorkflowExecution, e error) {
 		if e == nil {
 			childWorkflowExecution = &r
 		}
 		executionSettable.Set(r, e)
 	})
+
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result
 	}
 
-	Go(ctx, func(ctx Context) {
-		if ctxDone := ctx.Done(); ctxDone != nil {
-			NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
-				if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
-					// child workflow started, and ctx cancelled
-					getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(*options.domain, childWorkflowExecution.ID)
-				}
-			}).AddFuture(mainFuture, func(f Future) {
-				// childWorkflow is done, no-op
-			}).Select(ctx)
+	if cancellable {
+		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
+				// child workflow started, and ctx cancelled
+				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(*options.domain, childWorkflowExecution.ID)
+			}
+			return false
 		}
-	})
+		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+		if ok || !more {
+			cancellationCallback.fn(nil, more)
+		}
+	}
 
 	return result
 }
@@ -547,22 +571,27 @@ func NewTimer(ctx Context, d time.Duration) Future {
 		return future
 	}
 
+	ctxDone, cancellable := ctx.Done().(*channelImpl)
+	cancellationCallback := &receiveCallback{}
 	t := getWorkflowEnvironment(ctx).NewTimer(d, func(r []byte, e error) {
 		settable.Set(nil, e)
+		if cancellable {
+			// future is done, we don't need cancellation anymore
+			ctxDone.removeReceiveCallback(cancellationCallback)
+		}
 	})
-	if t != nil {
-		Go(ctx, func(ctx Context) {
-			if ctxDone := ctx.Done(); ctxDone != nil {
-				NewSelector(ctx).AddReceive(ctxDone, func(c Channel, more bool) {
-					// We will cancel the timer either it is explicit cancellation (or) we are closed.
-					if !future.IsReady() {
-						getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
-					}
-				}).AddFuture(future, func(f Future) {
-					// timer is done, no-op
-				}).Select(ctx)
+
+	if t != nil && cancellable {
+		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			if !future.IsReady() {
+				getWorkflowEnvironment(ctx).RequestCancelTimer(t.timerID)
 			}
-		})
+			return false
+		}
+		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+		if ok || !more {
+			cancellationCallback.fn(nil, more)
+		}
 	}
 	return future
 }
