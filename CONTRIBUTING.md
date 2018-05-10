@@ -6,7 +6,7 @@ This doc is intended for contributors to `cadence-client` (hopefully that's you!
 
 ## Development Environment
 
-* Go. Install on OS X with `brew install go`. The minimum required Go version is 1.9.
+* Go. Install on OS X with `brew install go`. The minimum required Go version is 1.10.
 * `thrift`. Install on OS X with `brew install thrift`.
 * `thrift-gen`. Install with `go get github.com/uber/tchannel-go/thrift/thrift-gen`.
 
