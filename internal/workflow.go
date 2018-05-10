@@ -341,18 +341,21 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 		return future
 	}
 	// Validate context options.
-	parameters := getActivityOptions(ctx)
-	parameters, err = getValidatedActivityOptions(ctx)
+	options := getActivityOptions(ctx)
+	options, err = getValidatedActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
-	parameters.ActivityType = *activityType
-	parameters.Input = input
+	params := executeActivityParams{
+		activityOptions: *options,
+		ActivityType:    *activityType,
+		Input:           input,
+	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(*parameters, func(r []byte, e error) {
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(params, func(r []byte, e error) {
 		settable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need the cancellation callback anymore.
@@ -413,19 +416,22 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 		settable.Set(nil, err)
 		return future
 	}
-	params, err := getValidatedLocalActivityOptions(ctx)
+	options, err := getValidatedLocalActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
 
-	params.ActivityFn = activity
-	params.InputArgs = args
-	params.WorkflowInfo = GetWorkflowInfo(ctx)
+	params := executeLocalActivityParams{
+		localActivityOptions: *options,
+		ActivityFn:           activity,
+		InputArgs:            args,
+		WorkflowInfo:         GetWorkflowInfo(ctx),
+	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(*params, func(r []byte, e error) {
+	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(params, func(r []byte, e error) {
 		settable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -485,13 +491,16 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		return result
 	}
 
-	options.input = input
-	options.workflowType = wfType
+	params := executeWorkflowParams{
+		workflowOptions: *options,
+		input:           input,
+		workflowType:    wfType,
+	}
 	var childWorkflowExecution *WorkflowExecution
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(*options, func(r []byte, e error) {
+	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r []byte, e error) {
 		mainSettable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore

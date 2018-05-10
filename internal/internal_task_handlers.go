@@ -1024,11 +1024,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		wth.metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
 		closeDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType: workflowTypePtr(*contErr.options.workflowType),
-			Input:        contErr.options.input,
-			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.options.taskListName}),
-			ExecutionStartToCloseTimeoutSeconds: contErr.options.executionStartToCloseTimeoutSeconds,
-			TaskStartToCloseTimeoutSeconds:      contErr.options.taskStartToCloseTimeoutSeconds,
+			WorkflowType: workflowTypePtr(*contErr.params.workflowType),
+			Input:        contErr.params.input,
+			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.params.taskListName}),
+			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
+			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
 		}
 	} else if workflowContext.err != nil {
 		// Workflow failures

@@ -274,33 +274,33 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
-	options workflowOptions, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	if options.workflowID == "" {
-		options.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+	params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+	if params.workflowID == "" {
+		params.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
 
 	attributes := &m.StartChildWorkflowExecutionDecisionAttributes{}
 
-	attributes.Domain = options.domain
-	attributes.TaskList = &m.TaskList{Name: options.taskListName}
-	attributes.WorkflowId = common.StringPtr(options.workflowID)
-	attributes.ExecutionStartToCloseTimeoutSeconds = options.executionStartToCloseTimeoutSeconds
-	attributes.TaskStartToCloseTimeoutSeconds = options.taskStartToCloseTimeoutSeconds
-	attributes.Input = options.input
-	attributes.WorkflowType = workflowTypePtr(*options.workflowType)
-	attributes.ChildPolicy = options.childPolicy.toThriftChildPolicyPtr()
-	attributes.WorkflowIdReusePolicy = options.workflowIDReusePolicy.toThriftPtr()
+	attributes.Domain = params.domain
+	attributes.TaskList = &m.TaskList{Name: params.taskListName}
+	attributes.WorkflowId = common.StringPtr(params.workflowID)
+	attributes.ExecutionStartToCloseTimeoutSeconds = params.executionStartToCloseTimeoutSeconds
+	attributes.TaskStartToCloseTimeoutSeconds = params.taskStartToCloseTimeoutSeconds
+	attributes.Input = params.input
+	attributes.WorkflowType = workflowTypePtr(*params.workflowType)
+	attributes.ChildPolicy = params.childPolicy.toThriftChildPolicyPtr()
+	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
 
 	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
 	decision.setData(&scheduledChildWorkflow{
 		resultCallback:      callback,
 		startedCallback:     startedHandler,
-		waitForCancellation: options.waitForCancellation,
+		waitForCancellation: params.waitForCancellation,
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
-		zap.String(tagChildWorkflowID, options.workflowID),
-		zap.String(tagWorkflowType, options.workflowType.Name))
+		zap.String(tagChildWorkflowID, params.workflowID),
+		zap.String(tagWorkflowType, params.workflowType.Name))
 
 	return nil
 }
@@ -341,7 +341,7 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType m.DecisionType
 	}
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
 	scheduleTaskAttr := &m.ScheduleActivityTaskDecisionAttributes{}
 	if parameters.ActivityID == nil || *parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = common.StringPtr(wc.GenerateSequenceID())

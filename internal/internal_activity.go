@@ -49,12 +49,10 @@ type (
 		activityID string
 	}
 
-	// executeActivityParameters configuration parameters for scheduling an activity
-	executeActivityParameters struct {
+	// activityOptions configuration parameters for scheduling an activity
+	activityOptions struct {
 		ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
-		ActivityType                  ActivityType
 		TaskListName                  string
-		Input                         []byte
 		ScheduleToCloseTimeoutSeconds int32
 		ScheduleToStartTimeoutSeconds int32
 		StartToCloseTimeoutSeconds    int32
@@ -63,11 +61,21 @@ type (
 		OriginalTaskListName          string
 	}
 
-	executeLocalActivityParams struct {
-		ActivityFn                    interface{} // local activity function pointer
-		InputArgs                     []interface{}
+	localActivityOptions struct {
 		ScheduleToCloseTimeoutSeconds int32
-		WorkflowInfo                  *WorkflowInfo
+	}
+
+	executeActivityParams struct {
+		activityOptions
+		ActivityType ActivityType
+		Input        []byte
+	}
+
+	executeLocalActivityParams struct {
+		localActivityOptions
+		ActivityFn   interface{} // local activity function pointer
+		InputArgs    []interface{}
+		WorkflowInfo *WorkflowInfo
 	}
 
 	// asyncActivityClient for requesting activity execution
@@ -75,7 +83,7 @@ type (
 		// The ExecuteActivity schedules an activity with a callback handler.
 		// If the activity failed to complete the callback error would indicate the failure
 		// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError
-		ExecuteActivity(parameters executeActivityParameters, callback resultHandler) *activityInfo
+		ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo
 
 		// This only initiates cancel request for activity. if the activity is configured to not waitForCancellation then
 		// it would invoke the callback handler immediately with error code ActivityTaskCanceledError.
@@ -124,23 +132,23 @@ func getActivityEnv(ctx context.Context) *activityEnvironment {
 	return env.(*activityEnvironment)
 }
 
-func getActivityOptions(ctx Context) *executeActivityParameters {
+func getActivityOptions(ctx Context) *activityOptions {
 	eap := ctx.Value(activityOptionsContextKey)
 	if eap == nil {
 		return nil
 	}
-	return eap.(*executeActivityParameters)
+	return eap.(*activityOptions)
 }
 
-func getLocalActivityOptions(ctx Context) *executeLocalActivityParams {
+func getLocalActivityOptions(ctx Context) *localActivityOptions {
 	opts := ctx.Value(localActivityOptionsContextKey)
 	if opts == nil {
 		return nil
 	}
-	return opts.(*executeLocalActivityParams)
+	return opts.(*localActivityOptions)
 }
 
-func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error) {
+func getValidatedActivityOptions(ctx Context) (*activityOptions, error) {
 	p := getActivityOptions(ctx)
 	if p == nil {
 		// We need task list as a compulsory parameter. This can be removed after registration
@@ -170,7 +178,7 @@ func getValidatedActivityOptions(ctx Context) (*executeActivityParameters, error
 	return p, nil
 }
 
-func getValidatedLocalActivityOptions(ctx Context) (*executeLocalActivityParams, error) {
+func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error) {
 	p := getLocalActivityOptions(ctx)
 	if p == nil {
 		return nil, errLocalActivityParamsBadRequest
@@ -341,7 +349,7 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}) err
 
 func setActivityParametersIfNotExist(ctx Context) Context {
 	params := getActivityOptions(ctx)
-	var newParams executeActivityParameters
+	var newParams activityOptions
 	if params != nil {
 		newParams = *params
 	}
@@ -350,7 +358,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 
 func setLocalActivityParametersIfNotExist(ctx Context) Context {
 	params := getLocalActivityOptions(ctx)
-	var newParams executeLocalActivityParams
+	var newParams localActivityOptions
 	if params != nil {
 		newParams = *params
 	}

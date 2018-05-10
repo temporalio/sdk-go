@@ -154,8 +154,6 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	workflowOptions struct {
-		workflowType                        *WorkflowType
-		input                               []byte
 		taskListName                        *string
 		executionStartToCloseTimeoutSeconds *int32
 		taskStartToCloseTimeoutSeconds      *int32
@@ -166,6 +164,12 @@ type (
 		signalChannels                      map[string]SignalChannel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
+	}
+
+	executeWorkflowParams struct {
+		workflowOptions
+		workflowType *WorkflowType
+		input        []byte
 	}
 
 	// decodeFutureImpl

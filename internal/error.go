@@ -118,9 +118,9 @@ type (
 
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
-		wfn     interface{}
-		args    []interface{}
-		options *workflowOptions
+		wfn    interface{}
+		args   []interface{}
+		params *executeWorkflowParams
 	}
 )
 
@@ -210,9 +210,12 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		panic("invalid taskStartToCloseTimeoutSeconds provided")
 	}
 
-	options.workflowType = workflowType
-	options.input = input
-	return &ContinueAsNewError{wfn: wfn, args: args, options: options}
+	params := &executeWorkflowParams{
+		workflowOptions: *options,
+		workflowType:    workflowType,
+		input:           input,
+	}
+	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
 
 // Error from error interface

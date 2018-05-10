@@ -397,10 +397,10 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
 	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
-	s.EqualValues("continueAsNewWorkflowTest", resultErr.options.workflowType.Name)
-	s.EqualValues(1, *resultErr.options.executionStartToCloseTimeoutSeconds)
-	s.EqualValues(1, *resultErr.options.taskStartToCloseTimeoutSeconds)
-	s.EqualValues("default-test-tasklist", *resultErr.options.taskListName)
+	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.workflowType.Name)
+	s.EqualValues(1, *resultErr.params.executionStartToCloseTimeoutSeconds)
+	s.EqualValues(1, *resultErr.params.taskStartToCloseTimeoutSeconds)
+	s.EqualValues("default-test-tasklist", *resultErr.params.taskListName)
 }
 
 func cancelWorkflowTest(ctx Context) (string, error) {
