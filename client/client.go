@@ -213,7 +213,7 @@ type (
 		//  - EntityNotExistError
 		ListOpenWorkflow(ctx context.Context, request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
 
-		// QueryWorkflow queries a given workflow execution and returns the query result synchronously. Parameter workflowID
+		// QueryWorkflow queries a given workflow's last execution and returns the query result synchronously. Parameter workflowID
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
 		// target workflow execution that this query will be send to. If runID is not specified (empty string), server will
 		// use the currently running execution of that workflowID. The queryType specifies the type of query you want to
@@ -234,6 +234,8 @@ type (
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
+		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
