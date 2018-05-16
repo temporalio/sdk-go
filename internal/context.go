@@ -203,7 +203,7 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 func newCancelCtx(parent Context) *cancelCtx {
 	return &cancelCtx{
 		Context: parent,
-		done:    NewChannel(parent),
+		done:    NewNamedChannel(parent, "cancelCtx-done-channel"),
 	}
 }
 

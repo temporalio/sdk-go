@@ -620,6 +620,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case m.EventTypeDecisionTaskScheduled:
 		// No Operation
 	case m.EventTypeDecisionTaskStarted:
+		// Set replay clock.
+		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
 		weh.workflowDefinition.OnDecisionTaskStarted()
 
 	case m.EventTypeDecisionTaskTimedOut:

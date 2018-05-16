@@ -219,13 +219,6 @@ func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.
 
 	result = eh.next
 	if len(result) > 0 {
-		// Set replay clock.
-		lastEvent := result[len(result)-1]
-		if lastEvent.GetEventType() == s.EventTypeDecisionTaskStarted {
-			ts := time.Unix(0, lastEvent.GetTimestamp())
-			eh.eventsHandler.SetCurrentReplayTime(ts)
-		}
-
 		eh.next, markers, err = eh.nextDecisionEvents()
 	}
 	return result, markers, err

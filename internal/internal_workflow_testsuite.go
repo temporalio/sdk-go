@@ -355,6 +355,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType str
 	// to make sure workflowDef.Execute() is run in main loop.
 	env.postCallback(func() {
 		env.workflowDef.Execute(env, input)
+		// kick off first decision task to start the workflow
+		env.startDecisionTask()
 	}, false)
 	env.startMainLoop()
 }

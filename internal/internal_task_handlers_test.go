@@ -189,16 +189,19 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	taskList := "tl1"
 	testEvents := []*s.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
-		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
 			ActivityId:   common.StringPtr("0"),
 			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
-		createTestEventActivityTaskStarted(3, &s.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(4, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
-		createTestEventDecisionTaskStarted(5),
+		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
+		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+		createTestEventDecisionTaskStarted(8),
 	}
-	task := createWorkflowTask(testEvents[0:1], 0, "HelloWorld_Workflow")
+	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
 	params := workerExecutionParameters{
 		TaskList: taskList,
 		Identity: "test-id-1",
@@ -215,7 +218,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	t.NotNil(response.Decisions[0].ScheduleActivityTaskDecisionAttributes)
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
-	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
+	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, _, err = taskHandler.ProcessWorkflowTask(task, nil, false)
 	response = request.(*s.RespondDecisionTaskCompletedRequest)
 	t.NoError(err)
@@ -347,13 +350,16 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	taskList := "taskList"
 	testEvents := []*s.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
-		createTestEventActivityTaskScheduled(2, &s.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
 			ActivityId:   common.StringPtr("0"),
 			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 	}
-	task := createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
+	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	params := workerExecutionParameters{
 		TaskList: taskList,
 		Identity: "test-id-1",
@@ -367,16 +373,16 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.NotNil(response)
 
 	// now change the history event so it does not match to decision produced via replay
-	testEvents[1].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
-	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, _, err = taskHandler.ProcessWorkflowTask(task, nil, false)
 	t.Error(err)
 	t.Nil(request)
 	t.Contains(err.Error(), "nondeterministic")
 
 	// now with different package name to activity type
-	testEvents[1].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")
-	task = createWorkflowTask(testEvents, 2, "HelloWorld_Workflow")
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")
+	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, _, err = taskHandler.ProcessWorkflowTask(task, nil, false)
 	t.NoError(err)
 	t.NotNil(request)

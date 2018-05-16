@@ -370,16 +370,12 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx = WithExecutionStartToCloseTimeout(rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
+	getActivityOptions(rootCtx).OriginalTaskListName = wInfo.TaskListName
 	return rootCtx
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
-	d.rootCtx = newWorkflowContext(env)
-	activityOptions := getActivityOptions(d.rootCtx)
-	activityOptions.OriginalTaskListName = env.WorkflowInfo().TaskListName
-
-	d.dispatcher = newDispatcher(d.rootCtx, func(ctx Context) {
-		d.rootCtx, d.cancel = WithCancel(ctx)
+	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env), func(ctx Context) {
 		r := &workflowResult{}
 
 		// We want to execute the user workflow definition from the first decision task started,
@@ -392,6 +388,8 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 		rpp := getWorkflowResultPointerPointer(ctx)
 		*rpp = r
 	})
+	d.rootCtx, d.cancel = WithCancel(rootCtx)
+	d.dispatcher = dispatcher
 
 	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
@@ -421,15 +419,6 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 		}
 		return handler(queryArgs)
 	})
-
-	// There is a inter dependency, before we call Execute() we can have a cancel request since
-	// dispatcher executes code on decision task started, we might not have cancel handler created.
-	//  (1) WithCancel -> creates channel -> needs dispatcher -> dispatcher needs a root function with context.
-	//  (2) Signals before first decision start needs to setup channels with data and needs the context with co-routine state.
-	//  (3) ...
-	// So all the events, that need to be executed before first decision task need a context with with co-routine state
-	// setup. So we call execute here so we get the root context created.
-	executeDispatcher(d.rootCtx, d.dispatcher)
 }
 
 func (d *syncWorkflowDefinition) OnDecisionTaskStarted() {
@@ -449,10 +438,10 @@ func (d *syncWorkflowDefinition) Close() {
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
-func newDispatcher(rootCtx Context, root func(ctx Context)) dispatcher {
+func newDispatcher(rootCtx Context, root func(ctx Context)) (*dispatcherImpl, Context) {
 	result := &dispatcherImpl{}
-	result.newCoroutine(rootCtx, root)
-	return result
+	ctxWithState := result.newCoroutine(rootCtx, root)
+	return result, ctxWithState
 }
 
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
@@ -757,45 +746,11 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
-func (s *coroutineState) NewCoroutine(ctx Context, f func(ctx Context)) {
-	s.dispatcher.newCoroutine(ctx, f)
+func (d *dispatcherImpl) newCoroutine(ctx Context, f func(ctx Context)) Context {
+	return d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
 }
 
-func (s *coroutineState) NewNamedCoroutine(ctx Context, name string, f func(ctx Context)) {
-	s.dispatcher.newNamedCoroutine(ctx, name, f)
-}
-
-func (s *coroutineState) NewSelector() Selector {
-	s.dispatcher.selectorSequence++
-	return s.NewNamedSelector(fmt.Sprintf("selector-%v", s.dispatcher.selectorSequence))
-}
-
-func (s *coroutineState) NewNamedSelector(name string) Selector {
-	return &selectorImpl{name: name}
-}
-
-func (s *coroutineState) NewChannel() Channel {
-	s.dispatcher.channelSequence++
-	return s.NewNamedChannel(fmt.Sprintf("chan-%v", s.dispatcher.channelSequence))
-}
-
-func (s *coroutineState) NewNamedChannel(name string) Channel {
-	return &channelImpl{name: name}
-}
-
-func (s *coroutineState) NewBufferedChannel(size int) Channel {
-	return &channelImpl{size: size}
-}
-
-func (s *coroutineState) NewNamedBufferedChannel(name string, size int) Channel {
-	return &channelImpl{name: name, size: size}
-}
-
-func (d *dispatcherImpl) newCoroutine(ctx Context, f func(ctx Context)) {
-	d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
-}
-
-func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx Context)) {
+func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx Context)) Context {
 	state := d.newState(name)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
 	go func(crt *coroutineState) {
@@ -808,10 +763,8 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx 
 		}()
 		crt.initialYield(1, "")
 		f(spawned)
-		// spawned is closure which seems harder for GC to re-claim,
-		// this help GC to re-claim the memory space used by the coroutinueState object
-		spawned.(*valueCtx).val = nil
 	}(state)
+	return spawned
 }
 
 func (d *dispatcherImpl) newState(name string) *coroutineState {

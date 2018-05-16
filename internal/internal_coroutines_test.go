@@ -34,7 +34,7 @@ import (
 
 func TestDispatcher(t *testing.T) {
 	value := "foo"
-	d := newDispatcher(background, func(ctx Context) { value = "bar" })
+	d, _ := newDispatcher(background, func(ctx Context) { value = "bar" })
 	require.Equal(t, "foo", value)
 	d.ExecuteUntilAllBlocked()
 	require.True(t, d.IsDone())
@@ -43,7 +43,7 @@ func TestDispatcher(t *testing.T) {
 
 func TestNonBlockingChildren(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		for i := 0; i < 10; i++ {
 			ii := i
 			Go(ctx, func(ctx Context) {
@@ -61,7 +61,7 @@ func TestNonBlockingChildren(t *testing.T) {
 
 func TestNonbufferedChannel(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -92,7 +92,7 @@ func TestNonbufferedChannel(t *testing.T) {
 func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 	var history []string
 	var c2 Channel
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 = NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -133,7 +133,7 @@ func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 
 func TestBufferedChannelPut(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -168,7 +168,7 @@ func TestBufferedChannelPut(t *testing.T) {
 
 func TestBufferedChannelGet(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewBufferedChannel(ctx, 2)
 
@@ -223,7 +223,7 @@ func TestBufferedChannelGet(t *testing.T) {
 
 func TestNotBlockingSelect(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
 		c2 := NewBufferedChannel(ctx, 1)
 		s := NewSelector(ctx)
@@ -260,7 +260,7 @@ func TestNotBlockingSelect(t *testing.T) {
 
 func TestBlockingSelect(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -313,7 +313,7 @@ func TestBlockingSelect(t *testing.T) {
 
 func TestBlockingSelectAsyncSend(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 
 		c1 := NewChannel(ctx)
 		s := NewSelector(ctx)
@@ -355,7 +355,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 
 func TestBlockingSelectAsyncSend2(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 100)
 		c2 := NewBufferedChannel(ctx, 100)
 		s := NewSelector(ctx)
@@ -400,7 +400,7 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 
 func TestSendSelect(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -441,7 +441,7 @@ func TestSendSelect(t *testing.T) {
 
 func TestSendSelectWithAsyncReceive(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -483,7 +483,7 @@ func TestSendSelectWithAsyncReceive(t *testing.T) {
 
 func TestChannelClose(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		jobs := NewBufferedChannel(ctx, 5)
 		done := NewNamedChannel(ctx, "done")
 
@@ -529,7 +529,7 @@ func TestChannelClose(t *testing.T) {
 }
 
 func TestSendClosedChannel(t *testing.T) {
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
@@ -544,7 +544,7 @@ func TestSendClosedChannel(t *testing.T) {
 }
 
 func TestBlockedSendClosedChannel(t *testing.T) {
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
@@ -558,7 +558,7 @@ func TestBlockedSendClosedChannel(t *testing.T) {
 }
 
 func TestAsyncSendClosedChannel(t *testing.T) {
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		defer func() {
 			assert.NotNil(t, recover(), "panic expected")
 		}()
@@ -573,7 +573,7 @@ func TestAsyncSendClosedChannel(t *testing.T) {
 
 func TestDispatchClose(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
@@ -608,7 +608,7 @@ func TestDispatchClose(t *testing.T) {
 
 func TestPanic(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
@@ -637,7 +637,7 @@ func TestFutureSetValue(t *testing.T) {
 	var history []string
 	var f Future
 	var s Settable
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		f, s = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -687,7 +687,7 @@ func TestFutureFail(t *testing.T) {
 	var history []string
 	var f Future
 	var s Settable
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		f, s = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -736,7 +736,7 @@ func TestFutureSet(t *testing.T) {
 	var history []string
 	var f1, f2 Future
 	var s1, s2 Settable
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		f1, s1 = NewFuture(ctx)
 		f2, s2 = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
@@ -815,7 +815,7 @@ func TestFutureChain(t *testing.T) {
 	var f1, cf1, f2, cf2 Future
 	var s1, cs1, s2, cs2 Settable
 
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		f1, s1 = NewFuture(ctx)
 		cf1, cs1 = NewFuture(ctx)
 		s1.Chain(cf1)
@@ -893,7 +893,7 @@ func TestFutureChain(t *testing.T) {
 
 func TestSelectFuture(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		future1, settable1 := NewFuture(ctx)
 		future2, settable2 := NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
@@ -945,7 +945,7 @@ func TestSelectFuture(t *testing.T) {
 
 func TestSelectDecodeFuture(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		future1, settable1 := newDecodeFuture(ctx, "testFn1")
 		future2, settable2 := newDecodeFuture(ctx, "testFn2")
 		Go(ctx, func(ctx Context) {
@@ -1000,7 +1000,7 @@ func TestDecodeFutureChain(t *testing.T) {
 	var f1, cf1, f2, cf2 Future
 	var s1, cs1, s2, cs2 Settable
 
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		f1, s1 = newDecodeFuture(ctx, "testFn")
 		cf1, cs1 = newDecodeFuture(ctx, "testFun")
 		f2, s2 = newDecodeFuture(ctx, "testFn")
@@ -1082,7 +1082,7 @@ func TestDecodeFutureChain(t *testing.T) {
 
 func TestSelectFuture_WithBatchSets(t *testing.T) {
 	var history []string
-	d := newDispatcher(background, func(ctx Context) {
+	d, _ := newDispatcher(background, func(ctx Context) {
 		future1, settable1 := NewFuture(ctx)
 		future2, settable2 := NewFuture(ctx)
 		future3, settable3 := NewFuture(ctx)
