@@ -554,7 +554,8 @@ func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v interface{}
 	}
 	if len(c.buffer) > 0 {
 		r := c.buffer[0]
-		c.buffer = append([]interface{}{}, c.buffer[1:]...)
+		c.buffer[0] = nil
+		c.buffer = c.buffer[1:]
 		return r, true, true
 	}
 	if c.closed {
@@ -562,7 +563,8 @@ func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v interface{}
 	}
 	for len(c.blockedSends) > 0 {
 		b := c.blockedSends[0]
-		c.blockedSends = append([]*sendCallback{}, c.blockedSends[1:]...)
+		c.blockedSends[0] = nil
+		c.blockedSends = c.blockedSends[1:]
 		if b.fn() {
 			return b.value, true, true
 		}
@@ -629,7 +631,8 @@ func (c *channelImpl) sendAsyncImpl(v interface{}, pair *sendCallback) (ok bool)
 	}
 	for len(c.blockedReceives) > 0 {
 		blockedGet := c.blockedReceives[0].fn
-		c.blockedReceives = append([]*receiveCallback{}, c.blockedReceives[1:]...)
+		c.blockedReceives[0] = nil
+		c.blockedReceives = c.blockedReceives[1:]
 		// false from callback indicates that value wasn't consumed
 		if blockedGet(v, true) {
 			return true
