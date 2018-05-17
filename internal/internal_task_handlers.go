@@ -667,6 +667,9 @@ ProcessEvents:
 
 func (wth *workflowTaskHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
 	workflowContext := lar.task.wc
+	workflowContext.Lock()
+	defer workflowContext.release()
+
 	if workflowContext.currentDecisionTask != lar.task.decisionTask {
 		// The possible case is decision task timeout while waiting for local activity to complete, then server would
 		// generate a new new decision task, which could be dispatched to this same worker. In that case, the cached
@@ -679,9 +682,6 @@ func (wth *workflowTaskHandlerImpl) ProcessLocalActivityResult(lar *localActivit
 			zap.Int32("ScheduleToCloseTimeoutSeconds", lar.task.params.ScheduleToCloseTimeoutSeconds))
 		return nil, nil
 	}
-
-	workflowContext.Lock()
-	defer workflowContext.release()
 
 	eventDecisions, err := workflowContext.eventHandler.ProcessLocalActivityResult(lar)
 	if err != nil {

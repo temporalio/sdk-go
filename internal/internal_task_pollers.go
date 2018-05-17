@@ -239,6 +239,9 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 }
 
 func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResult) error {
+	workflowContext := lar.task.wc
+	decisionStartTime := workflowContext.decisionStartTime
+	decisionTask := workflowContext.currentDecisionTask
 	completedRequest, err := wtp.taskHandler.(*workflowTaskHandlerImpl).ProcessLocalActivityResult(lar)
 	if err != nil {
 		return err
@@ -247,11 +250,10 @@ func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResu
 		return nil
 	}
 
-	workflowContext := lar.task.wc
-	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(workflowContext.decisionStartTime))
+	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(decisionStartTime))
 
 	responseStartTime := time.Now()
-	if err = wtp.RespondTaskCompleted(completedRequest, workflowContext.currentDecisionTask); err != nil {
+	if err = wtp.RespondTaskCompleted(completedRequest, decisionTask); err != nil {
 		return err
 	}
 	wtp.metricsScope.Timer(metrics.DecisionResponseLatency).Record(time.Now().Sub(responseStartTime))
