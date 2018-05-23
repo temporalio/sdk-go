@@ -14,3 +14,5 @@ bins
 test
 test.log
 /dummy
+.build
+.bins

@@ -1,112 +1,115 @@
 .PHONY: test bins clean cover cover_ci
-PROJECT_ROOT = go.uber.org/cadence
-
-export PATH := $(GOPATH)/bin:$(PATH)
-
-THRIFT_GENDIR=.gen
 
 # default target
 default: test
 
-# define the list of thrift files the service depends on
-# (if you have some)
-THRIFTRW_SRCS = \
-  idl/github.com/uber/cadence/cadence.thrift \
-  idl/github.com/uber/cadence/shared.thrift \
+IMPORT_ROOT := go.uber.org/cadence
+THRIFT_GENDIR := .gen/go
+THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
+# one or more thriftrw-generated file(s), to create / depend on generated code
+THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
+TEST_ARG ?= -coverprofile=$(BUILD)/cover.out -race
 
-PROGS = cadence-client
-TEST_ARG ?= -race -v -timeout 5m
-BUILD := ./build
+# general build-product folder, cleaned as part of `make clean`
+BUILD := .build
+# general bins folder.  NOT cleaned via `make clean`
+BINS := .bins
 
-THRIFT_GEN=$(GOPATH)/bin/thrift-gen
+# Automatically gather all srcs + a "sentinel" thriftrw output file (which forces generation).
+ALL_SRC := $(THRIFTRW_OUT) $(shell \
+	find . -name "*.go" | \
+	grep -v \
+	-e vendor/ \
+	-e .gen/ \
+	-e .build/ \
+)
 
-define thriftrwrule
-THRIFTRW_GEN_SRC += $(THRIFT_GENDIR)/go/$1/$1.go
+# Files that needs to run lint.  excludes testify mocks and the thrift sentinel.
+LINT_SRC := $(filter-out ./mock% $(THRIFTRW_OUT),$(ALL_SRC))
 
-$(THRIFT_GENDIR)/go/$1/$1.go:: $2
-	@mkdir -p $(THRIFT_GENDIR)/go
-	$(ECHO_V)thriftrw --plugin=yarpc --pkg-prefix=$(PROJECT_ROOT)/$(THRIFT_GENDIR)/go/ --out=$(THRIFT_GENDIR)/go $2
-endef
+THRIFTRW_VERSION := v1.11.0
+YARPC_VERSION := v1.29.1
+GOLINT_VERSION := 470b6b0bb3005eda157f0275e2e4895055396a81
 
-$(foreach tsrc,$(THRIFTRW_SRCS),$(eval $(call \
-	thriftrwrule,$(basename $(notdir \
-	$(shell echo $(tsrc) | tr A-Z a-z))),$(tsrc))))
+# versioned tools.  just change the version vars above, it'll automatically trigger a rebuild.
+$(BINS)/versions/thriftrw-$(THRIFTRW_VERSION):
+	./versioned_go_build.sh go.uber.org/thriftrw $(THRIFTRW_VERSION) $@
 
-# Automatically gather all srcs
-ALL_SRC := $(shell find . -name "*.go" | grep -v -e Godeps -e vendor \
-	-e ".*/\..*" \
-	-e ".*/_.*")
+$(BINS)/versions/yarpc-$(YARPC_VERSION):
+	./versioned_go_build.sh go.uber.org/yarpc $(YARPC_VERSION) encoding/thrift/thriftrw-plugin-yarpc $@
 
-# Files that needs to run lint, exclude testify mock from lint
-LINT_SRC := $(filter-out ./mock%,$(ALL_SRC))
+$(BINS)/versions/golint-$(GOLINT_VERSION):
+	./versioned_go_build.sh golang.org/x/lint $(GOLINT_VERSION) golint $@
 
-# all directories with *_test.go files in them
-TEST_DIRS := $(sort $(dir $(filter %_test.go,$(ALL_SRC))))
+# stable tool targets.  depend on / execute these instead of the versioned ones.
+# this versioned-to-nice-name thing is mostly because thriftrw depends on the yarpc
+# bin to be named "thriftrw-plugin-yarpc".
+$(BINS)/thriftrw: $(BINS)/versions/thriftrw-$(THRIFTRW_VERSION)
+	@ln -fs $(CURDIR)/$< $@
 
-vendor:
+$(BINS)/thriftrw-plugin-yarpc: $(BINS)/versions/yarpc-$(YARPC_VERSION)
+	@ln -fs $(CURDIR)/$< $@
+
+$(BINS)/golint: $(BINS)/versions/golint-$(GOLINT_VERSION)
+	@ln -fs $(CURDIR)/$< $@
+
+vendor: vendor/glide.updated
+
+vendor/glide.updated: glide.lock
 	glide install
+	touch vendor/glide.updated
 
-yarpc-install: vendor
-	go get './vendor/go.uber.org/thriftrw'
-	go get './vendor/go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc'
+$(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
+	@echo 'thriftrw: $(THRIFTRW_SRC)'
+	@mkdir -p $(dir $@)
+	@# needs to be able to find the thriftrw-plugin-yarpc bin in PATH
+	@PATH="$(BINS)" \
+		$(BINS)/thriftrw \
+		--plugin=yarpc \
+		--pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
+		--out=$(THRIFT_GENDIR) \
+		$(THRIFTRW_SRC)
 
 clean_thrift:
 	rm -rf .gen
 
-thriftc: clean_thrift yarpc-install $(THRIFTRW_GEN_SRC)
-
-copyright: ./internal/cmd/tools/copyright/licensegen.go
-	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
-
-vendor/glide.updated: glide.lock glide.yaml
-	glide install
-	touch vendor/glide.updated
-
-dummy: vendor/glide.updated $(ALL_SRC)
-	go build -i -o dummy internal/cmd/dummy/dummy.go
-
-test: bins
-	@rm -f test
-	@rm -f test.log
-	@for dir in $(TEST_DIRS); do \
-		go test -race -coverprofile=$@ "$$dir" | tee -a test.log; \
-	done;
-
-bins: thriftc copyright lint dummy
-
-cover_profile: clean copyright lint vendor/glide.updated
+# `make copyright` or depend on "copyright" to force-run licensegen,
+# or depend on $(BUILD)/copyright to let it run as needed.
+copyright $(BUILD)/copyright: $(ALL_SRC)
 	@mkdir -p $(BUILD)
-	@echo "mode: atomic" > $(BUILD)/cover.out
+	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
+	@touch $(BUILD)/copyright
 
-	@echo Testing packages:
-	@for dir in $(TEST_DIRS); do \
-		mkdir -p $(BUILD)/"$$dir"; \
-		go test "$$dir" $(TEST_ARG) -coverprofile=$(BUILD)/"$$dir"/coverage.out || exit 1; \
-		cat $(BUILD)/"$$dir"/coverage.out | grep -v "mode: atomic" >> $(BUILD)/cover.out; \
-	done;
+$(BUILD)/dummy: vendor/glide.updated $(ALL_SRC)
+	go build -i -o $@ internal/cmd/dummy/dummy.go
 
-cover: cover_profile
+test $(BUILD)/cover.out: $(BUILD)/copyright $(BUILD)/dummy $(ALL_SRC)
+	go test ./... $(TEST_ARG)
+
+bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
+
+cover: $(BUILD)/cover.out
 	go tool cover -html=$(BUILD)/cover.out;
 
-cover_ci: cover_profile
+cover_ci: $(BUILD)/cover.out
 	goveralls -coverprofile=$(BUILD)/cover.out -service=travis-ci || echo -e "\x1b[31mCoveralls failed\x1b[m";
 
 # golint fails to report many lint failures if it is only given a single file
-# to work on at a time.  and we can't exclude files from its checks, so for
-# best results we need to give it a whitelist of every file in every package
-# that we want linted.
+# to work on at a time, and it can't handle multiple packages at once, *and*
+# we can't exclude files from its checks, so for best results we need to give
+# it a whitelist of every file in every package that we want linted, per package.
 #
 # so lint + this golint func works like:
-# - iterate over all dirs (outputs "./folder/")
+# - iterate over all lintable dirs (outputs "./folder/")
 # - find .go files in a dir (via wildcard, so not recursively)
 # - filter to only files in LINT_SRC
 # - if it's not empty, run golint against the list
 define lint_if_present
-test -n "$1" && golint -set_exit_status $1
+test -n "$1" && $(BINS)/golint -set_exit_status $1
 endef
 
-lint:
-	@$(foreach pkg,\
+lint: $(BINS)/golint $(ALL_SRC)
+	$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
 	) test -z "$$ERR" || exit 1
@@ -121,6 +124,5 @@ fmt:
 	@gofmt -w $(ALL_SRC)
 
 clean:
-	rm -rf cadence-client
 	rm -Rf $(BUILD)
-	rm -f dummy
+	rm -Rf .gen
