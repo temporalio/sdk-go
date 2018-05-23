@@ -153,12 +153,14 @@ func isServiceTransientError(err error) bool {
 		*s.WorkflowExecutionAlreadyStartedError,
 		*s.DomainAlreadyExistsError,
 		*s.QueryFailedError,
+		*s.DomainNotActiveError,
 		*s.CancellationAlreadyRequestedError:
 		return false
 	}
 
 	// s.InternalServiceError
 	// s.ServiceBusyError
+	// s.LimitExceededError
 	return true
 }
 

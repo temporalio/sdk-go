@@ -34,6 +34,116 @@ import (
 	"strings"
 )
 
+type AccessDeniedError struct {
+	Message string `json:"message,required"`
+}
+
+// ToWire translates a AccessDeniedError struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *AccessDeniedError) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	w, err = wire.NewValueString(v.Message), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 1, Value: w}
+	i++
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a AccessDeniedError struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a AccessDeniedError struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v AccessDeniedError
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *AccessDeniedError) FromWire(w wire.Value) error {
+	var err error
+
+	messageIsSet := false
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 1:
+			if field.Value.Type() == wire.TBinary {
+				v.Message, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				messageIsSet = true
+			}
+		}
+	}
+
+	if !messageIsSet {
+		return errors.New("field Message of AccessDeniedError is required")
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a AccessDeniedError
+// struct.
+func (v *AccessDeniedError) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	fields[i] = fmt.Sprintf("Message: %v", v.Message)
+	i++
+
+	return fmt.Sprintf("AccessDeniedError{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this AccessDeniedError match the
+// provided AccessDeniedError.
+//
+// This function performs a deep comparison.
+func (v *AccessDeniedError) Equals(rhs *AccessDeniedError) bool {
+	if !(v.Message == rhs.Message) {
+		return false
+	}
+
+	return true
+}
+
+func (v *AccessDeniedError) Error() string {
+	return v.String()
+}
+
 type ActivityTaskCancelRequestedEventAttributes struct {
 	ActivityId                   *string `json:"activityId,omitempty"`
 	DecisionTaskCompletedEventId *int64  `json:"decisionTaskCompletedEventId,omitempty"`
@@ -925,6 +1035,7 @@ type ActivityTaskScheduledEventAttributes struct {
 	StartToCloseTimeoutSeconds    *int32        `json:"startToCloseTimeoutSeconds,omitempty"`
 	HeartbeatTimeoutSeconds       *int32        `json:"heartbeatTimeoutSeconds,omitempty"`
 	DecisionTaskCompletedEventId  *int64        `json:"decisionTaskCompletedEventId,omitempty"`
+	RetryPolicy                   *RetryPolicy  `json:"retryPolicy,omitempty"`
 }
 
 // ToWire translates a ActivityTaskScheduledEventAttributes struct into a Thrift-level intermediate
@@ -944,7 +1055,7 @@ type ActivityTaskScheduledEventAttributes struct {
 //   }
 func (v *ActivityTaskScheduledEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [10]wire.Field
+		fields [11]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -1030,6 +1141,14 @@ func (v *ActivityTaskScheduledEventAttributes) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 90, Value: w}
 		i++
 	}
+	if v.RetryPolicy != nil {
+		w, err = v.RetryPolicy.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 110, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -1042,6 +1161,12 @@ func _ActivityType_Read(w wire.Value) (*ActivityType, error) {
 
 func _TaskList_Read(w wire.Value) (*TaskList, error) {
 	var v TaskList
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _RetryPolicy_Read(w wire.Value) (*RetryPolicy, error) {
+	var v RetryPolicy
 	err := v.FromWire(w)
 	return &v, err
 }
@@ -1162,6 +1287,14 @@ func (v *ActivityTaskScheduledEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 110:
+			if field.Value.Type() == wire.TStruct {
+				v.RetryPolicy, err = _RetryPolicy_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -1175,7 +1308,7 @@ func (v *ActivityTaskScheduledEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [10]string
+	var fields [11]string
 	i := 0
 	if v.ActivityId != nil {
 		fields[i] = fmt.Sprintf("ActivityId: %v", *(v.ActivityId))
@@ -1215,6 +1348,10 @@ func (v *ActivityTaskScheduledEventAttributes) String() string {
 	}
 	if v.DecisionTaskCompletedEventId != nil {
 		fields[i] = fmt.Sprintf("DecisionTaskCompletedEventId: %v", *(v.DecisionTaskCompletedEventId))
+		i++
+	}
+	if v.RetryPolicy != nil {
+		fields[i] = fmt.Sprintf("RetryPolicy: %v", v.RetryPolicy)
 		i++
 	}
 
@@ -1264,6 +1401,9 @@ func (v *ActivityTaskScheduledEventAttributes) Equals(rhs *ActivityTaskScheduled
 		return false
 	}
 	if !_I64_EqualsPtr(v.DecisionTaskCompletedEventId, rhs.DecisionTaskCompletedEventId) {
+		return false
+	}
+	if !((v.RetryPolicy == nil && rhs.RetryPolicy == nil) || (v.RetryPolicy != nil && rhs.RetryPolicy != nil && v.RetryPolicy.Equals(rhs.RetryPolicy))) {
 		return false
 	}
 
@@ -1344,6 +1484,7 @@ type ActivityTaskStartedEventAttributes struct {
 	ScheduledEventId *int64  `json:"scheduledEventId,omitempty"`
 	Identity         *string `json:"identity,omitempty"`
 	RequestId        *string `json:"requestId,omitempty"`
+	Attempt          *int32  `json:"attempt,omitempty"`
 }
 
 // ToWire translates a ActivityTaskStartedEventAttributes struct into a Thrift-level intermediate
@@ -1363,7 +1504,7 @@ type ActivityTaskStartedEventAttributes struct {
 //   }
 func (v *ActivityTaskStartedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -1391,6 +1532,14 @@ func (v *ActivityTaskStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.Attempt != nil {
+		w, err = wire.NewValueI32(*(v.Attempt)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
 
@@ -1449,6 +1598,16 @@ func (v *ActivityTaskStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 40:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.Attempt = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -1462,7 +1621,7 @@ func (v *ActivityTaskStartedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.ScheduledEventId != nil {
 		fields[i] = fmt.Sprintf("ScheduledEventId: %v", *(v.ScheduledEventId))
@@ -1474,6 +1633,10 @@ func (v *ActivityTaskStartedEventAttributes) String() string {
 	}
 	if v.RequestId != nil {
 		fields[i] = fmt.Sprintf("RequestId: %v", *(v.RequestId))
+		i++
+	}
+	if v.Attempt != nil {
+		fields[i] = fmt.Sprintf("Attempt: %v", *(v.Attempt))
 		i++
 	}
 
@@ -1492,6 +1655,9 @@ func (v *ActivityTaskStartedEventAttributes) Equals(rhs *ActivityTaskStartedEven
 		return false
 	}
 	if !_String_EqualsPtr(v.RequestId, rhs.RequestId) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.Attempt, rhs.Attempt) {
 		return false
 	}
 
@@ -1523,6 +1689,16 @@ func (v *ActivityTaskStartedEventAttributes) GetIdentity() (o string) {
 func (v *ActivityTaskStartedEventAttributes) GetRequestId() (o string) {
 	if v.RequestId != nil {
 		return *v.RequestId
+	}
+
+	return
+}
+
+// GetAttempt returns the value of Attempt if it is set or its
+// zero value if it is unset.
+func (v *ActivityTaskStartedEventAttributes) GetAttempt() (o int32) {
+	if v.Attempt != nil {
+		return *v.Attempt
 	}
 
 	return
@@ -8640,6 +8816,194 @@ func (v *DomainInfo) GetOwnerEmail() (o string) {
 	return
 }
 
+type DomainNotActiveError struct {
+	Message        string `json:"message,required"`
+	DomainName     string `json:"domainName,required"`
+	CurrentCluster string `json:"currentCluster,required"`
+	ActiveCluster  string `json:"activeCluster,required"`
+}
+
+// ToWire translates a DomainNotActiveError struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *DomainNotActiveError) ToWire() (wire.Value, error) {
+	var (
+		fields [4]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	w, err = wire.NewValueString(v.Message), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 1, Value: w}
+	i++
+
+	w, err = wire.NewValueString(v.DomainName), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 2, Value: w}
+	i++
+
+	w, err = wire.NewValueString(v.CurrentCluster), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 3, Value: w}
+	i++
+
+	w, err = wire.NewValueString(v.ActiveCluster), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 4, Value: w}
+	i++
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a DomainNotActiveError struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a DomainNotActiveError struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v DomainNotActiveError
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *DomainNotActiveError) FromWire(w wire.Value) error {
+	var err error
+
+	messageIsSet := false
+	domainNameIsSet := false
+	currentClusterIsSet := false
+	activeClusterIsSet := false
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 1:
+			if field.Value.Type() == wire.TBinary {
+				v.Message, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				messageIsSet = true
+			}
+		case 2:
+			if field.Value.Type() == wire.TBinary {
+				v.DomainName, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				domainNameIsSet = true
+			}
+		case 3:
+			if field.Value.Type() == wire.TBinary {
+				v.CurrentCluster, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				currentClusterIsSet = true
+			}
+		case 4:
+			if field.Value.Type() == wire.TBinary {
+				v.ActiveCluster, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				activeClusterIsSet = true
+			}
+		}
+	}
+
+	if !messageIsSet {
+		return errors.New("field Message of DomainNotActiveError is required")
+	}
+
+	if !domainNameIsSet {
+		return errors.New("field DomainName of DomainNotActiveError is required")
+	}
+
+	if !currentClusterIsSet {
+		return errors.New("field CurrentCluster of DomainNotActiveError is required")
+	}
+
+	if !activeClusterIsSet {
+		return errors.New("field ActiveCluster of DomainNotActiveError is required")
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a DomainNotActiveError
+// struct.
+func (v *DomainNotActiveError) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [4]string
+	i := 0
+	fields[i] = fmt.Sprintf("Message: %v", v.Message)
+	i++
+	fields[i] = fmt.Sprintf("DomainName: %v", v.DomainName)
+	i++
+	fields[i] = fmt.Sprintf("CurrentCluster: %v", v.CurrentCluster)
+	i++
+	fields[i] = fmt.Sprintf("ActiveCluster: %v", v.ActiveCluster)
+	i++
+
+	return fmt.Sprintf("DomainNotActiveError{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this DomainNotActiveError match the
+// provided DomainNotActiveError.
+//
+// This function performs a deep comparison.
+func (v *DomainNotActiveError) Equals(rhs *DomainNotActiveError) bool {
+	if !(v.Message == rhs.Message) {
+		return false
+	}
+	if !(v.DomainName == rhs.DomainName) {
+		return false
+	}
+	if !(v.CurrentCluster == rhs.CurrentCluster) {
+		return false
+	}
+	if !(v.ActiveCluster == rhs.ActiveCluster) {
+		return false
+	}
+
+	return true
+}
+
+func (v *DomainNotActiveError) Error() string {
+	return v.String()
+}
+
 type DomainReplicationConfiguration struct {
 	ActiveClusterName *string                            `json:"activeClusterName,omitempty"`
 	Clusters          []*ClusterReplicationConfiguration `json:"clusters,omitempty"`
@@ -10702,6 +11066,7 @@ type HistoryEvent struct {
 	EventId                                                        *int64                                                          `json:"eventId,omitempty"`
 	Timestamp                                                      *int64                                                          `json:"timestamp,omitempty"`
 	EventType                                                      *EventType                                                      `json:"eventType,omitempty"`
+	Version                                                        *int64                                                          `json:"version,omitempty"`
 	WorkflowExecutionStartedEventAttributes                        *WorkflowExecutionStartedEventAttributes                        `json:"workflowExecutionStartedEventAttributes,omitempty"`
 	WorkflowExecutionCompletedEventAttributes                      *WorkflowExecutionCompletedEventAttributes                      `json:"workflowExecutionCompletedEventAttributes,omitempty"`
 	WorkflowExecutionFailedEventAttributes                         *WorkflowExecutionFailedEventAttributes                         `json:"workflowExecutionFailedEventAttributes,omitempty"`
@@ -10762,7 +11127,7 @@ type HistoryEvent struct {
 //   }
 func (v *HistoryEvent) ToWire() (wire.Value, error) {
 	var (
-		fields [44]wire.Field
+		fields [45]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -10790,6 +11155,14 @@ func (v *HistoryEvent) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.Version != nil {
+		w, err = wire.NewValueI64(*(v.Version)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 35, Value: w}
 		i++
 	}
 	if v.WorkflowExecutionStartedEventAttributes != nil {
@@ -11428,6 +11801,16 @@ func (v *HistoryEvent) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 35:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.Version = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		case 40:
 			if field.Value.Type() == wire.TStruct {
 				v.WorkflowExecutionStartedEventAttributes, err = _WorkflowExecutionStartedEventAttributes_Read(field.Value)
@@ -11769,7 +12152,7 @@ func (v *HistoryEvent) String() string {
 		return "<nil>"
 	}
 
-	var fields [44]string
+	var fields [45]string
 	i := 0
 	if v.EventId != nil {
 		fields[i] = fmt.Sprintf("EventId: %v", *(v.EventId))
@@ -11781,6 +12164,10 @@ func (v *HistoryEvent) String() string {
 	}
 	if v.EventType != nil {
 		fields[i] = fmt.Sprintf("EventType: %v", *(v.EventType))
+		i++
+	}
+	if v.Version != nil {
+		fields[i] = fmt.Sprintf("Version: %v", *(v.Version))
 		i++
 	}
 	if v.WorkflowExecutionStartedEventAttributes != nil {
@@ -11975,6 +12362,9 @@ func (v *HistoryEvent) Equals(rhs *HistoryEvent) bool {
 	if !_EventType_EqualsPtr(v.EventType, rhs.EventType) {
 		return false
 	}
+	if !_I64_EqualsPtr(v.Version, rhs.Version) {
+		return false
+	}
 	if !((v.WorkflowExecutionStartedEventAttributes == nil && rhs.WorkflowExecutionStartedEventAttributes == nil) || (v.WorkflowExecutionStartedEventAttributes != nil && rhs.WorkflowExecutionStartedEventAttributes != nil && v.WorkflowExecutionStartedEventAttributes.Equals(rhs.WorkflowExecutionStartedEventAttributes))) {
 		return false
 	}
@@ -12127,6 +12517,16 @@ func (v *HistoryEvent) GetTimestamp() (o int64) {
 func (v *HistoryEvent) GetEventType() (o EventType) {
 	if v.EventType != nil {
 		return *v.EventType
+	}
+
+	return
+}
+
+// GetVersion returns the value of Version if it is set or its
+// zero value if it is unset.
+func (v *HistoryEvent) GetVersion() (o int64) {
+	if v.Version != nil {
+		return *v.Version
 	}
 
 	return
@@ -12374,6 +12774,116 @@ func (v *InternalServiceError) Equals(rhs *InternalServiceError) bool {
 }
 
 func (v *InternalServiceError) Error() string {
+	return v.String()
+}
+
+type LimitExceededError struct {
+	Message string `json:"message,required"`
+}
+
+// ToWire translates a LimitExceededError struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *LimitExceededError) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	w, err = wire.NewValueString(v.Message), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 1, Value: w}
+	i++
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a LimitExceededError struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a LimitExceededError struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v LimitExceededError
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *LimitExceededError) FromWire(w wire.Value) error {
+	var err error
+
+	messageIsSet := false
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 1:
+			if field.Value.Type() == wire.TBinary {
+				v.Message, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				messageIsSet = true
+			}
+		}
+	}
+
+	if !messageIsSet {
+		return errors.New("field Message of LimitExceededError is required")
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a LimitExceededError
+// struct.
+func (v *LimitExceededError) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	fields[i] = fmt.Sprintf("Message: %v", v.Message)
+	i++
+
+	return fmt.Sprintf("LimitExceededError{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this LimitExceededError match the
+// provided LimitExceededError.
+//
+// This function performs a deep comparison.
+func (v *LimitExceededError) Equals(rhs *LimitExceededError) bool {
+	if !(v.Message == rhs.Message) {
+		return false
+	}
+
+	return true
+}
+
+func (v *LimitExceededError) Error() string {
 	return v.String()
 }
 
@@ -14040,16 +14550,18 @@ func (v *PollForActivityTaskRequest) GetIdentity() (o string) {
 }
 
 type PollForActivityTaskResponse struct {
-	TaskToken                     []byte             `json:"taskToken,omitempty"`
-	WorkflowExecution             *WorkflowExecution `json:"workflowExecution,omitempty"`
-	ActivityId                    *string            `json:"activityId,omitempty"`
-	ActivityType                  *ActivityType      `json:"activityType,omitempty"`
-	Input                         []byte             `json:"input,omitempty"`
-	ScheduledTimestamp            *int64             `json:"scheduledTimestamp,omitempty"`
-	ScheduleToCloseTimeoutSeconds *int32             `json:"scheduleToCloseTimeoutSeconds,omitempty"`
-	StartedTimestamp              *int64             `json:"startedTimestamp,omitempty"`
-	StartToCloseTimeoutSeconds    *int32             `json:"startToCloseTimeoutSeconds,omitempty"`
-	HeartbeatTimeoutSeconds       *int32             `json:"heartbeatTimeoutSeconds,omitempty"`
+	TaskToken                       []byte             `json:"taskToken,omitempty"`
+	WorkflowExecution               *WorkflowExecution `json:"workflowExecution,omitempty"`
+	ActivityId                      *string            `json:"activityId,omitempty"`
+	ActivityType                    *ActivityType      `json:"activityType,omitempty"`
+	Input                           []byte             `json:"input,omitempty"`
+	ScheduledTimestamp              *int64             `json:"scheduledTimestamp,omitempty"`
+	ScheduleToCloseTimeoutSeconds   *int32             `json:"scheduleToCloseTimeoutSeconds,omitempty"`
+	StartedTimestamp                *int64             `json:"startedTimestamp,omitempty"`
+	StartToCloseTimeoutSeconds      *int32             `json:"startToCloseTimeoutSeconds,omitempty"`
+	HeartbeatTimeoutSeconds         *int32             `json:"heartbeatTimeoutSeconds,omitempty"`
+	Attempt                         *int32             `json:"attempt,omitempty"`
+	ScheduledTimestampOfThisAttempt *int64             `json:"scheduledTimestampOfThisAttempt,omitempty"`
 }
 
 // ToWire translates a PollForActivityTaskResponse struct into a Thrift-level intermediate
@@ -14069,7 +14581,7 @@ type PollForActivityTaskResponse struct {
 //   }
 func (v *PollForActivityTaskResponse) ToWire() (wire.Value, error) {
 	var (
-		fields [10]wire.Field
+		fields [12]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -14153,6 +14665,22 @@ func (v *PollForActivityTaskResponse) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 110, Value: w}
+		i++
+	}
+	if v.Attempt != nil {
+		w, err = wire.NewValueI32(*(v.Attempt)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 120, Value: w}
+		i++
+	}
+	if v.ScheduledTimestampOfThisAttempt != nil {
+		w, err = wire.NewValueI64(*(v.ScheduledTimestampOfThisAttempt)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 130, Value: w}
 		i++
 	}
 
@@ -14273,6 +14801,26 @@ func (v *PollForActivityTaskResponse) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 120:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.Attempt = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 130:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.ScheduledTimestampOfThisAttempt = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -14286,7 +14834,7 @@ func (v *PollForActivityTaskResponse) String() string {
 		return "<nil>"
 	}
 
-	var fields [10]string
+	var fields [12]string
 	i := 0
 	if v.TaskToken != nil {
 		fields[i] = fmt.Sprintf("TaskToken: %v", v.TaskToken)
@@ -14328,6 +14876,14 @@ func (v *PollForActivityTaskResponse) String() string {
 		fields[i] = fmt.Sprintf("HeartbeatTimeoutSeconds: %v", *(v.HeartbeatTimeoutSeconds))
 		i++
 	}
+	if v.Attempt != nil {
+		fields[i] = fmt.Sprintf("Attempt: %v", *(v.Attempt))
+		i++
+	}
+	if v.ScheduledTimestampOfThisAttempt != nil {
+		fields[i] = fmt.Sprintf("ScheduledTimestampOfThisAttempt: %v", *(v.ScheduledTimestampOfThisAttempt))
+		i++
+	}
 
 	return fmt.Sprintf("PollForActivityTaskResponse{%v}", strings.Join(fields[:i], ", "))
 }
@@ -14365,6 +14921,12 @@ func (v *PollForActivityTaskResponse) Equals(rhs *PollForActivityTaskResponse) b
 		return false
 	}
 	if !_I32_EqualsPtr(v.HeartbeatTimeoutSeconds, rhs.HeartbeatTimeoutSeconds) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.Attempt, rhs.Attempt) {
+		return false
+	}
+	if !_I64_EqualsPtr(v.ScheduledTimestampOfThisAttempt, rhs.ScheduledTimestampOfThisAttempt) {
 		return false
 	}
 
@@ -14426,6 +14988,26 @@ func (v *PollForActivityTaskResponse) GetStartToCloseTimeoutSeconds() (o int32) 
 func (v *PollForActivityTaskResponse) GetHeartbeatTimeoutSeconds() (o int32) {
 	if v.HeartbeatTimeoutSeconds != nil {
 		return *v.HeartbeatTimeoutSeconds
+	}
+
+	return
+}
+
+// GetAttempt returns the value of Attempt if it is set or its
+// zero value if it is unset.
+func (v *PollForActivityTaskResponse) GetAttempt() (o int32) {
+	if v.Attempt != nil {
+		return *v.Attempt
+	}
+
+	return
+}
+
+// GetScheduledTimestampOfThisAttempt returns the value of ScheduledTimestampOfThisAttempt if it is set or its
+// zero value if it is unset.
+func (v *PollForActivityTaskResponse) GetScheduledTimestampOfThisAttempt() (o int64) {
+	if v.ScheduledTimestampOfThisAttempt != nil {
+		return *v.ScheduledTimestampOfThisAttempt
 	}
 
 	return
@@ -20076,6 +20658,323 @@ func (v *RespondQueryTaskCompletedRequest) GetErrorMessage() (o string) {
 	return
 }
 
+type RetryPolicy struct {
+	InitialIntervalInSeconds *int32   `json:"initialIntervalInSeconds,omitempty"`
+	BackoffCoefficient       *float64 `json:"backoffCoefficient,omitempty"`
+	MaximumIntervalInSeconds *int32   `json:"maximumIntervalInSeconds,omitempty"`
+	MaximumAttempts          *int32   `json:"maximumAttempts,omitempty"`
+	NonRetriableErrorReasons []string `json:"nonRetriableErrorReasons,omitempty"`
+}
+
+type _List_String_ValueList []string
+
+func (v _List_String_ValueList) ForEach(f func(wire.Value) error) error {
+	for _, x := range v {
+		w, err := wire.NewValueString(x), error(nil)
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_String_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_String_ValueList) ValueType() wire.Type {
+	return wire.TBinary
+}
+
+func (_List_String_ValueList) Close() {}
+
+// ToWire translates a RetryPolicy struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *RetryPolicy) ToWire() (wire.Value, error) {
+	var (
+		fields [5]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.InitialIntervalInSeconds != nil {
+		w, err = wire.NewValueI32(*(v.InitialIntervalInSeconds)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.BackoffCoefficient != nil {
+		w, err = wire.NewValueDouble(*(v.BackoffCoefficient)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.MaximumIntervalInSeconds != nil {
+		w, err = wire.NewValueI32(*(v.MaximumIntervalInSeconds)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.MaximumAttempts != nil {
+		w, err = wire.NewValueI32(*(v.MaximumAttempts)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+	if v.NonRetriableErrorReasons != nil {
+		w, err = wire.NewValueList(_List_String_ValueList(v.NonRetriableErrorReasons)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _List_String_Read(l wire.ValueList) ([]string, error) {
+	if l.ValueType() != wire.TBinary {
+		return nil, nil
+	}
+
+	o := make([]string, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := x.GetString(), error(nil)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
+}
+
+// FromWire deserializes a RetryPolicy struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a RetryPolicy struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v RetryPolicy
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *RetryPolicy) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.InitialIntervalInSeconds = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TDouble {
+				var x float64
+				x, err = field.Value.GetDouble(), error(nil)
+				v.BackoffCoefficient = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.MaximumIntervalInSeconds = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 40:
+			if field.Value.Type() == wire.TI32 {
+				var x int32
+				x, err = field.Value.GetI32(), error(nil)
+				v.MaximumAttempts = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 50:
+			if field.Value.Type() == wire.TList {
+				v.NonRetriableErrorReasons, err = _List_String_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a RetryPolicy
+// struct.
+func (v *RetryPolicy) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [5]string
+	i := 0
+	if v.InitialIntervalInSeconds != nil {
+		fields[i] = fmt.Sprintf("InitialIntervalInSeconds: %v", *(v.InitialIntervalInSeconds))
+		i++
+	}
+	if v.BackoffCoefficient != nil {
+		fields[i] = fmt.Sprintf("BackoffCoefficient: %v", *(v.BackoffCoefficient))
+		i++
+	}
+	if v.MaximumIntervalInSeconds != nil {
+		fields[i] = fmt.Sprintf("MaximumIntervalInSeconds: %v", *(v.MaximumIntervalInSeconds))
+		i++
+	}
+	if v.MaximumAttempts != nil {
+		fields[i] = fmt.Sprintf("MaximumAttempts: %v", *(v.MaximumAttempts))
+		i++
+	}
+	if v.NonRetriableErrorReasons != nil {
+		fields[i] = fmt.Sprintf("NonRetriableErrorReasons: %v", v.NonRetriableErrorReasons)
+		i++
+	}
+
+	return fmt.Sprintf("RetryPolicy{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _Double_EqualsPtr(lhs, rhs *float64) bool {
+	if lhs != nil && rhs != nil {
+
+		x := *lhs
+		y := *rhs
+		return (x == y)
+	}
+	return lhs == nil && rhs == nil
+}
+
+func _List_String_Equals(lhs, rhs []string) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !(lv == rv) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Equals returns true if all the fields of this RetryPolicy match the
+// provided RetryPolicy.
+//
+// This function performs a deep comparison.
+func (v *RetryPolicy) Equals(rhs *RetryPolicy) bool {
+	if !_I32_EqualsPtr(v.InitialIntervalInSeconds, rhs.InitialIntervalInSeconds) {
+		return false
+	}
+	if !_Double_EqualsPtr(v.BackoffCoefficient, rhs.BackoffCoefficient) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.MaximumIntervalInSeconds, rhs.MaximumIntervalInSeconds) {
+		return false
+	}
+	if !_I32_EqualsPtr(v.MaximumAttempts, rhs.MaximumAttempts) {
+		return false
+	}
+	if !((v.NonRetriableErrorReasons == nil && rhs.NonRetriableErrorReasons == nil) || (v.NonRetriableErrorReasons != nil && rhs.NonRetriableErrorReasons != nil && _List_String_Equals(v.NonRetriableErrorReasons, rhs.NonRetriableErrorReasons))) {
+		return false
+	}
+
+	return true
+}
+
+// GetInitialIntervalInSeconds returns the value of InitialIntervalInSeconds if it is set or its
+// zero value if it is unset.
+func (v *RetryPolicy) GetInitialIntervalInSeconds() (o int32) {
+	if v.InitialIntervalInSeconds != nil {
+		return *v.InitialIntervalInSeconds
+	}
+
+	return
+}
+
+// GetBackoffCoefficient returns the value of BackoffCoefficient if it is set or its
+// zero value if it is unset.
+func (v *RetryPolicy) GetBackoffCoefficient() (o float64) {
+	if v.BackoffCoefficient != nil {
+		return *v.BackoffCoefficient
+	}
+
+	return
+}
+
+// GetMaximumIntervalInSeconds returns the value of MaximumIntervalInSeconds if it is set or its
+// zero value if it is unset.
+func (v *RetryPolicy) GetMaximumIntervalInSeconds() (o int32) {
+	if v.MaximumIntervalInSeconds != nil {
+		return *v.MaximumIntervalInSeconds
+	}
+
+	return
+}
+
+// GetMaximumAttempts returns the value of MaximumAttempts if it is set or its
+// zero value if it is unset.
+func (v *RetryPolicy) GetMaximumAttempts() (o int32) {
+	if v.MaximumAttempts != nil {
+		return *v.MaximumAttempts
+	}
+
+	return
+}
+
 type ScheduleActivityTaskDecisionAttributes struct {
 	ActivityId                    *string       `json:"activityId,omitempty"`
 	ActivityType                  *ActivityType `json:"activityType,omitempty"`
@@ -20086,6 +20985,7 @@ type ScheduleActivityTaskDecisionAttributes struct {
 	ScheduleToStartTimeoutSeconds *int32        `json:"scheduleToStartTimeoutSeconds,omitempty"`
 	StartToCloseTimeoutSeconds    *int32        `json:"startToCloseTimeoutSeconds,omitempty"`
 	HeartbeatTimeoutSeconds       *int32        `json:"heartbeatTimeoutSeconds,omitempty"`
+	RetryPolicy                   *RetryPolicy  `json:"retryPolicy,omitempty"`
 }
 
 // ToWire translates a ScheduleActivityTaskDecisionAttributes struct into a Thrift-level intermediate
@@ -20105,7 +21005,7 @@ type ScheduleActivityTaskDecisionAttributes struct {
 //   }
 func (v *ScheduleActivityTaskDecisionAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [9]wire.Field
+		fields [10]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -20181,6 +21081,14 @@ func (v *ScheduleActivityTaskDecisionAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 60, Value: w}
+		i++
+	}
+	if v.RetryPolicy != nil {
+		w, err = v.RetryPolicy.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 70, Value: w}
 		i++
 	}
 
@@ -20293,6 +21201,14 @@ func (v *ScheduleActivityTaskDecisionAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 70:
+			if field.Value.Type() == wire.TStruct {
+				v.RetryPolicy, err = _RetryPolicy_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -20306,7 +21222,7 @@ func (v *ScheduleActivityTaskDecisionAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [9]string
+	var fields [10]string
 	i := 0
 	if v.ActivityId != nil {
 		fields[i] = fmt.Sprintf("ActivityId: %v", *(v.ActivityId))
@@ -20344,6 +21260,10 @@ func (v *ScheduleActivityTaskDecisionAttributes) String() string {
 		fields[i] = fmt.Sprintf("HeartbeatTimeoutSeconds: %v", *(v.HeartbeatTimeoutSeconds))
 		i++
 	}
+	if v.RetryPolicy != nil {
+		fields[i] = fmt.Sprintf("RetryPolicy: %v", v.RetryPolicy)
+		i++
+	}
 
 	return fmt.Sprintf("ScheduleActivityTaskDecisionAttributes{%v}", strings.Join(fields[:i], ", "))
 }
@@ -20378,6 +21298,9 @@ func (v *ScheduleActivityTaskDecisionAttributes) Equals(rhs *ScheduleActivityTas
 		return false
 	}
 	if !_I32_EqualsPtr(v.HeartbeatTimeoutSeconds, rhs.HeartbeatTimeoutSeconds) {
+		return false
+	}
+	if !((v.RetryPolicy == nil && rhs.RetryPolicy == nil) || (v.RetryPolicy != nil && rhs.RetryPolicy != nil && v.RetryPolicy.Equals(rhs.RetryPolicy))) {
 		return false
 	}
 
@@ -23799,6 +24722,7 @@ type StartWorkflowExecutionRequest struct {
 	Identity                            *string                `json:"identity,omitempty"`
 	RequestId                           *string                `json:"requestId,omitempty"`
 	WorkflowIdReusePolicy               *WorkflowIdReusePolicy `json:"workflowIdReusePolicy,omitempty"`
+	ChildPolicy                         *ChildPolicy           `json:"childPolicy,omitempty"`
 }
 
 // ToWire translates a StartWorkflowExecutionRequest struct into a Thrift-level intermediate
@@ -23818,7 +24742,7 @@ type StartWorkflowExecutionRequest struct {
 //   }
 func (v *StartWorkflowExecutionRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [10]wire.Field
+		fields [11]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -23902,6 +24826,14 @@ func (v *StartWorkflowExecutionRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 100, Value: w}
+		i++
+	}
+	if v.ChildPolicy != nil {
+		w, err = v.ChildPolicy.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 110, Value: w}
 		i++
 	}
 
@@ -24024,6 +24956,16 @@ func (v *StartWorkflowExecutionRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 110:
+			if field.Value.Type() == wire.TI32 {
+				var x ChildPolicy
+				x, err = _ChildPolicy_Read(field.Value)
+				v.ChildPolicy = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -24037,7 +24979,7 @@ func (v *StartWorkflowExecutionRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [10]string
+	var fields [11]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -24079,6 +25021,10 @@ func (v *StartWorkflowExecutionRequest) String() string {
 		fields[i] = fmt.Sprintf("WorkflowIdReusePolicy: %v", *(v.WorkflowIdReusePolicy))
 		i++
 	}
+	if v.ChildPolicy != nil {
+		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
+		i++
+	}
 
 	return fmt.Sprintf("StartWorkflowExecutionRequest{%v}", strings.Join(fields[:i], ", "))
 }
@@ -24116,6 +25062,9 @@ func (v *StartWorkflowExecutionRequest) Equals(rhs *StartWorkflowExecutionReques
 		return false
 	}
 	if !_WorkflowIdReusePolicy_EqualsPtr(v.WorkflowIdReusePolicy, rhs.WorkflowIdReusePolicy) {
+		return false
+	}
+	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
 		return false
 	}
 
@@ -24187,6 +25136,16 @@ func (v *StartWorkflowExecutionRequest) GetRequestId() (o string) {
 func (v *StartWorkflowExecutionRequest) GetWorkflowIdReusePolicy() (o WorkflowIdReusePolicy) {
 	if v.WorkflowIdReusePolicy != nil {
 		return *v.WorkflowIdReusePolicy
+	}
+
+	return
+}
+
+// GetChildPolicy returns the value of ChildPolicy if it is set or its
+// zero value if it is unset.
+func (v *StartWorkflowExecutionRequest) GetChildPolicy() (o ChildPolicy) {
+	if v.ChildPolicy != nil {
+		return *v.ChildPolicy
 	}
 
 	return
@@ -24843,16 +25802,6 @@ func (v *TaskListMetadata) String() string {
 	}
 
 	return fmt.Sprintf("TaskListMetadata{%v}", strings.Join(fields[:i], ", "))
-}
-
-func _Double_EqualsPtr(lhs, rhs *float64) bool {
-	if lhs != nil && rhs != nil {
-
-		x := *lhs
-		y := *rhs
-		return (x == y)
-	}
-	return lhs == nil && rhs == nil
 }
 
 // Equals returns true if all the fields of this TaskListMetadata match the
@@ -28919,12 +29868,17 @@ func (v *WorkflowExecutionSignaledEventAttributes) GetIdentity() (o string) {
 }
 
 type WorkflowExecutionStartedEventAttributes struct {
-	WorkflowType                        *WorkflowType `json:"workflowType,omitempty"`
-	TaskList                            *TaskList     `json:"taskList,omitempty"`
-	Input                               []byte        `json:"input,omitempty"`
-	ExecutionStartToCloseTimeoutSeconds *int32        `json:"executionStartToCloseTimeoutSeconds,omitempty"`
-	TaskStartToCloseTimeoutSeconds      *int32        `json:"taskStartToCloseTimeoutSeconds,omitempty"`
-	Identity                            *string       `json:"identity,omitempty"`
+	WorkflowType                        *WorkflowType      `json:"workflowType,omitempty"`
+	ParentWorkflowDomain                *string            `json:"parentWorkflowDomain,omitempty"`
+	ParentWorkflowExecution             *WorkflowExecution `json:"parentWorkflowExecution,omitempty"`
+	ParentInitiatedEventId              *int64             `json:"parentInitiatedEventId,omitempty"`
+	TaskList                            *TaskList          `json:"taskList,omitempty"`
+	Input                               []byte             `json:"input,omitempty"`
+	ExecutionStartToCloseTimeoutSeconds *int32             `json:"executionStartToCloseTimeoutSeconds,omitempty"`
+	TaskStartToCloseTimeoutSeconds      *int32             `json:"taskStartToCloseTimeoutSeconds,omitempty"`
+	ChildPolicy                         *ChildPolicy       `json:"childPolicy,omitempty"`
+	ContinuedExecutionRunId             *string            `json:"continuedExecutionRunId,omitempty"`
+	Identity                            *string            `json:"identity,omitempty"`
 }
 
 // ToWire translates a WorkflowExecutionStartedEventAttributes struct into a Thrift-level intermediate
@@ -28944,7 +29898,7 @@ type WorkflowExecutionStartedEventAttributes struct {
 //   }
 func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [6]wire.Field
+		fields [11]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -28956,6 +29910,30 @@ func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.ParentWorkflowDomain != nil {
+		w, err = wire.NewValueString(*(v.ParentWorkflowDomain)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 12, Value: w}
+		i++
+	}
+	if v.ParentWorkflowExecution != nil {
+		w, err = v.ParentWorkflowExecution.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 14, Value: w}
+		i++
+	}
+	if v.ParentInitiatedEventId != nil {
+		w, err = wire.NewValueI64(*(v.ParentInitiatedEventId)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 16, Value: w}
 		i++
 	}
 	if v.TaskList != nil {
@@ -28988,6 +29966,22 @@ func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 50, Value: w}
+		i++
+	}
+	if v.ChildPolicy != nil {
+		w, err = v.ChildPolicy.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 52, Value: w}
+		i++
+	}
+	if v.ContinuedExecutionRunId != nil {
+		w, err = wire.NewValueString(*(v.ContinuedExecutionRunId)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 54, Value: w}
 		i++
 	}
 	if v.Identity != nil {
@@ -29032,6 +30026,34 @@ func (v *WorkflowExecutionStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 12:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.ParentWorkflowDomain = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 14:
+			if field.Value.Type() == wire.TStruct {
+				v.ParentWorkflowExecution, err = _WorkflowExecution_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 16:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.ParentInitiatedEventId = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		case 20:
 			if field.Value.Type() == wire.TStruct {
 				v.TaskList, err = _TaskList_Read(field.Value)
@@ -29068,6 +30090,26 @@ func (v *WorkflowExecutionStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 52:
+			if field.Value.Type() == wire.TI32 {
+				var x ChildPolicy
+				x, err = _ChildPolicy_Read(field.Value)
+				v.ChildPolicy = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 54:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.ContinuedExecutionRunId = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		case 60:
 			if field.Value.Type() == wire.TBinary {
 				var x string
@@ -29091,10 +30133,22 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [6]string
+	var fields [11]string
 	i := 0
 	if v.WorkflowType != nil {
 		fields[i] = fmt.Sprintf("WorkflowType: %v", v.WorkflowType)
+		i++
+	}
+	if v.ParentWorkflowDomain != nil {
+		fields[i] = fmt.Sprintf("ParentWorkflowDomain: %v", *(v.ParentWorkflowDomain))
+		i++
+	}
+	if v.ParentWorkflowExecution != nil {
+		fields[i] = fmt.Sprintf("ParentWorkflowExecution: %v", v.ParentWorkflowExecution)
+		i++
+	}
+	if v.ParentInitiatedEventId != nil {
+		fields[i] = fmt.Sprintf("ParentInitiatedEventId: %v", *(v.ParentInitiatedEventId))
 		i++
 	}
 	if v.TaskList != nil {
@@ -29113,6 +30167,14 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
 		i++
 	}
+	if v.ChildPolicy != nil {
+		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
+		i++
+	}
+	if v.ContinuedExecutionRunId != nil {
+		fields[i] = fmt.Sprintf("ContinuedExecutionRunId: %v", *(v.ContinuedExecutionRunId))
+		i++
+	}
 	if v.Identity != nil {
 		fields[i] = fmt.Sprintf("Identity: %v", *(v.Identity))
 		i++
@@ -29129,6 +30191,15 @@ func (v *WorkflowExecutionStartedEventAttributes) Equals(rhs *WorkflowExecutionS
 	if !((v.WorkflowType == nil && rhs.WorkflowType == nil) || (v.WorkflowType != nil && rhs.WorkflowType != nil && v.WorkflowType.Equals(rhs.WorkflowType))) {
 		return false
 	}
+	if !_String_EqualsPtr(v.ParentWorkflowDomain, rhs.ParentWorkflowDomain) {
+		return false
+	}
+	if !((v.ParentWorkflowExecution == nil && rhs.ParentWorkflowExecution == nil) || (v.ParentWorkflowExecution != nil && rhs.ParentWorkflowExecution != nil && v.ParentWorkflowExecution.Equals(rhs.ParentWorkflowExecution))) {
+		return false
+	}
+	if !_I64_EqualsPtr(v.ParentInitiatedEventId, rhs.ParentInitiatedEventId) {
+		return false
+	}
 	if !((v.TaskList == nil && rhs.TaskList == nil) || (v.TaskList != nil && rhs.TaskList != nil && v.TaskList.Equals(rhs.TaskList))) {
 		return false
 	}
@@ -29141,11 +30212,37 @@ func (v *WorkflowExecutionStartedEventAttributes) Equals(rhs *WorkflowExecutionS
 	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
 		return false
 	}
+	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
+		return false
+	}
+	if !_String_EqualsPtr(v.ContinuedExecutionRunId, rhs.ContinuedExecutionRunId) {
+		return false
+	}
 	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
 		return false
 	}
 
 	return true
+}
+
+// GetParentWorkflowDomain returns the value of ParentWorkflowDomain if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionStartedEventAttributes) GetParentWorkflowDomain() (o string) {
+	if v.ParentWorkflowDomain != nil {
+		return *v.ParentWorkflowDomain
+	}
+
+	return
+}
+
+// GetParentInitiatedEventId returns the value of ParentInitiatedEventId if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionStartedEventAttributes) GetParentInitiatedEventId() (o int64) {
+	if v.ParentInitiatedEventId != nil {
+		return *v.ParentInitiatedEventId
+	}
+
+	return
 }
 
 // GetExecutionStartToCloseTimeoutSeconds returns the value of ExecutionStartToCloseTimeoutSeconds if it is set or its
@@ -29163,6 +30260,26 @@ func (v *WorkflowExecutionStartedEventAttributes) GetExecutionStartToCloseTimeou
 func (v *WorkflowExecutionStartedEventAttributes) GetTaskStartToCloseTimeoutSeconds() (o int32) {
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		return *v.TaskStartToCloseTimeoutSeconds
+	}
+
+	return
+}
+
+// GetChildPolicy returns the value of ChildPolicy if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionStartedEventAttributes) GetChildPolicy() (o ChildPolicy) {
+	if v.ChildPolicy != nil {
+		return *v.ChildPolicy
+	}
+
+	return
+}
+
+// GetContinuedExecutionRunId returns the value of ContinuedExecutionRunId if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionStartedEventAttributes) GetContinuedExecutionRunId() (o string) {
+	if v.ContinuedExecutionRunId != nil {
+		return *v.ContinuedExecutionRunId
 	}
 
 	return

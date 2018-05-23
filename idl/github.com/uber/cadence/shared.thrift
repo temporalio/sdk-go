@@ -54,6 +54,21 @@ exception QueryFailedError {
   1: required string message
 }
 
+exception DomainNotActiveError {
+  1: required string message
+  2: required string domainName
+  3: required string currentCluster
+  4: required string activeCluster
+}
+
+exception LimitExceededError {
+  1: required string message
+}
+
+exception AccessDeniedError {
+  1: required string message
+}
+
 enum WorkflowIdReusePolicy {
   /*
    * allow start a workflow execution using the same workflow ID,
@@ -85,6 +100,10 @@ enum TimeoutType {
   HEARTBEAT,
 }
 
+// whenever this list of decision is changed
+// do change the mutableStateBuilder.go
+// function shouldBufferEvent
+// to make sure wo do the correct event ordering
 enum DecisionType {
   ScheduleActivityTask,
   RequestCancelActivityTask,
@@ -264,6 +283,7 @@ struct ScheduleActivityTaskDecisionAttributes {
   50: optional i32 scheduleToStartTimeoutSeconds
   55: optional i32 startToCloseTimeoutSeconds
   60: optional i32 heartbeatTimeoutSeconds
+  70: optional RetryPolicy retryPolicy
 }
 
 struct RequestCancelActivityTaskDecisionAttributes {
@@ -353,10 +373,15 @@ struct Decision {
 
 struct WorkflowExecutionStartedEventAttributes {
   10: optional WorkflowType workflowType
+  12: optional string parentWorkflowDomain
+  14: optional WorkflowExecution parentWorkflowExecution
+  16: optional i64 (js.type = "Long") parentInitiatedEventId
   20: optional TaskList taskList
   30: optional binary input
   40: optional i32 executionStartToCloseTimeoutSeconds
   50: optional i32 taskStartToCloseTimeoutSeconds
+  52: optional ChildPolicy childPolicy
+  54: optional string continuedExecutionRunId
   60: optional string identity
 }
 
@@ -429,12 +454,14 @@ struct ActivityTaskScheduledEventAttributes {
   55: optional i32 startToCloseTimeoutSeconds
   60: optional i32 heartbeatTimeoutSeconds
   90: optional i64 (js.type = "Long") decisionTaskCompletedEventId
+  110: optional RetryPolicy retryPolicy
 }
 
 struct ActivityTaskStartedEventAttributes {
   10: optional i64 (js.type = "Long") scheduledEventId
   20: optional string identity
   30: optional string requestId
+  40: optional i32 attempt
 }
 
 struct ActivityTaskCompletedEventAttributes {
@@ -662,6 +689,7 @@ struct HistoryEvent {
   10:  optional i64 (js.type = "Long") eventId
   20:  optional i64 (js.type = "Long") timestamp
   30:  optional EventType eventType
+  35:  optional i64 (js.type = "Long") version
   40:  optional WorkflowExecutionStartedEventAttributes workflowExecutionStartedEventAttributes
   50:  optional WorkflowExecutionCompletedEventAttributes workflowExecutionCompletedEventAttributes
   60:  optional WorkflowExecutionFailedEventAttributes workflowExecutionFailedEventAttributes
@@ -800,6 +828,7 @@ struct StartWorkflowExecutionRequest {
   80: optional string identity
   90: optional string requestId
   100: optional WorkflowIdReusePolicy workflowIdReusePolicy
+  110: optional ChildPolicy childPolicy
 }
 
 struct StartWorkflowExecutionResponse {
@@ -863,6 +892,8 @@ struct PollForActivityTaskResponse {
   90:  optional i64 (js.type = "Long") startedTimestamp
   100: optional i32 startToCloseTimeoutSeconds
   110: optional i32 heartbeatTimeoutSeconds
+  120: optional i32 attempt
+  130: optional i64 (js.type = "Long") scheduledTimestampOfThisAttempt
 }
 
 struct RecordActivityTaskHeartbeatRequest {
@@ -1081,4 +1112,25 @@ struct PollerInfo {
   // Unix Nano
   10: optional i64 (js.type = "Long")  lastAccessTime
   20: optional string identity
+}
+
+struct RetryPolicy {
+  // Interval of the first retry. If coefficient is 1.0 then it is used for all retries.
+  10: optional i32 initialIntervalInSeconds
+
+  // Coefficient used to calculate the next retry interval.
+  // The next retry interval is previous interval multiplied by the coefficient.
+  // Must be 1 or larger.
+  20: optional double backoffCoefficient
+
+  // Maximum interval between retries. Exponential backoff leads to interval increase.
+  // This value is the cap of the increase. Default is 100x of initial interval.
+  30: optional i32 maximumIntervalInSeconds
+
+  // Maximum number of attempts. When exceeded the retries stop even if not expired yet.
+  // Must be 1 or bigger. Default is unlimited.
+  40: optional i32 maximumAttempts
+
+  // Non-Retriable errors. Will stop retrying if error matches this list.
+  50: optional list<string> nonRetriableErrorReasons
 }
