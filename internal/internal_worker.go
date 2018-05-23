@@ -141,6 +141,10 @@ type (
 		DisableStickyExecution bool
 
 		StickyScheduleToStartTimeout time.Duration
+
+		// NonDeterministicWorkflowPolicy is used for configuring how client's decision task handler deals with
+		// mismatched history events (presumably arising from non-deterministic workflow definitions).
+		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 	}
 )
 
@@ -1017,6 +1021,7 @@ func newAggregatedWorker(
 		DisableStickyExecution:               wOptions.DisableStickyExecution,
 		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
+		NonDeterministicWorkflowPolicy:       wOptions.NonDeterministicWorkflowPolicy,
 	}
 
 	ensureRequiredParams(&workerParams)

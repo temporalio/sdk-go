@@ -364,6 +364,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		TaskList: taskList,
 		Identity: "test-id-1",
 		Logger:   zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
 	}
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
 	request, _, err := taskHandler.ProcessWorkflowTask(task, nil, false)
@@ -379,6 +380,26 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.Error(err)
 	t.Nil(request)
 	t.Contains(err.Error(), "nondeterministic")
+
+	// now, create a new task handler with fail nondeterministic workflow policy
+	// and verify that it handles the mismatching history correctly.
+	params.NonDeterministicWorkflowPolicy = NonDeterministicWorkflowPolicyFailWorkflow
+	failOnNondeterminismTaskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	request, _, err = failOnNondeterminismTaskHandler.ProcessWorkflowTask(task, nil, false)
+	// When FailWorkflow policy is set, task handler does not return an error,
+	// because it will indicate non determinism in the request.
+	t.NoError(err)
+	// Verify that request is a RespondDecisionTaskCompleteRequest
+	response, ok := request.(*s.RespondDecisionTaskCompletedRequest)
+	t.True(ok)
+	// Verify there's at least 1 decision
+	// and the last last decision is to fail workflow
+	// and contains proper justification.(i.e. nondeterminism).
+	t.True(len(response.Decisions) > 0)
+	closeDecision := response.Decisions[len(response.Decisions)-1]
+	t.Equal(*closeDecision.DecisionType, s.DecisionTypeFailWorkflowExecution)
+	t.Contains(*closeDecision.FailWorkflowExecutionDecisionAttributes.Reason, "nondeterministic")
 
 	// now with different package name to activity type
 	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")

@@ -98,15 +98,16 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		domain                 string
-		metricsScope           tally.Scope
-		ppMgr                  pressurePointMgr
-		logger                 *zap.Logger
-		identity               string
-		enableLoggingInReplay  bool
-		disableStickyExecution bool
-		hostEnv                *hostEnvImpl
-		laTunnel               *localActivityTunnel
+		domain                         string
+		metricsScope                   tally.Scope
+		ppMgr                          pressurePointMgr
+		logger                         *zap.Logger
+		identity                       string
+		enableLoggingInReplay          bool
+		disableStickyExecution         bool
+		hostEnv                        *hostEnvImpl
+		laTunnel                       *localActivityTunnel
+		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 	}
 
 	activityProvider func(name string) activity
@@ -307,6 +308,7 @@ func newWorkflowTaskHandler(
 		enableLoggingInReplay:  params.EnableLoggingInReplay,
 		disableStickyExecution: params.DisableStickyExecution,
 		hostEnv:                hostEnv,
+		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
 	}
 }
 
@@ -653,7 +655,26 @@ ProcessEvents:
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
 			wth.logger.Error("Replay and history mismatch.", zap.Error(err))
-			return nil, "", err
+
+			// Whether or not we store the error in workflowContext.err makes
+			// a significant difference, to the point that it affects client's observable
+			// behavior as far as handling non-deterministic workflows.
+			//
+			// If we store it in workflowContext.err, the decision task completion code
+			// will pick up the error and correctly wrap it in the response request we sent back
+			// to the server, which in this case will contain a request to fail the workflow.
+			//
+			// If we simply return the error, the decision task completion code path will not
+			// execute at all, therefore, no response is sent back to the server and we will
+			// look like a decision task time out.
+			switch wth.nonDeterministicWorkflowPolicy {
+			case NonDeterministicWorkflowPolicyFailWorkflow:
+				eventHandler.Complete(nil, NewCustomError("nondeterministic workflow", err.Error()))
+			case NonDeterministicWorkflowPolicyBlockWorkflow:
+				return nil, "", err
+			default:
+				panic(fmt.Sprintf("unknown mismatched workflow history policy."))
+			}
 		}
 	}
 

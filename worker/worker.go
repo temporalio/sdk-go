@@ -37,6 +37,25 @@ type (
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
+
+	// NonDeterministicWorkflowPolicy is an enum for configuring how client's decision task handler deals with
+	// mismatched history events (presumably arising from non-deterministic workflow definitions).
+	NonDeterministicWorkflowPolicy = internal.NonDeterministicWorkflowPolicy
+)
+
+const (
+	// NonDeterministicWorkflowPolicyBlockWorkflow is the default policy for handling detected non-determinism.
+	// This option simply logs to console with an error message that non-determinism is detected, but
+	// does *NOT* reply anything back to the server.
+	// It is chosen as default for backward compatibility reasons because it preserves the old behavior
+	// for handling non-determinism that we had before NonDeterministicWorkflowPolicy type was added to
+	// allow more configurability.
+	NonDeterministicWorkflowPolicyBlockWorkflow = internal.NonDeterministicWorkflowPolicyBlockWorkflow
+	// NonDeterministicWorkflowPolicyFailWorkflow behaves exactly the same as Ignore, up until the very
+	// end of processing a decision task.
+	// Whereas default does *NOT* reply anything back to the server, fail workflow replies back with a request
+	// to fail the workflow execution.
+	NonDeterministicWorkflowPolicyFailWorkflow = internal.NonDeterministicWorkflowPolicyFailWorkflow
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
