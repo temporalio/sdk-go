@@ -32,14 +32,6 @@ type (
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	Channel = internal.Channel
 
-	// SignalChannel extends from Channel. It adds the ability to deal with corrupted signal data. Signal is sent to
-	// Cadence server as binary blob. When workflow try to receive signal data as strongly typed value, the Channel will
-	// try to decode that binary blob into that strongly typed value pointer. If that data is corrupted and cannot be
-	// decoded, the Receive call will panic which will block the workflow. That might not be expected behavior. This
-	// SignalChannel adds new methods so that workflow could receive signal as encoded.Value, and then extract that strongly
-	// typed value from encoded.Value. If the decoding fails, the encoded.Value will return error instead of panic.
-	SignalChannel = internal.SignalChannel
-
 	// Selector must be used instead of native go select by workflow code.
 	// Use workflow.NewSelector(ctx) method to create a Selector instance.
 	Selector = internal.Selector

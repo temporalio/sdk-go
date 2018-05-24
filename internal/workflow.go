@@ -70,28 +70,6 @@ type (
 		Close()
 	}
 
-	// SignalChannel extends from Channel. It adds the ability to deal with corrupted signal data. Signal is sent to
-	// Cadence server as binary blob. When workflow try to receive signal data as strongly typed value, the Channel will
-	// try to decode that binary blob into that strongly typed value pointer. If that data is corrupted and cannot be
-	// decoded, the Receive call will panic which will block the workflow. That might not be expected behavior. This
-	// SignalChannel adds new methods so that workflow could receive signal as encoded.Value, and then extract that strongly
-	// typed value from encoded.Value. If the decoding fails, the encoded.Value will return error instead of panic.
-	SignalChannel interface {
-		Channel
-
-		// ReceiveEncodedValue blocks until it receives a value, and then return that value as encoded.Value.
-		// Returns false when Channel is closed.
-		ReceiveEncodedValue(ctx Context) (value encoded.Value, more bool)
-
-		// ReceiveEncodedValueAsync try to receive from Channel without blocking. If there is data available from the
-		// Channel, it returns the data as encoded.Value and true. Otherwise, it returns nil and false immediately.
-		ReceiveEncodedValueAsync() (value encoded.Value, ok bool)
-
-		// ReceiveEncodedValueAsyncWithMoreFlag is same as ReceiveEncodedValueAsync with extra return value more to
-		// indicate if there could be  more value from the Channel. The more is false when Channel is closed.
-		ReceiveEncodedValueAsyncWithMoreFlag() (value encoded.Value, ok bool, more bool)
-	}
-
 	// Selector must be used instead of native go select by workflow code.
 	// Use workflow.NewSelector(ctx) method to create a Selector instance.
 	Selector interface {
@@ -791,7 +769,7 @@ func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
 }
 
 // GetSignalChannel returns channel corresponding to the signal name.
-func GetSignalChannel(ctx Context, signalName string) SignalChannel {
+func GetSignalChannel(ctx Context, signalName string) Channel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
