@@ -66,55 +66,75 @@ func TestReplayAwareLogger(t *testing.T) {
 	require.True(t, strings.Contains(logs, "replay2 info"), "replay2 info should show")
 }
 
-func Test_DecodedValue(t *testing.T) {
+func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 	equals := func(a, b interface{}) bool {
 		ao := a.(ActivityOptions)
 		bo := b.(ActivityOptions)
 		return ao.TaskList == bo.TaskList
 	}
 	value := ActivityOptions{TaskList: "test-tasklist"}
-	blob := encodeValue(value)
-	isEqual := isEqualValue(value, blob, equals)
+	blob := env.encodeValue(value)
+	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
 
 	value.TaskList = "value-changed"
-	isEqual = isEqualValue(value, blob, equals)
+	isEqual = env.isEqualValue(value, blob, equals)
 	require.False(t, isEqual)
 }
 
+func TestDecodedValue(t *testing.T) {
+	env := &workflowEnvironmentImpl{
+		dataConverter: newDefaultDataConverter(),
+	}
+	testDecodeValueHelper(t, env)
+}
+
+func TestDecodedValue_WithDataConverter(t *testing.T) {
+	env := &workflowEnvironmentImpl{
+		dataConverter: newTestDataConverter(),
+	}
+	testDecodeValueHelper(t, env)
+}
+
 func Test_DecodedValuePtr(t *testing.T) {
+	env := &workflowEnvironmentImpl{
+		dataConverter: newDefaultDataConverter(),
+	}
 	equals := func(a, b interface{}) bool {
 		ao := a.(*ActivityOptions)
 		bo := b.(*ActivityOptions)
 		return ao.TaskList == bo.TaskList
 	}
 	value := &ActivityOptions{TaskList: "test-tasklist"}
-	blob := encodeValue(value)
-	isEqual := isEqualValue(value, blob, equals)
+	blob := env.encodeValue(value)
+	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
 
 	value.TaskList = "value-changed"
-	isEqual = isEqualValue(value, blob, equals)
+	isEqual = env.isEqualValue(value, blob, equals)
 	require.False(t, isEqual)
 }
 
 func Test_DecodedValueNil(t *testing.T) {
+	env := &workflowEnvironmentImpl{
+		dataConverter: newDefaultDataConverter(),
+	}
 	equals := func(a, b interface{}) bool {
 		return a == nil && b == nil
 	}
 	// newValue is nil, old value is nil
 	var value interface{}
-	blob := encodeValue(value)
-	isEqual := isEqualValue(value, blob, equals)
+	blob := env.encodeValue(value)
+	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
 
 	// newValue is nil, oldValue is not nil
-	blob = encodeValue("any-non-nil-value")
-	isEqual = isEqualValue(value, blob, equals)
+	blob = env.encodeValue("any-non-nil-value")
+	isEqual = env.isEqualValue(value, blob, equals)
 	require.False(t, isEqual)
 
 	// newValue is not nil, oldValue is nil
-	blob = encodeValue(nil)
-	isEqual = isEqualValue("non-nil-value", blob, equals)
+	blob = env.encodeValue(nil)
+	isEqual = env.isEqualValue("non-nil-value", blob, equals)
 	require.False(t, isEqual)
 }

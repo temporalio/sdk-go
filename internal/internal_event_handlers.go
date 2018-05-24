@@ -105,8 +105,9 @@ type (
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
-		metricsScope tally.Scope
-		hostEnv      *hostEnvImpl
+		metricsScope  tally.Scope
+		hostEnv       *hostEnvImpl
+		dataConverter encoded.DataConverter
 	}
 
 	localActivityTask struct {
@@ -161,6 +162,7 @@ func newWorkflowExecutionEventHandler(
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	hostEnv *hostEnvImpl,
+	dataConverter encoded.DataConverter,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
@@ -173,6 +175,7 @@ func newWorkflowExecutionEventHandler(
 		completeHandler:       completeHandler,
 		enableLoggingInReplay: enableLoggingInReplay,
 		hostEnv:               hostEnv,
+		dataConverter:         dataConverter,
 	}
 	context.logger = logger.With(
 		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},
@@ -319,6 +322,10 @@ func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
 
 func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return wc.metricsScope
+}
+
+func (wc *workflowEnvironmentImpl) GetDataConverter() encoded.DataConverter {
+	return wc.dataConverter
 }
 
 func (wc *workflowEnvironmentImpl) IsReplaying() bool {
@@ -471,7 +478,7 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 	} else {
 		// GetVersion for changeID is called first time (non-replay mode), we need to generate a marker decision for it.
 		version = maxSupported
-		wc.decisionsHelper.recordVersionMarker(changeID, version)
+		wc.decisionsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter())
 	}
 
 	validateVersion(changeID, version, minSupported, maxSupported)
@@ -504,7 +511,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 			callback(result, err)
 			return
 		}
-		details, err = wc.hostEnv.encodeArgs([]interface{}{sideEffectID, result})
+		details, err = encodeArgs(wc.GetDataConverter(), []interface{}{sideEffectID, result})
 		if err != nil {
 			callback(nil, fmt.Errorf("failure encoding sideEffectID: %v", err))
 			return
@@ -519,17 +526,17 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
 	if result, ok := wc.mutableSideEffect[id]; ok {
-		encodedResult := EncodedValue(result)
+		encodedResult := newEncodedValue(result, wc.GetDataConverter())
 		if wc.isReplay {
 			return encodedResult
 		}
 
 		newValue := f()
-		if isEqualValue(newValue, result, equals) {
+		if wc.isEqualValue(newValue, result, equals) {
 			return encodedResult
 		}
 
-		return wc.recordMutableSideEffect(id, encodeValue(newValue))
+		return wc.recordMutableSideEffect(id, wc.encodeValue(newValue))
 	}
 
 	if wc.isReplay {
@@ -537,21 +544,21 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 		panic("MutableSideEffect with given ID not found during replay")
 	}
 
-	return wc.recordMutableSideEffect(id, encodeValue(f()))
+	return wc.recordMutableSideEffect(id, wc.encodeValue(f()))
 }
 
-func isEqualValue(newValue interface{}, encodedOldValue []byte, equals func(a, b interface{}) bool) bool {
+func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue []byte, equals func(a, b interface{}) bool) bool {
 	if newValue == nil {
 		// new value is nil
-		newEncodedValue := encodeValue(nil)
+		newEncodedValue := wc.encodeValue(nil)
 		return bytes.Equal(newEncodedValue, encodedOldValue)
 	}
 
-	oldValue := decodeValue(encodedOldValue, newValue)
+	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
 	return equals(newValue, oldValue)
 }
 
-func decodeValue(encodedValue EncodedValue, value interface{}) interface{} {
+func decodeValue(encodedValue encoded.Value, value interface{}) interface{} {
 	// We need to decode oldValue out of encodedValue, first we need to prepare valuePtr as the same type as value
 	valuePtr := reflect.New(reflect.TypeOf(value)).Interface()
 	if err := encodedValue.Get(valuePtr); err != nil {
@@ -561,22 +568,26 @@ func decodeValue(encodedValue EncodedValue, value interface{}) interface{} {
 	return decodedValue
 }
 
-func encodeValue(value interface{}) []byte {
-	blob, err := getHostEnvironment().encodeArg(value)
+func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) []byte {
+	blob, err := wc.encodeArg(value)
 	if err != nil {
 		panic(err)
 	}
 	return blob
 }
 
+func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) ([]byte, error) {
+	return wc.GetDataConverter().ToData(arg)
+}
+
 func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byte) encoded.Value {
-	details, err := wc.hostEnv.encodeArgs([]interface{}{id, string(data)})
+	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, string(data)})
 	if err != nil {
 		panic(err)
 	}
 	wc.decisionsHelper.recordMutableSideEffectMarker(id, details)
 	wc.mutableSideEffect[id] = data
-	return EncodedValue(data)
+	return newEncodedValue(data, wc.GetDataConverter())
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
@@ -751,7 +762,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs []byte) ([]byte, error) {
 	if queryType == QueryTypeStackTrace {
-		return getHostEnvironment().encodeArg(weh.StackTrace())
+		return weh.encodeArg(weh.StackTrace())
 	}
 	return weh.queryHandler(queryType, queryArgs)
 }
@@ -801,7 +812,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *m.
 	}
 
 	attributes := event.ActivityTaskFailedEventAttributes
-	err := constructError(*attributes.Reason, attributes.Details)
+	err := constructError(*attributes.Reason, attributes.Details, weh.GetDataConverter())
 	activity.handle(nil, err)
 	return nil
 }
@@ -818,7 +829,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	var err error
 	tt := attributes.GetTimeoutType()
 	if tt == m.TimeoutTypeHeartbeat {
-		err = NewHeartbeatTimeoutError(attributes.Details)
+		details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+		err = NewHeartbeatTimeoutError(details)
 	} else {
 		err = NewTimeoutError(attributes.GetTimeoutType())
 	}
@@ -836,7 +848,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 
 	if decision.isDone() || !activity.waitForCancelRequest {
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
-		err := NewCanceledError(event.ActivityTaskCanceledEventAttributes.Details)
+		details := newEncodedValues(event.ActivityTaskCanceledEventAttributes.Details, weh.GetDataConverter())
+		err := NewCanceledError(details)
 		activity.handle(nil, err)
 	}
 
@@ -862,7 +875,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
 	attributes *m.MarkerRecordedEventAttributes,
 ) error {
-	encodedValues := EncodedValues(attributes.Details)
+	encodedValues := newEncodedValues(attributes.Details, weh.dataConverter)
 	switch attributes.GetMarkerName() {
 	case sideEffectMarkerName:
 		var sideEffectID int32
@@ -890,9 +903,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	}
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData EncodedValue) error {
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData []byte) error {
 	var lamd localActivityMarkerData
-	if err := markerData.Get(&lamd); err != nil {
+	if err := newEncodedValue(markerData, weh.dataConverter).Get(&lamd); err != nil {
 		return err
 	}
 
@@ -902,7 +915,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		if len(lamd.ErrReason) > 0 {
-			la.callback(nil, constructError(lamd.ErrReason, []byte(lamd.ErrJSON)))
+			la.callback(nil, constructError(lamd.ErrReason, []byte(lamd.ErrJSON), weh.GetDataConverter()))
 		} else {
 			la.callback([]byte(lamd.ResultJSON), nil)
 		}
@@ -924,7 +937,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		ReplayTime: weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
 	}
 	if lar.err != nil {
-		errReason, errDetails := getErrorDetails(lar.err)
+		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
 		lamd.ErrReason = errReason
 		lamd.ErrJSON = string(errDetails)
 	} else {
@@ -932,7 +945,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	}
 
 	// encode marker data
-	markerData, err := getHostEnvironment().encodeArg(lamd)
+	markerData, err := weh.encodeArg(lamd)
 	if err != nil {
 		return nil, err
 	}
@@ -1012,7 +1025,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		return nil
 	}
 
-	err := constructError(attributes.GetReason(), attributes.Details)
+	err := constructError(attributes.GetReason(), attributes.Details, weh.GetDataConverter())
 	childWorkflow.handle(nil, err)
 
 	return nil
@@ -1026,7 +1039,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 	if childWorkflow.handled {
 		return nil
 	}
-	err := NewCanceledError(attributes.Details)
+	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+	err := NewCanceledError(details)
 	childWorkflow.handle(nil, err)
 	return nil
 }

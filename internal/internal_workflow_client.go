@@ -52,6 +52,7 @@ type (
 		domain          string
 		metricsScope    *metrics.TaggedScope
 		identity        string
+		dataConverter   encoded.DataConverter
 	}
 
 	// domainClient is the client for managing domains.
@@ -82,10 +83,11 @@ type (
 
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
-		workflowFn   interface{}
-		firstRunID   string
-		currentRunID string
-		iterFn       func(ctx context.Context, runID string) HistoryEventIterator
+		workflowFn    interface{}
+		firstRunID    string
+		currentRunID  string
+		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
+		dataConverter encoded.DataConverter
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -154,7 +156,7 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	// Validate type and its arguments.
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, wc.dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -235,16 +237,17 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	}
 
 	return &workflowRunImpl{
-		workflowFn:   workflow,
-		firstRunID:   runID,
-		currentRunID: runID,
-		iterFn:       iterFn,
+		workflowFn:    workflow,
+		firstRunID:    runID,
+		currentRunID:  runID,
+		iterFn:        iterFn,
+		dataConverter: wc.dataConverter,
 	}, nil
 }
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
-	input, err := getEncodedArg(arg)
+	input, err := encodeArg(wc.dataConverter, arg)
 	if err != nil {
 		return err
 	}
@@ -273,7 +276,7 @@ func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (*WorkflowExecution, error) {
 
-	signalInput, err := getEncodedArg(signalArg)
+	signalInput, err := encodeArg(wc.dataConverter, signalArg)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +303,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	// Validate type and its arguments.
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, wc.dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -442,12 +445,12 @@ func (wc *workflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	var data []byte
 	if result != nil {
 		var err0 error
-		data, err0 = getHostEnvironment().encodeArg(result)
+		data, err0 = encodeArg(wc.dataConverter, result)
 		if err0 != nil {
 			return err0
 		}
 	}
-	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err)
+	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
 }
 
@@ -463,19 +466,19 @@ func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domain, work
 	var data []byte
 	if result != nil {
 		var err0 error
-		data, err0 = getHostEnvironment().encodeArg(result)
+		data, err0 = encodeArg(wc.dataConverter, result)
 		if err0 != nil {
 			return err0
 		}
 	}
 
-	request := convertActivityResultToRespondRequestByID(wc.identity, domain, workflowID, runID, activityID, data, err)
+	request := convertActivityResultToRespondRequestByID(wc.identity, domain, workflowID, runID, activityID, data, err, wc.dataConverter)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
 func (wc *workflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
-	data, err := getHostEnvironment().encodeArgs(details)
+	data, err := encodeArgs(wc.dataConverter, details)
 	if err != nil {
 		return err
 	}
@@ -485,7 +488,7 @@ func (wc *workflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *workflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	domain, workflowID, runID, activityID string, details ...interface{}) error {
-	data, err := getHostEnvironment().encodeArgs(details)
+	data, err := encodeArgs(wc.dataConverter, details)
 	if err != nil {
 		return err
 	}
@@ -584,7 +587,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	var input []byte
 	if len(args) > 0 {
 		var err error
-		if input, err = getHostEnvironment().encodeArgs(args); err != nil {
+		if input, err = encodeArgs(wc.dataConverter, args); err != nil {
 			return nil, err
 		}
 	}
@@ -613,7 +616,7 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 		return nil, err
 	}
 
-	return EncodedValue(resp.QueryResult), nil
+	return newEncodedValue(resp.QueryResult, wc.dataConverter), nil
 }
 
 // DescribeTaskList returns information about the target tasklist, right now this API returns the
@@ -785,13 +788,14 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		err = deSerializeFunctionResult(workflowRun.workflowFn, attributes.Result, valuePtr)
+		err = deSerializeFunctionResult(workflowRun.workflowFn, attributes.Result, valuePtr, workflowRun.dataConverter)
 	case s.EventTypeWorkflowExecutionFailed:
 		attributes := closeEvent.WorkflowExecutionFailedEventAttributes
-		err = constructError(attributes.GetReason(), attributes.Details)
+		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)
 	case s.EventTypeWorkflowExecutionCanceled:
 		attributes := closeEvent.WorkflowExecutionCanceledEventAttributes
-		err = NewCanceledError(attributes.Details)
+		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
+		err = NewCanceledError(details)
 	case s.EventTypeWorkflowExecutionTerminated:
 		err = newTerminatedError()
 	case s.EventTypeWorkflowExecutionTimedOut:
@@ -805,15 +809,4 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = fmt.Errorf("Unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
 	return err
-}
-
-func getEncodedArg(arg interface{}) ([]byte, error) {
-	var input []byte
-	if arg != nil {
-		var err error
-		if input, err = getHostEnvironment().encodeArg(arg); err != nil {
-			return nil, err
-		}
-	}
-	return input, nil
 }

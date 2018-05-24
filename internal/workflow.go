@@ -155,8 +155,10 @@ type (
 	}
 
 	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
-	EncodedValue []byte
-
+	EncodedValue struct {
+		value         []byte
+		dataConverter encoded.DataConverter
+	}
 	// Version represents a change version. See GetVersion call.
 	Version int
 
@@ -262,18 +264,18 @@ func NewChannel(ctx Context) Channel {
 // NewNamedChannel create new Channel instance with a given human readable name.
 // Name appears in stack traces that are blocked on this channel.
 func NewNamedChannel(ctx Context, name string) Channel {
-	return &channelImpl{name: name}
+	return &channelImpl{name: name, dataConverter: getDataConverterFromWorkflowContext(ctx)}
 }
 
 // NewBufferedChannel create new buffered Channel instance
 func NewBufferedChannel(ctx Context, size int) Channel {
-	return &channelImpl{size: size}
+	return &channelImpl{size: size, dataConverter: getDataConverterFromWorkflowContext(ctx)}
 }
 
 // NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
 // Name appears in stack traces that are blocked on this Channel.
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
-	return &channelImpl{name: name, size: size}
+	return &channelImpl{name: name, size: size, dataConverter: getDataConverterFromWorkflowContext(ctx)}
 }
 
 // NewSelector creates a new Selector instance.
@@ -334,8 +336,9 @@ func NewFuture(ctx Context) (Future, Settable) {
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, activity)
-	activityType, input, err := getValidatedActivityFunction(activity, args)
+	activityType, input, err := getValidatedActivityFunction(activity, args, dataConverter)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -347,10 +350,12 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 		settable.Set(nil, err)
 		return future
 	}
+
 	params := executeActivityParams{
 		activityOptions: *options,
 		ActivityType:    *activityType,
 		Input:           input,
+		DataConverter:   dataConverter,
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -427,6 +432,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 		ActivityFn:           activity,
 		InputArgs:            args,
 		WorkflowInfo:         GetWorkflowInfo(ctx),
+		DataConverter:        getDataConverterFromWorkflowContext(ctx),
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -478,7 +484,8 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl),
 	}
-	wfType, input, err := getValidatedWorkflowFunction(childWorkflow, args)
+	dc := getWorkflowEnvOptions(ctx).dataConverter
+	wfType, input, err := getValidatedWorkflowFunction(childWorkflow, args, dc)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
@@ -490,12 +497,14 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		mainSettable.Set(nil, err)
 		return result
 	}
+	options.dataConverter = dc
 
 	params := executeWorkflowParams{
 		workflowOptions: *options,
 		input:           input,
 		workflowType:    wfType,
 	}
+
 	var childWorkflowExecution *WorkflowExecution
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -684,7 +693,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	input, err := getEncodedArg(arg)
+	input, err := encodeArg(options.dataConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -771,22 +780,39 @@ func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	return ctx1
 }
 
+// WithDataConverter adds DataConverter to the context.
+func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
+	if dc == nil {
+		panic("data converter is nil for WithDataConverter")
+	}
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).dataConverter = dc
+	return ctx1
+}
+
 // GetSignalChannel returns channel corresponding to the signal name.
 func GetSignalChannel(ctx Context, signalName string) SignalChannel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
+func newEncodedValue(value []byte, dc encoded.DataConverter) encoded.Value {
+	if dc == nil {
+		dc = newDefaultDataConverter()
+	}
+	return &EncodedValue{value, dc}
+}
+
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
 func (b EncodedValue) Get(valuePtr interface{}) error {
-	if b == nil {
+	if !b.HasValue() {
 		return ErrNoData
 	}
-	return getHostEnvironment().decodeArg(b, valuePtr)
+	return decodeArg(b.dataConverter, b.value, valuePtr)
 }
 
 // HasValue return whether there is value encoded.
 func (b EncodedValue) HasValue() bool {
-	return b != nil
+	return b.value != nil
 }
 
 // SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
@@ -826,13 +852,14 @@ func (b EncodedValue) HasValue() bool {
 //         ....
 //  }
 func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
+	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() ([]byte, error) {
 		r := f(ctx)
-		return getHostEnvironment().encodeArg(r)
+		return encodeArg(dc, r)
 	}
 	resultCallback := func(result []byte, err error) {
-		settable.Set(EncodedValue(result), err)
+		settable.Set(EncodedValue{result, dc}, err)
 	}
 	getWorkflowEnvironment(ctx).SideEffect(wrapperFunc, resultCallback)
 	var encoded EncodedValue

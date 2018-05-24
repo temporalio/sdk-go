@@ -92,10 +92,11 @@ type (
 	}
 
 	mockWrapper struct {
-		env        *testWorkflowEnvironmentImpl
-		name       string
-		fn         interface{}
-		isWorkflow bool
+		env           *testWorkflowEnvironmentImpl
+		name          string
+		fn            interface{}
+		isWorkflow    bool
+		dataConverter encoded.DataConverter
 	}
 
 	taskListSpecificActivity struct {
@@ -110,14 +111,13 @@ type (
 
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
-		mock          *mock.Mock
-		service       workflowserviceclient.Interface
-		workerOptions WorkerOptions
-		logger        *zap.Logger
-		metricsScope  *metrics.TaggedScope
-		mockClock     *clock.Mock
-		wallClock     clock.Clock
-		startTime     time.Time
+		mock         *mock.Mock
+		service      workflowserviceclient.Interface
+		logger       *zap.Logger
+		metricsScope *metrics.TaggedScope
+		mockClock    *clock.Mock
+		wallClock    clock.Clock
+		startTime    time.Time
 
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
@@ -162,9 +162,10 @@ type (
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isTestCompleted bool
-		testResult      EncodedValue
+		testResult      encoded.Value
 		testError       error
 		doneChannel     chan struct{}
+		workerOptions   WorkerOptions
 	}
 )
 
@@ -242,7 +243,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
 		env.postCallback(func() {
 			if env.onActivityHeartbeatListener != nil {
-				env.onActivityHeartbeatListener(activityInfo, EncodedValues(r.Details))
+				env.onActivityHeartbeatListener(activityInfo, newEncodedValues(r.Details, env.GetDataConverter()))
 			}
 		}, false)
 
@@ -272,6 +273,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	if env.workerOptions.MetricsScope == nil {
 		env.workerOptions.MetricsScope = env.metricsScope
 	}
+	if env.workerOptions.DataConverter == nil {
+		env.workerOptions.DataConverter = newDefaultDataConverter()
+	}
 
 	return env
 }
@@ -282,6 +286,8 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.parentEnv = env
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
+	childEnv.workerOptions = env.workerOptions
+	childEnv.workerOptions.DataConverter = params.dataConverter
 
 	if params.workflowID == "" {
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
@@ -321,6 +327,9 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if options.MetricsScope != nil {
 		env.workerOptions.MetricsScope = options.MetricsScope
 	}
+	if options.DataConverter != nil {
+		env.workerOptions.DataConverter = options.DataConverter
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
@@ -336,7 +345,7 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, act
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, args ...interface{}) {
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter())
 	if err != nil {
 		panic(err)
 	}
@@ -379,7 +388,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (encoded.Value, error) {
-	activityType, input, err := getValidatedActivityFunction(activityFn, args)
+	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter())
 	if err != nil {
 		panic(err)
 	}
@@ -401,7 +410,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	)
 
 	// ensure activityFn is registered to defaultTestTaskList
-	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList)
+	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList, env.GetDataConverter())
 	result, err := taskHandler.Execute(defaultTestTaskList, task)
 	if err != nil {
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
@@ -415,11 +424,12 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	switch request := result.(type) {
 	case *shared.RespondActivityTaskCanceledRequest:
-		return nil, NewCanceledError(request.Details)
+		details := newEncodedValues(request.Details, env.GetDataConverter())
+		return nil, NewCanceledError(details)
 	case *shared.RespondActivityTaskFailedRequest:
-		return nil, constructError(request.GetReason(), request.Details)
+		return nil, constructError(request.GetReason(), request.Details, env.GetDataConverter())
 	case *shared.RespondActivityTaskCompletedRequest:
-		return EncodedValue(request.Result), nil
+		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
 		// will never happen
 		return nil, fmt.Errorf("unsupported respond type %T", result)
@@ -451,7 +461,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
-	return EncodedValue(result.result), result.err
+	return newEncodedValue(result.result, env.GetDataConverter()), result.err
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {
@@ -635,15 +645,17 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 		env.workflowCancelHandler()
 	}
 
+	dc := env.GetDataConverter()
 	env.isTestCompleted = true
-	env.testResult = EncodedValue(result)
+	env.testResult = newEncodedValue(result, dc)
 
 	if err != nil {
 		switch err := err.(type) {
 		case *CanceledError, *ContinueAsNewError, *TimeoutError:
 			env.testError = err
 		default:
-			env.testError = constructError(getErrorDetails(err))
+			reason, details := getErrorDetails(err, dc)
+			env.testError = constructError(reason, details, dc)
 		}
 	}
 
@@ -659,7 +671,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			env.parentEnv.postCallback(func() {
 				// deliver result
 				childWorkflowHandle.err = env.testError
-				childWorkflowHandle.callback(env.testResult, env.testError)
+				childWorkflowHandle.callback(result, env.testError)
 				if env.onChildWorkflowCompletedListener != nil {
 					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, env.testError)
 				}
@@ -675,7 +687,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	var data []byte
 	if result != nil {
 		var encodeErr error
-		data, encodeErr = getHostEnvironment().encodeArg(result)
+		data, encodeErr = encodeArg(env.GetDataConverter(), result)
 		if encodeErr != nil {
 			return encodeErr
 		}
@@ -689,8 +701,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 				zap.String(tagActivityID, activityID))
 			return
 		}
-		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err)
-		env.handleActivityResult(activityID, request, activityHandle.activityType)
+		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err, env.GetDataConverter())
+		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule decision task, because activity might be still pending */)
 
 	return nil
@@ -702,6 +714,10 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
 
 func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return env.workerOptions.MetricsScope
+}
+
+func (env *testWorkflowEnvironmentImpl) GetDataConverter() encoded.DataConverter {
+	return env.workerOptions.DataConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
@@ -719,7 +735,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		parameters,
 	)
 
-	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName)
+	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
 	env.activities[activityInfo.activityID] = activityHandle
@@ -732,7 +748,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		}
 		// post activity result to workflow dispatcher
 		env.postCallback(func() {
-			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name)
+			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
 			env.runningCount--
 		}, false /* do not auto schedule decision task, because activity might be still pending */)
 	}()
@@ -744,7 +760,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	activityID := getStringID(env.nextID())
 	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
 	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
-	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs); at != nil {
+	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
@@ -761,9 +777,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 		callback:   callback,
 	}
 	taskHandler := localActivityTaskHandler{
-		userContext:  wOptions.BackgroundActivityContext,
-		metricsScope: wOptions.MetricsScope,
-		logger:       wOptions.Logger,
+		userContext:   wOptions.BackgroundActivityContext,
+		metricsScope:  wOptions.MetricsScope,
+		logger:        wOptions.Logger,
+		dataConverter: wOptions.DataConverter,
 	}
 
 	env.localActivities[activityID] = task
@@ -797,7 +814,8 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string) {
+func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string,
+	dataConverter encoded.DataConverter) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
 	activityInfo := env.getActivityInfo(activityID, activityType)
@@ -825,10 +843,11 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 
 	switch request := result.(type) {
 	case *shared.RespondActivityTaskCanceledRequest:
-		err = NewCanceledError(request.Details)
+		details := newEncodedValues(request.Details, dataConverter)
+		err = NewCanceledError(details)
 		activityHandle.callback(nil, err)
 	case *shared.RespondActivityTaskFailedRequest:
-		err = constructError(*request.Reason, request.Details)
+		err = constructError(*request.Reason, request.Details, dataConverter)
 		activityHandle.callback(nil, err)
 	case *shared.RespondActivityTaskCompletedRequest:
 		blob = request.Result
@@ -838,7 +857,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	}
 
 	if env.onActivityCompletedListener != nil {
-		env.onActivityCompletedListener(activityInfo, EncodedValue(blob), err)
+		env.onActivityCompletedListener(activityInfo, newEncodedValue(blob, dataConverter), err)
 	}
 
 	env.startDecisionTask()
@@ -861,7 +880,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	delete(env.localActivities, activityID)
 	task.callback(result.result, result.err)
 	if env.onLocalActivityCompletedListener != nil {
-		env.onLocalActivityCompletedListener(activityInfo, EncodedValue(result.result), result.err)
+		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), result.err)
 	}
 
 	env.startDecisionTask()
@@ -894,13 +913,14 @@ func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallW
 // Execute executes the activity code.
 func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	activityInfo := GetActivityInfo(ctx)
+	dc := getDataConverterFromActivityCtx(ctx)
 	if a.env.onActivityStartedListener != nil {
 		a.env.postCallback(func() {
-			a.env.onActivityStartedListener(&activityInfo, ctx, EncodedValues(input))
+			a.env.onActivityStartedListener(&activityInfo, ctx, newEncodedValues(input, dc))
 		}, false)
 	}
 
-	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
+	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false, dataConverter: dc}
 	if mockRet := m.getMockReturn(ctx, input); mockRet != nil {
 		return m.executeMock(ctx, input, mockRet)
 	}
@@ -930,7 +950,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	env := w.env
 	if env.isChildWorkflow() && env.onChildWorkflowStartedListener != nil {
 		env.postCallback(func() {
-			env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, EncodedValues(input))
+			env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
 		}, false)
 	}
 
@@ -941,7 +961,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		env.runningCount++
 	}
 
-	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true}
+	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true, dataConverter: env.GetDataConverter()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
@@ -1010,7 +1030,7 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock
 	}
 
 	fnType := reflect.TypeOf(m.fn)
-	reflectArgs, err := getHostEnvironment().decodeArgs(fnType, input)
+	reflectArgs, err := decodeArgs(m.dataConverter, fnType, input)
 	if err != nil {
 		panic(err)
 	}
@@ -1095,7 +1115,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
 				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
 					fnName, expectedType, mockResult, mockResult))
 			}
-			result, encodeErr := getHostEnvironment().encodeArg(mockResult)
+			result, encodeErr := encodeArg(m.env.GetDataConverter(), mockResult)
 			if encodeErr != nil {
 				panic(fmt.Sprintf("encode result from mock of %v failed: %v", fnName, encodeErr))
 			}
@@ -1134,14 +1154,15 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 	return m.getMockValue(mockRet)
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string) ActivityTaskHandler {
+func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter encoded.DataConverter) ActivityTaskHandler {
 	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
 	params := workerExecutionParameters{
-		TaskList:     taskList,
-		Identity:     wOptions.Identity,
-		MetricsScope: wOptions.MetricsScope,
-		Logger:       wOptions.Logger,
-		UserContext:  wOptions.BackgroundActivityContext,
+		TaskList:      taskList,
+		Identity:      wOptions.Identity,
+		MetricsScope:  wOptions.MetricsScope,
+		Logger:        wOptions.Logger,
+		UserContext:   wOptions.BackgroundActivityContext,
+		DataConverter: dataConverter,
 	}
 	ensureRequiredParams(&params)
 
@@ -1379,7 +1400,15 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 }
 
 func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
-	return EncodedValue(encodeValue(f()))
+	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
+}
+
+func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) []byte {
+	blob, err := env.GetDataConverter().ToData(value)
+	if err != nil {
+		panic(err)
+	}
+	return blob
 }
 
 func (env *testWorkflowEnvironmentImpl) nextID() int {
@@ -1414,7 +1443,7 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
 }
 
 func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interface{}) {
-	data, err := getHostEnvironment().encodeArg(input)
+	data, err := encodeArg(env.GetDataConverter(), input)
 	if err != nil {
 		panic(err)
 	}
@@ -1424,7 +1453,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {
-	data, err := getHostEnvironment().encodeArg(args)
+	data, err := encodeArg(env.GetDataConverter(), args)
 	if err != nil {
 		return nil, err
 	}
@@ -1432,7 +1461,7 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	if err != nil {
 		return nil, err
 	}
-	return EncodedValue(blob), nil
+	return newEncodedValue(blob, env.GetDataConverter()), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {

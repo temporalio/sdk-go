@@ -24,20 +24,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"reflect"
+	"sync"
+	"testing"
+	"time"
+
+	"bytes"
+	"encoding/gob"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
-	"os"
-	"reflect"
-	"sync"
-	"testing"
-	"time"
 )
 
 func init() {
@@ -75,7 +79,7 @@ type internalWorkerTestSuite struct {
 	service  *workflowservicetest.MockClient
 }
 
-func TestInternalWorkerTestSuite(t *testing.T) {
+func TestInternalWorkferTestSuite(t *testing.T) {
 	s := new(internalWorkerTestSuite)
 	suite.Run(t, s)
 }
@@ -118,7 +122,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflow")},
 			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
-			Input:        testEncodeFunctionArgs(testReplayWorkflow),
+			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -137,13 +141,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	require.NoError(s.T(), err)
 }
 
-func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {
-	logger := getLogger()
+func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExecutionParameters) {
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
 			TaskList: &shared.TaskList{Name: common.StringPtr(taskList)},
-			Input:    testEncodeFunctionArgs(testReplayWorkflow),
+			Input:    testEncodeFunctionArgs(params.DataConverter, testReplayWorkflow),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -167,15 +170,28 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {
 		PreviousStartedEventId: common.Int64Ptr(5),
 	}
 
-	params := workerExecutionParameters{
-		Identity: "identity",
-		Logger:   logger,
-	}
 	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
 	_, stackTrace, err := r.ProcessWorkflowTask(task, nil, true)
 	require.NoError(s.T(), err)
 	require.NotEmpty(s.T(), stackTrace, stackTrace)
 	require.Contains(s.T(), stackTrace, "cadence/internal.(*decodeFutureImpl).Get")
+}
+
+func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {
+	params := workerExecutionParameters{
+		Identity: "identity",
+		Logger:   getLogger(),
+	}
+	s.testDecisionTaskHandlerHelper(params)
+}
+
+func (s *internalWorkerTestSuite) TestDecisionTaskHandler_WithDataConverter() {
+	params := workerExecutionParameters{
+		Identity:      "identity",
+		Logger:        getLogger(),
+		DataConverter: newTestDataConverter(),
+	}
+	s.testDecisionTaskHandlerHelper(params)
 }
 
 // testSampleWorkflow
@@ -198,7 +214,15 @@ func testActivityMultipleArgs(ctx context.Context, arg1 int, arg2 string, arg3 b
 }
 
 func (s *internalWorkerTestSuite) TestCreateWorker() {
-	worker := createWorkerWithThrottle(s.T(), s.service, float64(500.0))
+	worker := createWorkerWithThrottle(s.service, float64(500.0), nil)
+	err := worker.Start()
+	require.NoError(s.T(), err)
+	time.Sleep(time.Millisecond * 200)
+	worker.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestCreateWorker_WithDataConverter() {
+	worker := createWorkerWithDataConverter(s.service)
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)
@@ -210,7 +234,7 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicetest.NewMockClient(mockCtrl)
 
-	worker := createWorker(s.T(), service)
+	worker := createWorker(service)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -226,7 +250,7 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 
 func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	t := s.T()
-	w := createWorker(t, s.service)
+	w := createWorker(s.service)
 	aw := w.(*aggregatedWorker)
 	aw.hostEnv = newHostEnvironment()
 	assert.Empty(t, aw.hostEnv.getRegisteredActivities())
@@ -255,7 +279,7 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
 				// log
 			}).Times(2)
 
-		worker := createWorker(t, service)
+		worker := createWorker(service)
 		if tc.isErrFatal {
 			err := worker.Start()
 			assert.Error(t, err, "worker.start() MUST fail when domain is invalid")
@@ -295,12 +319,12 @@ func (m *mockPollForActivityTaskRequest) String() string {
 	return "PollForActivityTaskRequest"
 }
 
-func createWorker(t *testing.T, service *workflowservicetest.MockClient) Worker {
-	return createWorkerWithThrottle(t, service, float64(0.0))
+func createWorker(service *workflowservicetest.MockClient) Worker {
+	return createWorkerWithThrottle(service, float64(0.0), nil)
 }
 
 func createWorkerWithThrottle(
-	t *testing.T, service *workflowservicetest.MockClient, activitiesPerSecond float64,
+	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc encoded.DataConverter,
 ) Worker {
 	domain := "testDomain"
 	domainStatus := shared.DomainStatusRegistered
@@ -334,6 +358,9 @@ func createWorkerWithThrottle(
 	workerOptions := WorkerOptions{}
 	workerOptions.WorkerActivitiesPerSecond = 20
 	workerOptions.TaskListActivitiesPerSecond = activitiesPerSecond
+	if dc != nil {
+		workerOptions.DataConverter = dc
+	}
 
 	// Start Worker.
 	worker := NewWorker(
@@ -344,11 +371,15 @@ func createWorkerWithThrottle(
 	return worker
 }
 
-func (s *internalWorkerTestSuite) TestCompleteActivity() {
+func createWorkerWithDataConverter(service *workflowservicetest.MockClient) Worker {
+	return createWorkerWithThrottle(service, float64(0.0), newTestDataConverter())
+}
+
+func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt *ClientOptions) {
 	t := s.T()
 	mockService := s.service
 	domain := "testDomain"
-	wfClient := NewClient(mockService, domain, nil)
+	wfClient := NewClient(mockService, domain, opt)
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
 		func(ctx context.Context, request *shared.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) {
@@ -373,10 +404,18 @@ func (s *internalWorkerTestSuite) TestCompleteActivity() {
 	require.NotNil(t, failedRequest)
 }
 
+func (s *internalWorkerTestSuite) TestCompleteActivity() {
+	s.testCompleteActivityHelper(nil)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivity_WithDataConverter() {
+	opt := &ClientOptions{DataConverter: newTestDataConverter()}
+	s.testCompleteActivityHelper(opt)
+}
+
 func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	t := s.T()
 	mockService := s.service
-
 	domain := "testDomain"
 	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
@@ -423,6 +462,30 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 	require.NotNil(s.T(), heartbeatRequest)
 }
 
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter() {
+	t := s.T()
+	domain := "testDomain"
+	dc := newTestDataConverter()
+	opt := &ClientOptions{DataConverter: dc}
+	wfClient := NewClient(s.service, domain, opt)
+	var heartbeatRequest *shared.RecordActivityTaskHeartbeatRequest
+	cancelRequested := false
+	heartbeatResponse := shared.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	detail1 := "testStack"
+	detail2 := testStruct{"abc", 123}
+	detail3 := 4
+	encodedDetail, err := dc.ToData(detail1, detail2, detail3)
+	require.Nil(t, err)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
+		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+			heartbeatRequest = request
+			require.Equal(t, encodedDetail, request.Details)
+		}).Times(1)
+
+	wfClient.RecordActivityHeartbeat(context.Background(), nil, detail1, detail2, detail3)
+	require.NotNil(t, heartbeatRequest)
+}
+
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 	domain := "testDomain"
 	wfClient := NewClient(s.service, domain, nil)
@@ -438,50 +501,6 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 	wfClient.RecordActivityHeartbeatByID(context.Background(), domain, "wid", "rid", "aid",
 		"testStack", "customerObjects", 4)
 	require.NotNil(s.T(), heartbeatRequest)
-}
-
-func testEncodeFunction(t *testing.T, f interface{}, args ...interface{}) string {
-	input, err := getHostEnvironment().Encoder().Marshal(args)
-	require.NoError(t, err, err)
-
-	var result []interface{}
-	for _, v := range args {
-		arg := reflect.New(reflect.TypeOf(v)).Interface()
-		result = append(result, arg)
-	}
-	err = getHostEnvironment().Encoder().Unmarshal(input, result)
-	require.NoError(t, err, err)
-
-	targetArgs := []reflect.Value{}
-	for _, arg := range result {
-		targetArgs = append(targetArgs, reflect.ValueOf(arg).Elem())
-	}
-	fnValue := reflect.ValueOf(f)
-	retValues := fnValue.Call(targetArgs)
-	return retValues[0].Interface().(string)
-}
-
-func (s *internalWorkerTestSuite) TestEncoder() {
-	t := s.T()
-	getHostEnvironment().Encoder().Register(new(emptyCtx))
-	// Two param functor.
-	f1 := func(ctx Context, r []byte) string {
-		return "result"
-	}
-	r1 := testEncodeFunction(t, f1, new(emptyCtx), []byte("test"))
-	require.Equal(t, r1, "result")
-	// No parameters.
-	f2 := func() string {
-		return "empty-result"
-	}
-	r2 := testEncodeFunction(t, f2)
-	require.Equal(t, r2, "empty-result")
-	// Nil parameter.
-	f3 := func(r []byte) string {
-		return "nil-result"
-	}
-	r3 := testEncodeFunction(t, f3, []byte(""))
-	require.Equal(t, r3, "nil-result")
 }
 
 type activitiesCallingOptionsWorkflow struct {
@@ -650,11 +669,26 @@ func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
-	ts := &WorkflowTestSuite{}
-	env := ts.NewTestWorkflowEnvironment()
 	w := &activitiesCallingOptionsWorkflow{t: t}
 	RegisterWorkflow(w.Execute)
-	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
+
+	testVariousActivitySchedulingOption(t, w.Execute)
+	testVariousActivitySchedulingOptionWithDataConverter(t, w.Execute)
+}
+
+func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
+	ts := &WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(wf, []byte{1, 2})
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+}
+
+func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
+	ts := &WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.ExecuteWorkflow(wf, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 }
@@ -710,15 +744,15 @@ type testErrorDetails struct {
 	T string
 }
 
-func TestActivityErrorWithDetails(t *testing.T) {
+func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewCustomError("testReason", "testStringDetails")
 		}}
-	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, 1))
 
-	err := deSerializeFunctionResult(a1.fn, encResult, nil)
+	encResult, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, a1.fn, 1))
+	err := deSerializeFunctionResult(a1.fn, encResult, nil, dataConverter)
 	require.NoError(t, err)
 	require.Error(t, e)
 	errWD := e.(*CustomError)
@@ -732,8 +766,8 @@ func TestActivityErrorWithDetails(t *testing.T) {
 		fn: func(arg1 int) (err error) {
 			return NewCustomError("testReason", testErrorDetails{T: "testErrorStack"})
 		}}
-	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
-	err = deSerializeFunctionResult(a2.fn, encResult, nil)
+	encResult, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, a2.fn, 1))
+	err = deSerializeFunctionResult(a2.fn, encResult, nil, dataConverter)
 	require.NoError(t, err)
 	require.Error(t, e)
 	errWD = e.(*CustomError)
@@ -747,9 +781,9 @@ func TestActivityErrorWithDetails(t *testing.T) {
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult", NewCustomError("testReason", testErrorDetails{T: "testErrorStack3"})
 		}}
-	encResult, e = a3.Execute(context.Background(), testEncodeFunctionArgs(a3.fn, 1))
+	encResult, e = a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, a3.fn, 1))
 	var result string
-	err = deSerializeFunctionResult(a3.fn, encResult, &result)
+	err = deSerializeFunctionResult(a3.fn, encResult, &result, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, "testResult", result)
 	require.Error(t, e)
@@ -763,8 +797,8 @@ func TestActivityErrorWithDetails(t *testing.T) {
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult4", NewCustomError("testReason", "testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
-	encResult, e = a4.Execute(context.Background(), testEncodeFunctionArgs(a4.fn, 1))
-	err = deSerializeFunctionResult(a3.fn, encResult, &result)
+	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, a4.fn, 1))
+	err = deSerializeFunctionResult(a3.fn, encResult, &result, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", result)
 	require.Error(t, e)
@@ -776,14 +810,24 @@ func TestActivityErrorWithDetails(t *testing.T) {
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
 }
 
-func TestActivityCancelledError(t *testing.T) {
+func TestActivityErrorWithDetails(t *testing.T) {
+	testActivityErrorWithDetailsHelper(context.Background(), t, nil)
+}
+
+func TestActivityErrorWithDetails_WithDataConverter(t *testing.T) {
+	dc := newTestDataConverter()
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	testActivityErrorWithDetailsHelper(ctx, t, dc)
+}
+
+func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewCanceledError("testCancelStringDetails")
 		}}
-	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, 1))
-	err := deSerializeFunctionResult(a1.fn, encResult, nil)
+	encResult, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, a1.fn, 1))
+	err := deSerializeFunctionResult(a1.fn, encResult, nil, dataConverter)
 	require.NoError(t, err)
 	require.Error(t, e)
 	errWD := e.(*CanceledError)
@@ -796,8 +840,8 @@ func TestActivityCancelledError(t *testing.T) {
 		fn: func(arg1 int) (err error) {
 			return NewCanceledError(testErrorDetails{T: "testCancelErrorStack"})
 		}}
-	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
-	err = deSerializeFunctionResult(a2.fn, encResult, nil)
+	encResult, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, a2.fn, 1))
+	err = deSerializeFunctionResult(a2.fn, encResult, nil, dataConverter)
 	require.NoError(t, err)
 	require.Error(t, e)
 	errWD = e.(*CanceledError)
@@ -810,9 +854,9 @@ func TestActivityCancelledError(t *testing.T) {
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult", NewCanceledError(testErrorDetails{T: "testErrorStack3"})
 		}}
-	encResult, e = a3.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
+	encResult, e = a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, a2.fn, 1))
 	var r string
-	err = deSerializeFunctionResult(a3.fn, encResult, &r)
+	err = deSerializeFunctionResult(a3.fn, encResult, &r, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, "testResult", r)
 	require.Error(t, e)
@@ -825,8 +869,8 @@ func TestActivityCancelledError(t *testing.T) {
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult4", NewCanceledError("testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
-	encResult, e = a4.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, 1))
-	err = deSerializeFunctionResult(a3.fn, encResult, &r)
+	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, a2.fn, 1))
+	err = deSerializeFunctionResult(a3.fn, encResult, &r, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", r)
 	require.Error(t, e)
@@ -837,15 +881,25 @@ func TestActivityCancelledError(t *testing.T) {
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
 }
 
-func TestActivityExecutionVariousTypes(t *testing.T) {
+func TestActivityCancelledError(t *testing.T) {
+	testActivityCancelledErrorHelper(context.Background(), t, nil)
+}
+
+func TestActivityCancelledError_WithDataConverter(t *testing.T) {
+	dc := newTestDataConverter()
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	testActivityCancelledErrorHelper(ctx, t, dc)
+}
+
+func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 1}, nil
 		}}
-	encResult, e := a1.Execute(context.Background(), testEncodeFunctionArgs(a1.fn, "test"))
+	encResult, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, a1.fn, "test"))
 	require.NoError(t, e)
 	var r *testWorkflowResult
-	err := deSerializeFunctionResult(a1.fn, encResult, &r)
+	err := deSerializeFunctionResult(a1.fn, encResult, &r, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, 1, r.V)
 
@@ -853,11 +907,23 @@ func TestActivityExecutionVariousTypes(t *testing.T) {
 		fn: func(ctx context.Context, arg1 *testWorkflowResult) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 2}, nil
 		}}
-	encResult, e = a2.Execute(context.Background(), testEncodeFunctionArgs(a2.fn, r))
+	encResult, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, a2.fn, r))
 	require.NoError(t, e)
-	err = deSerializeFunctionResult(a2.fn, encResult, &r)
+	err = deSerializeFunctionResult(a2.fn, encResult, &r, dataConverter)
 	require.NoError(t, err)
 	require.Equal(t, 2, r.V)
+}
+
+func TestActivityExecutionVariousTypes(t *testing.T) {
+	testActivityExecutionVariousTypesHelper(context.Background(), t, nil)
+}
+
+func TestActivityExecutionVariousTypes_WithDataConverter(t *testing.T) {
+	dc := newTestDataConverter()
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
+		dataConverter: dc,
+	})
+	testActivityExecutionVariousTypesHelper(ctx, t, dc)
 }
 
 type encodingTest struct {
@@ -865,17 +931,7 @@ type encodingTest struct {
 	input    []interface{}
 }
 
-// duplicate of GetHostEnvironment().registerType()
-func testRegisterType(enc encoding, v interface{}) error {
-	t := reflect.Indirect(reflect.ValueOf(v)).Type()
-	if t.Kind() == reflect.Interface || t.Kind() == reflect.Ptr {
-		return nil
-	}
-	arg := reflect.Zero(t).Interface()
-	return enc.Register(arg)
-}
-
-func Test_ActivityNilArgs(t *testing.T) {
+func TestActivityNilArgs(t *testing.T) {
 	nilErr := errors.New("nils")
 	activityFn := func(name string, idx int, strptr *string) error {
 		if name == "" && idx == 0 && strptr == nil {
@@ -885,14 +941,28 @@ func Test_ActivityNilArgs(t *testing.T) {
 	}
 
 	args := []interface{}{nil, nil, nil}
-	_, input, err := getValidatedActivityFunction(activityFn, args)
+	_, input, err := getValidatedActivityFunction(activityFn, args, nil)
 	require.NoError(t, err)
 
-	reflectArgs, err := getHostEnvironment().decodeArgs(reflect.TypeOf(activityFn), input)
+	reflectArgs, err := decodeArgs(nil, reflect.TypeOf(activityFn), input)
 	require.NoError(t, err)
 
 	reflectResults := reflect.ValueOf(activityFn).Call(reflectArgs)
 	require.Equal(t, nilErr, reflectResults[0].Interface())
+}
+
+func TestActivityNilArgs_WithDataConverter(t *testing.T) {
+	nilErr := errors.New("nils")
+	activityFn := func(name string, idx int, strptr *string) error {
+		if name == "" && idx == 0 && strptr == nil {
+			return nilErr
+		}
+		return nil
+	}
+
+	args := []interface{}{nil, nil, nil}
+	_, _, err := getValidatedActivityFunction(activityFn, args, newTestDataConverter())
+	require.Error(t, err) // testDataConverter cannot encode nil value
 }
 
 /*
@@ -945,16 +1015,108 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(workflowFunc interface{}, args ...interface{}) []byte {
-	err := getHostEnvironment().RegisterFnType(reflect.TypeOf(workflowFunc))
-	if err != nil {
-		fmt.Println(err)
-		panic("Failed to register function types")
-	}
-	input, err := getHostEnvironment().encodeArgs(args)
+func testEncodeFunctionArgs(dataConverter encoded.DataConverter, workflowFunc interface{}, args ...interface{}) []byte {
+	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)
 		panic("Failed to encode arguments")
 	}
 	return input
+}
+
+func testDataConverterFunction(t *testing.T, dc encoded.DataConverter, f interface{}, args ...interface{}) string {
+	input, err := dc.ToData(args...)
+	require.NoError(t, err, err)
+
+	var result []interface{}
+	for _, v := range args {
+		arg := reflect.New(reflect.TypeOf(v)).Interface()
+		result = append(result, arg)
+	}
+	err = dc.FromData(input, result...)
+	require.NoError(t, err, err)
+
+	targetArgs := []reflect.Value{}
+	for _, arg := range result {
+		targetArgs = append(targetArgs, reflect.ValueOf(arg).Elem())
+	}
+	fnValue := reflect.ValueOf(f)
+	retValues := fnValue.Call(targetArgs)
+	return retValues[0].Interface().(string)
+}
+
+func testDataConverterHelper(t *testing.T, dc encoded.DataConverter) {
+	f1 := func(ctx Context, r []byte) string {
+		return "result"
+	}
+	r1 := testDataConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
+	require.Equal(t, r1, "result")
+	// No parameters.
+	f2 := func() string {
+		return "empty-result"
+	}
+	r2 := testDataConverterFunction(t, dc, f2)
+	require.Equal(t, r2, "empty-result")
+	// Nil parameter.
+	f3 := func(r []byte) string {
+		return "nil-result"
+	}
+	r3 := testDataConverterFunction(t, dc, f3, []byte(""))
+	require.Equal(t, r3, "nil-result")
+}
+
+func TestDefaultDataConverter(t *testing.T) {
+	dc := newDefaultDataConverter()
+	testDataConverterHelper(t, dc)
+}
+
+// testDataConverter implements encoded.DataConverter using gob
+type testDataConverter struct{}
+
+func newTestDataConverter() encoded.DataConverter {
+	return &testDataConverter{}
+}
+
+func (tdc *testDataConverter) ToData(value ...interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	for i, obj := range value {
+		if err := enc.Encode(obj); err != nil {
+			return nil, fmt.Errorf(
+				"unable to encode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(input))
+	for i, obj := range valuePtr {
+		if err := dec.Decode(obj); err != nil {
+			return fmt.Errorf(
+				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
+		}
+	}
+	return nil
+}
+
+func TestTestDataConverter(t *testing.T) {
+	dc := newTestDataConverter()
+	testDataConverterHelper(t, dc)
+}
+
+func TestDecodeArg(t *testing.T) {
+	dc := newDefaultDataConverter()
+
+	b, err := encodeArg(dc, testErrorDetails3)
+	require.NoError(t, err)
+	var r testStruct
+	err = decodeArg(dc, b, &r)
+	require.NoError(t, err)
+	require.Equal(t, testErrorDetails3, r)
+
+	// test mismatch of mutli arguments
+	b, err = encodeArgs(dc, []interface{}{testErrorDetails1, testErrorDetails2})
+	require.NoError(t, err)
+	require.Error(t, decodeArg(dc, b, &r))
 }

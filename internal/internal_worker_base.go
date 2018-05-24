@@ -72,6 +72,7 @@ type (
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value
+		GetDataConverter() encoded.DataConverter
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

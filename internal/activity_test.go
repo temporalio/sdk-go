@@ -162,7 +162,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
 		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).
 		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
-			ev := EncodedValues(request.Details)
+			ev := newEncodedValues(request.Details, nil)
 			var progress string
 			err := ev.Get(&progress)
 			if err != nil {

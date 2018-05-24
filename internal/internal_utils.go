@@ -32,6 +32,7 @@ import (
 
 	"github.com/pborman/uuid"
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
 	"golang.org/x/net/context"
@@ -143,22 +144,30 @@ func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 }
 
 // getErrorDetails gets reason and details.
-func getErrorDetails(err error) (string, []byte) {
+func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []byte) {
 	switch err := err.(type) {
 	case *CustomError:
-		return err.Reason(), err.details
+		data, err0 := encodeArgs(dataConverter, err.details.(ErrorDetailsValues))
+		if err0 != nil {
+			panic(err0)
+		}
+		return err.Reason(), data
 	case *CanceledError:
-		return errReasonCanceled, err.details
+		data, err0 := encodeArgs(dataConverter, err.details.(ErrorDetailsValues))
+		if err0 != nil {
+			panic(err0)
+		}
+		return errReasonCanceled, data
 	case *PanicError:
-		data, gobErr := getHostEnvironment().encodeArgs([]interface{}{err.Error(), err.StackTrace()})
-		if gobErr != nil {
-			panic(gobErr)
+		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error(), err.StackTrace()})
+		if err0 != nil {
+			panic(err0)
 		}
 		return errReasonPanic, data
 	case *TimeoutError:
-		data, gobErr := getHostEnvironment().encodeArgs([]interface{}{err.timeoutType})
-		if gobErr != nil {
-			panic(gobErr)
+		data, err0 := encodeArgs(dataConverter, []interface{}{err.timeoutType})
+		if err0 != nil {
+			panic(err0)
 		}
 		return errReasonTimeout, data
 	default:
@@ -168,26 +177,29 @@ func getErrorDetails(err error) (string, []byte) {
 }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details []byte) error {
+func constructError(reason string, details []byte, dataConverter encoded.DataConverter) error {
 	switch reason {
 	case errReasonPanic:
 		// panic error
 		var msg, st string
-		details := EncodedValues(details)
+		details := newEncodedValues(details, dataConverter)
 		details.Get(&msg, &st)
 		return newPanicError(msg, st)
 	case errReasonGeneric:
 		// errors created other than using NewCustomError() API.
 		return &GenericError{err: string(details)}
 	case errReasonCanceled:
+		details := newEncodedValues(details, dataConverter)
 		return NewCanceledError(details)
 	case errReasonTimeout:
 		var timeoutType s.TimeoutType
-		details := EncodedValues(details)
+		details := newEncodedValues(details, dataConverter)
 		details.Get(&timeoutType)
 		return NewTimeoutError(timeoutType)
 	default:
-		return NewCustomError(reason, details)
+		details := newEncodedValues(details, dataConverter)
+		err := NewCustomError(reason, details)
+		return err
 	}
 }
 

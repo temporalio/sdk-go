@@ -16,3 +16,4 @@ test.log
 /dummy
 .build
 .bins
+.DS_Store

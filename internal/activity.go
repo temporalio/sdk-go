@@ -26,6 +26,7 @@ import (
 
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -139,7 +140,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) != 1 || details[0] != nil {
-		data, err = getHostEnvironment().encodeArgs(details)
+		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
 		if err != nil {
 			panic(err)
 		}
@@ -168,6 +169,7 @@ func WithActivityTask(
 	invoker ServiceInvoker,
 	logger *zap.Logger,
 	scope tally.Scope,
+	dataConverter encoded.DataConverter,
 ) context.Context {
 	var deadline time.Time
 	scheduled := time.Unix(0, task.GetScheduledTimestamp())
@@ -198,6 +200,7 @@ func WithActivityTask(
 		scheduledTimestamp: scheduled,
 		startedTimestamp:   started,
 		taskList:           taskList,
+		dataConverter:      dataConverter,
 	})
 }
 

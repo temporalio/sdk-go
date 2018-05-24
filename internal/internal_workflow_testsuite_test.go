@@ -82,6 +82,51 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter() {
+	mockActivity := func(ctx context.Context, msg string) (string, error) {
+		return "mock_" + msg, nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       20 * time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		var result string
+		ctx = WithDataConverter(ctx, newTestDataConverter())
+		err := ExecuteActivity(ctx, testActivityHello, "world").Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+
+		var result1 string
+		ctx1 := WithDataConverter(ctx, newDefaultDataConverter()) // use another converter to run activity
+		err1 := ExecuteActivity(ctx1, testActivityHello, "world1").Get(ctx1, &result1)
+		if err1 != nil {
+			return "", err1
+		}
+		return result + "," + result1, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Twice()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("mock_world,mock_world1", result)
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockValues() {
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return("mock_value", nil).Once()
@@ -478,6 +523,38 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_activity hello_world", actualResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic_WithDataConverter() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		ctx = WithDataConverter(ctx, newTestDataConverter())
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
 		if err != nil {
 			return "", err

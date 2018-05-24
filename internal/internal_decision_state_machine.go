@@ -25,6 +25,7 @@ import (
 	"fmt"
 
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/util"
 )
@@ -723,9 +724,9 @@ func (h *decisionsHelper) getActivityID(event *s.HistoryEvent) string {
 	return activityID
 }
 
-func (h *decisionsHelper) recordVersionMarker(changeID string, version Version) decisionStateMachine {
+func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dataConverter encoded.DataConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
-	details, err := getHostEnvironment().encodeArgs([]interface{}{changeID, version})
+	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
 	if err != nil {
 		panic(err)
 	}

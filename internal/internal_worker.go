@@ -39,6 +39,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/zap"
@@ -145,7 +146,12 @@ type (
 		// NonDeterministicWorkflowPolicy is used for configuring how client's decision task handler deals with
 		// mismatched history events (presumably arising from non-deterministic workflow definitions).
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
+
+		DataConverter encoded.DataConverter
 	}
+
+	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
+	defaultDataConverter struct{}
 )
 
 // newWorkflowWorker returns an instance of the workflow worker.
@@ -173,10 +179,13 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger = logger
 		params.Logger.Info("No logger configured for cadence worker. Created default one.")
 	}
-
 	if params.MetricsScope == nil {
 		params.MetricsScope = tally.NoopScope
 		params.Logger.Info("No metrics scope configured for cadence worker. Use NoopScope as default.")
+	}
+	if params.DataConverter == nil {
+		params.DataConverter = newDefaultDataConverter()
+		params.Logger.Info("No DataConverter configured for cadence worker. Use default one.")
 	}
 }
 
@@ -410,8 +419,6 @@ type hostEnvImpl struct {
 	workflowAliasMap map[string]string
 	activityFuncMap  map[string]activity
 	activityAliasMap map[string]string
-	encoding         encoding
-	tEncoding        encoding
 }
 
 func (th *hostEnvImpl) RegisterWorkflow(af interface{}) error {
@@ -436,10 +443,6 @@ func (th *hostEnvImpl) RegisterWorkflowWithOptions(
 	// Check if already registered
 	if _, ok := th.getWorkflowFn(registerName); ok {
 		return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
-	}
-	// Register args with encoding.
-	if err := th.registerEncodingTypes(fnType); err != nil {
-		return err
 	}
 	th.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
@@ -471,30 +474,11 @@ func (th *hostEnvImpl) RegisterActivityWithOptions(
 	if _, ok := th.getActivityFn(registerName); ok {
 		return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 	}
-	// Register args with encoding.
-	if err := th.registerEncodingTypes(fnType); err != nil {
-		return err
-	}
 	th.addActivityFn(registerName, af)
 	if len(alias) > 0 {
 		th.addActivityAlias(fnName, alias)
 	}
 	return nil
-}
-
-// Get the encoder.
-func (th *hostEnvImpl) Encoder() encoding {
-	return th.encoding
-}
-
-// Get thrift encoder.
-func (th *hostEnvImpl) ThriftEncoder() encoding {
-	return th.tEncoding
-}
-
-// Register all function args and return types with encoder.
-func (th *hostEnvImpl) RegisterFnType(fnType reflect.Type) error {
-	return th.registerEncodingTypes(fnType)
 }
 
 func (th *hostEnvImpl) addWorkflowAlias(fnName string, alias string) {
@@ -578,54 +562,7 @@ func (th *hostEnvImpl) getRegisteredActivities() []activity {
 	return activities
 }
 
-// register all the types with encoder.
-func (th *hostEnvImpl) registerEncodingTypes(fnType reflect.Type) error {
-	th.Lock()
-	defer th.Unlock()
-
-	// Register arguments.
-	for i := 0; i < fnType.NumIn(); i++ {
-		err := th.registerType(fnType.In(i), th.Encoder())
-		if err != nil {
-			return err
-		}
-	}
-	// Register return types.
-	// TODO: We need register all concrete implementations of error, Either
-	// through pre-registry (or) at the time conversion.
-	for i := 0; i < fnType.NumOut(); i++ {
-		err := th.registerType(fnType.Out(i), th.Encoder())
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (th *hostEnvImpl) registerValue(v interface{}, encoder encoding) error {
-	if val := reflect.ValueOf(v); val.IsValid() {
-		if val.Kind() == reflect.Ptr && val.IsNil() {
-			return nil
-		}
-		rType := reflect.Indirect(val).Type()
-		return th.registerType(rType, encoder)
-	}
-	return nil
-}
-
-// register type with our encoder.
-func (th *hostEnvImpl) registerType(t reflect.Type, encoder encoding) error {
-	// Interfaces cannot be registered, their implementations should be
-	// https://golang.org/pkg/encoding/gob/#Register
-	if t.Kind() == reflect.Interface || t.Kind() == reflect.Ptr {
-		return nil
-	}
-	arg := reflect.Zero(t).Interface()
-	return encoder.Register(arg)
-}
-
-func (th *hostEnvImpl) isUseThriftEncoding(objs []interface{}) bool {
+func isUseThriftEncoding(objs []interface{}) bool {
 	// NOTE: our criteria to use which encoder is simple if all the types are serializable using thrift then we use
 	// thrift encoder. For everything else we default to gob.
 
@@ -641,7 +578,7 @@ func (th *hostEnvImpl) isUseThriftEncoding(objs []interface{}) bool {
 	return true
 }
 
-func (th *hostEnvImpl) isUseThriftDecoding(objs []interface{}) bool {
+func isUseThriftDecoding(objs []interface{}) bool {
 	// NOTE: our criteria to use which encoder is simple if all the types are de-serializable using thrift then we use
 	// thrift decoder. For everything else we default to gob.
 
@@ -711,64 +648,19 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 	return nil
 }
 
-// encode set of values.
-func (th *hostEnvImpl) encode(r []interface{}) ([]byte, error) {
-	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
-		return r[0].([]byte), nil
-	}
-
-	var encoder encoding
-	if th.isUseThriftEncoding(r) {
-		encoder = th.ThriftEncoder()
-	} else {
-		encoder = th.Encoder()
-	}
-
-	for _, v := range r {
-		err := th.registerValue(v, encoder)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	data, err := encoder.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-// decode a set of values.
-func (th *hostEnvImpl) decode(data []byte, to []interface{}) error {
-	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
-		reflect.ValueOf(to[0]).Elem().SetBytes(data)
-		return nil
-	}
-
-	var encoder encoding
-	if th.isUseThriftDecoding(to) {
-		encoder = th.ThriftEncoder()
-	} else {
-		encoder = th.Encoder()
-	}
-
-	for _, v := range to {
-		err := th.registerValue(v, encoder)
-		if err != nil {
-			return err
-		}
-	}
-
-	return encoder.Unmarshal(data, to)
-}
-
 // encode multiple arguments(arguments to a function).
-func (th *hostEnvImpl) encodeArgs(args []interface{}) ([]byte, error) {
-	return th.encode(args)
+func encodeArgs(dc encoded.DataConverter, args []interface{}) ([]byte, error) {
+	if dc == nil {
+		return newDefaultDataConverter().ToData(args...)
+	}
+	return dc.ToData(args...)
 }
 
 // decode multiple arguments(arguments to a function).
-func (th *hostEnvImpl) decodeArgs(fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+func decodeArgs(dc encoded.DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+	if dc == nil {
+		dc = newDefaultDataConverter()
+	}
 	var r []interface{}
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
@@ -779,7 +671,7 @@ argsLoop:
 		arg := reflect.New(argT).Interface()
 		r = append(r, arg)
 	}
-	err = th.decode(data, r)
+	err = dc.FromData(data, r...)
 	if err != nil {
 		return
 	}
@@ -790,16 +682,22 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func (th *hostEnvImpl) encodeArg(arg interface{}) ([]byte, error) {
-	return th.encode([]interface{}{arg})
+func encodeArg(dc encoded.DataConverter, arg interface{}) ([]byte, error) {
+	if dc == nil {
+		return newDefaultDataConverter().ToData(arg)
+	}
+	return dc.ToData(arg)
 }
 
 // decode single value(like return parameter).
-func (th *hostEnvImpl) decodeArg(data []byte, to interface{}) error {
-	return th.decode(data, []interface{}{to})
+func decodeArg(dc encoded.DataConverter, data []byte, to interface{}) error {
+	if dc == nil {
+		return newDefaultDataConverter().FromData(data, to)
+	}
+	return dc.FromData(data, to)
 }
 
-func (th *hostEnvImpl) decodeAndAssignValue(from interface{}, toValuePtr interface{}) error {
+func decodeAndAssignValue(dc encoded.DataConverter, from interface{}, toValuePtr interface{}) error {
 	if toValuePtr == nil {
 		return nil
 	}
@@ -807,7 +705,7 @@ func (th *hostEnvImpl) decodeAndAssignValue(from interface{}, toValuePtr interfa
 		return errors.New("value parameter provided is not a pointer")
 	}
 	if data, ok := from.([]byte); ok {
-		if err := th.decodeArg(data, toValuePtr); err != nil {
+		if err := decodeArg(dc, data, toValuePtr); err != nil {
 			return err
 		}
 	} else if fv := reflect.ValueOf(from); fv.IsValid() {
@@ -832,8 +730,6 @@ func newHostEnvironment() *hostEnvImpl {
 		workflowAliasMap: make(map[string]string),
 		activityFuncMap:  make(map[string]activity),
 		activityAliasMap: make(map[string]string),
-		encoding:         jsonEncoding{},
-		tEncoding:        thriftEncoding{},
 	}
 }
 
@@ -855,12 +751,13 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 	// Workflow context.
 	args := []reflect.Value{reflect.ValueOf(ctx)}
 
+	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
 	if fnType.NumIn() > 1 && isTypeByteSlice(fnType.In(1)) {
 		// 0 - is workflow context.
 		// 1 ... input types.
 		args = append(args, reflect.ValueOf(input))
 	} else {
-		decoded, err := getHostEnvironment().decodeArgs(fnType, input)
+		decoded, err := decodeArgs(dataConverter, fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"unable to decode the workflow function input bytes with error: %v, function name: %v",
@@ -872,7 +769,7 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 	// Invoke the workflow with arguments.
 	fnValue := reflect.ValueOf(we.fn)
 	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(we.fn, retValues)
+	return validateFunctionAndGetResults(we.fn, retValues, dataConverter)
 }
 
 // Wrapper to execute activity functions.
@@ -892,6 +789,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	fnType := reflect.TypeOf(ae.fn)
 	args := []reflect.Value{}
+	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
 	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
@@ -901,7 +799,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 	if fnType.NumIn() == 1 && isTypeByteSlice(fnType.In(0)) {
 		args = append(args, reflect.ValueOf(input))
 	} else {
-		decoded, err := getHostEnvironment().decodeArgs(fnType, input)
+		decoded, err := decodeArgs(dataConverter, fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"unable to decode the activity function input bytes with error: %v for function name: %v",
@@ -912,12 +810,13 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 
 	fnValue := reflect.ValueOf(ae.fn)
 	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(ae.fn, retValues)
+	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) ([]byte, error) {
 	fnType := reflect.TypeOf(ae.fn)
 	args := []reflect.Value{}
+	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
 	argsOffeset := 0
@@ -936,7 +835,18 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 
 	fnValue := reflect.ValueOf(ae.fn)
 	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(ae.fn, retValues)
+	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+}
+
+func getDataConverterFromActivityCtx(ctx context.Context) encoded.DataConverter {
+	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
+		return newDefaultDataConverter()
+	}
+	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
+	if info.dataConverter == nil {
+		return newDefaultDataConverter()
+	}
+	return info.dataConverter
 }
 
 // aggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
@@ -1022,6 +932,7 @@ func newAggregatedWorker(
 		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
 		NonDeterministicWorkflowPolicy:       wOptions.NonDeterministicWorkflowPolicy,
+		DataConverter:                        wOptions.DataConverter,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1141,18 +1052,12 @@ func isInterfaceNil(i interface{}) bool {
 
 // encoding is capable of encoding and decoding objects
 type encoding interface {
-	Register(obj interface{}) error
 	Marshal([]interface{}) ([]byte, error)
 	Unmarshal([]byte, []interface{}) error
 }
 
 // jsonEncoding encapsulates json encoding and decoding
 type jsonEncoding struct {
-}
-
-// Register implements the encoding interface
-func (g jsonEncoding) Register(obj interface{}) error {
-	return nil
 }
 
 // Marshal encodes an array of object into bytes
@@ -1193,11 +1098,6 @@ func isThriftType(v interface{}) bool {
 
 // thriftEncoding encapsulates thrift serializer/de-serializer.
 type thriftEncoding struct{}
-
-// Register implements the encoding interface
-func (g thriftEncoding) Register(obj interface{}) error {
-	return nil
-}
 
 // Marshal encodes an array of thrift into bytes
 func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
@@ -1254,6 +1154,9 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
 	}
+	if options.DataConverter == nil {
+		options.DataConverter = newDefaultDataConverter()
+	}
 	return options
 }
 
@@ -1266,4 +1169,43 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 		}
 	}
 	return nil
+}
+
+func newDefaultDataConverter() encoded.DataConverter {
+	return &defaultDataConverter{}
+}
+
+func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
+	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
+		return r[0].([]byte), nil
+	}
+
+	var encoder encoding
+	if isUseThriftEncoding(r) {
+		encoder = &thriftEncoding{}
+	} else {
+		encoder = &jsonEncoding{}
+	}
+
+	data, err := encoder.Marshal(r)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
+	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
+		reflect.ValueOf(to[0]).Elem().SetBytes(data)
+		return nil
+	}
+
+	var encoder encoding
+	if isUseThriftDecoding(to) {
+		encoder = &thriftEncoding{}
+	} else {
+		encoder = &jsonEncoding{}
+	}
+
+	return encoder.Unmarshal(data, to)
 }

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 	"testing"
 )
@@ -34,42 +35,39 @@ const (
 	customErrReasonA = "CustomReasonA"
 )
 
-var errs = [][]error{
-	// pairs of errors: actualErrorActivityReturns and expectedErrorDeciderSees
-	{errors.New("error:foo"), &GenericError{"error:foo"}},
-	{NewCustomError(customErrReasonA, "my details"), NewCustomError(customErrReasonA, "my details")},
-	// assume "reason:X" is some new reason activity could return, but workflow code was not aware of.
-	{NewCustomError("reason:X"), NewCustomError("reason:X")},
-	{NewCanceledError("some-details"), NewCanceledError("some-details")},
+type testStruct struct {
+	Name string
+	Age  int
 }
 
-func Test_ActivityError(t *testing.T) {
-	errorActivityFn := func(i int) error {
-		return errs[i][0]
+var (
+	testErrorDetails1 = "my details"
+	testErrorDetails2 = 123
+	testErrorDetails3 = testStruct{"a string", 321}
+)
+
+func Test_GenericError(t *testing.T) {
+	// test activity error
+	errorActivityFn := func() error {
+		return errors.New("error:foo")
 	}
 	RegisterActivity(errorActivityFn)
 	s := &WorkflowTestSuite{}
-	for i := 0; i < len(errs); i++ {
-		env := s.NewTestActivityEnvironment()
-		_, err := env.ExecuteActivity(errorActivityFn, i)
-		require.Error(t, err)
-		require.Equal(t, errs[i][1], err)
-	}
-}
-
-func Test_ActivityPanic(t *testing.T) {
-	panicActivityFn := func() error {
-		panic("panic-blabla")
-	}
-	RegisterActivity(panicActivityFn)
-	s := &WorkflowTestSuite{}
-	s.SetLogger(zap.NewNop())
 	env := s.NewTestActivityEnvironment()
-	_, err := env.ExecuteActivity(panicActivityFn)
+	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	panicErr, ok := err.(*PanicError)
-	require.True(t, ok)
-	require.Equal(t, "panic-blabla", panicErr.Error())
+	require.Equal(t, &GenericError{"error:foo"}, err)
+
+	// test workflow error
+	errorWorkflowFn := func(ctx Context) error {
+		return errors.New("error:foo")
+	}
+	RegisterWorkflow(errorWorkflowFn)
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(errorWorkflowFn)
+	err = wfEnv.GetWorkflowError()
+	require.Error(t, err)
+	require.Equal(t, &GenericError{"error:foo"}, err)
 }
 
 func Test_ActivityNotRegistered(t *testing.T) {
@@ -84,29 +82,191 @@ func Test_ActivityNotRegistered(t *testing.T) {
 	require.Contains(t, err.Error(), registeredActivityFn)
 }
 
-func Test_WorkflowError(t *testing.T) {
-	errorWorkflowFn := func(ctx Context, i int) error {
-		return errs[i][0]
-	}
-	RegisterWorkflow(errorWorkflowFn)
-	s := &WorkflowTestSuite{}
-	for i := 0; i < len(errs); i++ {
-		wfEnv := s.NewTestWorkflowEnvironment()
-		wfEnv.ExecuteWorkflow(errorWorkflowFn, i)
-		err := wfEnv.GetWorkflowError()
-		require.Error(t, err)
-		require.Equal(t, errs[i][1], err)
-	}
-}
-
-func Test_ErrorDetails(t *testing.T) {
+func Test_TimeoutError(t *testing.T) {
 	timeoutErr := NewTimeoutError(shared.TimeoutTypeScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
 
-	heartbeatErr := NewHeartbeatTimeoutError("detailed-info")
+	heartbeatErr := NewHeartbeatTimeoutError(testErrorDetails1)
 	require.True(t, heartbeatErr.HasDetails())
 	require.NoError(t, heartbeatErr.Details(&data))
-	require.Equal(t, "detailed-info", data)
+	require.Equal(t, testErrorDetails1, data)
+
+	// test heartbeatTimeout inside internal_event_handlers
+	context := &workflowEnvironmentImpl{
+		decisionsHelper: newDecisionsHelper(),
+		dataConverter:   newDefaultDataConverter(),
+	}
+	var actualErr error
+	activityID := "activityID"
+	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
+	di := newActivityDecisionStateMachine(
+		&shared.ScheduleActivityTaskDecisionAttributes{ActivityId: common.StringPtr(activityID)})
+	di.state = decisionStateInitiated
+	di.setData(&scheduledActivity{
+		callback: func(r []byte, e error) {
+			actualErr = e
+		},
+	})
+	context.decisionsHelper.decisions[makeDecisionID(decisionTypeActivity, activityID)] = di
+	timeoutType := shared.TimeoutTypeHeartbeat
+	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
+	event := createTestEventActivityTaskTimedOut(7, &shared.ActivityTaskTimedOutEventAttributes{
+		Details:          encodedDetails1,
+		ScheduledEventId: common.Int64Ptr(5),
+		StartedEventId:   common.Int64Ptr(6),
+		TimeoutType:      &timeoutType,
+	})
+	weh := &workflowExecutionEventHandlerImpl{context, nil}
+	weh.handleActivityTaskTimedOut(event)
+	err, ok := actualErr.(*TimeoutError)
+	require.True(t, ok)
+	require.True(t, err.HasDetails())
+	data = ""
+	require.NoError(t, err.Details(&data))
+	require.Equal(t, testErrorDetails1, data)
+}
+
+func Test_CustomError(t *testing.T) {
+	// test ErrorDetailValues as Details
+	var a1 string
+	var a2 int
+	var a3 testStruct
+	err0 := NewCustomError(customErrReasonA, testErrorDetails1)
+	require.True(t, err0.HasDetails())
+	err0.Details(&a1)
+	require.Equal(t, testErrorDetails1, a1)
+	a1 = ""
+	err0 = NewCustomError(customErrReasonA, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	require.True(t, err0.HasDetails())
+	err0.Details(&a1, &a2, &a3)
+	require.Equal(t, testErrorDetails1, a1)
+	require.Equal(t, testErrorDetails2, a2)
+	require.Equal(t, testErrorDetails3, a3)
+
+	// test EncodedValues as Details
+	errorActivityFn := func() error {
+		return err0
+	}
+	RegisterActivity(errorActivityFn)
+	s := &WorkflowTestSuite{}
+	env := s.NewTestActivityEnvironment()
+	_, err := env.ExecuteActivity(errorActivityFn)
+	require.Error(t, err)
+	err1, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err1.HasDetails())
+	var b1 string
+	var b2 int
+	var b3 testStruct
+	err1.Details(&b1, &b2, &b3)
+	require.Equal(t, testErrorDetails1, b1)
+	require.Equal(t, testErrorDetails2, b2)
+	require.Equal(t, testErrorDetails3, b3)
+
+	// test reason and no detail
+	require.Panics(t, func() { NewCustomError("cadenceInternal:testReason") })
+	newReason := "another reason"
+	err2 := NewCustomError(newReason)
+	require.True(t, !err2.HasDetails())
+	require.Equal(t, ErrNoData, err2.Details())
+	require.Equal(t, newReason, err2.Reason())
+	err3 := NewCustomError(newReason, nil)
+	// TODO: probably we want to handle this case when details are nil, HasDetails return false
+	require.True(t, err3.HasDetails())
+
+	// test workflow error
+	errorWorkflowFn := func(ctx Context) error {
+		return err0
+	}
+	RegisterWorkflow(errorWorkflowFn)
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(errorWorkflowFn)
+	err = wfEnv.GetWorkflowError()
+	require.Error(t, err)
+	err4, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err4.HasDetails())
+	err4.Details(&b1, &b2, &b3)
+	require.Equal(t, testErrorDetails1, b1)
+	require.Equal(t, testErrorDetails2, b2)
+	require.Equal(t, testErrorDetails3, b3)
+}
+
+func Test_CanceledError(t *testing.T) {
+	// test ErrorDetailValues as Details
+	var a1 string
+	var a2 int
+	var a3 testStruct
+	err0 := NewCanceledError(testErrorDetails1)
+	require.True(t, err0.HasDetails())
+	err0.Details(&a1)
+	require.Equal(t, testErrorDetails1, a1)
+	a1 = ""
+	err0 = NewCanceledError(testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	require.True(t, err0.HasDetails())
+	err0.Details(&a1, &a2, &a3)
+	require.Equal(t, testErrorDetails1, a1)
+	require.Equal(t, testErrorDetails2, a2)
+	require.Equal(t, testErrorDetails3, a3)
+
+	// test EncodedValues as Details
+	errorActivityFn := func() error {
+		return err0
+	}
+	RegisterActivity(errorActivityFn)
+	s := &WorkflowTestSuite{}
+	env := s.NewTestActivityEnvironment()
+	_, err := env.ExecuteActivity(errorActivityFn)
+	require.Error(t, err)
+	err1, ok := err.(*CanceledError)
+	require.True(t, ok)
+	require.True(t, err1.HasDetails())
+	var b1 string
+	var b2 int
+	var b3 testStruct
+	err1.Details(&b1, &b2, &b3)
+	require.Equal(t, testErrorDetails1, b1)
+	require.Equal(t, testErrorDetails2, b2)
+	require.Equal(t, testErrorDetails3, b3)
+
+	err2 := NewCanceledError()
+	require.False(t, err2.HasDetails())
+
+	// test workflow error
+	errorWorkflowFn := func(ctx Context) error {
+		return err0
+	}
+	RegisterWorkflow(errorWorkflowFn)
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(errorWorkflowFn)
+	err = wfEnv.GetWorkflowError()
+	require.Error(t, err)
+	err3, ok := err.(*CanceledError)
+	require.True(t, ok)
+	require.True(t, err3.HasDetails())
+	err3.Details(&b1, &b2, &b3)
+	require.Equal(t, testErrorDetails1, b1)
+	require.Equal(t, testErrorDetails2, b2)
+	require.Equal(t, testErrorDetails3, b3)
+}
+
+func TestErrorDetailsValues(t *testing.T) {
+	e := ErrorDetailsValues{}
+	require.Equal(t, ErrNoData, e.Get())
+
+	e = ErrorDetailsValues{testErrorDetails1, testErrorDetails2, testErrorDetails3}
+	var a1 string
+	var a2 int
+	var a3 testStruct
+	require.True(t, e.HasValues())
+	e.Get(&a1)
+	require.Equal(t, testErrorDetails1, a1)
+	e.Get(&a1, &a2, &a3)
+	require.Equal(t, testErrorDetails1, a1)
+	require.Equal(t, testErrorDetails2, a2)
+	require.Equal(t, testErrorDetails3, a3)
+
+	require.Equal(t, ErrTooManyArg, e.Get(&a1, &a2, &a3, &a3))
 }

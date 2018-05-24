@@ -35,6 +35,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/cache"
@@ -108,6 +109,7 @@ type (
 		hostEnv                        *hostEnvImpl
 		laTunnel                       *localActivityTunnel
 		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
+		dataConverter                  encoded.DataConverter
 	}
 
 	activityProvider func(name string) activity
@@ -121,6 +123,7 @@ type (
 		userContext      context.Context
 		hostEnv          *hostEnvImpl
 		activityProvider activityProvider
+		dataConverter    encoded.DataConverter
 	}
 
 	// history wrapper method to help information about events.
@@ -309,6 +312,7 @@ func newWorkflowTaskHandler(
 		disableStickyExecution: params.DisableStickyExecution,
 		hostEnv:                hostEnv,
 		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
+		dataConverter:                  params.DataConverter,
 	}
 }
 
@@ -421,7 +425,8 @@ func (w *workflowExecutionContext) resetWorkflowState() {
 		w.wth.logger,
 		w.wth.enableLoggingInReplay,
 		w.wth.metricsScope,
-		w.wth.hostEnv).(*workflowExecutionEventHandlerImpl)
+		w.wth.hostEnv,
+		w.wth.dataConverter).(*workflowExecutionEventHandlerImpl)
 }
 
 func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*s.History, error) {
@@ -1015,7 +1020,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
 		failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
-		_, details := getErrorDetails(panicErr)
+		_, details := getErrorDetails(panicErr, wth.dataConverter)
 		return &s.RespondDecisionTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Cause:     &failedCause,
@@ -1030,8 +1035,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow cancelled
 		wth.metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeCancelWorkflowExecution)
+		_, details := getErrorDetails(canceledErr, wth.dataConverter)
 		closeDecision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
-			Details: canceledErr.details,
+			Details: details,
 		}
 	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
 		// Continue as new error.
@@ -1048,7 +1054,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		wth.metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeFailWorkflowExecution)
-		reason, details := getErrorDetails(workflowContext.err)
+		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
 		closeDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
 			Reason:  common.StringPtr(reason),
 			Details: details,
@@ -1114,6 +1120,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		userContext:      params.UserContext,
 		hostEnv:          env,
 		activityProvider: activityProvider,
+		dataConverter:    params.DataConverter,
 	}
 }
 
@@ -1252,7 +1259,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	canCtx, cancel := context.WithCancel(rootCtx)
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds())
 	defer invoker.Close()
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope, ath.dataConverter)
 	activityType := *t.ActivityType
 	activityImplementation := ath.getActivity(activityType.GetName())
 	if activityImplementation == nil {
@@ -1272,7 +1279,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 			scope := ath.metricsScope.GetTaggedScope(tagActivityType, t.ActivityType.GetName())
 			scope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
-			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr), nil
+			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
 		}
 	}()
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
@@ -1285,7 +1292,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 		return nil, ctx.Err()
 	}
 
-	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err), nil
+	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
