@@ -334,7 +334,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	if options != nil {
 		metricScope = options.MetricsScope
 	}
-	metricScope = tagScope(metricScope, tagDomain, domain)
+	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
 	var dataConverter encoded.DataConverter
 	if options != nil && options.DataConverter != nil {
 		dataConverter = options.DataConverter
@@ -362,7 +362,7 @@ func NewDomainClient(service workflowserviceclient.Interface, options *ClientOpt
 	if options != nil {
 		metricScope = options.MetricsScope
 	}
-	metricScope = tagScope(metricScope, tagDomain, "domain-client")
+	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 	return &domainClient{
 		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
 		metricsScope:    metricScope,
