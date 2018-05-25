@@ -599,7 +599,7 @@ func TestDispatchClose(t *testing.T) {
 	d.Close()
 	time.Sleep(100 * time.Millisecond) // Let all goroutines to die
 	closedCount := beforeClose - runtime.NumGoroutine()
-	require.EqualValues(t, 11, closedCount)
+	require.True(t, closedCount >= 11)
 	expected := []string{
 		"root",
 	}
