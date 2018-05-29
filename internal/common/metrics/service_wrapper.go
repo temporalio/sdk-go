@@ -74,6 +74,7 @@ const (
 	scopeNameDescribeTaskList                 = CadenceMetricsPrefix + "DescribeTaskList"
 	scopeNameRespondQueryTaskCompleted        = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
 	scopeNameDescribeWorkflowExecution        = CadenceMetricsPrefix + "DescribeWorkflowExecution"
+	scopeNameResetStickyTaskList              = CadenceMetricsPrefix + "ResetStickyTaskList"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -295,6 +296,13 @@ func (w *workflowServiceMetricsWrapper) UpdateDomain(ctx context.Context, reques
 func (w *workflowServiceMetricsWrapper) QueryWorkflow(ctx context.Context, request *shared.QueryWorkflowRequest, opts ...yarpc.CallOption) (*shared.QueryWorkflowResponse, error) {
 	scope := w.getOperationScope(scopeNameQueryWorkflow)
 	result, err := w.service.QueryWorkflow(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) ResetStickyTaskList(ctx context.Context, request *shared.ResetStickyTaskListRequest, opts ...yarpc.CallOption) (*shared.ResetStickyTaskListResponse, error) {
+	scope := w.getOperationScope(scopeNameResetStickyTaskList)
+	result, err := w.service.ResetStickyTaskList(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
