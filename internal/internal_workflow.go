@@ -258,6 +258,14 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 	if rf.Type().Kind() != reflect.Ptr {
 		return errors.New("value parameter is not a pointer")
 	}
+
+	if blob, ok := f.value.([]byte); ok && !isTypeByteSlice(reflect.TypeOf(value)) {
+		if err := decodeArg(getDataConverterFromWorkflowContext(ctx), blob, value); err != nil {
+			return err
+		}
+		return f.err
+	}
+
 	fv := reflect.ValueOf(f.value)
 	if fv.IsValid() {
 		rf.Elem().Set(fv)

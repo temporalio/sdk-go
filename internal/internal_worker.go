@@ -714,9 +714,10 @@ func decodeAndAssignValue(dc encoded.DataConverter, from interface{}, toValuePtr
 	return nil
 }
 
+var typeOfByteSlice = reflect.TypeOf(([]byte)(nil))
+
 func isTypeByteSlice(inType reflect.Type) bool {
-	r := reflect.TypeOf(([]byte)(nil))
-	return inType == r || inType == reflect.PtrTo(r)
+	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
 }
 
 var once sync.Once

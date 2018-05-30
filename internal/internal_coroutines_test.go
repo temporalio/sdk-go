@@ -1128,3 +1128,33 @@ func TestSelectFuture_WithBatchSets(t *testing.T) {
 	}
 	require.EqualValues(t, expected, history)
 }
+
+func TestChainedFuture(t *testing.T) {
+	activityFn := func(arg int) (int, error) {
+		return arg, nil
+	}
+	workflowFn := func(ctx Context) (int, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+		})
+		f := ExecuteActivity(ctx, activityFn, 5)
+		var out int
+		fut, set := NewFuture(ctx)
+		set.Chain(f)
+		fut.Get(ctx, &out)
+		return out, nil
+	}
+	RegisterWorkflow(workflowFn)
+	RegisterActivity(activityFn)
+
+	s := WorkflowTestSuite{}
+	env := s.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(workflowFn)
+	err := env.GetWorkflowError()
+	require.NoError(t, err)
+	var out int
+	require.NoError(t, env.GetWorkflowResult(&out))
+	require.Equal(t, 5, out)
+}
