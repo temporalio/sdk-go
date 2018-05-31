@@ -5,7 +5,7 @@ default: test
 
 IMPORT_ROOT := go.uber.org/cadence
 THRIFT_GENDIR := .gen/go
-THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
+THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift idl/github.com/uber/cadence/admin.thrift
 # one or more thriftrw-generated file(s), to create / depend on generated code
 THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
 TEST_ARG ?= -coverprofile=$(BUILD)/cover.out -race
@@ -63,12 +63,12 @@ $(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
 	@mkdir -p $(dir $@)
 	@# needs to be able to find the thriftrw-plugin-yarpc bin in PATH
-	@PATH="$(BINS)" \
-		$(BINS)/thriftrw \
-		--plugin=yarpc \
-		--pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
-		--out=$(THRIFT_GENDIR) \
-		$(THRIFTRW_SRC)
+	$(foreach source,$(THRIFTRW_SRC),\
+		PATH="$(BINS)" \
+		    $(BINS)/thriftrw \
+		        --plugin=yarpc \
+		        --pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
+		        --out=$(THRIFT_GENDIR) $(source);)
 
 clean_thrift:
 	rm -rf .gen
