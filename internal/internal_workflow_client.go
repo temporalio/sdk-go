@@ -64,6 +64,9 @@ type (
 
 	// WorkflowRun represents a started non child workflow
 	WorkflowRun interface {
+		// GetID return workflow ID, which will be same as StartWorkflowOptions.ID if provided.
+		GetID() string
+
 		// GetRunID return the first started workflow run ID (please see below)
 		GetRunID() string
 
@@ -84,6 +87,7 @@ type (
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
 		workflowFn    interface{}
+		workflowID    string
 		firstRunID    string
 		currentRunID  string
 		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
@@ -238,6 +242,7 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 
 	return &workflowRunImpl{
 		workflowFn:    workflow,
+		workflowID:    workflowID,
 		firstRunID:    runID,
 		currentRunID:  runID,
 		iterFn:        iterFn,
@@ -765,6 +770,10 @@ func (iter *historyEventIteratorImpl) Next() (*s.HistoryEvent, error) {
 
 func (workflowRun *workflowRunImpl) GetRunID() string {
 	return workflowRun.firstRunID
+}
+
+func (workflowRun *workflowRunImpl) GetID() string {
+	return workflowRun.workflowID
 }
 
 func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{}) error {

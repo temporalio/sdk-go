@@ -236,6 +236,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -287,6 +288,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -318,11 +320,12 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 		},
 		NextPageToken: nil,
 	}
+	var wid *string
 	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
 	getHistory.Do(func(ctx interface{}, getRequest *shared.GetWorkflowExecutionHistoryRequest, opt1 interface{}, opt2 interface{}, opt3 interface{}) {
-		workflowID := getRequest.Execution.WorkflowId
-		s.NotNil(workflowID)
-		s.NotEmpty(*workflowID)
+		wid = getRequest.Execution.WorkflowId
+		s.NotNil(wid)
+		s.NotEmpty(*wid)
 	})
 
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
@@ -340,6 +343,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 	err = workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
 	s.Equal(workflowResult, decodedResult)
+	s.Equal(workflowRun.GetID(), *wid)
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
@@ -379,6 +383,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -428,6 +433,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -468,6 +474,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Terminated() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -511,6 +518,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -577,6 +585,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 		}, workflowType,
 	)
 	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)

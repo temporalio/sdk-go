@@ -71,7 +71,8 @@ type (
 		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 		// subjected to change in the future.
 		//
-		// WorkflowRun has 2 methods:
+		// WorkflowRun has three methods:
+		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
@@ -272,7 +273,8 @@ type (
 		DecisionTaskStartToCloseTimeout time.Duration
 
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate
+		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate.
+		// Optional: defaulted to WorkflowIDReusePolicyAllowDuplicateFailedOnly.
 		WorkflowIDReusePolicy WorkflowIDReusePolicy
 	}
 
