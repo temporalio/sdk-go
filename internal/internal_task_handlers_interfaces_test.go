@@ -99,7 +99,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 	// mocks
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	response, err := s.service.PollForDecisionTask(ctx, &m.PollForDecisionTaskRequest{})
 	s.NoError(err)
@@ -110,7 +110,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	completionRequest := request.(*m.RespondDecisionTaskCompletedRequest)
 	s.NoError(err)
 
-	err = s.service.RespondDecisionTaskCompleted(ctx, completionRequest)
+	_, err = s.service.RespondDecisionTaskCompleted(ctx, completionRequest)
 	s.NoError(err)
 }
 

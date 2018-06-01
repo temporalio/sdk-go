@@ -292,7 +292,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
 					}
 				}
-				err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
+				_, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))

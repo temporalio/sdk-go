@@ -244,11 +244,11 @@ func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedByID(ctx contex
 	return err
 }
 
-func (w *workflowServiceMetricsWrapper) RespondDecisionTaskCompleted(ctx context.Context, request *shared.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption) error {
+func (w *workflowServiceMetricsWrapper) RespondDecisionTaskCompleted(ctx context.Context, request *shared.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption) (*shared.RespondDecisionTaskCompletedResponse, error) {
 	scope := w.getOperationScope(scopeNameRespondDecisionTaskCompleted)
-	err := w.service.RespondDecisionTaskCompleted(ctx, request, opts...)
+	response, err := w.service.RespondDecisionTaskCompleted(ctx, request, opts...)
 	scope.handleError(err)
-	return err
+	return response, err
 }
 
 func (w *workflowServiceMetricsWrapper) RespondDecisionTaskFailed(ctx context.Context, request *shared.RespondDecisionTaskFailedRequest, opts ...yarpc.CallOption) error {
