@@ -76,6 +76,11 @@ type (
 		pollStartTime time.Time
 	}
 
+	// resetStickinessTask wraps a ResetStickyTaskListRequest.
+	resetStickinessTask struct {
+		task *s.ResetStickyTaskListRequest
+	}
+
 	// workflowExecutionContext is the cached workflow state for sticky execution
 	workflowExecutionContext struct {
 		sync.Mutex
@@ -375,11 +380,9 @@ func removeWorkflowContext(runID string) {
 
 func (w *workflowExecutionContext) release() {
 	if w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
-		// TODO: in case of error, ideally, we should notify server to clear the stickiness.
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
 		// if the close decision failed, the next decision will have to rebuild the state.
-		w.destroyCachedState()
 		removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 	}
 
@@ -392,15 +395,43 @@ func (w *workflowExecutionContext) completeWorkflow(result []byte, err error) {
 	w.err = err
 }
 
+func (w *workflowExecutionContext) shouldResetStickyOnEviction() bool {
+	// Not all evictions from the cache warrant a call to the server
+	// to reset stickiness.
+	// Cases when this is redundant or unnecessary include
+	// when an error was encountered during execution
+	// or workflow simply completed successfully.
+	return w.err == nil && !w.isWorkflowCompleted
+}
+
 func (w *workflowExecutionContext) onEviction() {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.Lock()
+
+	// Queue a ResetStickiness request *BEFORE* calling destroyCachedState
+	// because once destroyed, no sensible information
+	// may be ascertained about the execution context's state,
+	// nor should any of its methods be invoked.
+	if w.shouldResetStickyOnEviction() {
+		w.queueResetStickinessTask()
+	}
+
 	w.destroyCachedState()
 	w.Unlock()
 }
 
 func (w *workflowExecutionContext) isDestroyed() bool {
 	return w.eventHandler == nil
+}
+
+func (w *workflowExecutionContext) queueResetStickinessTask() {
+	var task resetStickinessTask
+	task.task = &s.ResetStickyTaskListRequest{
+		Domain: common.StringPtr(w.workflowInfo.Domain),
+		Execution: &s.WorkflowExecution{common.StringPtr(w.workflowInfo.WorkflowExecution.ID),
+			common.StringPtr(w.workflowInfo.WorkflowExecution.RunID)},
+	}
+	w.laTunnel.resultCh <- &task
 }
 
 func (w *workflowExecutionContext) destroyCachedState() {

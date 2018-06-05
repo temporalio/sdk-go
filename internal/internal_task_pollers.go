@@ -204,11 +204,17 @@ func (wtp *workflowTaskPoller) PollTask() (interface{}, error) {
 
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
-	if lar, ok := task.(*localActivityResult); ok {
-		return wtp.processLocalActivityResult(lar)
+	switch task.(type) {
+	case *localActivityResult:
+		return wtp.processLocalActivityResult(task.(*localActivityResult))
+	case *workflowTask:
+		return wtp.processWorkflowTask(task.(*workflowTask))
+	case *resetStickinessTask:
+		return wtp.processResetStickinessTask(task.(*resetStickinessTask))
+	default:
+		panic("unknown task type.")
 	}
-
-	return wtp.processWorkflowTask(task.(*workflowTask))
+	return nil
 }
 
 func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) error {
@@ -240,6 +246,11 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 	wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
 
 	return nil
+}
+
+func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
+	_, err := wtp.service.ResetStickyTaskList(context.Background(), rst.task)
+	return err
 }
 
 func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResult) error {
