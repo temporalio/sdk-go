@@ -166,7 +166,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, NewErrorWithDetails("reason", details)
+		//      CompleteActivity(token, nil, cadence.NewCustomError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
