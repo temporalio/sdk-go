@@ -139,11 +139,12 @@ type (
 		// like common logger for all activities.
 		BackgroundActivityContext context.Context
 
-		// NonDeterministicWorkflowPolicy is used for configuring how decision worker deals with non-deterministic history events
+		// Optional: Sets how decision worker deals with non-deterministic history events
 		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow definition changes).
+		// default: NonDeterministicWorkflowPolicyBlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 
-		// Optional: sets DataConverter to customize serialization/deserialization of arguments in Cadence
+		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Cadence
 		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
 		DataConverter encoded.DataConverter
 	}
