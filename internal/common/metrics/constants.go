@@ -48,6 +48,7 @@ const (
 	DecisionResponseLatency            = CadenceMetricsPrefix + "decision-response-latency"
 	DecisionTaskPanicCounter           = CadenceMetricsPrefix + "decision-task-panic"
 	DecisionTaskCompletedCounter       = CadenceMetricsPrefix + "decision-task-completed"
+	DecisionTaskForceCompleted         = CadenceMetricsPrefix + "decision-task-force-completed"
 
 	ActivityPollCounter                = CadenceMetricsPrefix + "activity-poll-total"
 	ActivityPollFailedCounter          = CadenceMetricsPrefix + "activity-poll-failed"

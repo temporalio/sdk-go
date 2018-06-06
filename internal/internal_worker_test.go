@@ -171,8 +171,10 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	}
 
 	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	_, stackTrace, err := r.ProcessWorkflowTask(task, nil, true)
-	require.NoError(s.T(), err)
+	_, wc, err := r.ProcessWorkflowTask(task, nil)
+	s.NoError(err)
+	s.NotNil(wc)
+	stackTrace := wc.eventHandler.StackTrace()
 	require.NotEmpty(s.T(), stackTrace, stackTrace)
 	require.Contains(s.T(), stackTrace, "cadence/internal.(*decodeFutureImpl).Get")
 }

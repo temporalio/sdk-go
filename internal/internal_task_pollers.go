@@ -226,24 +226,31 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 		return nil
 	}
 
-	executionStartTime := time.Now()
+	startTime := time.Now()
 	// Process the task.
-	completedRequest, _, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.historyIterator, false)
+	completedRequest, wc, err := wtp.taskHandler.ProcessWorkflowTask(workflowTask.task, workflowTask.historyIterator)
 	if err != nil {
 		wtp.metricsScope.Counter(metrics.DecisionExecutionFailedCounter).Inc(1)
 		return err
 	}
 	if completedRequest == nil {
+		if wc != nil {
+			// decision task cannot complete, we need a timer
+			wtp.scheduleRespondDecisionTaskCompleted(wc, workflowTask, startTime)
+		}
+
 		return nil
 	}
-	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(executionStartTime))
 
-	responseStartTime := time.Now()
-	if err = wtp.RespondTaskCompleted(completedRequest, workflowTask.task); err != nil {
+	response, err := wtp.RespondTaskCompletedWithMetrics(completedRequest, workflowTask.task, startTime)
+	if err != nil {
 		return err
 	}
-	wtp.metricsScope.Timer(metrics.DecisionResponseLatency).Record(time.Now().Sub(responseStartTime))
-	wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
+	if response != nil && response.DecisionTask != nil {
+		wc.Lock()
+		defer wc.Unlock()
+		return wc.processCompleteDecisionResponseLocked(response, wtp)
+	}
 
 	return nil
 }
@@ -251,6 +258,90 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
 	_, err := wtp.service.ResetStickyTaskList(context.Background(), rst.task)
 	return err
+}
+
+func (wtp *workflowTaskPoller) scheduleRespondDecisionTaskCompleted(wc *WorkflowExecutionContext, workflowTask *workflowTask, startTime time.Time) {
+	deadlineToTrigger := time.Duration(float32(0.8) * float32(wc.workflowInfo.TaskStartToCloseTimeoutSeconds) * float32(time.Second))
+	delayDuration := startTime.Add(deadlineToTrigger).Sub(time.Now())
+	time.AfterFunc(delayDuration, func() {
+		wtp.forceRespondDecisionTaskCompleted(wc, workflowTask, startTime)
+	})
+}
+
+func (wtp *workflowTaskPoller) forceRespondDecisionTaskCompleted(wc *WorkflowExecutionContext, workflowTask *workflowTask, startTime time.Time) {
+	wc.Lock()
+	defer wc.release()
+
+	if wc.currentDecisionTask != workflowTask.task {
+		// decision task already completed
+		var currentTaskStartedEventID int64
+		if wc.currentDecisionTask != nil {
+			currentTaskStartedEventID = wc.currentDecisionTask.GetStartedEventId()
+		}
+		wtp.logger.Debug("DecisionTask already completed when force responding timer fires.",
+			zap.Int64("TaskStartedEventID", workflowTask.task.GetStartedEventId()),
+			zap.Int64("CurrentStartedEventID", currentTaskStartedEventID))
+		return
+	}
+
+	completeRequest := wc.CompleteDecisionTaskLocked(true)
+	wtp.logger.Debug("Force RespondDecisionTaskCompleted.",
+		zap.Int64("TaskStartedEventID", workflowTask.task.GetStartedEventId()))
+	wtp.metricsScope.Counter(metrics.DecisionTaskForceCompleted).Inc(1)
+
+	response, err := wtp.RespondTaskCompletedWithMetrics(completeRequest, workflowTask.task, startTime)
+	if err != nil {
+		return
+	}
+
+	wc.processCompleteDecisionResponseLocked(response, wtp)
+	return
+}
+
+func (w *WorkflowExecutionContext) processCompleteDecisionResponseLocked(response *s.RespondDecisionTaskCompletedResponse, wtp *workflowTaskPoller) error {
+	if response == nil || response.DecisionTask == nil {
+		return nil
+	}
+
+	startTime := time.Now()
+	newTask := wtp.toWorkflowTask(response.DecisionTask)
+
+	if newTask.task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
+		// sanity check for new task, this should not happen.
+		wtp.logger.Error("New task from RespondDecisionTaskCompleted has unexpected events",
+			zap.String(tagWorkflowID, newTask.task.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, newTask.task.WorkflowExecution.GetRunId()),
+			zap.Int64("CachedPreviousStartedEventID", w.previousStartedEventID),
+			zap.Int64("TaskFirstEventID", newTask.task.History.Events[0].GetEventId()),
+			zap.Int64("TaskStartedEventID", newTask.task.GetStartedEventId()),
+			zap.Int64("TaskPreviousStartedEventID", newTask.task.GetPreviousStartedEventId()))
+
+		w.destroyCachedState()
+		w.resetStateIfDestroyed(newTask.task, newTask.historyIterator)
+	}
+
+	w.setCurrentTask(newTask.task)
+
+	// process new task
+	completedRequest, err := w.processWorkflowTaskLocked(newTask, true)
+	if err != nil {
+		wtp.logger.Info("Failed to process new task from response of RespondDecisionTaskCompleted.",
+			zap.Error(err))
+		return err
+	}
+
+	if completedRequest == nil {
+		// decision task cannot complete, we need a timer
+		wtp.scheduleRespondDecisionTaskCompleted(w, newTask, startTime)
+		return nil
+	}
+
+	response, err = wtp.RespondTaskCompletedWithMetrics(completedRequest, newTask.task, startTime)
+	if err != nil {
+		return err
+	}
+
+	return w.processCompleteDecisionResponseLocked(response, wtp)
 }
 
 func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResult) error {
@@ -264,19 +355,33 @@ func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResu
 	if completedRequest == nil {
 		return nil
 	}
-
-	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(decisionStartTime))
-
-	responseStartTime := time.Now()
-	if err = wtp.RespondTaskCompleted(completedRequest, decisionTask); err != nil {
+	response, err := wtp.RespondTaskCompletedWithMetrics(completedRequest, decisionTask, decisionStartTime)
+	if err != nil {
 		return err
 	}
-	wtp.metricsScope.Timer(metrics.DecisionResponseLatency).Record(time.Now().Sub(responseStartTime))
-	wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
+	if response != nil && response.DecisionTask != nil {
+		workflowContext.Lock()
+		defer workflowContext.Unlock()
+		return workflowContext.processCompleteDecisionResponseLocked(response, wtp)
+	}
 	return nil
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *s.PollForDecisionTaskResponse) (err error) {
+func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest interface{}, task *s.PollForDecisionTaskResponse, startTime time.Time) (response *s.RespondDecisionTaskCompletedResponse, err error) {
+
+	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Now().Sub(startTime))
+
+	responseStartTime := time.Now()
+	if response, err = wtp.RespondTaskCompleted(completedRequest, task); err != nil {
+		wtp.metricsScope.Counter(metrics.DecisionResponseFailedCounter).Inc(1)
+		return
+	}
+	wtp.metricsScope.Timer(metrics.DecisionResponseLatency).Record(time.Now().Sub(responseStartTime))
+	wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
+	return
+}
+
+func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *s.PollForDecisionTaskResponse) (response *s.RespondDecisionTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
 	err = backoff.Retry(ctx,
@@ -303,7 +408,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
 					}
 				}
-				_, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
+				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
@@ -324,12 +429,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			return err1
 		}, serviceOperationRetryPolicy, isServiceTransientError)
 
-	if err != nil {
-		wtp.metricsScope.Counter(metrics.DecisionResponseFailedCounter).Inc(1)
-		return err
-	}
-
-	return nil
+	return
 }
 
 func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
@@ -547,6 +647,25 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 
 	wtp.updateBacklog(request.TaskList.GetKind(), response.GetBacklogCountHint())
 
+	task := wtp.toWorkflowTask(response)
+	traceLog(func() {
+		var firstEventID int64 = -1
+		if response.History != nil && len(response.History.Events) > 0 {
+			firstEventID = response.History.Events[0].GetEventId()
+		}
+		wtp.logger.Debug("workflowTaskPoller::Poll Succeed",
+			zap.Int64("StartedEventID", response.GetStartedEventId()),
+			zap.Int64("Attempt", response.GetAttempt()),
+			zap.Int64("FirstEventID", firstEventID),
+			zap.Bool("IsQueryTask", response.Query != nil))
+	})
+
+	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
+	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Now().Sub(startTime))
+	return task, nil
+}
+
+func (wtp *workflowTaskPoller) toWorkflowTask(response *s.PollForDecisionTaskResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
 		nextPageToken: response.NextPageToken,
 		execution:     response.WorkflowExecution,
@@ -558,11 +677,8 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 	task := &workflowTask{
 		task:            response,
 		historyIterator: historyIterator,
-		pollStartTime:   startTime,
 	}
-	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
-	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Now().Sub(startTime))
-	return task, nil
+	return task
 }
 
 func (h *historyIteratorImpl) GetNextPage() (*s.History, error) {

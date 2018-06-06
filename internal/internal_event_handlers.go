@@ -112,13 +112,12 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
-		activityID   string
-		params       *executeLocalActivityParams
-		callback     resultHandler
-		wc           *workflowExecutionContext
-		decisionTask *m.PollForDecisionTaskResponse
-		canceled     bool
-		cancelFunc   func()
+		activityID string
+		params     *executeLocalActivityParams
+		callback   resultHandler
+		wc         *WorkflowExecutionContext
+		canceled   bool
+		cancelFunc func()
 	}
 
 	localActivityMarkerData struct {
@@ -909,9 +908,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		return err
 	}
 
-	weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
-
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
+		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		if len(lamd.ErrReason) > 0 {

@@ -67,7 +67,6 @@ type (
 	workflowTask struct {
 		task            *s.PollForDecisionTaskResponse
 		historyIterator HistoryIterator
-		pollStartTime   time.Time
 	}
 
 	// activityTask wraps a activity task.
@@ -81,8 +80,8 @@ type (
 		task *s.ResetStickyTaskListRequest
 	}
 
-	// workflowExecutionContext is the cached workflow state for sticky execution
-	workflowExecutionContext struct {
+	// WorkflowExecutionContext is the cached workflow state for sticky execution
+	WorkflowExecutionContext struct {
 		sync.Mutex
 		workflowStartTime time.Time
 		workflowInfo      *WorkflowInfo
@@ -349,7 +348,7 @@ func getWorkflowCache() cache.Cache {
 		defer stickyCacheLock.Unlock()
 		workflowCache = cache.New(stickyCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
-				wc := cachedEntity.(*workflowExecutionContext)
+				wc := cachedEntity.(*WorkflowExecutionContext)
 				wc.onEviction()
 			},
 		})
@@ -357,28 +356,28 @@ func getWorkflowCache() cache.Cache {
 	return workflowCache
 }
 
-func getWorkflowContext(runID string) *workflowExecutionContext {
+func getWorkflowContext(runID string) *WorkflowExecutionContext {
 	o := getWorkflowCache().Get(runID)
 	if o == nil {
 		return nil
 	}
-	wc := o.(*workflowExecutionContext)
+	wc := o.(*WorkflowExecutionContext)
 	return wc
 }
 
-func putWorkflowContext(runID string, wc *workflowExecutionContext) (*workflowExecutionContext, error) {
+func putWorkflowContext(runID string, wc *WorkflowExecutionContext) (*WorkflowExecutionContext, error) {
 	existing, err := getWorkflowCache().PutIfNotExist(runID, wc)
 	if err != nil {
 		return nil, err
 	}
-	return existing.(*workflowExecutionContext), nil
+	return existing.(*WorkflowExecutionContext), nil
 }
 
 func removeWorkflowContext(runID string) {
 	getWorkflowCache().Delete(runID)
 }
 
-func (w *workflowExecutionContext) release() {
+func (w *WorkflowExecutionContext) release() {
 	if w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
@@ -389,13 +388,13 @@ func (w *workflowExecutionContext) release() {
 	w.Unlock()
 }
 
-func (w *workflowExecutionContext) completeWorkflow(result []byte, err error) {
+func (w *WorkflowExecutionContext) completeWorkflow(result []byte, err error) {
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
 }
 
-func (w *workflowExecutionContext) shouldResetStickyOnEviction() bool {
+func (w *WorkflowExecutionContext) shouldResetStickyOnEviction() bool {
 	// Not all evictions from the cache warrant a call to the server
 	// to reset stickiness.
 	// Cases when this is redundant or unnecessary include
@@ -404,7 +403,7 @@ func (w *workflowExecutionContext) shouldResetStickyOnEviction() bool {
 	return w.err == nil && !w.isWorkflowCompleted
 }
 
-func (w *workflowExecutionContext) onEviction() {
+func (w *WorkflowExecutionContext) onEviction() {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.Lock()
 
@@ -420,11 +419,11 @@ func (w *workflowExecutionContext) onEviction() {
 	w.Unlock()
 }
 
-func (w *workflowExecutionContext) isDestroyed() bool {
+func (w *WorkflowExecutionContext) isDestroyed() bool {
 	return w.eventHandler == nil
 }
 
-func (w *workflowExecutionContext) queueResetStickinessTask() {
+func (w *WorkflowExecutionContext) queueResetStickinessTask() {
 	var task resetStickinessTask
 	task.task = &s.ResetStickyTaskListRequest{
 		Domain: common.StringPtr(w.workflowInfo.Domain),
@@ -434,21 +433,20 @@ func (w *workflowExecutionContext) queueResetStickinessTask() {
 	w.laTunnel.resultCh <- &task
 }
 
-func (w *workflowExecutionContext) destroyCachedState() {
+func (w *WorkflowExecutionContext) destroyCachedState() {
+	w.clearCurrentTask()
 	w.isWorkflowCompleted = false
 	w.result = nil
 	w.err = nil
 	w.previousStartedEventID = 0
 	w.newDecisions = nil
-	w.currentDecisionTask = nil
-	w.laTunnel = nil
 	if w.eventHandler != nil {
 		w.eventHandler.Close()
 		w.eventHandler = nil
 	}
 }
 
-func (w *workflowExecutionContext) resetWorkflowState() {
+func (w *WorkflowExecutionContext) resetWorkflowState() {
 	w.destroyCachedState()
 	w.eventHandler = newWorkflowExecutionEventHandler(
 		w.workflowInfo,
@@ -470,7 +468,7 @@ func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIt
 	return firstPageHistory, nil
 }
 
-func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisionTaskResponse) (*workflowExecutionContext, error) {
+func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisionTaskResponse) (*WorkflowExecutionContext, error) {
 	h := task.History
 	attributes := h.Events[0].WorkflowExecutionStartedEventAttributes
 	if attributes == nil {
@@ -497,19 +495,18 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		Domain: wth.domain,
 	}
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
-	workflowContext := &workflowExecutionContext{workflowStartTime: wfStartTime, workflowInfo: workflowInfo, wth: wth}
+	workflowContext := &WorkflowExecutionContext{workflowStartTime: wfStartTime, workflowInfo: workflowInfo, wth: wth}
 	workflowContext.resetWorkflowState()
 
 	return workflowContext, nil
 }
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDecisionTaskResponse,
-	historyIterator HistoryIterator) (workflowContext *workflowExecutionContext, skipReplayCheck bool, err error) {
+	historyIterator HistoryIterator) (workflowContext *WorkflowExecutionContext, skipReplayCheck bool, err error) {
 	defer func() {
 		if err == nil && workflowContext != nil {
-			workflowContext.currentDecisionTask = task
+			workflowContext.setCurrentTask(task)
 			workflowContext.laTunnel = wth.laTunnel
-			workflowContext.decisionStartTime = time.Now()
 		}
 		wth.metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
 	}()
@@ -518,10 +515,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 	runID := task.WorkflowExecution.GetRunId()
 
 	history := task.History
-	isFullHistory := true
-	if len(history.Events) == 0 || history.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
-		isFullHistory = false
-	}
+	isFullHistory := isFullHistory(history)
 
 	workflowContext = nil
 	if task.Query == nil || (task.Query != nil && !isFullHistory) {
@@ -571,37 +565,41 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		workflowContext.Lock()
 	}
 
+	err = workflowContext.resetStateIfDestroyed(task, historyIterator)
+
+	return
+}
+
+func isFullHistory(history *s.History) bool {
+	if len(history.Events) == 0 || history.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+		return false
+	}
+	return true
+}
+
+func (w *WorkflowExecutionContext) resetStateIfDestroyed(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
-	if workflowContext.isDestroyed() {
-		workflowContext.resetWorkflowState()
+	if w.isDestroyed() {
+		w.resetWorkflowState()
 		// reset history events if necessary
-		if !isFullHistory {
-			if history, err = resetHistory(task, historyIterator); err != nil {
-				return
+		if !isFullHistory(task.History) {
+			if _, err := resetHistory(task, historyIterator); err != nil {
+				return err
 			}
 		}
 	}
-
-	// since the "query decision task" is a transient decision
-	// meaning there is no "query decision event" on the history side
-	// we should not update the previous started event ID
-	if task.Query == nil {
-		workflowContext.previousStartedEventID = task.GetStartedEventId()
-	}
-
-	return
+	return nil
 }
 
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator,
-	emitStack bool,
-) (completeRequest interface{}, stackTrace string, err error) {
+) (completeRequest interface{}, context *WorkflowExecutionContext, err error) {
 	if task == nil {
-		return nil, "", errors.New("nil workflow task provided")
+		return nil, nil, errors.New("nil workflow task provided")
 	}
 
 	if task.History == nil || len(task.History.Events) == 0 {
@@ -610,7 +608,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
-		return nil, "", errors.New("nil or empty history")
+		return nil, nil, errors.New("nil or empty history")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -625,12 +623,19 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 
 	workflowContext, skipReplayCheck, err := wth.getOrCreateWorkflowContext(task, historyIterator)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	defer workflowContext.release()
 
-	eventHandler := workflowContext.eventHandler
-	reorderedHistory := newHistory(&workflowTask{task: task, historyIterator: historyIterator}, eventHandler)
+	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
+
+	response, err := workflowContext.processWorkflowTaskLocked(workflowTask, skipReplayCheck)
+	return response, workflowContext, err
+}
+
+func (w *WorkflowExecutionContext) processWorkflowTaskLocked(task *workflowTask, skipReplayCheck bool) (completeRequest interface{}, err error) {
+	eventHandler := w.eventHandler
+	reorderedHistory := newHistory(task, eventHandler)
 	var replayDecisions []*s.Decision
 	var respondEvents []*s.HistoryEvent
 
@@ -639,7 +644,7 @@ ProcessEvents:
 	for {
 		reorderedEvents, markers, err := reorderedHistory.NextDecisionEvents()
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 
 		if len(reorderedEvents) == 0 {
@@ -649,7 +654,7 @@ ProcessEvents:
 		for _, m := range markers {
 			_, err := eventHandler.ProcessEvent(m, true, false)
 			if err != nil {
-				return nil, "", err
+				return nil, err
 			}
 		}
 
@@ -661,25 +666,25 @@ ProcessEvents:
 			}
 
 			// Any pressure points.
-			err := wth.executeAnyPressurePoints(event, isInReplay)
+			err := w.wth.executeAnyPressurePoints(event, isInReplay)
 			if err != nil {
-				return nil, "", err
+				return nil, err
 			}
 
 			eventDecisions, err := eventHandler.ProcessEvent(event, isInReplay, isLast)
 			if err != nil {
-				return nil, "", err
+				return nil, err
 			}
 
 			if eventDecisions != nil {
 				if !isInReplay {
-					workflowContext.newDecisions = append(workflowContext.newDecisions, eventDecisions...)
+					w.newDecisions = append(w.newDecisions, eventDecisions...)
 				} else if !skipReplayCheck {
 					replayDecisions = append(replayDecisions, eventDecisions...)
 				}
 			}
 
-			if workflowContext.isWorkflowCompleted {
+			if w.isWorkflowCompleted {
 				// If workflow is already completed then we can break from processing
 				// further decisions.
 				break ProcessEvents
@@ -690,7 +695,7 @@ ProcessEvents:
 	if !skipReplayCheck {
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
-			wth.logger.Error("Replay and history mismatch.", zap.Error(err))
+			w.wth.logger.Error("Replay and history mismatch.", zap.Error(err))
 
 			// Whether or not we store the error in workflowContext.err makes
 			// a significant difference, to the point that it affects client's observable
@@ -703,80 +708,82 @@ ProcessEvents:
 			// If we simply return the error, the decision task completion code path will not
 			// execute at all, therefore, no response is sent back to the server and we will
 			// look like a decision task time out.
-			switch wth.nonDeterministicWorkflowPolicy {
+			switch w.wth.nonDeterministicWorkflowPolicy {
 			case NonDeterministicWorkflowPolicyFailWorkflow:
 				eventHandler.Complete(nil, NewCustomError("nondeterministic workflow", err.Error()))
 			case NonDeterministicWorkflowPolicyBlockWorkflow:
-				return nil, "", err
+				return nil, err
 			default:
 				panic(fmt.Sprintf("unknown mismatched workflow history policy."))
 			}
 		}
 	}
 
-	completeRequest = workflowContext.CompleteDecisionTask()
-
-	if emitStack {
-		stackTrace = eventHandler.StackTrace()
-	}
-	return completeRequest, stackTrace, nil
+	return w.CompleteDecisionTaskLocked(false), nil
 }
 
 func (wth *workflowTaskHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
 	workflowContext := lar.task.wc
 	workflowContext.Lock()
 	defer workflowContext.release()
+	workflowContext.processLocalActivityResultLocked(lar)
 
-	if workflowContext.currentDecisionTask != lar.task.decisionTask {
-		// The possible case is decision task timeout while waiting for local activity to complete, then server would
-		// generate a new new decision task, which could be dispatched to this same worker. In that case, the cached
-		// workflowExecutionContext will be reset because the events mismatch and the currentDecisionTask will be updated
-		// to the new decision task while the reference in the local activity task will still be the old one.
-		wth.logger.Info("Discard local activity result because decision task that it belongs to is no longer available. "+
-			"Possible cause is local activity took too long and decision task timed out.",
-			zap.String("LocalActivityID", lar.task.activityID),
-			zap.String("LocalActivityFunc", getFunctionName(lar.task.params.ActivityFn)),
-			zap.Int32("ScheduleToCloseTimeoutSeconds", lar.task.params.ScheduleToCloseTimeoutSeconds))
-		return nil, nil
-	}
+	return workflowContext.CompleteDecisionTaskLocked(false), nil
+}
 
-	eventDecisions, err := workflowContext.eventHandler.ProcessLocalActivityResult(lar)
+func (w *WorkflowExecutionContext) processLocalActivityResultLocked(lar *localActivityResult) error {
+	eventDecisions, err := w.eventHandler.ProcessLocalActivityResult(lar)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if eventDecisions != nil {
-		workflowContext.newDecisions = append(workflowContext.newDecisions, eventDecisions...)
+		w.newDecisions = append(w.newDecisions, eventDecisions...)
 	}
 
-	return workflowContext.CompleteDecisionTask(), nil
+	return nil
 }
 
-func (w *workflowExecutionContext) CompleteDecisionTask() interface{} {
+func (w *WorkflowExecutionContext) CompleteDecisionTaskLocked(force bool) interface{} {
 	if w.hasPendingLocalActivityWork() {
 		if len(w.eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
 			for activityID := range w.eventHandler.unstartedLaTasks {
 				task := w.eventHandler.pendingLaTasks[activityID]
 				task.wc = w
-				task.decisionTask = w.currentDecisionTask
 				w.laTunnel.sendTask(task)
 			}
 			w.eventHandler.unstartedLaTasks = make(map[string]struct{})
 		}
 		// cannot complete decision task as there are pending local activities
-		return nil
+		if !force {
+			// will not return nil if we are forced to complete
+			return nil
+		}
 	}
 
-	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions)
-	w.newDecisions = nil
-	w.currentDecisionTask = nil
+	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions, force)
+	w.clearCurrentTask()
 
 	return completeRequest
 }
 
-func (w *workflowExecutionContext) hasPendingLocalActivityWork() bool {
-	return !w.isWorkflowCompleted && len(w.eventHandler.pendingLaTasks) > 0
+func (w *WorkflowExecutionContext) hasPendingLocalActivityWork() bool {
+	return !w.isWorkflowCompleted && w.eventHandler != nil && len(w.eventHandler.pendingLaTasks) > 0
+}
+
+func (w *WorkflowExecutionContext) clearCurrentTask() {
+	w.newDecisions = nil
+	w.currentDecisionTask = nil
+}
+
+func (w *WorkflowExecutionContext) setCurrentTask(task *s.PollForDecisionTaskResponse) {
+	w.currentDecisionTask = task
+	// do not update the previousStartedEventID for query task
+	if task.Query == nil {
+		w.previousStartedEventID = task.GetStartedEventId()
+	}
+	w.decisionStartTime = time.Now()
 }
 
 func skipDeterministicCheckForDecision(d *s.Decision) bool {
@@ -1020,8 +1027,9 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	eventHandler *workflowExecutionEventHandlerImpl,
 	task *s.PollForDecisionTaskResponse,
-	workflowContext *workflowExecutionContext,
-	decisions []*s.Decision) interface{} {
+	workflowContext *WorkflowExecutionContext,
+	decisions []*s.Decision,
+	forceNewDecision bool) interface{} {
 
 	// for query task
 	if task.Query != nil {
@@ -1103,12 +1111,15 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		decisions = append(decisions, closeDecision)
 		elapsed := time.Now().Sub(workflowContext.workflowStartTime)
 		wth.metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
+		forceNewDecision = false
 	}
 
 	return &s.RespondDecisionTaskCompletedRequest{
-		TaskToken: task.TaskToken,
-		Decisions: decisions,
-		Identity:  common.StringPtr(wth.identity),
+		TaskToken:                  task.TaskToken,
+		Decisions:                  decisions,
+		Identity:                   common.StringPtr(wth.identity),
+		ReturnNewDecisionTask:      common.BoolPtr(true),
+		ForceCreateNewDecisionTask: common.BoolPtr(forceNewDecision),
 	}
 }
 

@@ -45,12 +45,13 @@ type (
 	// WorkflowTaskHandler represents decision task handlers.
 	WorkflowTaskHandler interface {
 		// Processes the workflow task
-		// The response is either
-		// RespondDecisionTaskCompletedRequest or RespondDecisionTaskFailedRequest
+		// The response could be:
+		// - RespondDecisionTaskCompletedRequest
+		// - RespondDecisionTaskFailedRequest
+		// - RespondQueryTaskCompletedRequest
 		ProcessWorkflowTask(
 			task *s.PollForDecisionTaskResponse,
-			historyIterator HistoryIterator,
-			emitStack bool) (response interface{}, stackTrace string, err error)
+			historyIterator HistoryIterator) (response interface{}, context *WorkflowExecutionContext, err error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.
