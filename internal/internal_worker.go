@@ -59,8 +59,8 @@ const (
 
 	defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
 
-	defaultMaxConcurrentWorkflowExecutionSize = 50     // hardcoded max workflow execution size.
-	defaultMaxWorkflowExecutionRate           = 100000 // Large workflow execution rate (unlimited)
+	defaultMaxConcurrentTaskExecutionSize = 50     // hardcoded max task execution size.
+	defaultMaxTaskExecutionRate           = 100000 // Large task execution rate (unlimited)
 
 	defaultPollerRate = 1000
 
@@ -256,8 +256,8 @@ func newWorkflowTaskWorkerInternal(
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.ConcurrentPollRoutineSize,
 		pollerRate:        defaultPollerRate,
-		maxConcurrentTask: defaultMaxConcurrentWorkflowExecutionSize,
-		maxTaskPerSecond:  defaultMaxWorkflowExecutionRate,
+		maxConcurrentTask: defaultMaxConcurrentTaskExecutionSize,
+		maxTaskPerSecond:  defaultMaxTaskExecutionRate,
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "DecisionWorker"},
