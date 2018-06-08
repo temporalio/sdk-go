@@ -1,0 +1,70 @@
+[
+  {
+    "eventId": 1,
+    "timestamp": 1528336257159337100,
+    "eventType": "WorkflowExecutionStarted",
+    "workflowExecutionStartedEventAttributes": {
+      "workflowType": {
+        "name": "go.uber.org/cadence/internal.testReplayWorkflowFromFile"
+      },
+      "taskList": {
+        "name": "taskList1"
+      },
+      "executionStartToCloseTimeoutSeconds": 60,
+      "taskStartToCloseTimeoutSeconds": 60,
+      "identity": "cadence-cli@user-C02WC08UHTDG"
+    }
+  },
+  {
+    "eventId": 2,
+    "timestamp": 1528336257159349200,
+    "eventType": "DecisionTaskScheduled",
+    "decisionTaskScheduledEventAttributes": {
+      "taskList": {
+        "name": "taskList1"
+      },
+      "startToCloseTimeoutSeconds": 60,
+      "attempt": 0
+    }
+  },
+  {
+    "eventId": 3,
+    "timestamp": 1528336257174772700,
+    "eventType": "DecisionTaskStarted",
+    "decisionTaskStartedEventAttributes": {
+      "scheduledEventId": 2,
+      "identity": "50114@user-C02WC08UHTDG@taskList1",
+      "requestId": "b7403b35-b4b1-432f-84ff-01d66d060a87"
+    }
+  },
+  {
+    "eventId": 4,
+    "timestamp": 1528336257188460300,
+    "eventType": "DecisionTaskCompleted",
+    "decisionTaskCompletedEventAttributes": {
+      "scheduledEventId": 2,
+      "startedEventId": 3,
+      "identity": "50114@user-C02WC08UHTDG@taskList1"
+    }
+  },
+  {
+    "eventId": 5,
+    "timestamp": 1528336257188469200,
+    "eventType": "ActivityTaskScheduled",
+    "activityTaskScheduledEventAttributes": {
+      "activityId": "0",
+      "activityType": {
+        "name": "go.uber.org/cadence/internal.testActivityMultipleArgs"
+      },
+      "taskList": {
+        "name": "taskList1"
+      },
+      "input": "MgoidGVzdCIKdHJ1ZQo=",
+      "scheduleToCloseTimeoutSeconds": 120,
+      "scheduleToStartTimeoutSeconds": 60,
+      "startToCloseTimeoutSeconds": 60,
+      "heartbeatTimeoutSeconds": 20,
+      "decisionTaskCompletedEventId": 4
+    }
+  }
+]

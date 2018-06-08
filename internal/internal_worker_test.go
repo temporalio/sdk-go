@@ -50,6 +50,7 @@ func init() {
 		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
 	)
 	RegisterWorkflow(testReplayWorkflow)
+	RegisterWorkflow(testReplayWorkflowFromFile)
 	RegisterActivityWithOptions(
 		testActivity,
 		RegisterActivityOptions{Name: "testActivity"},
@@ -112,6 +113,22 @@ func testReplayWorkflow(ctx Context) error {
 	return err
 }
 
+func testReplayWorkflowFromFile(ctx Context) error {
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
+		WaitForCancellation:    true,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	err := ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
 func testActivity(ctx context.Context) error {
 	return nil
 }
@@ -138,6 +155,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	history := &shared.History{Events: testEvents}
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
+	logger := getLogger()
+	err := ReplayWorkflowHistoryFromJSONFile(logger, "testdata/sampleHistory.json")
 	require.NoError(s.T(), err)
 }
 

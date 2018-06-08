@@ -26,6 +26,7 @@ import (
 	"math"
 	"time"
 
+	"encoding/json"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -35,6 +36,7 @@ import (
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
+	"io/ioutil"
 )
 
 type (
@@ -200,57 +202,53 @@ func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.
 	if err != nil {
 		return err
 	}
-	events := hResponse.History.Events
-	if events == nil {
-		return errors.New("empty events")
-	}
-	if len(events) < 3 {
-		return errors.New("at least 3 events expected in the history")
-	}
-	first := events[0]
-	if first.GetEventType() != shared.EventTypeWorkflowExecutionStarted {
-		return errors.New("first event is not WorkflowExecutionStarted")
-	}
-	attr := first.WorkflowExecutionStartedEventAttributes
-	if attr == nil {
-		return errors.New("corrupted WorkflowExecutionStarted")
-	}
-	workflowType := attr.WorkflowType
-	task := &shared.PollForDecisionTaskResponse{
-		Attempt:           common.Int64Ptr(0),
-		TaskToken:         []byte("ReplayTaskToken"),
-		NextPageToken:     hResponse.NextPageToken,
-		WorkflowType:      workflowType,
-		WorkflowExecution: sharedExecution,
-	}
-	metricScope := tally.NoopScope
-	iterator := &historyIteratorImpl{
-		nextPageToken: task.NextPageToken,
-		execution:     task.WorkflowExecution,
-		domain:        "ReplayDomain",
-		service:       service,
-		metricsScope:  metricScope,
-		maxEventID:    task.GetStartedEventId(),
-	}
-	taskList := "ReplayTaskList"
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-	params := workerExecutionParameters{
-		TaskList: taskList,
-		Identity: "replayID",
-		Logger:   logger,
-	}
-	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
-	_, _, err = taskHandler.ProcessWorkflowTask(task, iterator)
-	return err
+
+	return replayWorkflowHistory(logger, service, domain, hResponse.History)
 }
 
 // ReplayWorkflowHistory executes a single decision task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	testReporter := logger.Sugar()
+	controller := gomock.NewController(testReporter)
+	service := workflowservicetest.NewMockClient(controller)
+
 	domain := "ReplayDomain"
+
+	return replayWorkflowHistory(logger, service, domain, history)
+}
+
+// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
+
+	history, err := extractHistoryFromFile(jsonfileName)
+
+	if err != nil {
+		return err
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	testReporter := logger.Sugar()
+	controller := gomock.NewController(testReporter)
+	service := workflowservicetest.NewMockClient(controller)
+
+	domain := "ReplayDomain"
+
+	return replayWorkflowHistory(logger, service, domain, history)
+}
+
+func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Interface, domain string, history *shared.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {
@@ -283,14 +281,12 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	testReporter := logger.Sugar()
-	controller := gomock.NewController(testReporter)
-	service := workflowservicetest.NewMockClient(controller)
+
 	metricScope := tally.NoopScope
 	iterator := &historyIteratorImpl{
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
-		domain:        domain,
+		domain:        "ReplayDomain",
 		service:       service,
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
@@ -303,4 +299,21 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
 	_, _, err := taskHandler.ProcessWorkflowTask(task, iterator)
 	return err
+}
+
+func extractHistoryFromFile(jsonfileName string) (*shared.History, error) {
+	raw, err := ioutil.ReadFile(jsonfileName)
+	if err != nil {
+		return nil, err
+	}
+
+	var deserializedEvents []*shared.HistoryEvent
+	err = json.Unmarshal(raw, &deserializedEvents)
+
+	if err != nil {
+		return nil, err
+	}
+	history := &shared.History{Events: deserializedEvents}
+
+	return history, nil
 }
