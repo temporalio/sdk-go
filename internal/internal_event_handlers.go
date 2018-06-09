@@ -115,7 +115,7 @@ type (
 		activityID string
 		params     *executeLocalActivityParams
 		callback   resultHandler
-		wc         *WorkflowExecutionContext
+		wc         *workflowExecutionContextImpl
 		canceled   bool
 		cancelFunc func()
 	}

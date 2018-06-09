@@ -80,9 +80,9 @@ type (
 		task *s.ResetStickyTaskListRequest
 	}
 
-	// WorkflowExecutionContext is the cached workflow state for sticky execution
-	WorkflowExecutionContext struct {
-		sync.Mutex
+	// workflowExecutionContextImpl is the cached workflow state for sticky execution
+	workflowExecutionContextImpl struct {
+		mutex             sync.Mutex
 		workflowStartTime time.Time
 		workflowInfo      *WorkflowInfo
 		wth               *workflowTaskHandlerImpl
@@ -348,7 +348,7 @@ func getWorkflowCache() cache.Cache {
 		defer stickyCacheLock.Unlock()
 		workflowCache = cache.New(stickyCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
-				wc := cachedEntity.(*WorkflowExecutionContext)
+				wc := cachedEntity.(*workflowExecutionContextImpl)
 				wc.onEviction()
 			},
 		})
@@ -356,28 +356,32 @@ func getWorkflowCache() cache.Cache {
 	return workflowCache
 }
 
-func getWorkflowContext(runID string) *WorkflowExecutionContext {
+func getWorkflowContext(runID string) *workflowExecutionContextImpl {
 	o := getWorkflowCache().Get(runID)
 	if o == nil {
 		return nil
 	}
-	wc := o.(*WorkflowExecutionContext)
+	wc := o.(*workflowExecutionContextImpl)
 	return wc
 }
 
-func putWorkflowContext(runID string, wc *WorkflowExecutionContext) (*WorkflowExecutionContext, error) {
+func putWorkflowContext(runID string, wc *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
 	existing, err := getWorkflowCache().PutIfNotExist(runID, wc)
 	if err != nil {
 		return nil, err
 	}
-	return existing.(*WorkflowExecutionContext), nil
+	return existing.(*workflowExecutionContextImpl), nil
 }
 
 func removeWorkflowContext(runID string) {
 	getWorkflowCache().Delete(runID)
 }
 
-func (w *WorkflowExecutionContext) release() {
+func (w *workflowExecutionContextImpl) Lock() {
+	w.mutex.Lock()
+}
+
+func (w *workflowExecutionContextImpl) Unlock() {
 	if w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
@@ -385,16 +389,16 @@ func (w *WorkflowExecutionContext) release() {
 		removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 	}
 
-	w.Unlock()
+	w.mutex.Unlock()
 }
 
-func (w *WorkflowExecutionContext) completeWorkflow(result []byte, err error) {
+func (w *workflowExecutionContextImpl) completeWorkflow(result []byte, err error) {
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
 }
 
-func (w *WorkflowExecutionContext) shouldResetStickyOnEviction() bool {
+func (w *workflowExecutionContextImpl) shouldResetStickyOnEviction() bool {
 	// Not all evictions from the cache warrant a call to the server
 	// to reset stickiness.
 	// Cases when this is redundant or unnecessary include
@@ -403,11 +407,11 @@ func (w *WorkflowExecutionContext) shouldResetStickyOnEviction() bool {
 	return w.err == nil && !w.isWorkflowCompleted
 }
 
-func (w *WorkflowExecutionContext) onEviction() {
+func (w *workflowExecutionContextImpl) onEviction() {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
-	w.Lock()
+	w.mutex.Lock()
 
-	// Queue a ResetStickiness request *BEFORE* calling destroyCachedState
+	// Queue a ResetStickiness request *BEFORE* calling clearState
 	// because once destroyed, no sensible information
 	// may be ascertained about the execution context's state,
 	// nor should any of its methods be invoked.
@@ -415,25 +419,27 @@ func (w *WorkflowExecutionContext) onEviction() {
 		w.queueResetStickinessTask()
 	}
 
-	w.destroyCachedState()
-	w.Unlock()
+	w.clearState()
+	w.mutex.Unlock()
 }
 
-func (w *WorkflowExecutionContext) isDestroyed() bool {
+func (w *workflowExecutionContextImpl) isDestroyed() bool {
 	return w.eventHandler == nil
 }
 
-func (w *WorkflowExecutionContext) queueResetStickinessTask() {
+func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
 	task.task = &s.ResetStickyTaskListRequest{
 		Domain: common.StringPtr(w.workflowInfo.Domain),
-		Execution: &s.WorkflowExecution{common.StringPtr(w.workflowInfo.WorkflowExecution.ID),
-			common.StringPtr(w.workflowInfo.WorkflowExecution.RunID)},
+		Execution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr(w.workflowInfo.WorkflowExecution.ID),
+			RunId:      common.StringPtr(w.workflowInfo.WorkflowExecution.RunID),
+		},
 	}
 	w.laTunnel.resultCh <- &task
 }
 
-func (w *WorkflowExecutionContext) destroyCachedState() {
+func (w *workflowExecutionContextImpl) clearState() {
 	w.clearCurrentTask()
 	w.isWorkflowCompleted = false
 	w.result = nil
@@ -446,8 +452,8 @@ func (w *WorkflowExecutionContext) destroyCachedState() {
 	}
 }
 
-func (w *WorkflowExecutionContext) resetWorkflowState() {
-	w.destroyCachedState()
+func (w *workflowExecutionContextImpl) createEventHandler() {
+	w.clearState()
 	w.eventHandler = newWorkflowExecutionEventHandler(
 		w.workflowInfo,
 		w.completeWorkflow,
@@ -468,7 +474,7 @@ func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIt
 	return firstPageHistory, nil
 }
 
-func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisionTaskResponse) (*WorkflowExecutionContext, error) {
+func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisionTaskResponse) (*workflowExecutionContextImpl, error) {
 	h := task.History
 	attributes := h.Events[0].WorkflowExecutionStartedEventAttributes
 	if attributes == nil {
@@ -495,23 +501,21 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		Domain: wth.domain,
 	}
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
-	workflowContext := &WorkflowExecutionContext{workflowStartTime: wfStartTime, workflowInfo: workflowInfo, wth: wth}
-	workflowContext.resetWorkflowState()
+	workflowContext := &workflowExecutionContextImpl{workflowStartTime: wfStartTime, workflowInfo: workflowInfo, wth: wth}
+	workflowContext.createEventHandler()
 
 	return workflowContext, nil
 }
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDecisionTaskResponse,
-	historyIterator HistoryIterator) (workflowContext *WorkflowExecutionContext, skipReplayCheck bool, err error) {
+	historyIterator HistoryIterator) (workflowContext *workflowExecutionContextImpl, err error) {
 	defer func() {
 		if err == nil && workflowContext != nil {
-			workflowContext.setCurrentTask(task)
 			workflowContext.laTunnel = wth.laTunnel
 		}
 		wth.metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
 	}()
 
-	skipReplayCheck = task.Query != nil
 	runID := task.WorkflowExecution.GetRunId()
 
 	history := task.History
@@ -527,23 +531,12 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		if task.Query != nil && !isFullHistory {
 			// query task and we have a valid cached state
 			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
-			skipReplayCheck = true
 		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 {
 			// non query task and we have a valid cached state
 			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
-			skipReplayCheck = true
 		} else {
 			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
-			wth.logger.Debug("Cached sticky workflow state is stalled.",
-				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-				zap.String(tagRunID, runID),
-				zap.Int64("CachedPreviousStartedEventID", workflowContext.previousStartedEventID),
-				zap.Int64("TaskFirstEventID", history.Events[0].GetEventId()),
-				zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
-				zap.Int64("TaskPreviousStartedEventID", task.GetPreviousStartedEventId()))
-
-			wth.metricsScope.Counter(metrics.StickyCacheStall).Inc(1)
-			workflowContext.destroyCachedState()
+			workflowContext.ResetIfStale(task, historyIterator)
 		}
 	} else {
 		if !isFullHistory {
@@ -577,12 +570,12 @@ func isFullHistory(history *s.History) bool {
 	return true
 }
 
-func (w *WorkflowExecutionContext) resetStateIfDestroyed(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
+func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
 	if w.isDestroyed() {
-		w.resetWorkflowState()
+		w.createEventHandler()
 		// reset history events if necessary
 		if !isFullHistory(task.History) {
 			if _, err := resetHistory(task, historyIterator); err != nil {
@@ -597,7 +590,7 @@ func (w *WorkflowExecutionContext) resetStateIfDestroyed(task *s.PollForDecision
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	task *s.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator,
-) (completeRequest interface{}, context *WorkflowExecutionContext, err error) {
+) (completeRequest interface{}, context WorkflowExecutionContext, err error) {
 	if task == nil {
 		return nil, nil, errors.New("nil workflow task provided")
 	}
@@ -621,24 +614,28 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			zap.Int64("PreviousStartedEventId", task.GetPreviousStartedEventId()))
 	})
 
-	workflowContext, skipReplayCheck, err := wth.getOrCreateWorkflowContext(task, historyIterator)
+	workflowContext, err := wth.getOrCreateWorkflowContext(task, historyIterator)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer workflowContext.release()
+	defer workflowContext.Unlock()
 
-	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
-
-	response, err := workflowContext.processWorkflowTaskLocked(workflowTask, skipReplayCheck)
+	response, err := workflowContext.ProcessWorkflowTask(task, historyIterator)
 	return response, workflowContext, err
 }
 
-func (w *WorkflowExecutionContext) processWorkflowTaskLocked(task *workflowTask, skipReplayCheck bool) (completeRequest interface{}, err error) {
+func (w *workflowExecutionContextImpl) ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (completeRequest interface{}, err error) {
+	if err = w.ResetIfStale(task, historyIterator); err != nil {
+		return
+	}
+	w.SetCurrentTask(task)
+
 	eventHandler := w.eventHandler
-	reorderedHistory := newHistory(task, eventHandler)
+	reorderedHistory := newHistory(&workflowTask{task, historyIterator}, eventHandler)
 	var replayDecisions []*s.Decision
 	var respondEvents []*s.HistoryEvent
 
+	skipReplayCheck := w.skipReplayCheck()
 	// Process events
 ProcessEvents:
 	for {
@@ -719,32 +716,23 @@ ProcessEvents:
 		}
 	}
 
-	return w.CompleteDecisionTaskLocked(false), nil
+	return w.CompleteDecisionTask(true), nil
 }
 
-func (wth *workflowTaskHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
-	workflowContext := lar.task.wc
-	workflowContext.Lock()
-	defer workflowContext.release()
-	workflowContext.processLocalActivityResultLocked(lar)
-
-	return workflowContext.CompleteDecisionTaskLocked(false), nil
-}
-
-func (w *WorkflowExecutionContext) processLocalActivityResultLocked(lar *localActivityResult) error {
+func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
 	eventDecisions, err := w.eventHandler.ProcessLocalActivityResult(lar)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if eventDecisions != nil {
 		w.newDecisions = append(w.newDecisions, eventDecisions...)
 	}
 
-	return nil
+	return w.CompleteDecisionTask(true), nil
 }
 
-func (w *WorkflowExecutionContext) CompleteDecisionTaskLocked(force bool) interface{} {
+func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities bool) interface{} {
 	if w.hasPendingLocalActivityWork() {
 		if len(w.eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
@@ -756,34 +744,70 @@ func (w *WorkflowExecutionContext) CompleteDecisionTaskLocked(force bool) interf
 			w.eventHandler.unstartedLaTasks = make(map[string]struct{})
 		}
 		// cannot complete decision task as there are pending local activities
-		if !force {
-			// will not return nil if we are forced to complete
+		if waitLocalActivities {
 			return nil
 		}
 	}
 
-	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions, force)
+	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions, !waitLocalActivities)
 	w.clearCurrentTask()
 
 	return completeRequest
 }
 
-func (w *WorkflowExecutionContext) hasPendingLocalActivityWork() bool {
+func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
 	return !w.isWorkflowCompleted && w.eventHandler != nil && len(w.eventHandler.pendingLaTasks) > 0
 }
 
-func (w *WorkflowExecutionContext) clearCurrentTask() {
+func (w *workflowExecutionContextImpl) clearCurrentTask() {
 	w.newDecisions = nil
 	w.currentDecisionTask = nil
 }
 
-func (w *WorkflowExecutionContext) setCurrentTask(task *s.PollForDecisionTaskResponse) {
+func (w *workflowExecutionContextImpl) skipReplayCheck() bool {
+	return w.currentDecisionTask.Query != nil || !isFullHistory(w.currentDecisionTask.History)
+}
+
+func (w *workflowExecutionContextImpl) GetCurrentDecisionTask() *s.PollForDecisionTaskResponse {
+	return w.currentDecisionTask
+}
+
+func (w *workflowExecutionContextImpl) SetCurrentTask(task *s.PollForDecisionTaskResponse) {
 	w.currentDecisionTask = task
 	// do not update the previousStartedEventID for query task
 	if task.Query == nil {
 		w.previousStartedEventID = task.GetStartedEventId()
 	}
 	w.decisionStartTime = time.Now()
+}
+
+func (w *workflowExecutionContextImpl) ResetIfStale(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
+	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
+		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
+			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
+			zap.Int64("CachedPreviousStartedEventID", w.previousStartedEventID),
+			zap.Int64("TaskFirstEventID", task.History.Events[0].GetEventId()),
+			zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
+			zap.Int64("TaskPreviousStartedEventID", task.GetPreviousStartedEventId()))
+
+		w.wth.metricsScope.Counter(metrics.StickyCacheStall).Inc(1)
+
+		w.clearState()
+		return w.resetStateIfDestroyed(task, historyIterator)
+	}
+	return nil
+}
+
+func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
+	return time.Second * time.Duration(w.workflowInfo.TaskStartToCloseTimeoutSeconds)
+}
+
+func (w *workflowExecutionContextImpl) StackTrace() string {
+	if w.eventHandler == nil {
+		return "eventHandler is closed"
+	}
+	return w.eventHandler.StackTrace()
 }
 
 func skipDeterministicCheckForDecision(d *s.Decision) bool {
@@ -1027,7 +1051,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	eventHandler *workflowExecutionEventHandlerImpl,
 	task *s.PollForDecisionTaskResponse,
-	workflowContext *WorkflowExecutionContext,
+	workflowContext *workflowExecutionContextImpl,
 	decisions []*s.Decision,
 	forceNewDecision bool) interface{} {
 

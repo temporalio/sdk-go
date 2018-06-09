@@ -45,7 +45,7 @@ type sampleWorkflowTaskHandler struct {
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	task *m.PollForDecisionTaskResponse,
-	historyIterator HistoryIterator) (interface{}, *WorkflowExecutionContext, error) {
+	historyIterator HistoryIterator) (interface{}, WorkflowExecutionContext, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
 		TaskToken: task.TaskToken,
 	}, nil, nil
