@@ -59,7 +59,7 @@ const (
 
 	defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
 
-	defaultMaxConcurrentTaskExecutionSize = 50     // hardcoded max task execution size.
+	defaultMaxConcurrentTaskExecutionSize = 1000   // hardcoded max task execution size.
 	defaultMaxTaskExecutionRate           = 100000 // Large task execution rate (unlimited)
 
 	defaultPollerRate = 1000
