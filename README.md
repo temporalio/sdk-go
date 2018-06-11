@@ -157,7 +157,7 @@ func buildLogger() *zap.Logger {
 }
 
 func buildCadenceClient() workflowserviceclient.Interface {
-	ch, err := tchannel.NewChannelTransport(tchannel.ServiceName(ClientName))
+	ch, err := tchannel.NewChannelTransport(tchannel.ServiceName(ClientName), tchannel.ListenAddr("127.0.0.1:0"))
 	if err != nil {
 		panic("Failed to setup tchannel")
 	}
