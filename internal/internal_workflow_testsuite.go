@@ -461,7 +461,10 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
-	return newEncodedValue(result.result, env.GetDataConverter()), result.err
+	if result.err != nil {
+		return nil, result.err
+	}
+	return newEncodedValue(result.result, env.GetDataConverter()), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {
@@ -647,7 +650,6 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 
 	dc := env.GetDataConverter()
 	env.isTestCompleted = true
-	env.testResult = newEncodedValue(result, dc)
 
 	if err != nil {
 		switch err := err.(type) {
@@ -657,6 +659,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			reason, details := getErrorDetails(err, dc)
 			env.testError = constructError(reason, details, dc)
 		}
+	} else {
+		env.testResult = newEncodedValue(result, dc)
 	}
 
 	close(env.doneChannel)
@@ -857,7 +861,11 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	}
 
 	if env.onActivityCompletedListener != nil {
-		env.onActivityCompletedListener(activityInfo, newEncodedValue(blob, dataConverter), err)
+		if err != nil {
+			env.onActivityCompletedListener(activityInfo, nil, err)
+		} else {
+			env.onActivityCompletedListener(activityInfo, newEncodedValue(blob, dataConverter), nil)
+		}
 	}
 
 	env.startDecisionTask()
@@ -880,7 +888,11 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	delete(env.localActivities, activityID)
 	task.callback(result.result, result.err)
 	if env.onLocalActivityCompletedListener != nil {
-		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), result.err)
+		if result.err != nil {
+			env.onLocalActivityCompletedListener(activityInfo, nil, result.err)
+		} else {
+			env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
+		}
 	}
 
 	env.startDecisionTask()
