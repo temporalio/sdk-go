@@ -69,6 +69,10 @@ exception AccessDeniedError {
   1: required string message
 }
 
+exception RetryTaskError {
+  1: required string message
+}
+
 enum WorkflowIdReusePolicy {
   /*
    * allow start a workflow execution using the same workflow ID,
@@ -230,6 +234,10 @@ enum TaskListKind {
   STICKY,
 }
 
+struct Header {
+    10: optional map<string, binary> fields
+}
+
 struct WorkflowType {
   10: optional string name
 }
@@ -332,6 +340,7 @@ struct SignalExternalWorkflowExecutionDecisionAttributes {
 struct RecordMarkerDecisionAttributes {
   10: optional string markerName
   20: optional binary details
+  30: optional Header header
 }
 
 struct ContinueAsNewWorkflowExecutionDecisionAttributes {
@@ -546,6 +555,7 @@ struct MarkerRecordedEventAttributes {
   10: optional string markerName
   20: optional binary details
   30: optional i64 (js.type = "Long") decisionTaskCompletedEventId
+  40: optional Header header
 }
 
 struct WorkflowExecutionSignaledEventAttributes {
@@ -755,6 +765,8 @@ struct DomainInfo {
   20: optional DomainStatus status
   30: optional string description
   40: optional string ownerEmail
+  // A key-value map for any customized purpose
+  50: optional map<string,string> data
 }
 
 struct DomainConfiguration {
@@ -765,6 +777,8 @@ struct DomainConfiguration {
 struct UpdateDomainInfo {
   10: optional string description
   20: optional string ownerEmail
+  // A key-value map for any customized purpose
+  30: optional map<string,string> data
 }
 
 struct ClusterReplicationConfiguration {
@@ -784,6 +798,8 @@ struct RegisterDomainRequest {
   50: optional bool emitMetric
   60: optional list<ClusterReplicationConfiguration> clusters
   70: optional string activeClusterName
+  // A key-value map for any customized purpose
+  80: optional map<string,string> data
 }
 
 struct DescribeDomainRequest {
@@ -1111,6 +1127,26 @@ struct DescribeTaskListRequest {
 
 struct DescribeTaskListResponse {
   10: optional list<PollerInfo> pollers
+}
+
+//At least one of the parameters needs to be provided
+struct DescribeHistoryHostRequest {
+  10: optional string               hostAddress //ip:port
+  20: optional i32                  shardIdForHost
+  30: optional WorkflowExecution    executionForHost
+}
+
+struct DescribeHistoryHostResponse{
+  10: optional i32                  numberOfShards
+  20: optional list<i32>            shardIDs
+  30: optional DomainCacheInfo      domainCache
+  40: optional string               shardControllerStatus
+  50: optional string               address
+}
+
+struct DomainCacheInfo{
+  10: optional i64 numOfItemsInCacheByID
+  20: optional i64 numOfItemsInCacheByName
 }
 
 enum TaskListType {
