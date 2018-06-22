@@ -27,18 +27,35 @@ include "shared.thrift"
 **/
 service AdminService {
   /**
-  * InquiryWorkflowExecution returns information about the internal states of workflow execution.
+  * DescribeWorkflowExecution returns information about the internal states of workflow execution.
   **/
-  InquiryWorkflowExecutionResponse InquiryWorkflowExecution(1: shared.DescribeWorkflowExecutionRequest inquiryRequest)
+  DescribeWorkflowExecutionResponse DescribeWorkflowExecution(1: DescribeWorkflowExecutionRequest request)
     throws (
-      1: shared.BadRequestError badRequestError,
-      2: shared.InternalServiceError internalServiceError,
-      3: shared.EntityNotExistsError entityNotExistError,
-      4: shared.AccessDeniedError accessDeniedError,
+      1: shared.BadRequestError         badRequestError,
+      2: shared.InternalServiceError    internalServiceError,
+      3: shared.EntityNotExistsError    entityNotExistError,
+      4: shared.AccessDeniedError       accessDeniedError,
     )
+
+  /**
+    * DescribeHistoryHost returns information about the internal states of a history host
+    **/
+    shared.DescribeHistoryHostResponse DescribeHistoryHost(1: shared.DescribeHistoryHostRequest request)
+      throws (
+        1: shared.BadRequestError       badRequestError,
+        2: shared.InternalServiceError  internalServiceError,
+        3: shared.AccessDeniedError     accessDeniedError,
+      )
 }
 
-struct InquiryWorkflowExecutionResponse{
+struct DescribeWorkflowExecutionRequest {
+  10: optional string                       domain
+  20: optional shared.WorkflowExecution     execution
+}
+
+struct DescribeWorkflowExecutionResponse{
   10: optional string shardId
   20: optional string historyAddr
+  40: optional string mutableStateInCache
+  50: optional string mutableStateInDatabase
 }

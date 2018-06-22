@@ -48,6 +48,7 @@ type (
 const (
 	scopeNameDeprecateDomain                  = CadenceMetricsPrefix + "DeprecateDomain"
 	scopeNameDescribeDomain                   = CadenceMetricsPrefix + "DescribeDomain"
+	scopeNameListDomains                      = CadenceMetricsPrefix + "ListDomains"
 	scopeNameGetWorkflowExecutionHistory      = CadenceMetricsPrefix + "GetWorkflowExecutionHistory"
 	scopeNameListClosedWorkflowExecutions     = CadenceMetricsPrefix + "ListClosedWorkflowExecutions"
 	scopeNameListOpenWorkflowExecutions       = CadenceMetricsPrefix + "ListOpenWorkflowExecutions"
@@ -123,6 +124,13 @@ func (w *workflowServiceMetricsWrapper) DeprecateDomain(ctx context.Context, req
 	err := w.service.DeprecateDomain(ctx, request, opts...)
 	scope.handleError(err)
 	return err
+}
+
+func (w *workflowServiceMetricsWrapper) ListDomains(ctx context.Context, request *shared.ListDomainsRequest, opts ...yarpc.CallOption) (*shared.ListDomainsResponse, error) {
+	scope := w.getOperationScope(scopeNameListDomains)
+	result, err := w.service.ListDomains(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) DescribeDomain(ctx context.Context, request *shared.DescribeDomainRequest, opts ...yarpc.CallOption) (*shared.DescribeDomainResponse, error) {
