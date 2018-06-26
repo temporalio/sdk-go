@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -43,6 +44,7 @@ var _ DomainClient = (*domainClient)(nil)
 
 const (
 	defaultDecisionTaskTimeoutInSecs = 20
+	defaultGetHistoryTimeoutInSecs   = 25
 )
 
 type (
@@ -418,16 +420,30 @@ func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 		}
 
 		var response *s.GetWorkflowExecutionHistoryResponse
-		err := backoff.Retry(ctx,
-			func() error {
-				var err1 error
-				tchCtx, cancel, opt := newChannelContext(ctx)
-				defer cancel()
-				response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request, opt...)
-				return err1
-			}, serviceOperationRetryPolicy, isServiceTransientError)
-		if err != nil {
-			return nil, err
+		var err error
+	Loop:
+		for {
+			err = backoff.Retry(ctx,
+				func() error {
+					var err1 error
+					tchCtx, cancel, opt := newChannelContext(ctx, func(builder *contextBuilder) {
+						if isLongPoll {
+							builder.Timeout = defaultGetHistoryTimeoutInSecs * time.Second
+						}
+					})
+					defer cancel()
+					response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request, opt...)
+					return err1
+				}, serviceOperationRetryPolicy, isServiceTransientError)
+
+			if err != nil {
+				return nil, err
+			}
+			if isLongPoll && len(response.History.Events) == 0 && len(response.NextPageToken) != 0 {
+				request.NextPageToken = response.NextPageToken
+				continue Loop
+			}
+			break Loop
 		}
 		return response, nil
 	}

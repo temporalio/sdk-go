@@ -55,7 +55,7 @@ type (
 		suite.Suite
 		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicetest.MockClient
-		historyEventIterator  HistoryEventIterator
+		wfClient              *workflowClient
 	}
 )
 
@@ -75,15 +75,9 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicetest.NewMockClient(s.mockCtrl)
 
-	paginate := func(nexttoken []byte) (*shared.GetWorkflowExecutionHistoryResponse, error) {
-		filterType := shared.HistoryEventFilterTypeAllEvent
-		request := getGetWorkflowExecutionHistoryRequest(filterType)
-		request.NextPageToken = nexttoken
-		return s.workflowServiceClient.GetWorkflowExecutionHistory(context.Background(), request)
-	}
-
-	s.historyEventIterator = &historyEventIteratorImpl{
-		paginate: paginate,
+	s.wfClient = &workflowClient{
+		workflowService: s.workflowServiceClient,
+		domain:          domain,
 	}
 }
 
@@ -115,16 +109,51 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 		NextPageToken: nil,
 	}
 
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1).Return(response1, nil).Times(1)
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2).Return(response2, nil).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
 
 	events := []*shared.HistoryEvent{}
-	for s.historyEventIterator.HasNext() {
-		event, err := s.historyEventIterator.Next()
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, shared.HistoryEventFilterTypeAllEvent)
+	for iter.HasNext() {
+		event, err := iter.Next()
 		s.Nil(err)
 		events = append(events, event)
 	}
 	s.Equal(2, len(events))
+}
+
+func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
+	filterType := shared.HistoryEventFilterTypeAllEvent
+	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
+	response1 := &shared.GetWorkflowExecutionHistoryResponse{
+		History: &shared.History{
+			Events: []*shared.HistoryEvent{},
+		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+	request2 := getGetWorkflowExecutionHistoryRequest(filterType)
+	request2.NextPageToken = response1.NextPageToken
+	response2 := &shared.GetWorkflowExecutionHistoryResponse{
+		History: &shared.History{
+			Events: []*shared.HistoryEvent{
+				// dummy history event
+				&shared.HistoryEvent{},
+			},
+		},
+		NextPageToken: nil,
+	}
+
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
+
+	events := []*shared.HistoryEvent{}
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, shared.HistoryEventFilterTypeAllEvent)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		s.Nil(err)
+		events = append(events, event)
+	}
+	s.Equal(1, len(events))
 }
 
 func (s *historyEventIteratorSuite) TestIterator_Error() {
@@ -142,16 +171,19 @@ func (s *historyEventIteratorSuite) TestIterator_Error() {
 	request2 := getGetWorkflowExecutionHistoryRequest(filterType)
 	request2.NextPageToken = response1.NextPageToken
 
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1).Return(response1, nil).Times(1)
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2).Return(nil, errors.New("some random err")).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
 
-	s.True(s.historyEventIterator.HasNext())
-	event, err := s.historyEventIterator.Next()
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, shared.HistoryEventFilterTypeAllEvent)
+
+	s.True(iter.HasNext())
+	event, err := iter.Next()
 	s.NotNil(event)
 	s.Nil(err)
 
-	s.True(s.historyEventIterator.HasNext())
-	event, err = s.historyEventIterator.Next()
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(nil, &shared.EntityNotExistsError{}).Times(1)
+
+	s.True(iter.HasNext())
+	event, err = iter.Next()
 	s.Nil(event)
 	s.NotNil(err)
 }
