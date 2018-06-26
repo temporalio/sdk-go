@@ -33,7 +33,7 @@ const (
 	WorkflowGetHistoryFailedCounter  = CadenceMetricsPrefix + "workflow-get-history-failed"
 	WorkflowGetHistorySucceedCounter = CadenceMetricsPrefix + "workflow-get-history-succeed"
 	WorkflowGetHistoryLatency        = CadenceMetricsPrefix + "workflow-get-history-latency"
-	WorkflowSingalWithStartCounter   = CadenceMetricsPrefix + "workflow-signal-with-start"
+	WorkflowSignalWithStartCounter   = CadenceMetricsPrefix + "workflow-signal-with-start"
 	DecisionTimeoutCounter           = CadenceMetricsPrefix + "decision-timeout"
 
 	DecisionPollCounter                = CadenceMetricsPrefix + "decision-poll-total"

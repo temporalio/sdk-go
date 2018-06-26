@@ -32,7 +32,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
@@ -104,7 +103,7 @@ type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
 		domain                         string
-		metricsScope                   tally.Scope
+		metricsScope                   *metrics.TaggedScope
 		ppMgr                          pressurePointMgr
 		logger                         *zap.Logger
 		identity                       string
@@ -310,7 +309,7 @@ func newWorkflowTaskHandler(
 		domain:                 domain,
 		logger:                 params.Logger,
 		ppMgr:                  ppMgr,
-		metricsScope:           params.MetricsScope,
+		metricsScope:           metrics.NewTaggedScope(params.MetricsScope),
 		identity:               params.Identity,
 		enableLoggingInReplay:  params.EnableLoggingInReplay,
 		disableStickyExecution: params.DisableStickyExecution,
@@ -509,11 +508,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator) (workflowContext *workflowExecutionContextImpl, err error) {
+	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
 	defer func() {
 		if err == nil && workflowContext != nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
-		wth.metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
+		metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -530,10 +530,10 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		workflowContext.Lock()
 		if task.Query != nil && !isFullHistory {
 			// query task and we have a valid cached state
-			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
+			metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
 		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 {
 			// non query task and we have a valid cached state
-			wth.metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
+			metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
 			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
 			workflowContext.ResetIfStale(task, historyIterator)
@@ -542,7 +542,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		if !isFullHistory {
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
-			wth.metricsScope.Counter(metrics.StickyCacheMiss).Inc(1)
+			metricsScope.Counter(metrics.StickyCacheMiss).Inc(1)
 			if history, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
@@ -791,7 +791,9 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *s.PollForDecisionTaskR
 			zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
 			zap.Int64("TaskPreviousStartedEventID", task.GetPreviousStartedEventId()))
 
-		w.wth.metricsScope.Counter(metrics.StickyCacheStall).Inc(1)
+		w.wth.metricsScope.
+			GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).
+			Counter(metrics.StickyCacheStall).Inc(1)
 
 		w.clearState()
 		return w.resetStateIfDestroyed(task, historyIterator)
@@ -1075,10 +1077,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		return queryCompletedRequest
 	}
 
+	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
+
 	// fail decision task on decider panic
 	if panicErr, ok := workflowContext.err.(*PanicError); ok {
 		// Workflow panic
-		wth.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
+		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
@@ -1096,7 +1100,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	var closeDecision *s.Decision
 	if canceledErr, ok := workflowContext.err.(*CanceledError); ok {
 		// Workflow cancelled
-		wth.metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeCancelWorkflowExecution)
 		_, details := getErrorDetails(canceledErr, wth.dataConverter)
 		closeDecision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
@@ -1104,7 +1108,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
 		// Continue as new error.
-		wth.metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
 		closeDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
 			WorkflowType: workflowTypePtr(*contErr.params.workflowType),
@@ -1115,7 +1119,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		wth.metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeFailWorkflowExecution)
 		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
 		closeDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
@@ -1124,7 +1128,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
-		wth.metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeCompleteWorkflowExecution)
 		closeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
 			Result: workflowContext.result,
@@ -1134,7 +1138,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	if closeDecision != nil {
 		decisions = append(decisions, closeDecision)
 		elapsed := time.Now().Sub(workflowContext.workflowStartTime)
-		wth.metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
+		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewDecision = false
 	}
 

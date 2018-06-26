@@ -87,7 +87,7 @@ type (
 		identity            string
 		service             workflowserviceclient.Interface
 		taskHandler         ActivityTaskHandler
-		metricsScope        tally.Scope
+		metricsScope        *metrics.TaggedScope
 		logger              *zap.Logger
 		activitiesPerSecond float64
 	}
@@ -761,7 +761,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		taskListName:        params.TaskList,
 		identity:            params.Identity,
 		logger:              params.Logger,
-		metricsScope:        params.MetricsScope,
+		metricsScope:        metrics.NewTaggedScope(params.MetricsScope),
 		activitiesPerSecond: params.TaskListActivitiesPerSecond,
 	}
 }
@@ -825,35 +825,37 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
+	metricsScope := atp.metricsScope.GetTaggedScope(tagActivityType, activityTask.task.ActivityType.GetName())
+
 	// record tasklist queue latency
 	queueLatency := time.Duration(activityTask.task.GetStartedTimestamp() - activityTask.task.GetScheduledTimestamp())
-	atp.metricsScope.Timer(metrics.TaskListQueueLatency).Record(queueLatency)
+	metricsScope.Timer(metrics.TaskListQueueLatency).Record(queueLatency)
 
 	executionStartTime := time.Now()
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(atp.taskListName, activityTask.task)
 	if err != nil {
-		atp.metricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		metricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
 	}
-	atp.metricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Now().Sub(executionStartTime))
+	metricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Now().Sub(executionStartTime))
 
 	if request == ErrActivityResultPending {
 		return nil
 	}
 
 	responseStartTime := time.Now()
-	reportErr := reportActivityComplete(context.Background(), atp.service, request, atp.metricsScope)
+	reportErr := reportActivityComplete(context.Background(), atp.service, request, metricsScope)
 	if reportErr != nil {
-		atp.metricsScope.Counter(metrics.ActivityResponseFailedCounter).Inc(1)
+		metricsScope.Counter(metrics.ActivityResponseFailedCounter).Inc(1)
 		traceLog(func() {
 			atp.logger.Debug("reportActivityComplete failed", zap.Error(reportErr))
 		})
 		return reportErr
 	}
 
-	atp.metricsScope.Timer(metrics.ActivityResponseLatency).Record(time.Now().Sub(responseStartTime))
-	atp.metricsScope.Timer(metrics.ActivityEndToEndLatency).Record(time.Now().Sub(activityTask.pollStartTime))
+	metricsScope.Timer(metrics.ActivityResponseLatency).Record(time.Now().Sub(responseStartTime))
+	metricsScope.Timer(metrics.ActivityEndToEndLatency).Record(time.Now().Sub(activityTask.pollStartTime))
 	return nil
 }
 

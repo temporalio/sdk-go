@@ -194,16 +194,28 @@ func (s *replayAwareScope) Capabilities() tally.Capabilities {
 	return s.scope.Capabilities()
 }
 
-// GetTaggedScope return a scope with tag
-func (ts *TaggedScope) GetTaggedScope(tagName, tagValue string) tally.Scope {
+// GetTaggedScope return a scope with one or multiple tags,
+// input should be key value pairs like: GetTaggedScope(scope, tag1, val1, tag2, val2).
+func (ts *TaggedScope) GetTaggedScope(keyValueinPairs ...string) tally.Scope {
+	if len(keyValueinPairs)%2 != 0 {
+		panic("GetTaggedScope key value are not in pairs")
+	}
 	if ts.Map == nil {
 		ts.Map = &sync.Map{}
 	}
 
-	key := tagName + ":" + tagValue // used to prevent collision of tagValue (map key) for different tagName
+	key := ""
+	tagsMap := map[string]string{}
+	for i := 0; i < len(keyValueinPairs); i += 2 {
+		tagName := keyValueinPairs[i]
+		tagValue := keyValueinPairs[i+1]
+		key = key + tagName + ":" + tagValue + "-" // used to prevent collision of tagValue (map key) for different tagName
+		tagsMap[tagName] = tagValue
+	}
+
 	taggedScope, ok := ts.Load(key)
 	if !ok {
-		ts.Store(key, ts.Scope.Tagged(map[string]string{tagName: tagValue}))
+		ts.Store(key, ts.Scope.Tagged(tagsMap))
 		taggedScope, _ = ts.Load(key)
 	}
 	if taggedScope == nil {
