@@ -42,6 +42,7 @@ import (
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
+	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -944,6 +945,7 @@ func newAggregatedWorker(
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
+	service = metrics.NewWorkflowServiceWrapper(service, workerParams.MetricsScope)
 
 	processTestTags(&wOptions, &workerParams)
 
