@@ -147,13 +147,31 @@ func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []byte) {
 	switch err := err.(type) {
 	case *CustomError:
-		data, err0 := encodeArgs(dataConverter, err.details.(ErrorDetailsValues))
+		var data []byte
+		var err0 error
+		switch details := err.details.(type) {
+		case ErrorDetailsValues:
+			data, err0 = encodeArgs(dataConverter, details)
+		case EncodedValues:
+			data = details.values
+		default:
+			panic("unknown error type")
+		}
 		if err0 != nil {
 			panic(err0)
 		}
 		return err.Reason(), data
 	case *CanceledError:
-		data, err0 := encodeArgs(dataConverter, err.details.(ErrorDetailsValues))
+		var data []byte
+		var err0 error
+		switch details := err.details.(type) {
+		case ErrorDetailsValues:
+			data, err0 = encodeArgs(dataConverter, details)
+		case EncodedValues:
+			data = details.values
+		default:
+			panic("unknown error type")
+		}
 		if err0 != nil {
 			panic(err0)
 		}
