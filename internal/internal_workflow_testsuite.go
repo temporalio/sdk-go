@@ -176,7 +176,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
 			logger:           s.logger,
-			metricsScope:     metrics.NewTaggedScope(nil),
+			metricsScope:     metrics.NewTaggedScope(s.scope),
 			mockClock:        clock.NewMock(),
 			wallClock:        clock.New(),
 			timers:           make(map[string]*testTimerHandle),

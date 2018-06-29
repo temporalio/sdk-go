@@ -79,6 +79,7 @@ const (
 	TaskListQueueLatency = CadenceMetricsPrefix + "tasklist-queue-latency"
 
 	UnhandledSignalsCounter = CadenceMetricsPrefix + "unhandled-signals"
+	CorruptedSignalsCounter = CadenceMetricsPrefix + "corrupted-signals"
 
 	WorkerStartCounter = CadenceMetricsPrefix + "worker-start"
 	PollerStartCounter = CadenceMetricsPrefix + "poller-start"

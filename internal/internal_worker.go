@@ -710,6 +710,12 @@ func decodeAndAssignValue(dc encoded.DataConverter, from interface{}, toValuePtr
 			return err
 		}
 	} else if fv := reflect.ValueOf(from); fv.IsValid() {
+		fromType := fv.Type()
+		toType := reflect.TypeOf(toValuePtr).Elem()
+		assignable := fromType.AssignableTo(toType)
+		if !assignable {
+			return errors.New(fmt.Sprintf("%s is not assignable to  %s", fromType.Name(), toType.Name()))
+		}
 		reflect.ValueOf(toValuePtr).Elem().Set(fv)
 	}
 	return nil

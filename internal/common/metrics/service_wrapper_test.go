@@ -144,7 +144,7 @@ func Test_Wrapper(t *testing.T) {
 	}
 }
 
-func assertMetrics(t *testing.T, reporter *capturingStatsReporter, methodName string, counterNames []string) {
+func assertMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
 	require.Equal(t, len(counterNames), len(reporter.counts))
 	for _, name := range counterNames {
 		counterName := CadenceMetricsPrefix + methodName + "." + name
@@ -165,12 +165,12 @@ func assertMetrics(t *testing.T, reporter *capturingStatsReporter, methodName st
 func newService(t *testing.T) (mockService *workflowservicetest.MockClient,
 	wrapperService workflowserviceclient.Interface,
 	closer io.Closer,
-	reporter *capturingStatsReporter,
+	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
 	mockService = workflowservicetest.NewMockClient(mockCtrl)
 	isReplay := false
-	scope, closer, reporter := newMetricsScope(&isReplay)
+	scope, closer, reporter := NewMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
 	return
 }
