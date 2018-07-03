@@ -616,10 +616,6 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 
 	workflowContext, err := wth.getOrCreateWorkflowContext(task, historyIterator)
 	if err != nil {
-		// The WorkflowContext will be removed from the cache if an error is found
-		// in workflowContext.err when calling Unlock() method.
-		workflowContext.err = err
-		defer workflowContext.Unlock()
 		return nil, nil, err
 	}
 	defer workflowContext.Unlock()
