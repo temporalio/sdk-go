@@ -31,8 +31,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
 	"go.uber.org/cadence/internal/common/metrics"
+	"go.uber.org/zap"
 )
 
 type WorkflowUnitTest struct {
@@ -549,7 +549,7 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	s.EqualValues(strings.Join(expected, ""), string(result))
 }
 
-type message struct{
+type message struct {
 	Value string
 }
 
@@ -559,7 +559,7 @@ func receive_CorruptSignalWorkflowTest(ctx Context) ([]message, error) {
 	var m message
 	ch.Receive(ctx, &m)
 	result = append(result, m)
-	return result,nil
+	return result, nil
 }
 
 func receive_CorruptSignalOnClosedChannelWorkflowTest(ctx Context) ([]message, error) {
@@ -569,7 +569,7 @@ func receive_CorruptSignalOnClosedChannelWorkflowTest(ctx Context) ([]message, e
 	ch.Close()
 	ch.Receive(ctx, &m)
 	result = append(result, m)
-	return result,nil
+	return result, nil
 }
 
 func receiveWithSelector_CorruptSignalWorkflowTest(ctx Context) ([]message, error) {
@@ -584,7 +584,7 @@ func receiveWithSelector_CorruptSignalWorkflowTest(ctx Context) ([]message, erro
 		result = append(result, m)
 	})
 	s.Select(ctx)
-	return result,nil
+	return result, nil
 }
 
 func receiveAsync_CorruptSignalOnClosedChannelWorkflowTest(ctx Context) ([]int, error) {
@@ -599,7 +599,7 @@ func receiveAsync_CorruptSignalOnClosedChannelWorkflowTest(ctx Context) ([]int, 
 		result = append(result, m)
 	}
 
-	return result,nil
+	return result, nil
 }
 
 func receiveAysnc_CorruptSignalWorkflowTest(ctx Context) ([]message, error) {
@@ -614,14 +614,14 @@ func receiveAysnc_CorruptSignalWorkflowTest(ctx Context) ([]message, error) {
 	}
 
 	ch.SendAsync("wrong again")
-	ch.SendAsync(message {
-		Value:"the right interface",
+	ch.SendAsync(message{
+		Value: "the right interface",
 	})
 	ok = ch.ReceiveAsync(&m)
 	if ok == true {
 		result = append(result, m)
 	}
-	return result,nil
+	return result, nil
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPanic() {
@@ -635,8 +635,8 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPa
 	}, time.Millisecond)
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow("channelExpectingTypeMessage", message {
-			Value:"the right interface",
+		env.SignalWorkflow("channelExpectingTypeMessage", message{
+			Value: "the right interface",
 		})
 	}, time.Second)
 
@@ -647,14 +647,14 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPa
 	var result []message
 	env.GetWorkflowResult(&result)
 
-	s.EqualValues(1,len(result))
-	s.EqualValues("the right interface",result[0].Value)
+	s.EqualValues(1, len(result))
+	s.EqualValues("the right interface", result[0].Value)
 
 	closer.Close()
- 	counts := reporter.Counts()
- 	s.EqualValues(1, len(counts))
- 	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
- 	s.EqualValues(1, counts[0].Value())
+	counts := reporter.Counts()
+	s.EqualValues(1, len(counts))
+	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
+	s.EqualValues(1, counts[0].Value())
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLogMetricsAndNotPanic() {
@@ -668,8 +668,8 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLog
 	}, time.Second)
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow("channelExpectingTypeMessage", message {
-			Value:"the right interface",
+		env.SignalWorkflow("channelExpectingTypeMessage", message{
+			Value: "the right interface",
 		})
 	}, 3*time.Second)
 
@@ -680,8 +680,8 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLog
 	var result []message
 	env.GetWorkflowResult(&result)
 
-	s.EqualValues(1,len(result))
-	s.EqualValues("the right interface",result[0].Value)
+	s.EqualValues(1, len(result))
+	s.EqualValues("the right interface", result[0].Value)
 
 	closer.Close()
 	counts := reporter.Counts()
@@ -701,8 +701,8 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ReceiveAsync_ShouldLogMe
 
 	var result []message
 	env.GetWorkflowResult(&result)
-	s.EqualValues(1,len(result))
- 	s.EqualValues("the right interface",result[0].Value)
+	s.EqualValues(1, len(result))
+	s.EqualValues("the right interface", result[0].Value)
 
 	closer.Close()
 	counts := reporter.Counts()
@@ -720,7 +720,7 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_ReceiveAs
 
 	var result []message
 	env.GetWorkflowResult(&result)
-	s.EqualValues(0,len(result))
+	s.EqualValues(0, len(result))
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_ShouldComplete() {
@@ -730,14 +730,14 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_S
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow("channelExpectingTypeMessage", "wrong")
 	}, time.Second)
-	
+
 	env.ExecuteWorkflow(receiveAsync_CorruptSignalOnClosedChannelWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
 	env.GetWorkflowResult(&result)
-	s.EqualValues(0,len(result))
+	s.EqualValues(0, len(result))
 }
 
 func activityOptionsWorkflow(ctx Context) (result string, err error) {

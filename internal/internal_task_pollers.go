@@ -248,7 +248,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 	}
 	if response != nil && response.DecisionTask != nil {
 		wc.Lock()
-		defer wc.Unlock()
+		defer wc.Unlock(nil)
 		return wtp.processCompleteDecisionResponseLocked(response, wc)
 	}
 
@@ -280,7 +280,7 @@ func (wtp *workflowTaskPoller) scheduleRespondDecisionTaskCompleted(wc WorkflowE
 
 func (wtp *workflowTaskPoller) forceRespondDecisionTaskCompleted(wc WorkflowExecutionContext, workflowTask *workflowTask, startTime time.Time) {
 	wc.Lock()
-	defer wc.Unlock()
+	defer wc.Unlock(nil)
 
 	currentTask := wc.GetCurrentDecisionTask()
 	if currentTask != workflowTask.task {
@@ -342,7 +342,7 @@ func (wtp *workflowTaskPoller) processCompleteDecisionResponseLocked(response *s
 func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResult) error {
 	w := lar.task.wc
 	w.Lock()
-	defer w.Unlock()
+	defer w.Unlock(nil)
 
 	decisionStartTime := w.decisionStartTime
 	decisionTask := w.currentDecisionTask

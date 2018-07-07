@@ -21,9 +21,9 @@
 package metrics
 
 import (
+	"github.com/uber-go/tally"
 	"io"
 	"time"
-	"github.com/uber-go/tally"
 )
 
 func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
@@ -213,4 +213,3 @@ func (r *CapturingStatsReporter) Tagging() bool {
 func (r *CapturingStatsReporter) Flush() {
 	r.flush++
 }
-

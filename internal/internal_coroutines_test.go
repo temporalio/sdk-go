@@ -32,7 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createRootTestContext()(ctx Context){
+func createRootTestContext() (ctx Context) {
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	return newWorkflowContext(env.impl)
 }

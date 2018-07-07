@@ -32,13 +32,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
-	"github.com/uber-go/tally"
 )
 
 const (
@@ -107,8 +107,8 @@ type (
 		closed          bool                  // true if channel is closed.
 		recValue        *interface{}          // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 		dataConverter   encoded.DataConverter // for decode data
-		scope			tally.Scope			  // Used to send metrics
-		logger			*zap.Logger
+		scope           tally.Scope           // Used to send metrics
+		logger          *zap.Logger
 	}
 
 	// Single case statement of the Select
@@ -523,7 +523,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 		}
 
 		if ok || !m {
-			err:= c.assignValue(v, valuePtr)
+			err := c.assignValue(v, valuePtr)
 			if err == nil {
 				state.unblocked()
 				return m
@@ -532,7 +532,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 		}
 		for {
 			if hasResult {
-				err:= c.assignValue(result, valuePtr)
+				err := c.assignValue(result, valuePtr)
 				if err == nil {
 					state.unblocked()
 					return more
@@ -551,13 +551,13 @@ func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
 }
 
 func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) {
-	for{
+	for {
 		v, ok, more := c.receiveAsyncImpl(nil)
 		if !ok && !more { //channel closed and empty
-			return ok,more
+			return ok, more
 		}
 
-		err:=c.assignValue(v, valuePtr)
+		err := c.assignValue(v, valuePtr)
 		if err != nil {
 			continue
 			// keep consuming until a good signal is hit or channel is drained
@@ -682,7 +682,7 @@ func (c *channelImpl) Close() {
 }
 
 // Takes a value and assigns that 'to' value. logs a metric if it is unable to deserialize
-func (c *channelImpl) assignValue(from interface{}, to interface{}) (error) {
+func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	err := decodeAndAssignValue(c.dataConverter, from, to)
 	//add to metrics
 	if err != nil {

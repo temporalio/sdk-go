@@ -44,7 +44,8 @@ const (
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
-		logger *zap.Logger
+		logger  *zap.Logger
+		service *workflowservicetest.MockClient
 	}
 )
 
@@ -368,6 +369,43 @@ func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expected
 	t.Equal(expectedResult, queryResult)
 }
 
+func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
+			TaskList:     &s.TaskList{Name: &taskList},
+		}),
+	}
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "test-id-1",
+		Logger:   zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	// now change the history event so it does not match to decision produced via replay
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+	// will fail as it can't find laTunnel in getWorkflowCache().
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params)
+	request, _, err := taskHandler.ProcessWorkflowTask(task, nil)
+
+	t.Error(err)
+	t.Nil(request)
+	t.Contains(err.Error(), "nondeterministic")
+
+	// There should be nothing in the cache.
+	t.EqualValues(getWorkflowCache().Size(), 0)
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	taskList := "taskList"
 	testEvents := []*s.HistoryEvent{
@@ -388,6 +426,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		Logger:   zap.NewNop(),
 		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
 	}
+
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
 	request, _, err := taskHandler.ProcessWorkflowTask(task, nil)
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
@@ -398,6 +437,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// now change the history event so it does not match to decision produced via replay
 	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+	// will fail as it can't find laTunnel in getWorkflowCache().
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params)
 	request, _, err = taskHandler.ProcessWorkflowTask(task, nil)
 	t.Error(err)
 	t.Nil(request)

@@ -26,8 +26,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"sync"
 	"io"
+	"sync"
 )
 
 func Test_Counter(t *testing.T) {

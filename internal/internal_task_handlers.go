@@ -380,8 +380,8 @@ func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
-func (w *workflowExecutionContextImpl) Unlock() {
-	if w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
+func (w *workflowExecutionContextImpl) Unlock(err error) {
+	if err != nil || w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
 		// if the close decision failed, the next decision will have to rebuild the state.
@@ -499,6 +499,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
 		Domain: wth.domain,
 	}
+
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
 	workflowContext := &workflowExecutionContextImpl{workflowStartTime: wfStartTime, workflowInfo: workflowInfo, wth: wth}
 	workflowContext.createEventHandler()
@@ -618,7 +619,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	if err != nil {
 		return nil, nil, err
 	}
-	defer workflowContext.Unlock()
+
+	defer func() {
+		workflowContext.Unlock(err)
+	}()
 
 	response, err := workflowContext.ProcessWorkflowTask(task, historyIterator)
 	return response, workflowContext, err

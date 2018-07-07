@@ -28,7 +28,6 @@ package internal
 // point of view only to access them from other packages.
 
 import (
-	"sync"
 	"time"
 
 	s "go.uber.org/cadence/.gen/go/shared"
@@ -48,7 +47,8 @@ type (
 	// WorkflowExecutionContext represents one instance of workflow execution state in memory. Lock must be obtained before
 	// calling into any methods.
 	WorkflowExecutionContext interface {
-		sync.Locker
+		Lock()
+		Unlock(err error)
 		ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (completeRequest interface{}, err error)
 		ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error)
 		// CompleteDecisionTask try to complete current decision task and get response that needs to be sent back to server.
