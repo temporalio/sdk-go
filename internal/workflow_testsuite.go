@@ -66,7 +66,7 @@ type (
 		env  *TestWorkflowEnvironment
 
 		runFn        func(args mock.Arguments)
-		waitDuration time.Duration
+		waitDuration func() time.Duration
 	}
 )
 
@@ -332,7 +332,13 @@ func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
 
 // After sets how long to wait on workflow's clock before the mock call returns.
 func (c *MockCallWrapper) After(d time.Duration) *MockCallWrapper {
-	c.waitDuration = d
+	c.waitDuration = func() time.Duration { return d }
+	return c
+}
+
+// AfterFn sets a function which will tell how long to wait on workflow's clock before the mock call returns.
+func (c *MockCallWrapper) AfterFn(fn func() time.Duration) *MockCallWrapper {
+	c.waitDuration = fn
 	return c
 }
 

@@ -831,6 +831,72 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWaitFn() {
+	workflowFn := func(ctx Context) ([]string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var first, second string
+		ExecuteActivity(ctx, testActivityHello, "mock_delay_1").Get(ctx, &first)
+		ExecuteActivity(ctx, testActivityHello, "mock_delay_2").Get(ctx, &second)
+		return []string{first, second}, nil
+	}
+
+	// extract results from the env and compare to expected values
+	expectResult := func(env *TestWorkflowEnvironment, expected []string) {
+		var result []string
+		err := env.GetWorkflowResult(&result)
+		s.NoError(err)
+		s.Equal(expected, result)
+	}
+
+	// wrap around ExecuteWorkflow call to track env execution time
+	expectDuration := func(env *TestWorkflowEnvironment, seconds int, fn func()) {
+		before := env.Now()
+
+		fn()
+
+		after := env.Now()
+		expected := time.Second * time.Duration(seconds)
+		s.Truef(after.Sub(before).Round(time.Second) == expected,
+			"Expected %v to be %v after %v, real diff: %v", after, expected, before, after.Sub(before))
+	}
+
+	RegisterWorkflow(workflowFn)
+
+	// multiple different mocked delays and values should work
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, "mock_delay_1").After(time.Second).Return("one", nil).Once()
+	env.OnActivity(testActivityHello, mock.Anything, "mock_delay_2").After(time.Minute).Return("two", nil).Once()
+	expectDuration(env, 61, func() {
+		env.ExecuteWorkflow(workflowFn)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+	expectResult(env, []string{"one", "two"})
+
+	// multiple different dynamically mocked delays and values should work
+	env = s.NewTestWorkflowEnvironment()
+	afterCount, returnCount := 0, 0
+	afters := []time.Duration{time.Second, time.Minute}
+	returns := []string{"first", "second"}
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).
+		AfterFn(func() time.Duration {
+			defer func() { afterCount++ }()
+			return afters[afterCount]
+		}).
+		Return(func(ctx context.Context, msg string) (string, error) {
+			defer func() { returnCount++ }()
+			return returns[returnCount], nil
+		}).Twice()
+	expectDuration(env, 61, func() {
+		env.ExecuteWorkflow(workflowFn)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+	expectResult(env, returns)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)

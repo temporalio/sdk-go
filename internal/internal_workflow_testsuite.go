@@ -901,13 +901,17 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 // runBeforeMockCallReturns is registered as mock call's RunFn by *mock.Call.Run(fn). It will be called by testify's
 // mock.MethodCalled() before it returns.
 func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallWrapper, args mock.Arguments) {
-	if call.waitDuration > 0 {
+	var waitDuration time.Duration
+	if call.waitDuration != nil {
+		waitDuration = call.waitDuration()
+	}
+	if waitDuration > 0 {
 		// we want this mock call to block until the wait duration is elapsed (on workflow clock).
 		waitCh := make(chan time.Time)
 		env.registerDelayedCallback(func() {
 			env.runningCount++  // increase runningCount as the mock call is ready to resume.
 			waitCh <- env.Now() // this will unblock mock call
-		}, call.waitDuration)
+		}, waitDuration)
 
 		// make sure decrease runningCount after delayed callback is posted
 		env.postCallback(func() {
