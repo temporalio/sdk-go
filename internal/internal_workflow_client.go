@@ -43,7 +43,7 @@ var _ Client = (*workflowClient)(nil)
 var _ DomainClient = (*domainClient)(nil)
 
 const (
-	defaultDecisionTaskTimeoutInSecs = 20
+	defaultDecisionTaskTimeoutInSecs = 10
 	defaultGetHistoryTimeoutInSecs   = 25
 )
 
