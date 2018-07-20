@@ -696,7 +696,11 @@ ProcessEvents:
 	if !skipReplayCheck {
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
-			w.wth.logger.Error("Replay and history mismatch.", zap.Error(err))
+			w.wth.logger.Error("Replay and history mismatch.",
+				zap.String(tagWorkflowType, task.WorkflowType.GetName()),
+				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
+				zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
+				zap.Error(err))
 
 			// Whether or not we store the error in workflowContext.err makes
 			// a significant difference, to the point that it affects client's observable
