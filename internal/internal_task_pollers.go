@@ -283,7 +283,7 @@ func (wtp *workflowTaskPoller) forceRespondDecisionTaskCompleted(wc WorkflowExec
 	defer wc.Unlock(nil)
 
 	currentTask := wc.GetCurrentDecisionTask()
-	if currentTask != workflowTask.task {
+	if currentTask == nil || currentTask != workflowTask.task {
 		// decision task already completed
 		var currentTaskStartedEventID int64
 		if currentTask != nil {

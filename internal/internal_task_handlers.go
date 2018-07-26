@@ -741,6 +741,9 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActi
 }
 
 func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities bool) interface{} {
+	if w.currentDecisionTask == nil {
+		return nil
+	}
 	if w.hasPendingLocalActivityWork() {
 		if len(w.eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
