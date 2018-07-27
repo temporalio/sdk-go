@@ -75,19 +75,25 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
 	require.Equal(t, decisionStateCreated, d.getState())
+
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
 	require.Equal(t, s.DecisionTypeStartTimer, decisions[0].GetDecisionType())
+
 	h.cancelTimer(timerID)
 	require.Equal(t, decisionStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getDecisions(true)))
+	decisions = h.getDecisions(false)
+	require.Equal(t, 1, len(decisions))
+	require.Equal(t, s.DecisionTypeCancelTimer, decisions[0].GetDecisionType())
+
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
 	require.Equal(t, s.DecisionTypeCancelTimer, decisions[0].GetDecisionType())
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
+
 	h.handleTimerClosed(timerID)
 	require.Equal(t, decisionStateCompletedAfterCancellationDecisionSent, d.getState())
 }
@@ -216,7 +222,9 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
 	require.Equal(t, decisionStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getDecisions(true)))
+	decisions = h.getDecisions(false)
+	require.Equal(t, 1, len(decisions))
+	require.Equal(t, s.DecisionTypeRequestCancelActivityTask, decisions[0].GetDecisionType())
 
 	// activity scheduled
 	h.handleActivityTaskScheduled(1, activityID)
@@ -248,7 +256,9 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
 	require.Equal(t, decisionStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getDecisions(true)))
+	decisions = h.getDecisions(false)
+	require.Equal(t, 1, len(decisions))
+	require.Equal(t, s.DecisionTypeRequestCancelActivityTask, decisions[0].GetDecisionType())
 
 	// activity scheduled
 	h.handleActivityTaskScheduled(1, activityID)

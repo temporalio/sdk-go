@@ -398,7 +398,7 @@ func (d *activityDecisionStateMachine) getDecision() *s.Decision {
 		decision := createNewDecision(s.DecisionTypeScheduleActivityTask)
 		decision.ScheduleActivityTaskDecisionAttributes = d.attributes
 		return decision
-	case decisionStateCanceledAfterInitiated:
+	case decisionStateCanceledAfterInitiated, decisionStateCanceledBeforeInitiated:
 		decision := createNewDecision(s.DecisionTypeRequestCancelActivityTask)
 		decision.RequestCancelActivityTaskDecisionAttributes = &s.RequestCancelActivityTaskDecisionAttributes{
 			ActivityId: d.attributes.ActivityId,
@@ -411,7 +411,7 @@ func (d *activityDecisionStateMachine) getDecision() *s.Decision {
 
 func (d *activityDecisionStateMachine) handleDecisionSent() {
 	switch d.state {
-	case decisionStateCanceledAfterInitiated:
+	case decisionStateCanceledAfterInitiated, decisionStateCanceledBeforeInitiated:
 		d.moveState(decisionStateCancellationDecisionSent, eventDecisionSent)
 	default:
 		d.decisionStateMachineBase.handleDecisionSent()
@@ -438,7 +438,7 @@ func (d *timerDecisionStateMachine) isDone() bool {
 
 func (d *timerDecisionStateMachine) handleDecisionSent() {
 	switch d.state {
-	case decisionStateCanceledAfterInitiated:
+	case decisionStateCanceledAfterInitiated, decisionStateCanceledBeforeInitiated:
 		d.moveState(decisionStateCancellationDecisionSent, eventDecisionSent)
 	default:
 		d.decisionStateMachineBase.handleDecisionSent()
@@ -460,7 +460,7 @@ func (d *timerDecisionStateMachine) getDecision() *s.Decision {
 		decision := createNewDecision(s.DecisionTypeStartTimer)
 		decision.StartTimerDecisionAttributes = d.attributes
 		return decision
-	case decisionStateCanceledAfterInitiated:
+	case decisionStateCanceledAfterInitiated, decisionStateCanceledBeforeInitiated:
 		decision := createNewDecision(s.DecisionTypeCancelTimer)
 		decision.CancelTimerDecisionAttributes = &s.CancelTimerDecisionAttributes{
 			TimerId: d.attributes.TimerId,
