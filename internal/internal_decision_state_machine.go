@@ -104,7 +104,7 @@ type (
 
 	decisionsHelper struct {
 		orderedDecisions *list.List
-		decisions        map[decisionID]decisionStateMachine
+		decisions        map[decisionID]*list.Element
 
 		scheduledEventIDToActivityID     map[int64]string
 		scheduledEventIDToCancellationID map[int64]string
@@ -638,7 +638,7 @@ func (d *markerDecisionStateMachine) handleDecisionSent() {
 func newDecisionsHelper() *decisionsHelper {
 	return &decisionsHelper{
 		orderedDecisions: list.New(),
-		decisions:        make(map[decisionID]decisionStateMachine),
+		decisions:        make(map[decisionID]*list.Element),
 
 		scheduledEventIDToActivityID:     make(map[int64]string),
 		scheduledEventIDToCancellationID: make(map[int64]string),
@@ -653,12 +653,15 @@ func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 			" or incompatible change in the workflow definition", id)
 		panic(panicMsg)
 	}
-	return decision
+	// Move the last update decision state machine to the back of the list.
+	// Otherwise decisions (like timer cancellations) can end up out of order.
+	h.orderedDecisions.MoveToBack(decision)
+	return decision.Value.(decisionStateMachine)
 }
 
 func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
-	h.orderedDecisions.PushBack(decision)
-	h.decisions[decision.getID()] = decision
+	element := h.orderedDecisions.PushBack(decision)
+	h.decisions[decision.getID()] = element
 }
 
 func (h *decisionsHelper) scheduleActivityTask(attributes *s.ScheduleActivityTaskDecisionAttributes) decisionStateMachine {

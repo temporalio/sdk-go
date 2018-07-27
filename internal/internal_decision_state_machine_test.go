@@ -129,6 +129,32 @@ func Test_TimerStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	require.NotNil(t, panicErr)
 }
 
+func Test_TimerCancelEventOrdering(t *testing.T) {
+	timerID := "test-timer-1"
+	localActivityID := "test-activity-1"
+	attributes := &s.StartTimerDecisionAttributes{
+		TimerId: common.StringPtr(timerID),
+	}
+	h := newDecisionsHelper()
+	d := h.startTimer(attributes)
+	require.Equal(t, decisionStateCreated, d.getState())
+	decisions := h.getDecisions(true)
+	require.Equal(t, decisionStateDecisionSent, d.getState())
+	require.Equal(t, 1, len(decisions))
+	require.Equal(t, s.DecisionTypeStartTimer, decisions[0].GetDecisionType())
+	require.Equal(t, attributes, decisions[0].StartTimerDecisionAttributes)
+	h.handleTimerStarted(timerID)
+	require.Equal(t, decisionStateInitiated, d.getState())
+	m := h.recordLocalActivityMarker(localActivityID, []byte{})
+	require.Equal(t, decisionStateCreated, m.getState())
+	h.cancelTimer(timerID)
+	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
+	decisions = h.getDecisions(true)
+	require.Equal(t, 2, len(decisions))
+	require.Equal(t, s.DecisionTypeRecordMarker, decisions[0].GetDecisionType())
+	require.Equal(t, s.DecisionTypeCancelTimer, decisions[1].GetDecisionType())
+}
+
 func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{

@@ -109,7 +109,7 @@ func Test_TimeoutError(t *testing.T) {
 			actualErr = e
 		},
 	})
-	context.decisionsHelper.decisions[makeDecisionID(decisionTypeActivity, activityID)] = di
+	context.decisionsHelper.addDecision(di)
 	timeoutType := shared.TimeoutTypeHeartbeat
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &shared.ActivityTaskTimedOutEventAttributes{
