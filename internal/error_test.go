@@ -98,10 +98,11 @@ func Test_TimeoutError(t *testing.T) {
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   newDefaultDataConverter(),
 	}
+	h := newDecisionsHelper()
 	var actualErr error
 	activityID := "activityID"
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
-	di := newActivityDecisionStateMachine(
+	di := h.newActivityDecisionStateMachine(
 		&shared.ScheduleActivityTaskDecisionAttributes{ActivityId: common.StringPtr(activityID)})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{

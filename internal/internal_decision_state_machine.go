@@ -65,6 +65,7 @@ type (
 		state   decisionState
 		history []string
 		data    interface{}
+		helper  *decisionsHelper
 	}
 
 	activityDecisionStateMachine struct {
@@ -207,67 +208,68 @@ func makeDecisionID(decisionType decisionType, id string) decisionID {
 	return decisionID{decisionType: decisionType, id: id}
 }
 
-func newDecisionStateMachineBase(decisionType decisionType, id string) *decisionStateMachineBase {
+func (h *decisionsHelper) newDecisionStateMachineBase(decisionType decisionType, id string) *decisionStateMachineBase {
 	return &decisionStateMachineBase{
 		id:      makeDecisionID(decisionType, id),
 		state:   decisionStateCreated,
 		history: []string{decisionStateCreated.String()},
+		helper:  h,
 	}
 }
 
-func newActivityDecisionStateMachine(attributes *s.ScheduleActivityTaskDecisionAttributes) *activityDecisionStateMachine {
-	base := newDecisionStateMachineBase(decisionTypeActivity, attributes.GetActivityId())
+func (h *decisionsHelper) newActivityDecisionStateMachine(attributes *s.ScheduleActivityTaskDecisionAttributes) *activityDecisionStateMachine {
+	base := h.newDecisionStateMachineBase(decisionTypeActivity, attributes.GetActivityId())
 	return &activityDecisionStateMachine{
 		decisionStateMachineBase: base,
 		attributes:               attributes,
 	}
 }
 
-func newTimerDecisionStateMachine(attributes *s.StartTimerDecisionAttributes) *timerDecisionStateMachine {
-	base := newDecisionStateMachineBase(decisionTypeTimer, attributes.GetTimerId())
+func (h *decisionsHelper) newTimerDecisionStateMachine(attributes *s.StartTimerDecisionAttributes) *timerDecisionStateMachine {
+	base := h.newDecisionStateMachineBase(decisionTypeTimer, attributes.GetTimerId())
 	return &timerDecisionStateMachine{
 		decisionStateMachineBase: base,
 		attributes:               attributes,
 	}
 }
 
-func newChildWorkflowDecisionStateMachine(attributes *s.StartChildWorkflowExecutionDecisionAttributes) *childWorkflowDecisionStateMachine {
-	base := newDecisionStateMachineBase(decisionTypeChildWorkflow, attributes.GetWorkflowId())
+func (h *decisionsHelper) newChildWorkflowDecisionStateMachine(attributes *s.StartChildWorkflowExecutionDecisionAttributes) *childWorkflowDecisionStateMachine {
+	base := h.newDecisionStateMachineBase(decisionTypeChildWorkflow, attributes.GetWorkflowId())
 	return &childWorkflowDecisionStateMachine{
 		decisionStateMachineBase: base,
 		attributes:               attributes,
 	}
 }
 
-func newNaiveDecisionStateMachine(decisionType decisionType, id string, decision *s.Decision) *naiveDecisionStateMachine {
-	base := newDecisionStateMachineBase(decisionType, id)
+func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType, id string, decision *s.Decision) *naiveDecisionStateMachine {
+	base := h.newDecisionStateMachineBase(decisionType, id)
 	return &naiveDecisionStateMachine{
 		decisionStateMachineBase: base,
 		decision:                 decision,
 	}
 }
 
-func newMarkerDecisionStateMachine(id string, attributes *s.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
+func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *s.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
 	d := createNewDecision(s.DecisionTypeRecordMarker)
 	d.RecordMarkerDecisionAttributes = attributes
 	return &markerDecisionStateMachine{
-		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
+		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
 	}
 }
 
-func newCancelExternalWorkflowStateMachine(attributes *s.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
+func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *s.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
 	d := createNewDecision(s.DecisionTypeRequestCancelExternalWorkflowExecution)
 	d.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
 	return &cancelExternalWorkflowDecisionStateMachine{
-		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeCancellation, cancellationID, d),
+		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeCancellation, cancellationID, d),
 	}
 }
 
-func newSignalExternalWorkflowStateMachine(attributes *s.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
+func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *s.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
 	d := createNewDecision(s.DecisionTypeSignalExternalWorkflowExecution)
 	d.SignalExternalWorkflowExecutionDecisionAttributes = attributes
 	return &signalExternalWorkflowDecisionStateMachine{
-		naiveDecisionStateMachine: newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
+		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
 	}
 }
 
@@ -295,6 +297,13 @@ func (d *decisionStateMachineBase) moveState(newState decisionState, event strin
 	d.history = append(d.history, event)
 	d.state = newState
 	d.history = append(d.history, newState.String())
+
+	if newState == decisionStateCompleted {
+		if elem, ok := d.helper.decisions[d.getID()]; ok {
+			d.helper.orderedDecisions.Remove(elem)
+			delete(d.helper.decisions, d.getID())
+		}
+	}
 }
 
 func (d *decisionStateMachineBase) failStateTransition(event string) {
@@ -660,12 +669,16 @@ func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 }
 
 func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
+	if _, ok := h.decisions[decision.getID()]; ok {
+		panicMsg := fmt.Sprintf("adding duplicate decision %v", decision)
+		panic(panicMsg)
+	}
 	element := h.orderedDecisions.PushBack(decision)
 	h.decisions[decision.getID()] = element
 }
 
 func (h *decisionsHelper) scheduleActivityTask(attributes *s.ScheduleActivityTaskDecisionAttributes) decisionStateMachine {
-	decision := newActivityDecisionStateMachine(attributes)
+	decision := h.newActivityDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
 }
@@ -739,7 +752,7 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 		Details:    details, // Keep
 	}
 
-	decision := newMarkerDecisionStateMachine(markerID, recordMarker)
+	decision := h.newMarkerDecisionStateMachine(markerID, recordMarker)
 	h.addDecision(decision)
 	return decision
 }
@@ -750,7 +763,7 @@ func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte
 		MarkerName: common.StringPtr(sideEffectMarkerName),
 		Details:    data,
 	}
-	decision := newMarkerDecisionStateMachine(markerID, attributes)
+	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
 	return decision
 }
@@ -761,7 +774,7 @@ func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result []
 		MarkerName: common.StringPtr(localActivityMarkerName),
 		Details:    result,
 	}
-	decision := newMarkerDecisionStateMachine(markerID, attributes)
+	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
 	return decision
 }
@@ -772,13 +785,13 @@ func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID stri
 		MarkerName: common.StringPtr(mutableSideEffectMarkerName),
 		Details:    data,
 	}
-	decision := newMarkerDecisionStateMachine(markerID, attributes)
+	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
 	return decision
 }
 
 func (h *decisionsHelper) startChildWorkflowExecution(attributes *s.StartChildWorkflowExecutionDecisionAttributes) decisionStateMachine {
-	decision := newChildWorkflowDecisionStateMachine(attributes)
+	decision := h.newChildWorkflowDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
 }
@@ -833,7 +846,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflo
 		Control:           []byte(cancellationID),
 		ChildWorkflowOnly: common.BoolPtr(false),
 	}
-	decision := newCancelExternalWorkflowStateMachine(attributes, cancellationID)
+	decision := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
 	h.addDecision(decision)
 
 	return decision
@@ -893,7 +906,7 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(domain, workflowID, ru
 		Control:           []byte(signalID),
 		ChildWorkflowOnly: common.BoolPtr(childWorkflowOnly),
 	}
-	decision := newSignalExternalWorkflowStateMachine(attributes, signalID)
+	decision := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
 	h.addDecision(decision)
 	return decision
 }
@@ -925,7 +938,7 @@ func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
 }
 
 func (h *decisionsHelper) startTimer(attributes *s.StartTimerDecisionAttributes) decisionStateMachine {
-	decision := newTimerDecisionStateMachine(attributes)
+	decision := h.newTimerDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
 }

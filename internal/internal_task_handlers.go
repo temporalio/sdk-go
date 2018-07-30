@@ -54,7 +54,7 @@ type (
 	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
 		// Return List of decisions made, any error.
-		ProcessEvent(event *s.HistoryEvent, isReplay bool, isLast bool) ([]*s.Decision, error)
+		ProcessEvent(event *s.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs []byte) ([]byte, error)
 		StackTrace() string
@@ -293,8 +293,7 @@ OrderEvents:
 }
 
 func isPreloadMarkerEvent(event *s.HistoryEvent) bool {
-	return event.GetEventType() == s.EventTypeMarkerRecorded &&
-		event.MarkerRecordedEventAttributes.GetMarkerName() != localActivityMarkerName
+	return event.GetEventType() == s.EventTypeMarkerRecorded
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -653,9 +652,12 @@ ProcessEvents:
 		}
 		// Markers are from the events that are produced from the current decision
 		for _, m := range markers {
-			_, err := eventHandler.ProcessEvent(m, true, false)
-			if err != nil {
-				return nil, err
+			if m.MarkerRecordedEventAttributes.GetMarkerName() != localActivityMarkerName {
+				// local activity marker needs to be applied after decision task started event
+				err := eventHandler.ProcessEvent(m, true, false)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -672,23 +674,26 @@ ProcessEvents:
 				return nil, err
 			}
 
-			eventDecisions, err := eventHandler.ProcessEvent(event, isInReplay, isLast)
+			err = eventHandler.ProcessEvent(event, isInReplay, isLast)
 			if err != nil {
 				return nil, err
 			}
+		}
 
-			if eventDecisions != nil {
-				if !isInReplay {
-					w.newDecisions = append(w.newDecisions, eventDecisions...)
-				} else if !skipReplayCheck {
-					replayDecisions = append(replayDecisions, eventDecisions...)
+		// now apply local activity markers
+		for _, m := range markers {
+			if m.MarkerRecordedEventAttributes.GetMarkerName() == localActivityMarkerName {
+				err := eventHandler.ProcessEvent(m, true, false)
+				if err != nil {
+					return nil, err
 				}
 			}
-
-			if w.isWorkflowCompleted {
-				// If workflow is already completed then we can break from processing
-				// further decisions.
-				break ProcessEvents
+		}
+		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
+		if isReplay {
+			eventDecisions := eventHandler.decisionsHelper.getDecisions(true)
+			if len(eventDecisions) > 0 && !skipReplayCheck {
+				replayDecisions = append(replayDecisions, eventDecisions...)
 			}
 		}
 	}
@@ -728,13 +733,9 @@ ProcessEvents:
 }
 
 func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
-	eventDecisions, err := w.eventHandler.ProcessLocalActivityResult(lar)
+	err := w.eventHandler.ProcessLocalActivityResult(lar)
 	if err != nil {
 		return nil, err
-	}
-
-	if eventDecisions != nil {
-		w.newDecisions = append(w.newDecisions, eventDecisions...)
 	}
 
 	return w.CompleteDecisionTask(true), nil
@@ -758,6 +759,11 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities 
 		if waitLocalActivities {
 			return nil
 		}
+	}
+
+	eventDecisions := w.eventHandler.decisionsHelper.getDecisions(true)
+	if len(eventDecisions) > 0 {
+		w.newDecisions = append(w.newDecisions, eventDecisions...)
 	}
 
 	completeRequest := w.wth.completeWorkflow(w.eventHandler, w.currentDecisionTask, w, w.newDecisions, !waitLocalActivities)

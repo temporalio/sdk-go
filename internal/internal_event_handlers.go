@@ -593,9 +593,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	event *m.HistoryEvent,
 	isReplay bool,
 	isLast bool,
-) (result []*m.Decision, err error) {
+) (err error) {
 	if event == nil {
-		return nil, errors.New("nil event provided")
+		return errors.New("nil event provided")
 	}
 	defer func() {
 		if p := recover(); p != nil {
@@ -746,7 +746,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// When replaying histories to get stack trace or current state the last event might be not
@@ -756,7 +756,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.workflowDefinition.OnDecisionTaskStarted()
 	}
 
-	return weh.decisionsHelper.getDecisions(true), nil
+	return nil
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs []byte) ([]byte, error) {
@@ -928,7 +928,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) ([]*m.Decision, error) {
+func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
 	// convert local activity result and error to marker data
 	lamd := localActivityMarkerData{
 		ActivityID: lar.task.activityID,
@@ -945,7 +945,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	// encode marker data
 	markerData, err := weh.encodeArg(lamd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// create marker event for local activity result
