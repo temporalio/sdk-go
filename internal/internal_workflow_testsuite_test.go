@@ -1260,8 +1260,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 	stateWaitSignal, stateWaitActivity, stateDone := "wait for signal", "wait for activity", "done"
 	workflowFn := func(ctx Context) error {
 		var state string
-		err := SetQueryHandler(ctx, queryType, func() (string, error) {
-			return state, nil
+		err := SetQueryHandler(ctx, queryType, func(queryInput string) (string, error) {
+			return queryInput + state, nil
 		})
 		if err != nil {
 			return err
@@ -1284,12 +1284,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 
 	env := s.NewTestWorkflowEnvironment()
 	verifyStateWithQuery := func(expected string) {
-		encodedValue, err := env.QueryWorkflow(queryType)
+		encodedValue, err := env.QueryWorkflow(queryType, "input")
 		s.NoError(err)
+		s.NotNil(encodedValue)
 		var state string
 		err = encodedValue.Get(&state)
 		s.NoError(err)
-		s.Equal(expected, state)
+		s.Equal("input"+expected, state)
 	}
 	env.RegisterDelayedCallback(func() {
 		verifyStateWithQuery(stateWaitSignal)

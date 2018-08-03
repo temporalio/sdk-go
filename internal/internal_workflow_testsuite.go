@@ -1469,7 +1469,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {
-	data, err := encodeArg(env.GetDataConverter(), args)
+	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		return nil, err
 	}
