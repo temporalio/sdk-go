@@ -668,6 +668,11 @@ ProcessEvents:
 				respondEvents = append(respondEvents, event)
 			}
 
+			if isPreloadMarkerEvent(event) {
+				// marker events are processed separately
+				continue
+			}
+
 			// Any pressure points.
 			err := w.wth.executeAnyPressurePoints(event, isInReplay)
 			if err != nil {
@@ -745,7 +750,9 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities 
 	if w.currentDecisionTask == nil {
 		return nil
 	}
-	if w.hasPendingLocalActivityWork() {
+	// w.laTunnel could be nil for worker.ReplayHistory() because there is no worker started, in that case we don't
+	// care about the pending local activities, and just return because the result is ignored anyway by the caller.
+	if w.hasPendingLocalActivityWork() && w.laTunnel != nil {
 		if len(w.eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
 			for activityID := range w.eventHandler.unstartedLaTasks {
