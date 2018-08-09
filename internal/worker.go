@@ -90,6 +90,16 @@ type (
 		// The zero value of this uses the default value. Default: 100k
 		TaskListActivitiesPerSecond float64
 
+		// Optional: To set the maximum concurrent decision task executions this worker can have.
+		// The zero value of this uses the default value.
+		// default: defaultMaxConcurrentTaskExecutionSize(1k)
+		MaxConcurrentDecisionTaskExecutionSize int
+
+		// Optional: Sets the rate limiting on number of decision tasks that can be executed per second per
+		// worker. This can be used to limit resources used by the worker.
+		// The zero value of this uses the default value. Default: 100k
+		WorkerDecisionTasksPerSecond float64
+
 		// Optional: if the activities need auto heart beating for those activities
 		// by the framework
 		// default: false not to heartbeat.

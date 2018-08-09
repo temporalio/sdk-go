@@ -61,7 +61,7 @@ const (
 	defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
 
 	defaultMaxConcurrentTaskExecutionSize = 1000   // hardcoded max task execution size.
-	defaultMaxTaskExecutionRate           = 100000 // Large task execution rate (unlimited)
+	defaultWorkerTaskExecutionRate        = 100000 // Large task execution rate (unlimited)
 
 	defaultPollerRate = 1000
 
@@ -115,6 +115,12 @@ type (
 
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
+
+		// Defines how many concurrent decision task executions by this worker.
+		ConcurrentDecisionTaskExecutionSize int
+
+		// Defines rate limiting on number of decision tasks that can be executed per second per worker.
+		WorkerDecisionTasksPerSecond float64
 
 		// Defines how many concurrent local activity executions by this worker.
 		ConcurrentLocalActivityExecutionSize int
@@ -257,8 +263,8 @@ func newWorkflowTaskWorkerInternal(
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.ConcurrentPollRoutineSize,
 		pollerRate:        defaultPollerRate,
-		maxConcurrentTask: defaultMaxConcurrentTaskExecutionSize,
-		maxTaskPerSecond:  defaultMaxTaskExecutionRate,
+		maxConcurrentTask: params.ConcurrentDecisionTaskExecutionSize,
+		maxTaskPerSecond:  params.WorkerDecisionTasksPerSecond,
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "DecisionWorker"},
@@ -931,6 +937,8 @@ func newAggregatedWorker(
 		WorkerActivitiesPerSecond:            wOptions.WorkerActivitiesPerSecond,
 		ConcurrentLocalActivityExecutionSize: wOptions.MaxConcurrentLocalActivityExecutionSize,
 		WorkerLocalActivitiesPerSecond:       wOptions.WorkerLocalActivitiesPerSecond,
+		ConcurrentDecisionTaskExecutionSize:  wOptions.MaxConcurrentDecisionTaskExecutionSize,
+		WorkerDecisionTasksPerSecond:         wOptions.WorkerDecisionTasksPerSecond,
 		Identity:                             wOptions.Identity,
 		MetricsScope:                         wOptions.MetricsScope,
 		Logger:                               wOptions.Logger,
@@ -1150,6 +1158,12 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	}
 	if options.WorkerActivitiesPerSecond == 0 {
 		options.WorkerActivitiesPerSecond = defaultWorkerActivitiesPerSecond
+	}
+	if options.MaxConcurrentDecisionTaskExecutionSize == 0 {
+		options.MaxConcurrentDecisionTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
+	}
+	if options.WorkerDecisionTasksPerSecond == 0 {
+		options.WorkerDecisionTasksPerSecond = defaultWorkerTaskExecutionRate
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize == 0 {
 		options.MaxConcurrentLocalActivityExecutionSize = defaultMaxConcurrentLocalActivityExecutionSize
