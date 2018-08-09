@@ -256,8 +256,17 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 }
 
 func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
-	_, err := wtp.service.ResetStickyTaskList(context.Background(), rst.task)
-	return err
+	tchCtx, cancel, opt := newChannelContext(context.Background())
+	defer cancel()
+	if _, err := wtp.service.ResetStickyTaskList(tchCtx, rst.task, opt...); err != nil {
+		wtp.logger.Warn("ResetStickyTaskList failed",
+			zap.String(tagWorkflowID, rst.task.Execution.GetWorkflowId()),
+			zap.String(tagRunID, rst.task.Execution.GetRunId()),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
 }
 
 func (wtp *workflowTaskPoller) scheduleRespondDecisionTaskCompleted(wc WorkflowExecutionContext, workflowTask *workflowTask, startTime time.Time) {

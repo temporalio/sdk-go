@@ -164,7 +164,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	// this is the critical point of the test.
 	// ResetSticky should be called exactly once because our workflow cache evicts when full
 	// so if our worker puts *cacheSize* entries in the cache, it should evict exactly one
-	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskList).Times(1)
+	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(mockResetStickyTaskList).Times(1)
 
 	workflowWorker := internal.NewWorker(s.service, "test-domain", "tasklist", worker.Options{DisableActivityWorker: true})
 
