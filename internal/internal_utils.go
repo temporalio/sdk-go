@@ -152,7 +152,7 @@ func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
 			data, err0 = encodeArgs(dataConverter, details)
-		case EncodedValues:
+		case *EncodedValues:
 			data = details.values
 		default:
 			panic("unknown error type")
@@ -167,7 +167,7 @@ func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
 			data, err0 = encodeArgs(dataConverter, details)
-		case EncodedValues:
+		case *EncodedValues:
 			data = details.values
 		default:
 			panic("unknown error type")

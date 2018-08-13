@@ -40,10 +40,17 @@ type testStruct struct {
 	Age  int
 }
 
+type testStruct2 struct {
+	Name      string
+	Age       int
+	Favorites *[]string
+}
+
 var (
 	testErrorDetails1 = "my details"
 	testErrorDetails2 = 123
 	testErrorDetails3 = testStruct{"a string", 321}
+	testErrorDetails4 = testStruct2{"a string", 321, &[]string{"eat", "code"}}
 )
 
 func Test_GenericError(t *testing.T) {
@@ -193,6 +200,81 @@ func Test_CustomError(t *testing.T) {
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
+}
+
+func Test_CustomError_Pointer(t *testing.T) {
+	a1 := testStruct2{}
+	err1 := NewCustomError(customErrReasonA, testErrorDetails4)
+	require.True(t, err1.HasDetails())
+	err := err1.Details(&a1)
+	require.NoError(t, err)
+	require.Equal(t, testErrorDetails4, a1)
+
+	a2 := &testStruct2{}
+	err2 := NewCustomError(customErrReasonA, &testErrorDetails4) // // pointer in details
+	require.True(t, err2.HasDetails())
+	err = err2.Details(&a2)
+	require.NoError(t, err)
+	require.Equal(t, &testErrorDetails4, a2)
+
+	// test EncodedValues as Details
+	errorActivityFn := func() error {
+		return err1
+	}
+	RegisterActivity(errorActivityFn)
+	s := &WorkflowTestSuite{}
+	env := s.NewTestActivityEnvironment()
+	_, err = env.ExecuteActivity(errorActivityFn)
+	require.Error(t, err)
+	err3, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err3.HasDetails())
+	b1 := testStruct2{}
+	require.NoError(t, err3.Details(&b1))
+	require.Equal(t, testErrorDetails4, b1)
+
+	errorActivityFn2 := func() error {
+		return err2 // pointer in details
+	}
+	RegisterActivity(errorActivityFn2)
+	_, err = env.ExecuteActivity(errorActivityFn2)
+	require.Error(t, err)
+	err4, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err4.HasDetails())
+	b2 := &testStruct2{}
+	require.NoError(t, err4.Details(&b2))
+	require.Equal(t, &testErrorDetails4, b2)
+
+	// test workflow error
+	errorWorkflowFn := func(ctx Context) error {
+		return err1
+	}
+	RegisterWorkflow(errorWorkflowFn)
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(errorWorkflowFn)
+	err = wfEnv.GetWorkflowError()
+	require.Error(t, err)
+	err5, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err5.HasDetails())
+	err5.Details(&b1)
+	require.NoError(t, err5.Details(&b1))
+	require.Equal(t, testErrorDetails4, b1)
+
+	errorWorkflowFn2 := func(ctx Context) error {
+		return err2 // pointer in details
+	}
+	RegisterWorkflow(errorWorkflowFn2)
+	wfEnv.ExecuteWorkflow(errorWorkflowFn2)
+	err = wfEnv.GetWorkflowError()
+	require.Error(t, err)
+	err6, ok := err.(*CustomError)
+	require.True(t, ok)
+	require.True(t, err6.HasDetails())
+	err6.Details(&b2)
+	require.NoError(t, err6.Details(&b2))
+	require.Equal(t, &testErrorDetails4, b2)
 }
 
 func Test_CanceledError(t *testing.T) {

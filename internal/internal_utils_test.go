@@ -67,3 +67,41 @@ func TestNewValue(t *testing.T) {
 	NewValue(data).Get(&res)
 	require.Equal(t, res, heartbeatDetail)
 }
+
+func TestGetErrorDetails_CustomError(t *testing.T) {
+	dc := newDefaultDataConverter()
+	details, err := dc.ToData("error details")
+	require.NoError(t, err)
+
+	val := newEncodedValues(details, dc).(*EncodedValues)
+	customErr1 := NewCustomError(customErrReasonA, val)
+	reason, data := getErrorDetails(customErr1, dc)
+	require.Equal(t, customErrReasonA, reason)
+	require.Equal(t, val.values, data)
+
+	customErr2 := NewCustomError(customErrReasonA, testErrorDetails1)
+	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	require.NoError(t, err)
+	reason, data = getErrorDetails(customErr2, dc)
+	require.Equal(t, customErrReasonA, reason)
+	require.Equal(t, val2, data)
+}
+
+func TestGetErrorDetails_CancelError(t *testing.T) {
+	dc := newDefaultDataConverter()
+	details, err := dc.ToData("error details")
+	require.NoError(t, err)
+
+	val := newEncodedValues(details, dc).(*EncodedValues)
+	canceledErr1 := NewCanceledError(val)
+	reason, data := getErrorDetails(canceledErr1, dc)
+	require.Equal(t, errReasonCanceled, reason)
+	require.Equal(t, val.values, data)
+
+	canceledErr2 := NewCanceledError(testErrorDetails1)
+	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	require.NoError(t, err)
+	reason, data = getErrorDetails(canceledErr2, dc)
+	require.Equal(t, errReasonCanceled, reason)
+	require.Equal(t, val2, data)
+}
