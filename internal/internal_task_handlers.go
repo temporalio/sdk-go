@@ -186,9 +186,9 @@ func isDecisionEvent(eventType s.EventType) bool {
 		s.EventTypeWorkflowExecutionCanceled,
 		s.EventTypeWorkflowExecutionContinuedAsNew,
 		s.EventTypeActivityTaskScheduled,
-		s.EventTypeActivityTaskCancelRequested,
+		s.EventTypeActivityTaskCancelRequested, s.EventTypeRequestCancelActivityTaskFailed,
 		s.EventTypeTimerStarted,
-		s.EventTypeTimerCanceled,
+		s.EventTypeTimerCanceled, s.EventTypeCancelTimerFailed,
 		s.EventTypeMarkerRecorded,
 		s.EventTypeStartChildWorkflowExecutionInitiated,
 		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
@@ -927,14 +927,20 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		return true
 
 	case s.DecisionTypeRequestCancelActivityTask:
-		if e.GetEventType() != s.EventTypeActivityTaskCancelRequested {
+		if e.GetEventType() != s.EventTypeActivityTaskCancelRequested && e.GetEventType() != s.EventTypeRequestCancelActivityTaskFailed {
 			return false
 		}
-		eventAttributes := e.ActivityTaskCancelRequestedEventAttributes
 		decisionAttributes := d.RequestCancelActivityTaskDecisionAttributes
-
-		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
-			return false
+		if e.GetEventType() == s.EventTypeActivityTaskCancelRequested {
+			eventAttributes := e.ActivityTaskCancelRequestedEventAttributes
+			if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
+				return false
+			}
+		} else if e.GetEventType() == s.EventTypeRequestCancelActivityTaskFailed {
+			eventAttributes := e.RequestCancelActivityTaskFailedEventAttributes
+			if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
+				return false
+			}
 		}
 
 		return true
@@ -954,14 +960,20 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		return true
 
 	case s.DecisionTypeCancelTimer:
-		if e.GetEventType() != s.EventTypeTimerCanceled {
+		if e.GetEventType() != s.EventTypeTimerCanceled && e.GetEventType() != s.EventTypeCancelTimerFailed {
 			return false
 		}
-		eventAttributes := e.TimerCanceledEventAttributes
 		decisionAttributes := d.CancelTimerDecisionAttributes
-
-		if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
-			return false
+		if e.GetEventType() == s.EventTypeTimerCanceled {
+			eventAttributes := e.TimerCanceledEventAttributes
+			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+				return false
+			}
+		} else if e.GetEventType() == s.EventTypeCancelTimerFailed {
+			eventAttributes := e.CancelTimerFailedEventAttributes
+			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+				return false
+			}
 		}
 
 		return true
