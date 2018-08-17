@@ -1084,7 +1084,7 @@ func testDataConverterHelper(t *testing.T, dc encoded.DataConverter) {
 }
 
 func TestDefaultDataConverter(t *testing.T) {
-	dc := newDefaultDataConverter()
+	dc := getDefaultDataConverter()
 	testDataConverterHelper(t, dc)
 }
 
@@ -1124,7 +1124,7 @@ func TestTestDataConverter(t *testing.T) {
 }
 
 func TestDecodeArg(t *testing.T) {
-	dc := newDefaultDataConverter()
+	dc := getDefaultDataConverter()
 
 	b, err := encodeArg(dc, testErrorDetails3)
 	require.NoError(t, err)

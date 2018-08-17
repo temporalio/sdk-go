@@ -191,7 +191,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics scope configured for cadence worker. Use NoopScope as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = newDefaultDataConverter()
+		params.DataConverter = getDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for cadence worker. Use default one.")
 	}
 }
@@ -658,7 +658,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 // encode multiple arguments(arguments to a function).
 func encodeArgs(dc encoded.DataConverter, args []interface{}) ([]byte, error) {
 	if dc == nil {
-		return newDefaultDataConverter().ToData(args...)
+		return getDefaultDataConverter().ToData(args...)
 	}
 	return dc.ToData(args...)
 }
@@ -666,7 +666,7 @@ func encodeArgs(dc encoded.DataConverter, args []interface{}) ([]byte, error) {
 // decode multiple arguments(arguments to a function).
 func decodeArgs(dc encoded.DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
 	if dc == nil {
-		dc = newDefaultDataConverter()
+		dc = getDefaultDataConverter()
 	}
 	var r []interface{}
 argsLoop:
@@ -691,7 +691,7 @@ argsLoop:
 // encode single value(like return parameter).
 func encodeArg(dc encoded.DataConverter, arg interface{}) ([]byte, error) {
 	if dc == nil {
-		return newDefaultDataConverter().ToData(arg)
+		return getDefaultDataConverter().ToData(arg)
 	}
 	return dc.ToData(arg)
 }
@@ -699,7 +699,7 @@ func encodeArg(dc encoded.DataConverter, arg interface{}) ([]byte, error) {
 // decode single value(like return parameter).
 func decodeArg(dc encoded.DataConverter, data []byte, to interface{}) error {
 	if dc == nil {
-		return newDefaultDataConverter().FromData(data, to)
+		return getDefaultDataConverter().FromData(data, to)
 	}
 	return dc.FromData(data, to)
 }
@@ -854,11 +854,11 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 
 func getDataConverterFromActivityCtx(ctx context.Context) encoded.DataConverter {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return newDefaultDataConverter()
+		return getDefaultDataConverter()
 	}
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	if info.dataConverter == nil {
-		return newDefaultDataConverter()
+		return getDefaultDataConverter()
 	}
 	return info.dataConverter
 }
@@ -1178,7 +1178,7 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
 	}
 	if options.DataConverter == nil {
-		options.DataConverter = newDefaultDataConverter()
+		options.DataConverter = getDefaultDataConverter()
 	}
 	return options
 }
@@ -1194,8 +1194,10 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 	return nil
 }
 
-func newDefaultDataConverter() encoded.DataConverter {
-	return &defaultDataConverter{}
+var defaultJsonDataConverter encoded.DataConverter = &defaultDataConverter{}
+
+func getDefaultDataConverter() encoded.DataConverter {
+	return defaultJsonDataConverter
 }
 
 func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {

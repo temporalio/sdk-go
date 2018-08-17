@@ -274,7 +274,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		env.workerOptions.MetricsScope = env.metricsScope
 	}
 	if env.workerOptions.DataConverter == nil {
-		env.workerOptions.DataConverter = newDefaultDataConverter()
+		env.workerOptions.DataConverter = getDefaultDataConverter()
 	}
 
 	return env

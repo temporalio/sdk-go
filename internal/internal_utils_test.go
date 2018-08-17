@@ -69,7 +69,7 @@ func TestNewValue(t *testing.T) {
 }
 
 func TestGetErrorDetails_CustomError(t *testing.T) {
-	dc := newDefaultDataConverter()
+	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
@@ -88,7 +88,7 @@ func TestGetErrorDetails_CustomError(t *testing.T) {
 }
 
 func TestGetErrorDetails_CancelError(t *testing.T) {
-	dc := newDefaultDataConverter()
+	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 

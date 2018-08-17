@@ -84,7 +84,7 @@ func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 
 func TestDecodedValue(t *testing.T) {
 	env := &workflowEnvironmentImpl{
-		dataConverter: newDefaultDataConverter(),
+		dataConverter: getDefaultDataConverter(),
 	}
 	testDecodeValueHelper(t, env)
 }
@@ -98,7 +98,7 @@ func TestDecodedValue_WithDataConverter(t *testing.T) {
 
 func Test_DecodedValuePtr(t *testing.T) {
 	env := &workflowEnvironmentImpl{
-		dataConverter: newDefaultDataConverter(),
+		dataConverter: getDefaultDataConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		ao := a.(*ActivityOptions)
@@ -117,7 +117,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 
 func Test_DecodedValueNil(t *testing.T) {
 	env := &workflowEnvironmentImpl{
-		dataConverter: newDefaultDataConverter(),
+		dataConverter: getDefaultDataConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		return a == nil && b == nil

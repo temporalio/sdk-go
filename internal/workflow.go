@@ -778,7 +778,7 @@ func GetSignalChannel(ctx Context, signalName string) Channel {
 
 func newEncodedValue(value []byte, dc encoded.DataConverter) encoded.Value {
 	if dc == nil {
-		dc = newDefaultDataConverter()
+		dc = getDefaultDataConverter()
 	}
 	return &EncodedValue{value, dc}
 }

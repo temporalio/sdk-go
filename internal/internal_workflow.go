@@ -1058,7 +1058,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	}
 
 	if dataConverter == nil {
-		dataConverter = newDefaultDataConverter()
+		dataConverter = getDefaultDataConverter()
 	}
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1113,7 +1113,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.queryHandlers = make(map[string]func([]byte) ([]byte, error))
 	}
 	if newOptions.dataConverter == nil {
-		newOptions.dataConverter = newDefaultDataConverter()
+		newOptions.dataConverter = getDefaultDataConverter()
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
@@ -1121,7 +1121,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 func getDataConverterFromWorkflowContext(ctx Context) encoded.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.dataConverter == nil {
-		return newDefaultDataConverter()
+		return getDefaultDataConverter()
 	}
 	return options.dataConverter
 }

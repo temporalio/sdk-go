@@ -341,7 +341,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	if options != nil && options.DataConverter != nil {
 		dataConverter = options.DataConverter
 	} else {
-		dataConverter = newDefaultDataConverter()
+		dataConverter = getDefaultDataConverter()
 	}
 	return &workflowClient{
 		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),

@@ -334,7 +334,7 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interf
 func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter encoded.DataConverter) error {
 	fType := reflect.TypeOf(f)
 	if dataConverter == nil {
-		dataConverter = newDefaultDataConverter()
+		dataConverter = getDefaultDataConverter()
 	}
 
 	switch getKind(fType) {

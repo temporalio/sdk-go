@@ -72,7 +72,7 @@ type (
 
 func newEncodedValues(values []byte, dc encoded.DataConverter) encoded.Values {
 	if dc == nil {
-		dc = newDefaultDataConverter()
+		dc = getDefaultDataConverter()
 	}
 	return &EncodedValues{values, dc}
 }

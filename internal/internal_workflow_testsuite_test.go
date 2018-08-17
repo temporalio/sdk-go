@@ -103,7 +103,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter(
 		}
 
 		var result1 string
-		ctx1 := WithDataConverter(ctx, newDefaultDataConverter()) // use another converter to run activity
+		ctx1 := WithDataConverter(ctx, getDefaultDataConverter()) // use another converter to run activity
 		err1 := ExecuteActivity(ctx1, testActivityHello, "world1").Get(ctx1, &result1)
 		if err1 != nil {
 			return "", err1

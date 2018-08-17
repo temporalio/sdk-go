@@ -240,7 +240,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	filterType := shared.HistoryEventFilterTypeCloseEvent
 	eventType := shared.EventTypeWorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(newDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
 		History: &shared.History{
@@ -387,7 +387,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	filterType := shared.HistoryEventFilterTypeCloseEvent
 	eventType := shared.EventTypeWorkflowExecutionCanceled
 	details := "some details"
-	encodedDetails, _ := encodeArg(newDefaultDataConverter(), details)
+	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
 		History: &shared.History{
@@ -435,7 +435,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := shared.EventTypeWorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	dataConverter := newDefaultDataConverter()
+	dataConverter := getDefaultDataConverter()
 	encodedDetails, _ := encodeArg(dataConverter, details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
@@ -587,7 +587,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), getRequest1, gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse1, nil).Times(1)
 
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(newDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
 	eventType2 := shared.EventTypeWorkflowExecutionCompleted
 	getRequest2 := getGetWorkflowExecutionHistoryRequest(filterType)
 	getRequest2.Execution.RunId = common.StringPtr(newRunID)
@@ -743,7 +743,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(newDefaultDataConverter(), client.dataConverter)
+	s.Equal(getDefaultDataConverter(), client.dataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }

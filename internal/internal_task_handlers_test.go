@@ -628,7 +628,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		a.d = d.actWaitDuration
 		wep := workerExecutionParameters{
 			Logger:        t.logger,
-			DataConverter: newDefaultDataConverter(),
+			DataConverter: getDefaultDataConverter(),
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, hostEnv)
 		pats := &s.PollForActivityTaskResponse{

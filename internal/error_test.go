@@ -103,7 +103,7 @@ func Test_TimeoutError(t *testing.T) {
 	// test heartbeatTimeout inside internal_event_handlers
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
-		dataConverter:   newDefaultDataConverter(),
+		dataConverter:   getDefaultDataConverter(),
 	}
 	h := newDecisionsHelper()
 	var actualErr error
