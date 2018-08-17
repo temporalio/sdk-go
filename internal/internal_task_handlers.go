@@ -1122,14 +1122,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		wth.logger.Error("Workflow panic.",
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
-		failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
-		_, details := getErrorDetails(panicErr, wth.dataConverter)
-		return &s.RespondDecisionTaskFailedRequest{
-			TaskToken: task.TaskToken,
-			Cause:     &failedCause,
-			Details:   details,
-			Identity:  common.StringPtr(wth.identity),
-		}
+		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity)
 	}
 
 	// complete decision task
@@ -1184,6 +1177,17 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Identity:                   common.StringPtr(wth.identity),
 		ReturnNewDecisionTask:      common.BoolPtr(true),
 		ForceCreateNewDecisionTask: common.BoolPtr(forceNewDecision),
+	}
+}
+
+func errorToFailDecisionTask(taskToken []byte, err error, identity string) *s.RespondDecisionTaskFailedRequest {
+	failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
+	_, details := getErrorDetails(err, nil)
+	return &s.RespondDecisionTaskFailedRequest{
+		TaskToken: taskToken,
+		Cause:     &failedCause,
+		Details:   details,
+		Identity:  common.StringPtr(identity),
 	}
 }
 
