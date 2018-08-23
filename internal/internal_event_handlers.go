@@ -292,6 +292,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowType = workflowTypePtr(*params.workflowType)
 	attributes.ChildPolicy = params.childPolicy.toThriftChildPolicyPtr()
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
+	attributes.RetryPolicy = params.retryPolicy
 
 	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
 	decision.setData(&scheduledChildWorkflow{
@@ -362,6 +363,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = common.Int32Ptr(parameters.StartToCloseTimeoutSeconds)
 	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToStartTimeoutSeconds)
 	scheduleTaskAttr.HeartbeatTimeoutSeconds = common.Int32Ptr(parameters.HeartbeatTimeoutSeconds)
+	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 
 	decision := wc.decisionsHelper.scheduleActivityTask(scheduleTaskAttr)
 	decision.setData(&scheduledActivity{

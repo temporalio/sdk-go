@@ -48,11 +48,60 @@ type (
 		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
 		StartedTimestamp   time.Time     // Time of activity start
 		Deadline           time.Time     // Time of activity timeout
+		Attempt            int           // Attempt starts from 0, and increased by 1 for every retry if retry policy is specified.
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity
 	RegisterActivityOptions struct {
 		Name string
+	}
+
+	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
+	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+	// subjected to change in the future.
+	ActivityOptions struct {
+		// TaskList that the activity needs to be scheduled on.
+		// optional: The default task list with the same name as the workflow task list.
+		TaskList string
+
+		// ScheduleToCloseTimeout - The end to end time out for the activity needed.
+		// The zero value of this uses default value.
+		// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
+		ScheduleToCloseTimeout time.Duration
+
+		// ScheduleToStartTimeout - The queue time out before the activity starts executed.
+		// Mandatory: No default.
+		ScheduleToStartTimeout time.Duration
+
+		// StartToCloseTimeout - The time out from the start of execution to end of it.
+		// Mandatory: No default.
+		StartToCloseTimeout time.Duration
+
+		// HeartbeatTimeout - The periodic timeout while the activity is in execution. This is
+		// the max interval the server needs to hear at-least one ping from the activity.
+		// Optional: Default zero, means no heart beating is needed.
+		HeartbeatTimeout time.Duration
+
+		// WaitForCancellation - Whether to wait for cancelled activity to be completed(
+		// activity can be failed, completed, cancel accepted)
+		// Optional: default false
+		WaitForCancellation bool
+
+		// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
+		// to specify this then talk to cadence team. This is something will be done in future.
+		// Optional: default empty string
+		ActivityID string
+
+		// RetryPolicy specify how to retry activity if error happens.
+		// Optional: default is no retry
+		RetryPolicy *RetryPolicy
+	}
+
+	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
+	LocalActivityOptions struct {
+		// ScheduleToCloseTimeout - The end to end timeout for the local activity.
+		// This field is required.
+		ScheduleToCloseTimeout time.Duration
 	}
 )
 
@@ -107,6 +156,7 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 		ScheduledTimestamp: env.scheduledTimestamp,
 		StartedTimestamp:   env.startedTimestamp,
 		TaskList:           env.taskList,
+		Attempt:            env.attempt,
 	}
 }
 
@@ -201,51 +251,8 @@ func WithActivityTask(
 		startedTimestamp:   started,
 		taskList:           taskList,
 		dataConverter:      dataConverter,
+		attempt:            int(task.GetAttempt()),
 	})
-}
-
-// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-type ActivityOptions struct {
-	// TaskList that the activity needs to be scheduled on.
-	// optional: The default task list with the same name as the workflow task list.
-	TaskList string
-
-	// ScheduleToCloseTimeout - The end to end time out for the activity needed.
-	// The zero value of this uses default value.
-	// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
-	ScheduleToCloseTimeout time.Duration
-
-	// ScheduleToStartTimeout - The queue time out before the activity starts executed.
-	// Mandatory: No default.
-	ScheduleToStartTimeout time.Duration
-
-	// StartToCloseTimeout - The time out from the start of execution to end of it.
-	// Mandatory: No default.
-	StartToCloseTimeout time.Duration
-
-	// HeartbeatTimeout - The periodic timeout while the activity is in execution. This is
-	// the max interval the server needs to hear at-least one ping from the activity.
-	// Optional: Default zero, means no heart beating is needed.
-	HeartbeatTimeout time.Duration
-
-	// WaitForCancellation - Whether to wait for cancelled activity to be completed(
-	// activity can be failed, completed, cancel accepted)
-	// Optional: default false
-	WaitForCancellation bool
-
-	// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
-	// to specify this then talk to cadence team. This is something will be done in future.
-	// Optional: default empty string
-	ActivityID string
-}
-
-// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
-type LocalActivityOptions struct {
-	// ScheduleToCloseTimeout - The end to end timeout for the local activity.
-	// This field is required.
-	ScheduleToCloseTimeout time.Duration
 }
 
 // WithActivityOptions adds all options to the copy of the context.
@@ -262,6 +269,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = common.StringPtr(options.ActivityID)
+	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
 	return ctx1
 }
 
@@ -324,4 +332,26 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).WaitForCancellation = wait
 	return ctx1
+}
+
+// WithRetryPolicy adds retry policy to the copy of the context
+func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).RetryPolicy = convertRetryPolicy(&retryPolicy)
+	return ctx1
+}
+
+func convertRetryPolicy(retryPolicy *RetryPolicy) *shared.RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+	thriftRetryPolicy := shared.RetryPolicy{
+		InitialIntervalInSeconds:    common.Int32Ptr(common.Int32Ceil(retryPolicy.InitialInterval.Seconds())),
+		MaximumIntervalInSeconds:    common.Int32Ptr(common.Int32Ceil(retryPolicy.MaximumInterval.Seconds())),
+		BackoffCoefficient:          &retryPolicy.BackoffCoefficient,
+		MaximumAttempts:             &retryPolicy.MaximumAttempts,
+		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
+		ExpirationIntervalInSeconds: common.Int32Ptr(common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds())),
+	}
+	return &thriftRetryPolicy
 }

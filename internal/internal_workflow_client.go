@@ -178,6 +178,7 @@ func (wc *workflowClient) StartWorkflow(
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
 		Identity:                            common.StringPtr(wc.identity),
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
+		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -327,6 +328,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		SignalName:                          common.StringPtr(signalName),
 		SignalInput:                         signalInput,
 		Identity:                            common.StringPtr(wc.identity),
+		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 	}
 
 	var response *s.StartWorkflowExecutionResponse

@@ -176,6 +176,10 @@ type (
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
 		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate
 		WorkflowIDReusePolicy WorkflowIDReusePolicy
+
+		// RetryPolicy specify how to retry child workflow if error happens.
+		// Optional: default is no retry
+		RetryPolicy *RetryPolicy
 	}
 
 	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
@@ -534,6 +538,7 @@ type WorkflowInfo struct {
 	ExecutionStartToCloseTimeoutSeconds int32
 	TaskStartToCloseTimeoutSeconds      int32
 	Domain                              string
+	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
@@ -711,6 +716,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.childPolicy = cwo.ChildPolicy
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
+	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
 
 	return ctx1
 }

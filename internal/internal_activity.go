@@ -27,11 +27,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
+	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
-	"time"
 )
 
 type (
@@ -60,6 +62,7 @@ type (
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
 		OriginalTaskListName          string
+		RetryPolicy                   *shared.RetryPolicy
 	}
 
 	localActivityOptions struct {
@@ -116,6 +119,7 @@ type (
 		startedTimestamp   time.Time
 		taskList           string
 		dataConverter      encoded.DataConverter
+		attempt            int // starts from 0.
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -179,6 +183,10 @@ func getValidatedActivityOptions(ctx Context) (*activityOptions, error) {
 		return nil, errors.New("invalid negative HeartbeatTimeoutSeconds")
 	}
 
+	if err := validateRetryPolicy(p.RetryPolicy); err != nil {
+		return nil, err
+	}
+
 	return p, nil
 }
 
@@ -192,6 +200,37 @@ func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error
 	}
 
 	return p, nil
+}
+
+func validateRetryPolicy(p *shared.RetryPolicy) error {
+	if p == nil {
+		return nil
+	}
+
+	if p.GetInitialIntervalInSeconds() <= 0 {
+		return errors.New("missing or negative InitialIntervalInSeconds on retry policy")
+	}
+	if p.GetMaximumIntervalInSeconds() < 0 {
+		return errors.New("negative MaximumIntervalInSeconds on retry policy is invalid")
+	}
+	if p.GetMaximumIntervalInSeconds() == 0 {
+		// if not set, default to 100x of initial interval
+		p.MaximumIntervalInSeconds = common.Int32Ptr(100 * p.GetInitialIntervalInSeconds())
+	}
+	if p.GetMaximumAttempts() < 0 {
+		return errors.New("negative MaximumAttempts on retry policy is invalid")
+	}
+	if p.GetExpirationIntervalInSeconds() < 0 {
+		return errors.New("negative ExpirationIntervalInSeconds on retry policy is invalid")
+	}
+	if p.GetBackoffCoefficient() < 1 {
+		return errors.New("BackoffCoefficient on retry policy cannot be less than 1.0")
+	}
+	if p.GetMaximumAttempts() == 0 && p.GetExpirationIntervalInSeconds() == 0 {
+		return errors.New("both MaximumAttempts and ExpirationIntervalInSeconds on retry policy are not set, at least one of them must be set")
+	}
+
+	return nil
 }
 
 func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {
@@ -359,6 +398,11 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 	var newParams activityOptions
 	if params != nil {
 		newParams = *params
+		if params.RetryPolicy != nil {
+			var newRetryPolicy shared.RetryPolicy
+			newRetryPolicy = *newParams.RetryPolicy
+			newParams.RetryPolicy = &newRetryPolicy
+		}
 	}
 	return WithValue(ctx, activityOptionsContextKey, &newParams)
 }

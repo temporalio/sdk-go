@@ -169,6 +169,7 @@ type (
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       encoded.DataConverter
+		retryPolicy                         *shared.RetryPolicy
 	}
 
 	executeWorkflowParams struct {
@@ -1090,6 +1091,9 @@ func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
 	}
 	if p.executionStartToCloseTimeoutSeconds == nil || *p.executionStartToCloseTimeoutSeconds <= 0 {
 		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
+	}
+	if err := validateRetryPolicy(p.retryPolicy); err != nil {
+		return nil, err
 	}
 
 	return p, nil

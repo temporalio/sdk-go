@@ -44,3 +44,8 @@
 //
 // testsuite - unit testing framework for activity and workflow testing.
 package cadence
+
+import "go.uber.org/cadence/internal"
+
+// RetryPolicy defines the retry policy for activity/workflow.
+type RetryPolicy = internal.RetryPolicy

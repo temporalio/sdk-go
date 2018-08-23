@@ -276,6 +276,40 @@ type (
 		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate.
 		// Optional: defaulted to WorkflowIDReusePolicyAllowDuplicateFailedOnly.
 		WorkflowIDReusePolicy WorkflowIDReusePolicy
+
+		// RetryPolicy - Optional retry policy for workflow. If a retry policy is specified, in case of workflow failure
+		// server will start new workflow execution if needed based on the retry policy.
+		RetryPolicy *RetryPolicy
+	}
+
+	// RetryPolicy defines the retry policy
+	RetryPolicy struct {
+		// Backoff interval for the first retry. If coefficient is 1.0 then it is used for all retries.
+		// Required, no default value.
+		InitialInterval time.Duration
+
+		// Coefficient used to calculate the next retry backoff interval.
+		// The next retry interval is previous interval multiplied by this coefficient.
+		// Must be 1 or larger. Default is 2.0.
+		BackoffCoefficient float64
+
+		// Maximum backoff interval between retries. Exponential backoff leads to interval increase.
+		// This value is the cap of the interval. Default is 100x of initial interval.
+		MaximumInterval time.Duration
+
+		// Maximum time to retry.
+		// When exceeded the retries stop even if maximum retries is not reached yet.
+		// If not set or set to 0, it means forever, and rely on MaximumAttempts to stop.
+		// It is not allowed to have both ExpirationInterval and MaximumAttempts not set.
+		ExpirationInterval time.Duration
+
+		// Maximum number of attempts. When exceeded the retries stop even if not expired yet.
+		// If not set or set to 0, it means unlimited, and rely on ExpirationInterval to stop.
+		// It is not allowed to have both ExpirationInterval and MaximumAttempts not set.
+		MaximumAttempts int32
+
+		// Non-Retriable errors. Cadence server will stop retry if error reason matches this list.
+		NonRetriableErrorReasons []string
 	}
 
 	// DomainClient is the client for managing operations on the domain.

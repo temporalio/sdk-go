@@ -496,7 +496,8 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		},
 		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
-		Domain: wth.domain,
+		Domain:  wth.domain,
+		Attempt: attributes.GetAttempt(),
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
