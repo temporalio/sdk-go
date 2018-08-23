@@ -222,6 +222,8 @@ func init() {
 			return true
 		case *shared.DomainAlreadyExistsError:
 			return true
+		case *shared.ServiceBusyError:
+			return true
 		default:
 			return false
 		}
@@ -248,6 +250,11 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RegisterDomain_Result.DomainExistsError")
 			}
 			return &WorkflowService_RegisterDomain_Result{DomainExistsError: e}, nil
+		case *shared.ServiceBusyError:
+			if e == nil {
+				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RegisterDomain_Result.ServiceBusyError")
+			}
+			return &WorkflowService_RegisterDomain_Result{ServiceBusyError: e}, nil
 		}
 
 		return nil, err
@@ -265,6 +272,10 @@ func init() {
 			err = result.DomainExistsError
 			return
 		}
+		if result.ServiceBusyError != nil {
+			err = result.ServiceBusyError
+			return
+		}
 		return
 	}
 
@@ -277,6 +288,7 @@ type WorkflowService_RegisterDomain_Result struct {
 	BadRequestError      *shared.BadRequestError          `json:"badRequestError,omitempty"`
 	InternalServiceError *shared.InternalServiceError     `json:"internalServiceError,omitempty"`
 	DomainExistsError    *shared.DomainAlreadyExistsError `json:"domainExistsError,omitempty"`
+	ServiceBusyError     *shared.ServiceBusyError         `json:"serviceBusyError,omitempty"`
 }
 
 // ToWire translates a WorkflowService_RegisterDomain_Result struct into a Thrift-level intermediate
@@ -296,7 +308,7 @@ type WorkflowService_RegisterDomain_Result struct {
 //   }
 func (v *WorkflowService_RegisterDomain_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -324,6 +336,14 @@ func (v *WorkflowService_RegisterDomain_Result) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 3, Value: w}
+		i++
+	}
+	if v.ServiceBusyError != nil {
+		w, err = v.ServiceBusyError.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 4, Value: w}
 		i++
 	}
 
@@ -386,6 +406,14 @@ func (v *WorkflowService_RegisterDomain_Result) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 4:
+			if field.Value.Type() == wire.TStruct {
+				v.ServiceBusyError, err = _ServiceBusyError_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -397,6 +425,9 @@ func (v *WorkflowService_RegisterDomain_Result) FromWire(w wire.Value) error {
 		count++
 	}
 	if v.DomainExistsError != nil {
+		count++
+	}
+	if v.ServiceBusyError != nil {
 		count++
 	}
 	if count > 1 {
@@ -413,7 +444,7 @@ func (v *WorkflowService_RegisterDomain_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
@@ -425,6 +456,10 @@ func (v *WorkflowService_RegisterDomain_Result) String() string {
 	}
 	if v.DomainExistsError != nil {
 		fields[i] = fmt.Sprintf("DomainExistsError: %v", v.DomainExistsError)
+		i++
+	}
+	if v.ServiceBusyError != nil {
+		fields[i] = fmt.Sprintf("ServiceBusyError: %v", v.ServiceBusyError)
 		i++
 	}
 
@@ -443,6 +478,9 @@ func (v *WorkflowService_RegisterDomain_Result) Equals(rhs *WorkflowService_Regi
 		return false
 	}
 	if !((v.DomainExistsError == nil && rhs.DomainExistsError == nil) || (v.DomainExistsError != nil && rhs.DomainExistsError != nil && v.DomainExistsError.Equals(rhs.DomainExistsError))) {
+		return false
+	}
+	if !((v.ServiceBusyError == nil && rhs.ServiceBusyError == nil) || (v.ServiceBusyError != nil && rhs.ServiceBusyError != nil && v.ServiceBusyError.Equals(rhs.ServiceBusyError))) {
 		return false
 	}
 
