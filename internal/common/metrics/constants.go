@@ -93,4 +93,6 @@ const (
 	StickyCacheMiss  = CadenceMetricsPrefix + "sticky-cache-miss"
 	StickyCacheStall = CadenceMetricsPrefix + "sticky-cache-stall"
 	StickyCacheSize  = CadenceMetricsPrefix + "sticky-cache-size"
+
+	NonDeterministicError = CadenceMetricsPrefix + "non-deterministic-error"
 )
