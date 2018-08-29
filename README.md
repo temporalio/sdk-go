@@ -182,7 +182,7 @@ func startWorker(logger *zap.Logger, service workflowserviceclient.Interface) {
 		MetricsScope: tally.NewTestScope(TaskListName, map[string]string{}),
 	}
 
-	worker := worker.NewWorker(
+	worker := worker.New(
 		service,
 		Domain,
 		TaskListName,
