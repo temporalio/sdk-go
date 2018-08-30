@@ -1122,6 +1122,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow panic
 		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
+			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
 		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity)
@@ -1386,6 +1388,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskListName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			ath.logger.Error("Activity panic.",
+				zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
+				zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
+				zap.String(tagActivityType, t.ActivityType.GetName()),
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
 			scope := ath.metricsScope.GetTaggedScope(tagActivityType, t.ActivityType.GetName())
