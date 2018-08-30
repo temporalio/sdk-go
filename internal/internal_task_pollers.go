@@ -346,6 +346,11 @@ func (wtp *workflowTaskPoller) processLocalActivityResult(lar *localActivityResu
 	w.Lock()
 	defer w.Unlock(nil)
 
+	if w.isDestroyed() {
+		// by the time local activity returns, the workflow context is already destroyed
+		return nil
+	}
+
 	decisionStartTime := w.decisionStartTime
 	decisionTask := w.currentDecisionTask
 	completedRequest, err := w.ProcessLocalActivityResult(lar)
