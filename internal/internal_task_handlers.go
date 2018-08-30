@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -47,6 +48,8 @@ const (
 	defaultHeartBeatIntervalInSec = 10 * 60
 
 	defaultStickyCacheSize = 10000
+
+	noRetryBackoff = time.Duration(-1)
 )
 
 type (
@@ -511,7 +514,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 	historyIterator HistoryIterator) (workflowContext *workflowExecutionContextImpl, err error) {
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
 	defer func() {
-		if err == nil && workflowContext != nil {
+		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
 		metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
@@ -740,12 +743,105 @@ ProcessEvents:
 }
 
 func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
+	if lar.err != nil && w.retryLocalActivity(lar) {
+		return nil, nil // nothing to do here as we are retrying...
+	}
+
 	err := w.eventHandler.ProcessLocalActivityResult(lar)
 	if err != nil {
 		return nil, err
 	}
 
 	return w.CompleteDecisionTask(true), nil
+}
+
+func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
+	if lar.task.retryPolicy == nil || lar.err == nil || lar.err == ErrCanceled {
+		return false
+	}
+
+	backoff := getRetryBackoff(lar)
+	if backoff > 0 && backoff <= w.GetDecisionTimeout() {
+		// we need a local retry
+		time.AfterFunc(backoff, func() {
+			w.Lock()
+			defer w.Unlock(nil)
+
+			// after backoff, check if it is still relevant
+			if w.isDestroyed() {
+				return
+			}
+			if _, ok := w.eventHandler.pendingLaTasks[lar.task.activityID]; !ok {
+				return
+			}
+
+			lar.task.attempt++
+			w.laTunnel.sendTask(lar.task)
+		})
+		return true
+	}
+	// Backoff could be large and potentially much larger than DecisionTaskTimeout. We cannot just sleep locally for
+	// retry. Because it will delay the local activity from complete which keeps the decision task open. In order to
+	// keep decision task open, we have to keep "heartbeating" current decision task.
+	// In that case, it is more efficient to create a server timer with backoff duration and retry when that backoff
+	// timer fires. So here we will return false to indicate we don't need local retry anymore. However, we have to
+	// store the current attempt and backoff to the same LocalActivityResultMarker so the replay can do the right thing.
+	// The backoff timer will be created by workflow.ExecuteLocalActivity().
+	lar.backoff = backoff
+
+	return false
+}
+
+func getRetryBackoff(lar *localActivityResult) time.Duration {
+	p := lar.task.retryPolicy
+	var errReason string
+	if len(p.NonRetriableErrorReasons) > 0 {
+		if lar.err == ErrDeadlineExceeded {
+			errReason = "timeout:" + s.TimeoutTypeScheduleToClose.String()
+		} else {
+			errReason, _ = getErrorDetails(lar.err, nil)
+		}
+	}
+	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, time.Now(), lar.task.expireTime)
+}
+
+func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+	if p.MaximumAttempts == 0 && p.ExpirationInterval == 0 {
+		return noRetryBackoff
+	}
+
+	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
+		return noRetryBackoff // max attempt reached
+	}
+
+	backoffInterval := time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt)))
+	if backoffInterval <= 0 {
+		// math.Pow() could overflow
+		if p.MaximumInterval > 0 {
+			backoffInterval = p.MaximumInterval
+		} else {
+			return noRetryBackoff
+		}
+	}
+
+	if p.MaximumInterval > 0 && backoffInterval > p.MaximumInterval {
+		// cap next interval to MaxInterval
+		backoffInterval = p.MaximumInterval
+	}
+
+	nextScheduleTime := now.Add(backoffInterval)
+	if !expireTime.IsZero() && nextScheduleTime.After(expireTime) {
+		return noRetryBackoff
+	}
+
+	// check if error is non-retriable
+	for _, er := range p.NonRetriableErrorReasons {
+		if er == errReason {
+			return noRetryBackoff
+		}
+	}
+
+	return backoffInterval
 }
 
 func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities bool) interface{} {

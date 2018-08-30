@@ -49,7 +49,15 @@ var (
 
 type (
 	// resultHandler that returns result
-	resultHandler func(result []byte, err error)
+	resultHandler   func(result []byte, err error)
+	laResultHandler func(lar *localActivityResultWrapper)
+
+	localActivityResultWrapper struct {
+		err     error
+		result  []byte
+		attempt int32
+		backoff time.Duration
+	}
 
 	// workflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition

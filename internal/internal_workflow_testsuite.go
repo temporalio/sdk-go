@@ -451,7 +451,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	task := &localActivityTask{
 		activityID: "test-local-activity",
 		params:     &params,
-		callback: func(result []byte, err error) {
+		callback: func(lar *localActivityResultWrapper) {
 		},
 	}
 	taskHandler := localActivityTaskHandler{
@@ -760,7 +760,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	return activityInfo
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo {
+func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := getStringID(env.nextID())
 	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
 	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
@@ -811,7 +811,8 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 	env.logger.Debug("RequestCancelLocalActivity", zap.String(tagActivityID, activityID))
 	delete(env.localActivities, activityID)
 	env.postCallback(func() {
-		task.callback(nil, NewCanceledError())
+		lar := &localActivityResultWrapper{err: ErrCanceled, backoff: noRetryBackoff}
+		task.callback(lar)
 		if env.onLocalActivityCanceledListener != nil {
 			env.onLocalActivityCanceledListener(activityInfo)
 		}
@@ -886,7 +887,8 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 
 	delete(env.localActivities, activityID)
-	task.callback(result.result, result.err)
+	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
+	task.callback(lar)
 	if env.onLocalActivityCompletedListener != nil {
 		if result.err != nil {
 			env.onLocalActivityCompletedListener(activityInfo, nil, result.err)

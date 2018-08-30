@@ -309,6 +309,11 @@ type (
 		MaximumAttempts int32
 
 		// Non-Retriable errors. Cadence server will stop retry if error reason matches this list.
+		// By default, all failures will be retried except SCHEDULE_TO_START timeout failure. For SCHEDULE_TO_START
+		// timeout, instead of retry, you should increase that timeout.
+		// Error reason for custom error is specified when your activity/workflow return cadence.NewCustomError(reason).
+		// Error reasons for timeouts are: "timeout:START_TO_CLOSE" and "timeout:SCHEDULE_TO_CLOSE".
+		// Note, cancellation is not a failure, so it won't be retried.
 		NonRetriableErrorReasons []string
 	}
 

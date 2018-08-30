@@ -48,7 +48,7 @@ type (
 		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
 		StartedTimestamp   time.Time     // Time of activity start
 		Deadline           time.Time     // Time of activity timeout
-		Attempt            int           // Attempt starts from 0, and increased by 1 for every retry if retry policy is specified.
+		Attempt            int32         // Attempt starts from 0, and increased by 1 for every retry if retry policy is specified.
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity
@@ -102,6 +102,10 @@ type (
 		// ScheduleToCloseTimeout - The end to end timeout for the local activity.
 		// This field is required.
 		ScheduleToCloseTimeout time.Duration
+
+		// RetryPolicy specify how to retry activity if error happens.
+		// Optional: default is no retry
+		RetryPolicy *RetryPolicy
 	}
 )
 
@@ -251,7 +255,7 @@ func WithActivityTask(
 		startedTimestamp:   started,
 		taskList:           taskList,
 		dataConverter:      dataConverter,
-		attempt:            int(task.GetAttempt()),
+		attempt:            task.GetAttempt(),
 	})
 }
 
@@ -281,6 +285,7 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	opts := getLocalActivityOptions(ctx1)
 
 	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	opts.RetryPolicy = options.RetryPolicy
 	return ctx1
 }
 

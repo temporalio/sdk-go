@@ -67,6 +67,7 @@ type (
 
 	localActivityOptions struct {
 		ScheduleToCloseTimeoutSeconds int32
+		RetryPolicy                   *RetryPolicy
 	}
 
 	executeActivityParams struct {
@@ -82,6 +83,8 @@ type (
 		InputArgs     []interface{}
 		WorkflowInfo  *WorkflowInfo
 		DataConverter encoded.DataConverter
+		Attempt       int32
+		ScheduledTime time.Time
 	}
 
 	// asyncActivityClient for requesting activity execution
@@ -99,7 +102,7 @@ type (
 
 	// localActivityClient for requesting local activity execution
 	localActivityClient interface {
-		ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo
+		ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo
 
 		RequestCancelLocalActivity(activityID string)
 	}
@@ -119,7 +122,7 @@ type (
 		startedTimestamp   time.Time
 		taskList           string
 		dataConverter      encoded.DataConverter
-		attempt            int // starts from 0.
+		attempt            int32 // starts from 0.
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

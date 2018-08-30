@@ -112,20 +112,25 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
-		activityID string
-		params     *executeLocalActivityParams
-		callback   resultHandler
-		wc         *workflowExecutionContextImpl
-		canceled   bool
-		cancelFunc func()
+		activityID  string
+		params      *executeLocalActivityParams
+		callback    laResultHandler
+		wc          *workflowExecutionContextImpl
+		canceled    bool
+		cancelFunc  func()
+		attempt     int32 // attempt starting from 0
+		retryPolicy *RetryPolicy
+		expireTime  time.Time
 	}
 
 	localActivityMarkerData struct {
-		ActivityID string
-		ErrReason  string
-		ErrJSON    string // string instead of []byte so the encoded blob is human readable
-		ResultJSON string
-		ReplayTime time.Time
+		ActivityID string        `json:"activityId,omitempty"`
+		ErrReason  string        `json:"errReason,omitempty"`
+		ErrJSON    string        `json:"errJson,omitempty"` // string instead of []byte so the encoded blob is human readable
+		ResultJSON string        `json:"resultJson,omitempty"`
+		ReplayTime time.Time     `json:"replayTime,omitempty"`
+		Attempt    int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
+		Backoff    time.Duration `json:"backoff,omitempty"` // retry backoff duration
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -392,9 +397,20 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback resultHandler) *localActivityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := wc.GenerateSequenceID()
-	task := &localActivityTask{activityID: activityID, params: &params, callback: callback}
+	task := &localActivityTask{
+		activityID:  activityID,
+		params:      &params,
+		callback:    callback,
+		retryPolicy: params.RetryPolicy,
+		attempt:     params.Attempt,
+	}
+
+	if params.RetryPolicy != nil && params.RetryPolicy.ExpirationInterval > 0 {
+		task.expireTime = params.ScheduledTime.Add(params.RetryPolicy.ExpirationInterval)
+	}
+
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
 	return &localActivityInfo{activityID: activityID}
@@ -914,11 +930,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
+		lar := &localActivityResultWrapper{}
 		if len(lamd.ErrReason) > 0 {
-			la.callback(nil, constructError(lamd.ErrReason, []byte(lamd.ErrJSON), weh.GetDataConverter()))
+			lar.attempt = lamd.Attempt
+			lar.backoff = lamd.Backoff
+			lar.err = constructError(lamd.ErrReason, []byte(lamd.ErrJSON), weh.GetDataConverter())
 		} else {
-			la.callback([]byte(lamd.ResultJSON), nil)
+			lar.result = []byte(lamd.ResultJSON)
 		}
+		la.callback(lar)
 
 		// update time
 		weh.SetCurrentReplayTime(lamd.ReplayTime)
@@ -935,11 +955,13 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	lamd := localActivityMarkerData{
 		ActivityID: lar.task.activityID,
 		ReplayTime: weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
+		Attempt:    lar.task.attempt,
 	}
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
 		lamd.ErrReason = errReason
 		lamd.ErrJSON = string(errDetails)
+		lamd.Backoff = lar.backoff
 	} else {
 		lamd.ResultJSON = string(lar.result)
 	}

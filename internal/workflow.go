@@ -412,22 +412,64 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 		return future
 	}
 
-	params := executeLocalActivityParams{
+	params := &executeLocalActivityParams{
 		localActivityOptions: *options,
 		ActivityFn:           activity,
 		InputArgs:            args,
 		WorkflowInfo:         GetWorkflowInfo(ctx),
 		DataConverter:        getDataConverterFromWorkflowContext(ctx),
+		ScheduledTime:        Now(ctx), // initial scheduled time
 	}
 
+	Go(ctx, func(ctx Context) {
+		for {
+			f := scheduleLocalActivity(ctx, params)
+			var result []byte
+			err := f.Get(ctx, &result)
+			if retryErr, ok := err.(*needRetryError); ok && retryErr.Backoff > 0 {
+				// Backoff for retry
+				Sleep(ctx, retryErr.Backoff)
+				// increase the attempt, and retry the local activity
+				params.Attempt = retryErr.Attempt + 1
+				continue
+			}
+
+			// not more retry, return whatever is received.
+			settable.Set(result, err)
+			return
+		}
+	})
+
+	return future
+}
+
+type needRetryError struct {
+	Backoff time.Duration
+	Attempt int32
+}
+
+func (e *needRetryError) Error() string {
+	return fmt.Sprintf("Retry backoff: %v, Attempt: %v", e.Backoff, e.Attempt)
+}
+
+func scheduleLocalActivity(ctx Context, params *executeLocalActivityParams) Future {
+	f := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(params, func(r []byte, e error) {
-		settable.Set(r, e)
+	la := getWorkflowEnvironment(ctx).ExecuteLocalActivity(*params, func(lar *localActivityResultWrapper) {
 		if cancellable {
 			// future is done, we don't need cancellation anymore
 			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
+
+		if lar.err == nil || lar.backoff <= 0 {
+			f.Set(lar.result, lar.err)
+			return
+		}
+
+		// set retry error, and it will be handled by workflow.ExecuteLocalActivity().
+		f.Set(nil, &needRetryError{Backoff: lar.backoff, Attempt: lar.attempt})
+		return
 	})
 
 	if cancellable {
@@ -443,7 +485,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 		}
 	}
 
-	return future
+	return f
 }
 
 // ExecuteChildWorkflow requests child workflow execution in the context of a workflow.
