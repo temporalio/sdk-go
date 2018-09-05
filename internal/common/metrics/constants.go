@@ -91,6 +91,7 @@ const (
 
 	StickyCacheHit   = CadenceMetricsPrefix + "sticky-cache-hit"
 	StickyCacheMiss  = CadenceMetricsPrefix + "sticky-cache-miss"
+	StickyCacheEvict = CadenceMetricsPrefix + "sticky-cache-evict"
 	StickyCacheStall = CadenceMetricsPrefix + "sticky-cache-stall"
 	StickyCacheSize  = CadenceMetricsPrefix + "sticky-cache-size"
 

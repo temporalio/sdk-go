@@ -578,7 +578,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, domainNotActiveError)
 
 	called := false
-	cancelHandler := func () { called = true }
+	cancelHandler := func() { called = true }
 
 	cadenceInvoker := newServiceInvoker(
 		nil,

@@ -255,6 +255,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(workflowTask *workflowTask) e
 func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
 	tchCtx, cancel, opt := newChannelContext(context.Background())
 	defer cancel()
+	wtp.metricsScope.Counter(metrics.StickyCacheEvict).Inc(1)
 	if _, err := wtp.service.ResetStickyTaskList(tchCtx, rst.task, opt...); err != nil {
 		wtp.logger.Warn("ResetStickyTaskList failed",
 			zap.String(tagWorkflowID, rst.task.Execution.GetWorkflowId()),
