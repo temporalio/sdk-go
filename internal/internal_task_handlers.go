@@ -517,7 +517,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
-		metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(workflowCache.Size()))
+		metricsScope.Gauge(metrics.StickyCacheSize).Update(float64(getWorkflowCache().Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()
