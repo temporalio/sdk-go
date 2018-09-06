@@ -355,10 +355,10 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	if err != nil {
 		panic(err)
 	}
-	env.executeWorkflowInternal(workflowType.Name, input)
+	env.executeWorkflowInternal(0, workflowType.Name, input)
 }
 
-func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType string, input []byte) {
+func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input []byte) {
 	env.workflowInfo.WorkflowType.Name = workflowType
 	workflowDefinition, err := env.getWorkflowDefinition(env.workflowInfo.WorkflowType)
 	if err != nil {
@@ -371,7 +371,16 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(workflowType str
 	env.postCallback(func() {
 		env.workflowDef.Execute(env, input)
 		// kick off first decision task to start the workflow
-		env.startDecisionTask()
+		if delayStart == 0 {
+			env.startDecisionTask()
+		} else {
+			// we need to delayStart start workflow, decrease runningCount so mockClock could auto forward
+			env.runningCount--
+			env.registerDelayedCallback(func() {
+				env.runningCount++
+				env.startDecisionTask()
+			}, delayStart)
+		}
 	}, false)
 	env.startMainLoop()
 }
@@ -711,13 +720,11 @@ func (h *testWorkflowHandle) retryAsChild() bool {
 		}
 		backoff := getRetryBackoffFromThriftRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
 		if backoff > 0 {
-			env.registerDelayedCallback(func() {
-				// remove the current child workflow from the pending child workflow map because
-				// the childWorkflowID will be the same for retry run.
-				delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
-				params.attempt++
-				env.parentEnv.ExecuteChildWorkflow(*params, h.callback, nil /* child workflow already started */)
-			}, backoff)
+			// remove the current child workflow from the pending child workflow map because
+			// the childWorkflowID will be the same for retry run.
+			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
+			params.attempt++
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 
 			return true
 		}
@@ -1492,6 +1499,10 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+	return env.executeChildWorkflowWithDelay(0, params, callback, startedHandler)
+}
+
+func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
 		env.logger.Sugar().Infof("ExecuteChildWorkflow failed: %v", err)
@@ -1502,7 +1513,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params executeWorkf
 	env.runningCount++
 
 	// run child workflow in separate goroutinue
-	go childEnv.executeWorkflowInternal(params.workflowType.Name, params.input)
+	go childEnv.executeWorkflowInternal(delayStart, params.workflowType.Name, params.input)
 
 	return nil
 }
@@ -1571,6 +1582,25 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 	env.postCallback(func() {
 		env.signalHandler(name, data)
 	}, true)
+}
+
+func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalName string, input interface{}) error {
+	data, err := encodeArg(env.GetDataConverter(), input)
+	if err != nil {
+		panic(err)
+	}
+
+	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
+		if workflowHandle.handled {
+			return &shared.EntityNotExistsError{Message: fmt.Sprintf("Workflow %v already completed", workflowID)}
+		}
+		workflowHandle.env.postCallback(func() {
+			workflowHandle.env.signalHandler(signalName, data)
+		}, true)
+		return nil
+	}
+
+	return &shared.EntityNotExistsError{Message: fmt.Sprintf("Workflow %v not exists", workflowID)}
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {

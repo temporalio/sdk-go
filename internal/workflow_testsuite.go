@@ -511,6 +511,11 @@ func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{})
 	t.impl.signalWorkflow(name, input)
 }
 
+// SignalWorkflowByID sends signal to the currently running test workflow.
+func (t *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName string, input interface{}) error {
+	return t.impl.signalWorkflowByID(workflowID, signalName, input)
+}
+
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
 func (t *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (encoded.Value, error) {
 	return t.impl.queryWorkflow(queryType, args...)

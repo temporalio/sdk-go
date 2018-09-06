@@ -117,7 +117,7 @@ type (
 		//  }
 		GetChildWorkflowExecution() Future
 
-		// SignalChildWorkflow sends a signal to the child workflow. This call will block until child workflow is started.
+		// SignalWorkflowByID sends a signal to the child workflow. This call will block until child workflow is started.
 		SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future
 	}
 

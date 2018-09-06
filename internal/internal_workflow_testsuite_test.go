@@ -769,7 +769,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 	RegisterWorkflow(workflowFn)
 	RegisterWorkflow(childWorkflowFn)
 	env := s.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(time.Hour)
 
 	env.ExecuteWorkflow(workflowFn)
 
@@ -1887,7 +1886,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(time.Hour)
 	RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(workflowFn)
 
@@ -1931,7 +1929,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(time.Hour)
 	RegisterWorkflow(childWorkflowFn)
 	RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(workflowFn)
@@ -1941,4 +1938,64 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 	var result string
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal("retry-done", result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
+	childWorkflowFn := func(ctx Context) (string, error) {
+		info := GetWorkflowInfo(ctx)
+		if info.Attempt < 2 {
+			return "", NewCustomError("bad-luck")
+		}
+
+		ch := GetSignalChannel(ctx, "test-signal-name")
+		timeout := NewTimer(ctx, time.Second*3)
+		s := NewSelector(ctx)
+		var signal string
+		s.AddFuture(timeout, func(f Future) {
+			signal = "timeout"
+		}).AddReceive(ch, func(c Channel, more bool) {
+			c.Receive(ctx, &signal)
+		}).Select(ctx)
+
+		return signal, nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		cwo := ChildWorkflowOptions{
+			WorkflowID:                   "test-retry-signal-child-workflow",
+			ExecutionStartToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts:          3,
+				InitialInterval:          time.Second * 3,
+				MaximumInterval:          time.Second * 3,
+				BackoffCoefficient:       1,
+				NonRetriableErrorReasons: []string{"bad-bug"},
+				ExpirationInterval:       time.Minute,
+			},
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var childResult string
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, &childResult)
+		if err != nil {
+			return "", err
+		}
+
+		return childResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(childWorkflowFn)
+	RegisterWorkflow(workflowFn)
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflowByID("test-retry-signal-child-workflow", "test-signal-name", "test-signal-data")
+	}, time.Second*7 /* after 2nd attempt failed, but before 3rd attempt starts */)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("test-signal-data", result)
 }
