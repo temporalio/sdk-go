@@ -297,22 +297,19 @@ type (
 		// This value is the cap of the interval. Default is 100x of initial interval.
 		MaximumInterval time.Duration
 
-		// Maximum time to retry.
+		// Maximum time to retry. This is required and must be greater than 0.
 		// When exceeded the retries stop even if maximum retries is not reached yet.
-		// If not set or set to 0, it means forever, and rely on MaximumAttempts to stop.
-		// It is not allowed to have both ExpirationInterval and MaximumAttempts not set.
 		ExpirationInterval time.Duration
 
 		// Maximum number of attempts. When exceeded the retries stop even if not expired yet.
 		// If not set or set to 0, it means unlimited, and rely on ExpirationInterval to stop.
-		// It is not allowed to have both ExpirationInterval and MaximumAttempts not set.
 		MaximumAttempts int32
 
-		// Non-Retriable errors. Cadence server will stop retry if error reason matches this list.
-		// By default, all failures will be retried except SCHEDULE_TO_START timeout failure. For SCHEDULE_TO_START
-		// timeout, instead of retry, you should increase that timeout.
+		// Non-Retriable errors. This is optional. Cadence server will stop retry if error reason matches this list.
 		// Error reason for custom error is specified when your activity/workflow return cadence.NewCustomError(reason).
-		// Error reasons for timeouts are: "timeout:START_TO_CLOSE" and "timeout:SCHEDULE_TO_CLOSE".
+		// Error reason for panic error is "cadenceInternal:Panic".
+		// Error reason for any other error is "cadenceInternal:Generic".
+		// Error reason for timeouts is: "cadenceInternal:Timeout".
 		// Note, cancellation is not a failure, so it won't be retried.
 		NonRetriableErrorReasons []string
 	}

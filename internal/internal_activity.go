@@ -223,8 +223,8 @@ func validateRetryPolicy(p *shared.RetryPolicy) error {
 	if p.GetMaximumAttempts() < 0 {
 		return errors.New("negative MaximumAttempts on retry policy is invalid")
 	}
-	if p.GetExpirationIntervalInSeconds() < 0 {
-		return errors.New("negative ExpirationIntervalInSeconds on retry policy is invalid")
+	if p.GetExpirationIntervalInSeconds() <= 0 {
+		return errors.New("ExpirationIntervalInSeconds on retry policy must be greater than 0")
 	}
 	if p.GetBackoffCoefficient() < 1 {
 		return errors.New("BackoffCoefficient on retry policy cannot be less than 1.0")
