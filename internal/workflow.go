@@ -530,6 +530,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		workflowOptions: *options,
 		input:           input,
 		workflowType:    wfType,
+		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
 	}
 
 	var childWorkflowExecution *WorkflowExecution

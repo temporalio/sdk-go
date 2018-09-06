@@ -769,7 +769,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		return false
 	}
 
-	backoff := getRetryBackoff(lar)
+	backoff := getRetryBackoff(lar, time.Now())
 	if backoff > 0 && backoff <= w.GetDecisionTimeout() {
 		// we need a local retry
 		time.AfterFunc(backoff, func() {
@@ -801,7 +801,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time) time.Duration {
 	p := lar.task.retryPolicy
 	var errReason string
 	if len(p.NonRetriableErrorReasons) > 0 {
@@ -811,7 +811,7 @@ func getRetryBackoff(lar *localActivityResult) time.Duration {
 			errReason, _ = getErrorDetails(lar.err, nil)
 		}
 	}
-	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, time.Now(), lar.task.expireTime)
+	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, now, lar.task.expireTime)
 }
 
 func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {

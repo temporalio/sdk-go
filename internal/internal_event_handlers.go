@@ -399,6 +399,14 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := wc.GenerateSequenceID()
+	task := newLocalActivityTask(params, callback, activityID)
+
+	wc.pendingLaTasks[activityID] = task
+	wc.unstartedLaTasks[activityID] = struct{}{}
+	return &localActivityInfo{activityID: activityID}
+}
+
+func newLocalActivityTask(params executeLocalActivityParams, callback laResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
 		activityID:  activityID,
 		params:      &params,
@@ -410,10 +418,7 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActiv
 	if params.RetryPolicy != nil && params.RetryPolicy.ExpirationInterval > 0 {
 		task.expireTime = params.ScheduledTime.Add(params.RetryPolicy.ExpirationInterval)
 	}
-
-	wc.pendingLaTasks[activityID] = task
-	wc.unstartedLaTasks[activityID] = struct{}{}
-	return &localActivityInfo{activityID: activityID}
+	return task
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {

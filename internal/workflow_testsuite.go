@@ -168,7 +168,7 @@ func (t *TestActivityEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (t *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
-	t.impl.startTime = startTime
+	t.impl.setStartTime(startTime)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).

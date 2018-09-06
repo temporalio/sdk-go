@@ -208,12 +208,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	}
 
 	// move forward the mock clock to start time.
-	startTime := env.startTime
-	if startTime == time.Unix(0, 0) {
-		// if start time not set, use current clock time
-		startTime = env.wallClock.Now()
-	}
-	env.mockClock.Add(startTime.Sub(env.mockClock.Now()))
+	env.setStartTime(time.Now())
 
 	// put current workflow as a running workflow so child can send signal to parent
 	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result []byte, err error) {}}
@@ -280,6 +275,16 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 	return env
 }
 
+func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
+	// move forward the mock clock to start time.
+	if startTime.IsZero() {
+		// if start time not set, use current clock time
+		startTime = env.wallClock.Now()
+	}
+	env.mockClock.Add(startTime.Sub(env.mockClock.Now()))
+
+}
+
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite)
@@ -293,6 +298,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
 	}
 	// set workflow info data for child workflow
+	childEnv.workflowInfo.Attempt = params.attempt
 	childEnv.workflowInfo.WorkflowExecution.ID = params.workflowID
 	childEnv.workflowInfo.WorkflowExecution.RunID = params.workflowID + "_RunID"
 	childEnv.workflowInfo.Domain = *params.domain
@@ -672,6 +678,13 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			// It is possible that child workflow could complete after cancellation. In that case, childWorkflowHandle
 			// would have already been removed from the runningWorkflows map by RequestCancelWorkflow().
 			childWorkflowHandle.handled = true
+			// check if a retry is needed
+			if childWorkflowHandle.retryAsChild() {
+				// retry requested, so we don't want to post the error to parent workflow, return here.
+				return
+			}
+
+			// no retry, child workflow is done.
 			env.parentEnv.postCallback(func() {
 				// deliver result
 				childWorkflowHandle.err = env.testError
@@ -682,6 +695,35 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			}, true /* true to trigger parent workflow to resume to handle child workflow's result */)
 		}
 	}
+}
+
+func (h *testWorkflowHandle) retryAsChild() bool {
+	env := h.env
+	if !env.isChildWorkflow() {
+		return false
+	}
+	params := h.params
+	if params.retryPolicy != nil && env.testError != nil {
+		errReason, _ := getErrorDetails(env.testError, env.GetDataConverter())
+		var expireTime time.Time
+		if params.retryPolicy.GetExpirationIntervalInSeconds() > 0 {
+			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.retryPolicy.GetExpirationIntervalInSeconds()))
+		}
+		backoff := getRetryBackoffFromThriftRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
+		if backoff > 0 {
+			env.registerDelayedCallback(func() {
+				// remove the current child workflow from the pending child workflow map because
+				// the childWorkflowID will be the same for retry run.
+				delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
+				params.attempt++
+				env.parentEnv.ExecuteChildWorkflow(*params, h.callback, nil /* child workflow already started */)
+			}, backoff)
+
+			return true
+		}
+	}
+
+	return false
 }
 
 func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, result interface{}, err error) error {
@@ -746,10 +788,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	go func() {
-		result, err := taskHandler.Execute(parameters.TaskListName, task)
-		if err != nil {
-			panic(err)
-		}
+		result := env.executeActivityWithRetryForTest(taskHandler, parameters, task)
+
 		// post activity result to workflow dispatcher
 		env.postCallback(func() {
 			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
@@ -758,6 +798,69 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	}()
 
 	return activityInfo
+}
+
+func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
+	taskHandler ActivityTaskHandler,
+	parameters executeActivityParams,
+	task *shared.PollForActivityTaskResponse,
+) (result interface{}) {
+	var expireTime time.Time
+	if parameters.RetryPolicy != nil && parameters.RetryPolicy.GetExpirationIntervalInSeconds() > 0 {
+		expireTime = env.Now().Add(time.Second * time.Duration(parameters.RetryPolicy.GetExpirationIntervalInSeconds()))
+	}
+
+	for {
+		var err error
+		result, err = taskHandler.Execute(parameters.TaskListName, task)
+		if err != nil {
+			panic(err)
+		}
+
+		// check if a retry is needed
+		if request, ok := result.(*shared.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
+			p := fromThriftRetryPolicy(parameters.RetryPolicy)
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), *request.Reason, env.Now(), expireTime)
+			if backoff > 0 {
+				// need a retry
+				task.Attempt = common.Int32Ptr(task.GetAttempt() + 1)
+				waitCh := make(chan struct{})
+				env.postCallback(func() { env.runningCount-- }, false)
+				env.registerDelayedCallback(func() {
+					env.runningCount++
+					close(waitCh)
+				}, backoff)
+
+				<-waitCh
+				continue
+			}
+		}
+
+		// no retry
+		break
+	}
+
+	return
+}
+
+func fromThriftRetryPolicy(p *shared.RetryPolicy) *RetryPolicy {
+	return &RetryPolicy{
+		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
+		BackoffCoefficient:       p.GetBackoffCoefficient(),
+		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
+		ExpirationInterval:       time.Second * time.Duration(p.GetExpirationIntervalInSeconds()),
+		MaximumAttempts:          p.GetMaximumAttempts(),
+		NonRetriableErrorReasons: p.NonRetriableErrorReasons,
+	}
+}
+
+func getRetryBackoffFromThriftRetryPolicy(tp *shared.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+	if tp == nil {
+		return noRetryBackoff
+	}
+
+	p := fromThriftRetryPolicy(tp)
+	return getRetryBackoffWithNowTime(p, attempt, errReason, now, expireTime)
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
@@ -775,11 +878,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 		return aew.ExecuteWithActualArgs(ctx, params.InputArgs)
 	}
 
-	task := &localActivityTask{
-		activityID: activityID,
-		params:     &params,
-		callback:   callback,
-	}
+	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:   wOptions.BackgroundActivityContext,
 		metricsScope:  wOptions.MetricsScope,
@@ -888,6 +987,10 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 
 	delete(env.localActivities, activityID)
 	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
+	if result.task.retryPolicy != nil && result.err != nil {
+		lar.backoff = getRetryBackoff(result, env.Now())
+		lar.attempt = task.attempt
+	}
 	task.callback(lar)
 	if env.onLocalActivityCompletedListener != nil {
 		if result.err != nil {
@@ -1015,7 +1118,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		}
 	}
 
-	if env.isChildWorkflow() {
+	if env.isChildWorkflow() && env.startedHandler != nil /* startedHandler could be nil for retry */ {
 		// notify parent that child workflow is started
 		env.parentEnv.postCallback(func() {
 			env.startedHandler(childWE, startedErr)

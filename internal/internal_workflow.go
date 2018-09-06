@@ -174,8 +174,10 @@ type (
 
 	executeWorkflowParams struct {
 		workflowOptions
-		workflowType *WorkflowType
-		input        []byte
+		workflowType  *WorkflowType
+		input         []byte
+		attempt       int32     // used by test framework to support child workflow retry
+		scheduledTime time.Time // used by test framework to support child workflow retry
 	}
 
 	// decodeFutureImpl
