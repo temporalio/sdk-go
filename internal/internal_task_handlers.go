@@ -662,6 +662,9 @@ ProcessEvents:
 				if err != nil {
 					return nil, err
 				}
+				if w.isWorkflowCompleted {
+					break ProcessEvents
+				}
 			}
 		}
 
@@ -687,6 +690,9 @@ ProcessEvents:
 			if err != nil {
 				return nil, err
 			}
+			if w.isWorkflowCompleted {
+				break ProcessEvents
+			}
 		}
 
 		// now apply local activity markers
@@ -695,6 +701,9 @@ ProcessEvents:
 				err := eventHandler.ProcessEvent(m, true, false)
 				if err != nil {
 					return nil, err
+				}
+				if w.isWorkflowCompleted {
+					break ProcessEvents
 				}
 			}
 		}
@@ -707,7 +716,7 @@ ProcessEvents:
 		}
 	}
 
-	if !skipReplayCheck {
+	if !skipReplayCheck && !w.isWorkflowCompleted {
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
 			w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
