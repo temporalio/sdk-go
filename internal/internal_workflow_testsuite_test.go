@@ -746,7 +746,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 		t1 := NewTimer(ctx, time.Minute)
 		t2 := NewTimer(ctx, time.Minute*10)
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour * 2}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f1 := ExecuteChildWorkflow(ctx, childWorkflowFn)
 
@@ -1998,4 +1998,59 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	var result string
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal("test-signal-data", result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_TestWorkflowTimeoutInBusyLoop() {
+	neverEndingWorkflow := func(ctx Context) error {
+		for {
+			Sleep(ctx, time.Hour)
+		}
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkflowTimeout(time.Hour * 10)
+	timerFiredCount := 0
+	env.SetOnTimerFiredListener(func(timerID string) {
+		timerFiredCount++
+	})
+	RegisterWorkflow(neverEndingWorkflow)
+
+	env.ExecuteWorkflow(neverEndingWorkflow)
+	s.Equal(10, timerFiredCount)
+	s.Error(env.GetWorkflowError())
+	_, ok := env.GetWorkflowError().(*TimeoutError)
+	s.True(ok)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
+	childWorkflowFn := func(ctx Context) error {
+		Sleep(ctx, time.Hour*5)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			ExecutionStartToCloseTimeout: time.Hour * 3, // less than 5h that child workflow would take.
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+
+		s.Error(err)
+		if _, ok := err.(*TimeoutError); ok {
+			return nil
+		}
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkflowTimeout(time.Hour * 10)
+	timerFiredCount := 0
+	env.SetOnTimerFiredListener(func(timerID string) {
+		timerFiredCount++
+	})
+	RegisterWorkflow(childWorkflowFn)
+	RegisterWorkflow(workflowFn)
+
+	env.ExecuteWorkflow(workflowFn)
+	s.NoError(env.GetWorkflowError())
 }

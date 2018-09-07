@@ -368,11 +368,21 @@ func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestW
 	return t
 }
 
-// SetTestTimeout sets the wall clock timeout for this workflow test run. When test timeout happen, it means workflow is
-// blocked and cannot make progress. This could happen if workflow is waiting for activity result for too long.
-// This is real wall clock time, not the workflow time (a.k.a workflow.Now() time).
+// SetTestTimeout sets the idle timeout based on wall clock for this tested workflow. Idle is when workflow is blocked
+// waiting on events (including timer, activity, child workflow, signal etc). If there is no event happening longer than
+// this idle timeout, the test framework would stop the workflow and return timeout error.
+// This is based on real wall clock time, not the workflow time (a.k.a workflow.Now() time).
 func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *TestWorkflowEnvironment {
 	t.impl.testTimeout = idleTimeout
+	return t
+}
+
+// SetWorkflowTimeout sets the execution timeout for this tested workflow. This test framework uses mock clock internally
+// and when workflow is blocked on timer, it will auto forward the mock clock. Use SetWorkflowTimeout() to enforce a
+// workflow execution timeout to return timeout error when the workflow mock clock is moved head of the timeout.
+// This is based on the workflow time (a.k.a workflow.Now() time).
+func (t *TestWorkflowEnvironment) SetWorkflowTimeout(executionTimeout time.Duration) *TestWorkflowEnvironment {
+	t.impl.executionTimeout = executionTimeout
 	return t
 }
 

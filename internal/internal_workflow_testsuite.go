@@ -161,11 +161,12 @@ type (
 		queryHandler          func(string, []byte) ([]byte, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
-		isTestCompleted bool
-		testResult      encoded.Value
-		testError       error
-		doneChannel     chan struct{}
-		workerOptions   WorkerOptions
+		isTestCompleted  bool
+		testResult       encoded.Value
+		testError        error
+		doneChannel      chan struct{}
+		workerOptions    WorkerOptions
+		executionTimeout time.Duration
 	}
 )
 
@@ -305,6 +306,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.TaskListName = *params.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *params.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *params.taskStartToCloseTimeoutSeconds
+	childEnv.executionTimeout = time.Duration(*params.executionStartToCloseTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
@@ -382,6 +384,14 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 			}, delayStart)
 		}
 	}, false)
+
+	if env.executionTimeout > 0 {
+		env.registerDelayedCallback(func() {
+			if !env.isTestCompleted {
+				env.Complete(nil, ErrDeadlineExceeded)
+			}
+		}, env.executionTimeout)
+	}
 	env.startMainLoop()
 }
 
