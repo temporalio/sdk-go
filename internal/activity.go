@@ -164,6 +164,26 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 	}
 }
 
+// HasHeartbeatDetails checks if there is heartbeat details from last attempt.
+func HasHeartbeatDetails(ctx context.Context) bool {
+	env := getActivityEnv(ctx)
+	return len(env.heartbeatDetails) > 0
+}
+
+// GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
+// An activity could be scheduled with an optional retry policy on ActivityOptions. If the activity failed then server
+// would attempt to dispatch another activity task to retry according to the retry policy. If there was heartbeat
+// details reported by activity from the failed attempt, the details would be delivered along with the activity task for
+// retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
+func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+	env := getActivityEnv(ctx)
+	if len(env.heartbeatDetails) == 0 {
+		return ErrNoData
+	}
+	encoded := newEncodedValues(env.heartbeatDetails, env.dataConverter)
+	return encoded.Get(d...)
+}
+
 // GetActivityLogger returns a logger that can be used in activity
 func GetActivityLogger(ctx context.Context) *zap.Logger {
 	env := getActivityEnv(ctx)
@@ -256,6 +276,7 @@ func WithActivityTask(
 		taskList:           taskList,
 		dataConverter:      dataConverter,
 		attempt:            task.GetAttempt(),
+		heartbeatDetails:   task.HeartbeatDetails,
 	})
 }
 

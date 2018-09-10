@@ -98,3 +98,17 @@ func GetMetricsScope(ctx context.Context) tally.Scope {
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }
+
+// HasHeartbeatDetails checks if there is heartbeat details from last attempt.
+func HasHeartbeatDetails(ctx context.Context) bool {
+	return internal.HasHeartbeatDetails(ctx)
+}
+
+// GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
+// An activity could be scheduled with an optional retry policy on ActivityOptions. If the activity failed then server
+// would attempt to dispatch another activity task to retry according to the retry policy. If there was heartbeat
+// details reported by activity from the failed attempt, the details would be delivered along with the activity task for
+// retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
+func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+	return internal.GetHeartbeatDetails(ctx, d...)
+}

@@ -123,6 +123,7 @@ type (
 		taskList           string
 		dataConverter      encoded.DataConverter
 		attempt            int32 // starts from 0.
+		heartbeatDetails   []byte
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
