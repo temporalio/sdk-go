@@ -1793,7 +1793,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ContextMisuse() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
-
 	attempt1Count := 0
 	activityFailedFn := func(ctx context.Context) (string, error) {
 		attempt1Count++
@@ -1851,6 +1850,66 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal("retry-done", result)
 	s.Equal(1, attempt1Count)
 	s.Equal(3, attempt2Count)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
+	var startedFrom []int
+	activityHeartBeatFn := func(ctx context.Context, taskCount int) error {
+		startIdx := 0
+		if HasHeartbeatDetails(ctx) {
+			var lastProcessed int
+			if err := GetHeartbeatDetails(ctx, &lastProcessed); err == nil {
+				startIdx = lastProcessed + 1
+			}
+		}
+
+		startedFrom = append(startedFrom, startIdx)
+
+		// pretend that we processed 3 items: startIdx, startIdx+1, startIdx+2
+		startIdx += 2
+		// First heart beat is sent immediately, subsequent heartbeats are buffered and sent at 80% heartbeat timeout.
+		// We don't want heartbeat to be buffered for this test, so we rely on it been the first heartbeat.
+		RecordActivityHeartbeat(ctx, startIdx)
+
+		if startIdx == taskCount-1 { // startIdx start from 0.
+			return nil
+		}
+
+		return NewCustomError("bad-luck")
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts:          3,
+				InitialInterval:          time.Second,
+				MaximumInterval:          time.Second * 10,
+				BackoffCoefficient:       2,
+				NonRetriableErrorReasons: []string{"bad-bug"},
+				ExpirationInterval:       time.Minute,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		err := ExecuteActivity(ctx, activityHeartBeatFn, 9).Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+	RegisterWorkflow(workflowFn)
+	RegisterActivity(activityHeartBeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.Equal(3, len(startedFrom))
+	s.Equal([]int{0, 3, 6}, startedFrom)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {

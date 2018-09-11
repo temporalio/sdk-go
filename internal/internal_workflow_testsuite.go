@@ -63,8 +63,9 @@ type (
 	}
 
 	testActivityHandle struct {
-		callback     resultHandler
-		activityType string
+		callback         resultHandler
+		activityType     string
+		heartbeatDetails []byte
 	}
 
 	testWorkflowHandle struct {
@@ -230,6 +231,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		activityID := string(r.TaskToken)
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.activities[activityID]
+		activityHandle.heartbeatDetails = r.Details
 		env.locker.Unlock()
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
@@ -840,11 +842,15 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), *request.Reason, env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
-				task.Attempt = common.Int32Ptr(task.GetAttempt() + 1)
 				waitCh := make(chan struct{})
 				env.postCallback(func() { env.runningCount-- }, false)
 				env.registerDelayedCallback(func() {
 					env.runningCount++
+					task.Attempt = common.Int32Ptr(task.GetAttempt() + 1)
+					activityID := string(task.TaskToken)
+					if ah, ok := env.activities[activityID]; ok {
+						task.HeartbeatDetails = ah.heartbeatDetails
+					}
 					close(waitCh)
 				}, backoff)
 
