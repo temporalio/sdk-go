@@ -2113,3 +2113,59 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
 	env.ExecuteWorkflow(workflowFn)
 	s.NoError(env.GetWorkflowError())
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_SameActivityIDFromDifferentChildWorkflow() {
+	childWorkflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ActivityID:             "per_workflow_unique_activity_id",
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		info := GetWorkflowInfo(ctx)
+
+		var result string
+		err := ExecuteActivity(ctx, testActivityHello, info.WorkflowExecution.ID).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+
+		return result, nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowID:                   "child_1",
+			ExecutionStartToCloseTimeout: time.Minute,
+		})
+		f1 := ExecuteChildWorkflow(ctx1, childWorkflowFn)
+
+		ctx2 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowID:                   "child_2",
+			ExecutionStartToCloseTimeout: time.Minute,
+		})
+		f2 := ExecuteChildWorkflow(ctx2, childWorkflowFn)
+
+		var result1, result2 string
+		if err := f1.Get(ctx1, &result1); err != nil {
+			return "", err
+		}
+		if err := f2.Get(ctx1, &result2); err != nil {
+			return "", err
+		}
+
+		return result1 + " " + result2, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	RegisterWorkflow(childWorkflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_child_1 hello_child_2", actualResult)
+}
