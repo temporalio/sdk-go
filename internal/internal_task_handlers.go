@@ -69,6 +69,8 @@ type (
 	workflowTask struct {
 		task            *s.PollForDecisionTaskResponse
 		historyIterator HistoryIterator
+		doneCh          chan struct{}
+		laResultCh      chan *localActivityResult
 	}
 
 	// activityTask wraps a activity task.
@@ -424,7 +426,7 @@ func (w *workflowExecutionContextImpl) onEviction() {
 	w.mutex.Unlock()
 }
 
-func (w *workflowExecutionContextImpl) isDestroyed() bool {
+func (w *workflowExecutionContextImpl) IsDestroyed() bool {
 	return w.eventHandler == nil
 }
 
@@ -578,7 +580,7 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDeci
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
-	if w.isDestroyed() {
+	if w.IsDestroyed() {
 		w.createEventHandler()
 		// reset history events if necessary
 		if !isFullHistory(task.History) {
@@ -592,13 +594,12 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDeci
 
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
-	task *s.PollForDecisionTaskResponse,
-	historyIterator HistoryIterator,
+	workflowTask *workflowTask,
 ) (completeRequest interface{}, context WorkflowExecutionContext, err error) {
-	if task == nil {
+	if workflowTask == nil || workflowTask.task == nil {
 		return nil, nil, errors.New("nil workflow task provided")
 	}
-
+	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
 		task.History = &s.History{
 			Events: []*s.HistoryEvent{},
@@ -618,7 +619,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			zap.Int64("PreviousStartedEventId", task.GetPreviousStartedEventId()))
 	})
 
-	workflowContext, err := wth.getOrCreateWorkflowContext(task, historyIterator)
+	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -627,18 +628,20 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		workflowContext.Unlock(err)
 	}()
 
-	response, err := workflowContext.ProcessWorkflowTask(task, historyIterator)
+	response, err := workflowContext.ProcessWorkflowTask(workflowTask)
 	return response, workflowContext, err
 }
 
-func (w *workflowExecutionContextImpl) ProcessWorkflowTask(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (completeRequest interface{}, err error) {
+func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (completeRequest interface{}, err error) {
+	task := workflowTask.task
+	historyIterator := workflowTask.historyIterator
 	if err = w.ResetIfStale(task, historyIterator); err != nil {
 		return
 	}
 	w.SetCurrentTask(task)
 
 	eventHandler := w.eventHandler
-	reorderedHistory := newHistory(&workflowTask{task, historyIterator}, eventHandler)
+	reorderedHistory := newHistory(workflowTask, eventHandler)
 	var replayDecisions []*s.Decision
 	var respondEvents []*s.HistoryEvent
 
@@ -748,10 +751,10 @@ ProcessEvents:
 		}
 	}
 
-	return w.CompleteDecisionTask(true), nil
+	return w.CompleteDecisionTask(workflowTask, true), nil
 }
 
-func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActivityResult) (interface{}, error) {
+func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error) {
 	if lar.err != nil && w.retryLocalActivity(lar) {
 		return nil, nil // nothing to do here as we are retrying...
 	}
@@ -761,7 +764,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(lar *localActi
 		return nil, err
 	}
 
-	return w.CompleteDecisionTask(true), nil
+	return w.CompleteDecisionTask(workflowTask, true), nil
 }
 
 func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
@@ -777,7 +780,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 			defer w.Unlock(nil)
 
 			// after backoff, check if it is still relevant
-			if w.isDestroyed() {
+			if w.IsDestroyed() {
 				return
 			}
 			if _, ok := w.eventHandler.pendingLaTasks[lar.task.activityID]; !ok {
@@ -853,7 +856,7 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string,
 	return backoffInterval
 }
 
-func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities bool) interface{} {
+func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workflowTask, waitLocalActivities bool) interface{} {
 	if w.currentDecisionTask == nil {
 		return nil
 	}
@@ -865,6 +868,7 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(waitLocalActivities 
 			for activityID := range w.eventHandler.unstartedLaTasks {
 				task := w.eventHandler.pendingLaTasks[activityID]
 				task.wc = w
+				task.workflowTask = workflowTask
 				w.laTunnel.sendTask(task)
 			}
 			w.eventHandler.unstartedLaTasks = make(map[string]struct{})

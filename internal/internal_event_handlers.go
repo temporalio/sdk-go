@@ -112,15 +112,16 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
-		activityID  string
-		params      *executeLocalActivityParams
-		callback    laResultHandler
-		wc          *workflowExecutionContextImpl
-		canceled    bool
-		cancelFunc  func()
-		attempt     int32 // attempt starting from 0
-		retryPolicy *RetryPolicy
-		expireTime  time.Time
+		workflowTask *workflowTask
+		activityID   string
+		params       *executeLocalActivityParams
+		callback     laResultHandler
+		wc           *workflowExecutionContextImpl
+		canceled     bool
+		cancelFunc   func()
+		attempt      int32 // attempt starting from 0
+		retryPolicy  *RetryPolicy
+		expireTime   time.Time
 	}
 
 	localActivityMarkerData struct {

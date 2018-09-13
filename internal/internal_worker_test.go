@@ -187,7 +187,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	}
 
 	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	_, wc, err := r.ProcessWorkflowTask(task, nil)
+	_, wc, err := r.ProcessWorkflowTask(&workflowTask{task: task})
 	s.NoError(err)
 	s.NotNil(wc)
 	stackTrace := wc.StackTrace()
