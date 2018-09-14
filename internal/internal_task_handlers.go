@@ -1438,13 +1438,16 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 	return isActivityCancelled, err
 }
 
-func (i *cadenceInvoker) Close() {
+func (i *cadenceInvoker) Close(flushBufferedHeartbeat bool) {
 	i.Lock()
 	defer i.Unlock()
-
 	close(i.closeCh)
 	if i.hbBatchEndTimer != nil {
 		i.hbBatchEndTimer.Stop()
+		if flushBufferedHeartbeat && i.lastDetailsToReport != nil {
+			i.internalHeartBeat(*i.lastDetailsToReport)
+			i.lastDetailsToReport = nil
+		}
 	}
 }
 
@@ -1481,7 +1484,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	}
 	canCtx, cancel := context.WithCancel(rootCtx)
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds())
-	defer invoker.Close()
+	defer func() {
+		_, activityFailed := result.(*s.RespondActivityTaskFailedRequest)
+		invoker.Close(activityFailed) // flush buffered heartbeat if activity failed.
+	}()
 	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope, ath.dataConverter)
 	activityType := *t.ActivityType
 	activityImplementation := ath.getActivity(activityType.GetName())

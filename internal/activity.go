@@ -231,7 +231,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
 	Heartbeat(details []byte) error
-	Close()
+	Close(flushBufferedHeartbeat bool)
 }
 
 // WithActivityTask adds activity specific information into context.

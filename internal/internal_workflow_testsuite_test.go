@@ -1854,28 +1854,26 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 	var startedFrom []int
-	activityHeartBeatFn := func(ctx context.Context, taskCount int) error {
-		startIdx := 0
+	activityHeartBeatFn := func(ctx context.Context, firstTaskID, taskCount int) error {
+		i := firstTaskID
 		if HasHeartbeatDetails(ctx) {
 			var lastProcessed int
 			if err := GetHeartbeatDetails(ctx, &lastProcessed); err == nil {
-				startIdx = lastProcessed + 1
+				i = lastProcessed + 1
 			}
 		}
 
-		startedFrom = append(startedFrom, startIdx)
+		startedFrom = append(startedFrom, i)
 
-		// pretend that we processed 3 items: startIdx, startIdx+1, startIdx+2
-		startIdx += 2
-		// First heart beat is sent immediately, subsequent heartbeats are buffered and sent at 80% heartbeat timeout.
-		// We don't want heartbeat to be buffered for this test, so we rely on it been the first heartbeat.
-		RecordActivityHeartbeat(ctx, startIdx)
-
-		if startIdx == taskCount-1 { // startIdx start from 0.
-			return nil
+		for j := 0; i < firstTaskID+taskCount; i, j = i+1, j+1 {
+			// process task i
+			RecordActivityHeartbeat(ctx, i)
+			if j == 2 && i < firstTaskID+taskCount-1 { // simulate failure after processing 3 tasks
+				return NewCustomError("bad-luck")
+			}
 		}
 
-		return NewCustomError("bad-luck")
+		return nil
 	}
 
 	workflowFn := func(ctx Context) error {
@@ -1893,7 +1891,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 		}
 		ctx = WithActivityOptions(ctx, ao)
 
-		err := ExecuteActivity(ctx, activityHeartBeatFn, 9).Get(ctx, nil)
+		err := ExecuteActivity(ctx, activityHeartBeatFn, 0, 9).Get(ctx, nil)
 		if err != nil {
 			return err
 		}
