@@ -312,13 +312,19 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, errors.New("child workflow already running")
+			return nil, &shared.WorkflowExecutionAlreadyStartedError{
+				Message: common.StringPtr("Workflow execution already started"),
+			}
 		}
 		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
-			return nil, errors.New("duplicate workflow id not allowed")
+			return nil, &shared.WorkflowExecutionAlreadyStartedError{
+				Message: common.StringPtr("Workflow execution already started"),
+			}
 		}
 		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
-			return nil, errors.New("child workflow with specified workflow id already completed")
+			return nil, &shared.WorkflowExecutionAlreadyStartedError{
+				Message: common.StringPtr("Workflow execution already started"),
+			}
 		}
 	}
 

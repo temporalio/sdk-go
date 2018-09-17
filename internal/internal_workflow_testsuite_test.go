@@ -2167,3 +2167,39 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameActivityIDFromDifferentChildWorkflo
 	s.NoError(env.GetWorkflowResult(&actualResult))
 	s.Equal("hello_child_1 hello_child_2", actualResult)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowID:                   "Test_ChildWorkflowAlreadyRunning",
+			ExecutionStartToCloseTimeout: time.Minute,
+			//WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicate,
+		})
+
+		var result1, result2 string
+		err := ExecuteChildWorkflow(ctx1, testWorkflowHeartbeat, "child1", time.Millisecond).Get(ctx1, &result1)
+		s.NoError(err)
+
+		f2 := ExecuteChildWorkflow(ctx1, testWorkflowHeartbeat, "child2", time.Second)
+
+		err = f2.Get(ctx1, &result2)
+		s.Error(err)
+		_, ok := err.(*shared.WorkflowExecutionAlreadyStartedError)
+		s.True(ok)
+
+		return result1 + " " + result2, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.NoError(err)
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("heartbeat_child1 ", result)
+}

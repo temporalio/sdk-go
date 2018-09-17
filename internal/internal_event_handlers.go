@@ -1005,7 +1005,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	err := fmt.Errorf("start child workflow failed: %v", attributes.GetCause())
+	err := &m.WorkflowExecutionAlreadyStartedError{
+		Message: common.StringPtr("Workflow execution already started"),
+	}
 	childWorkflow.startedCallback(WorkflowExecution{}, err)
 	childWorkflow.handle(nil, err)
 
