@@ -690,7 +690,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 			decisionEventTypeCount++
 		}
 	}
-	// CancelTimer and CancelActivity each has 2 corresponding events.
-	require.Equal(t, len(decisionTypes)+2, decisionEventTypeCount, "Every decision type must have one matching event type. "+
+	// CancelTimer has 2 corresponding events.
+	require.Equal(t, len(decisionTypes)+1, decisionEventTypeCount, "Every decision type must have one matching event type. "+
 		"If you add new decision type, you need to update isDecisionEvent() method to include that new event type as well.")
 }

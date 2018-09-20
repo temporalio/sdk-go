@@ -191,7 +191,7 @@ func isDecisionEvent(eventType s.EventType) bool {
 		s.EventTypeWorkflowExecutionCanceled,
 		s.EventTypeWorkflowExecutionContinuedAsNew,
 		s.EventTypeActivityTaskScheduled,
-		s.EventTypeActivityTaskCancelRequested, s.EventTypeRequestCancelActivityTaskFailed,
+		s.EventTypeActivityTaskCancelRequested,
 		s.EventTypeTimerStarted,
 		s.EventTypeTimerCanceled, s.EventTypeCancelTimerFailed,
 		s.EventTypeMarkerRecorded,
@@ -1038,20 +1038,13 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		return true
 
 	case s.DecisionTypeRequestCancelActivityTask:
-		if e.GetEventType() != s.EventTypeActivityTaskCancelRequested && e.GetEventType() != s.EventTypeRequestCancelActivityTaskFailed {
+		if e.GetEventType() != s.EventTypeActivityTaskCancelRequested {
 			return false
 		}
 		decisionAttributes := d.RequestCancelActivityTaskDecisionAttributes
-		if e.GetEventType() == s.EventTypeActivityTaskCancelRequested {
-			eventAttributes := e.ActivityTaskCancelRequestedEventAttributes
-			if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
-				return false
-			}
-		} else if e.GetEventType() == s.EventTypeRequestCancelActivityTaskFailed {
-			eventAttributes := e.RequestCancelActivityTaskFailedEventAttributes
-			if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
-				return false
-			}
+		eventAttributes := e.ActivityTaskCancelRequestedEventAttributes
+		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
+			return false
 		}
 
 		return true
