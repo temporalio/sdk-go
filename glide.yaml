@@ -1,37 +1,25 @@
-package: go.uber.org/cadence
+# This glide manifest is generated and kept in sync by dep for backwards compatibility.
+# It is not a full glide manifest and will not work with traditional glide commands.
 import:
 - package: github.com/facebookgo/clock
+  version: master
+- package: github.com/golang/mock
+  version: ^1.1.1
 - package: github.com/pborman/uuid
-  version: v1.0
+  version: ^1.0.0
+- package: github.com/sirupsen/logrus
+  version: ^0.11.5
 - package: github.com/stretchr/testify
   version: ^1.2.0
-  subpackages:
-  - mock
 - package: github.com/uber-go/tally
-  version: v3.0.1
+  version: ^3.0.1
 - package: github.com/uber/tchannel-go
-  version: 2d75494d3a0ffabbd00bc2cb71ed039d94def186
-  subpackages:
-  - thrift
+  version: ^1.0.6
 - package: go.uber.org/atomic
-  version: v1.2.0
+  version: ^1.2.0
 - package: go.uber.org/thriftrw
-  version: ^1.6
+  version: ^1.6.0
 - package: go.uber.org/yarpc
   version: ^1.7.1
-  subpackages:
-  - api/transport
-  - encoding/thrift/thriftrw-plugin-yarpc
-  - transport/http
-  - transport/tchannel
 - package: go.uber.org/zap
-  version: ^1.8
-- package: golang.org/x/net
-  subpackages:
-  - context
-- package: golang.org/x/time
-  subpackages:
-  - rate
-testImport:
-- package: github.com/sirupsen/logrus
-  version: v0.11.5
+  version: ^1.8.0

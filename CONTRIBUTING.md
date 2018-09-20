@@ -22,8 +22,8 @@ cd $GOPATH/src/go.uber.org/cadence
 
 ## Dependency management
 
-Dependencies are tracked via `glide.yaml`. If you're not familiar with `glide`,
-read the [docs](https://github.com/Masterminds/glide#usage).
+Dependencies are tracked via `Gopkg.toml`. If you're not familiar with `dep`,
+read the [docs](https://https://golang.github.io/dep/docs/introduction.html).
 
 ## Licence headers
 

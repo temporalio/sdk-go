@@ -53,11 +53,13 @@ $(BINS)/thriftrw-plugin-yarpc: $(BINS)/versions/yarpc-$(YARPC_VERSION)
 $(BINS)/golint: $(BINS)/versions/golint-$(GOLINT_VERSION)
 	@ln -fs $(CURDIR)/$< $@
 
-vendor: vendor/glide.updated
+vendor: vendor/dep.updated
 
-vendor/glide.updated: glide.lock
-	glide install
-	touch vendor/glide.updated
+DEP ?= $(shell which dep)
+
+vendor/dep.updated: Gopkg.lock
+	${DEP} ensure
+	touch vendor/dep.updated
 
 $(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
@@ -80,7 +82,7 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
 	@touch $(BUILD)/copyright
 
-$(BUILD)/dummy: vendor/glide.updated $(ALL_SRC)
+$(BUILD)/dummy: vendor/dep.updated $(ALL_SRC)
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
 test $(BUILD)/cover.out: $(BUILD)/copyright $(BUILD)/dummy $(ALL_SRC)

@@ -1,0 +1,16 @@
+excludeDirs = [".tmp"]
+
+[[override]]
+  package = "golang.org/x/net"
+  version = ""
+  source = "golang.org/x/net"
+
+[[override]]
+  package = "golang.org/x/sys"
+  version = ""
+  source = "golang.org/x/sys"
+
+[[override]]
+  package = "golang.org/x/tools"
+  version = ""
+  source = "golang.org/x/tools"

@@ -8,6 +8,7 @@ set -euf -o pipefail
 # - cds to the repo
 # - checks out the requested version
 # - maybe runs `glide install`
+# - maybe runs `dep ensure`
 # - builds the bin and puts it where you told it to.
 #
 # Since doing that verbatim is a bit noisy, and pinning tools tends to
@@ -164,6 +165,9 @@ fi
 # to the current repo (not in our current folder)
 if [ -f glide.lock ]; then
     glide $QUIET install
+fi
+if [ -f Gopkg.lock ]; then
+    dep init
 fi
 
 # eval so redirection works when quiet
