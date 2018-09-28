@@ -2,130 +2,167 @@
 
 
 [[projects]]
+  digest = "1:06ed9e0df8145bc071b49db538b523f3f154b21f8414ab01bc10c2ec8e831ef1"
   name = "github.com/apache/thrift"
   packages = ["lib/go/thrift"]
+  pruneopts = ""
   revision = "9549b25c77587b29be4e0b5c258221a4ed85d37a"
 
 [[projects]]
   branch = "master"
+  digest = "1:c0bec5f9b98d0bc872ff5e834fac186b807b656683bd29cb82fb207a1513fabb"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
+  pruneopts = ""
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
+  digest = "1:56c130d885a4aacae1dd9c7b71cfe39912c7ebc1ff7d2b46083c8812996dc43b"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
+  pruneopts = ""
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
   version = "v1.1.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:88b37f144a80737f9e5cd50c887c00c2f3c7211257f884b8b80ce97e61ed1ccb"
   name = "github.com/facebookgo/clock"
   packages = ["."]
+  pruneopts = ""
   revision = "600d898af40aa09a7a93ecb9265d87b0504b6f03"
 
 [[projects]]
+  digest = "1:73a7106c799f98af4f3da7552906efc6a2570329f4cd2d2f5fb8f9d6c053ff2f"
   name = "github.com/golang/mock"
   packages = ["gomock"]
+  pruneopts = ""
   revision = "c34cdb4725f4c3844d095133c6e40e448b86589b"
   version = "v1.1.1"
 
 [[projects]]
+  digest = "1:27828cf74799ad14fcafece9f78f350cdbcd4fbe92c14ad4cba256fbbfa328ef"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
+  pruneopts = ""
   revision = "e09c5db296004fbe3f74490e84dcd62c3c5ddb1b"
 
 [[projects]]
+  digest = "1:63722a4b1e1717be7b98fc686e0b30d5e7f734b9e93d7dee86293b6deab7ea28"
   name = "github.com/matttproud/golang_protobuf_extensions"
   packages = ["pbutil"]
+  pruneopts = ""
   revision = "c12348ce28de40eed0136aa2b644d0ee0650e56c"
   version = "v1.0.1"
 
 [[projects]]
+  digest = "1:78fb99d6011c2ae6c72f3293a83951311147b12b06a5ffa43abf750c4fab6ac5"
   name = "github.com/opentracing/opentracing-go"
   packages = [
     ".",
     "ext",
-    "log"
+    "log",
   ]
+  pruneopts = ""
   revision = "1949ddbfd147afd4d964a9f00b24eb291e0e7c38"
   version = "v1.0.2"
 
 [[projects]]
+  digest = "1:35998716a671c0a3b50afd9123ee2cd27f6b9a8c74f5f9b99ba6d05e52223e19"
   name = "github.com/pborman/uuid"
   packages = ["."]
+  pruneopts = ""
   revision = "a97ce2ca70fa5a848076093f05e639a89ca34d06"
   version = "v1.0"
 
 [[projects]]
+  digest = "1:256484dbbcd271f9ecebc6795b2df8cad4c458dd0f5fd82a8c2fa0c29f233411"
   name = "github.com/pmezard/go-difflib"
   packages = ["difflib"]
+  pruneopts = ""
   revision = "792786c7400a136282c1664665ae0a8db921c6c2"
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:4142d94383572e74b42352273652c62afec5b23f325222ed09198f46009022d1"
   name = "github.com/prometheus/client_golang"
   packages = [
     "prometheus",
-    "prometheus/promhttp"
+    "prometheus/promhttp",
   ]
+  pruneopts = ""
   revision = "c5b7fccd204277076155f10851dad72b76a49317"
   version = "v0.8.0"
 
 [[projects]]
+  digest = "1:60aca47f4eeeb972f1b9da7e7db51dee15ff6c59f7b401c1588b8e6771ba15ef"
   name = "github.com/prometheus/client_model"
   packages = ["go"]
+  pruneopts = ""
   revision = "99fa1f4be8e564e8a6b613da7fa6f46c9edafc6c"
 
 [[projects]]
+  digest = "1:7d3d2ac8f39b724e332604be00d0108811a0d8c6ae3116b6030fe0d7a5e8f5cf"
   name = "github.com/prometheus/common"
   packages = [
     "expfmt",
     "internal/bitbucket.org/ww/goautoneg",
-    "model"
+    "model",
   ]
+  pruneopts = ""
   revision = "2f17f4a9d485bf34b4bfaccc273805040e4f86c8"
 
 [[projects]]
+  digest = "1:9015def9b01c5b9f28606fcbe9efcb76657fc20ef1c3102e89d290bff8a6380d"
   name = "github.com/prometheus/procfs"
   packages = [
     ".",
     "internal/util",
     "nfs",
-    "xfs"
+    "xfs",
   ]
+  pruneopts = ""
   revision = "780932d4fbbe0e69b84c34c20f5c8d0981e109ea"
 
 [[projects]]
+  digest = "1:b9585eba46f28b2dbdb61168d95d34d7646825ceb0111666c0326a835a59b6f2"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
+  pruneopts = ""
   revision = "ba1b36c82c5e05c4f912a88eab0dcd91a171688f"
   version = "v0.11.5"
 
 [[projects]]
+  digest = "1:711eebe744c0151a9d09af2315f0bb729b2ec7637ef4c410fa90a18ef74b65b6"
   name = "github.com/stretchr/objx"
   packages = ["."]
+  pruneopts = ""
   revision = "477a77ecc69700c7cdeb1fa9e129548e1c1c393c"
   version = "v0.1.1"
 
 [[projects]]
+  digest = "1:a30066593578732a356dc7e5d7f78d69184ca65aeeff5939241a3ab10559bb06"
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
     "mock",
     "require",
-    "suite"
+    "suite",
   ]
+  pruneopts = ""
   revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
   version = "v1.2.1"
 
 [[projects]]
+  digest = "1:05670618bcc6809bca47c5fa89af029b4edd569c1a04ea1e59a4009f3cecdfe0"
   name = "github.com/uber-go/tally"
   packages = ["."]
+  pruneopts = ""
   revision = "6c4631652c6aab57c64f65c2e0aaec2e9aae3a64"
   version = "v3.3.1"
 
 [[projects]]
+  digest = "1:e04fd5ac3dc6bde26e35bc7612df4df3326fa10e75883dd16eca84014e531089"
   name = "github.com/uber/tchannel-go"
   packages = [
     ".",
@@ -133,35 +170,43 @@
     "thrift",
     "thrift/gen-go/meta",
     "tnet",
-    "typed"
+    "typed",
   ]
+  pruneopts = ""
   revision = "ebbdb72d34776a9d97fe099f9e2b795eaf3fa512"
   version = "v1.0.6"
 
 [[projects]]
+  digest = "1:74f86c458e82e1c4efbab95233e0cf51b7cc02dc03193be9f62cd81224e10401"
   name = "go.uber.org/atomic"
   packages = ["."]
+  pruneopts = ""
   revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
   version = "v1.3.2"
 
 [[projects]]
+  digest = "1:22c7effcb4da0eacb2bb1940ee173fac010e9ef3c691f5de4b524d538bd980f5"
   name = "go.uber.org/multierr"
   packages = ["."]
+  pruneopts = ""
   revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
   version = "v1.1.0"
 
 [[projects]]
+  digest = "1:320b11edb503bbca6727a6e2d9bb67817c3e0c53780650cb4064142f22b4981a"
   name = "go.uber.org/net/metrics"
   packages = [
     ".",
     "bucket",
     "push",
-    "tallypush"
+    "tallypush",
   ]
+  pruneopts = ""
   revision = "1e19de5b971489a45d178e12a0f72a78c70e300e"
   version = "v1.0.1"
 
 [[projects]]
+  digest = "1:b50bac83809e6745137252658557d4adf3a64e89545414442c88a3749cc29b5a"
   name = "go.uber.org/thriftrw"
   packages = [
     "envelope",
@@ -170,12 +215,14 @@
     "protocol/binary",
     "thriftreflect",
     "version",
-    "wire"
+    "wire",
   ]
+  pruneopts = ""
   revision = "43dfafd7bb1c99f0460d645a1959b73f6dfa536f"
   version = "v1.11.0"
 
 [[projects]]
+  digest = "1:ff9353e2595c27cbd5163a8f6d7a104373147fbc228d58e299fccc4deb6618ee"
   name = "go.uber.org/yarpc"
   packages = [
     ".",
@@ -198,12 +245,14 @@
     "pkg/errors",
     "pkg/lifecycle",
     "pkg/procedure",
-    "yarpcerrors"
+    "yarpcerrors",
   ]
+  pruneopts = ""
   revision = "4ac8938c1046d4db2dc26a1436699935a8c5bb35"
   version = "v1.29.1"
 
 [[projects]]
+  digest = "1:6c2f76bad9a8ae48ec06108899e065a327d01afa43300f652443a05678cdca17"
   name = "go.uber.org/zap"
   packages = [
     ".",
@@ -211,32 +260,61 @@
     "internal/bufferpool",
     "internal/color",
     "internal/exit",
-    "zapcore"
+    "zapcore",
   ]
+  pruneopts = ""
   revision = "eeedf312bc6c57391d84767a4cd413f02a917974"
   version = "v1.8.0"
 
 [[projects]]
+  digest = "1:b05c431b613ae495517cdcb37d263dd983f99eec15d25f350afd68e03339de6f"
   name = "golang.org/x/net"
   packages = ["context"]
+  pruneopts = ""
   revision = "6c89489cafabcbc76df9dbf84ebf07204673fecf"
   source = "golang.org/x/net"
 
 [[projects]]
   branch = "master"
+  digest = "1:ed900376500543ca05f2a2383e1f541b4606f19cd22f34acb81b17a0b90c7f3e"
   name = "golang.org/x/sys"
   packages = ["unix"]
+  pruneopts = ""
   revision = "d0be0721c37eeb5299f245a996a483160fc36940"
   source = "golang.org/x/sys"
 
 [[projects]]
+  digest = "1:962626db478d8aa0ae5a1d99c2b367acc756346c6657780a91252cfda66a67d3"
   name = "golang.org/x/time"
   packages = ["rate"]
+  pruneopts = ""
   revision = "6dc17368e09b0e8634d71cac8168d853e869a0c7"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d5ef62239aecf1834c42523f157cab0ff642baae6298e7d199449548d0f2245a"
+  input-imports = [
+    "github.com/apache/thrift/lib/go/thrift",
+    "github.com/facebookgo/clock",
+    "github.com/golang/mock/gomock",
+    "github.com/pborman/uuid",
+    "github.com/sirupsen/logrus",
+    "github.com/stretchr/testify/assert",
+    "github.com/stretchr/testify/mock",
+    "github.com/stretchr/testify/require",
+    "github.com/stretchr/testify/suite",
+    "github.com/uber-go/tally",
+    "github.com/uber/tchannel-go/thrift",
+    "go.uber.org/atomic",
+    "go.uber.org/thriftrw/thriftreflect",
+    "go.uber.org/thriftrw/wire",
+    "go.uber.org/yarpc",
+    "go.uber.org/yarpc/api/transport",
+    "go.uber.org/yarpc/encoding/thrift",
+    "go.uber.org/zap",
+    "go.uber.org/zap/zapcore",
+    "golang.org/x/net/context",
+    "golang.org/x/time/rate",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -1084,9 +1084,12 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 	activityInfo := GetActivityInfo(ctx)
 	dc := getDataConverterFromActivityCtx(ctx)
 	if a.env.onActivityStartedListener != nil {
+		waitCh := make(chan struct{})
 		a.env.postCallback(func() {
 			a.env.onActivityStartedListener(&activityInfo, ctx, newEncodedValues(input, dc))
+			close(waitCh)
 		}, false)
+		<-waitCh // wait until listener returns
 	}
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false, dataConverter: dc}
@@ -1101,9 +1104,12 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]
 func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inputArgs []interface{}) ([]byte, error) {
 	activityInfo := GetActivityInfo(ctx)
 	if a.env.onLocalActivityStartedListener != nil {
+		waitCh := make(chan struct{})
 		a.env.postCallback(func() {
 			a.env.onLocalActivityStartedListener(&activityInfo, ctx, inputArgs)
+			close(waitCh)
 		}, false)
+		<-waitCh
 	}
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
@@ -1118,9 +1124,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []byte, err error) {
 	env := w.env
 	if env.isChildWorkflow() && env.onChildWorkflowStartedListener != nil {
-		env.postCallback(func() {
-			env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
-		}, false)
+		env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
 	}
 
 	if !env.isChildWorkflow() {
