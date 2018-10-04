@@ -18,11 +18,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package activity contains functions and types used to implement Cadence activities.
 package activity
 
 import (
 	"context"
+
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/internal"
 	"go.uber.org/zap"
@@ -64,7 +64,7 @@ func Register(activityFunc interface{}) {
 //	func sampleActivity() (result string, err error)
 //	func sampleActivity(arg1 bool) (result int, err error)
 //	func sampleActivity(arg1 bool) (err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+// Serialization of all primitive types, structures is supported ... except channels, functions, unsafe pointer.
 // If function implementation returns activity.ErrResultPending then activity is not completed from the
 // calling workflow point of view. See documentation of activity.ErrResultPending for more info.
 // This method calls panic if activityFunc doesn't comply with the expected format.
@@ -90,9 +90,7 @@ func GetMetricsScope(ctx context.Context) tally.Scope {
 // RecordHeartbeat sends heartbeat for the currently executing activity
 // If the activity is either cancelled (or) workflow/activity doesn't exist then we would cancel
 // the context with error context.Canceled.
-//  TODO: we don't have a way to distinguish between the two cases when context is cancelled because
-//  context doesn't support overriding value of ctx.Error.
-//  TODO: Implement automatic heartbeating with cancellation through ctx.
+//
 // details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
 // can check error TimeOutType()/Details().
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
