@@ -1283,6 +1283,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Identity:                   common.StringPtr(wth.identity),
 		ReturnNewDecisionTask:      common.BoolPtr(true),
 		ForceCreateNewDecisionTask: common.BoolPtr(forceNewDecision),
+		BinaryChecksum:             common.StringPtr(getBinaryChecksum()),
 	}
 }
 

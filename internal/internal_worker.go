@@ -25,9 +25,13 @@ package internal
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -872,6 +876,10 @@ type aggregatedWorker struct {
 }
 
 func (aw *aggregatedWorker) Start() error {
+	if err := initBinaryChecksum(); err != nil {
+		return fmt.Errorf("failed to get executable checksum: %v", err)
+	}
+
 	if !isInterfaceNil(aw.workflowWorker) {
 		if len(aw.hostEnv.getRegisteredWorkflowTypes()) == 0 {
 			aw.logger.Warn(
@@ -898,6 +906,47 @@ func (aw *aggregatedWorker) Start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
+}
+
+var binaryChecksum string
+var binaryChecksumLock sync.Mutex
+
+func initBinaryChecksum() error {
+	binaryChecksumLock.Lock()
+	defer binaryChecksumLock.Unlock()
+
+	if len(binaryChecksum) > 0 {
+		return nil
+	}
+
+	exec, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(exec)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+
+	checksum := h.Sum(nil)
+	binaryChecksum = hex.EncodeToString(checksum[:])
+
+	return nil
+}
+
+func getBinaryChecksum() string {
+	if len(binaryChecksum) == 0 {
+		initBinaryChecksum()
+	}
+
+	return binaryChecksum
 }
 
 func (aw *aggregatedWorker) Run() error {
