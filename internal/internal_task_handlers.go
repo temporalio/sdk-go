@@ -310,14 +310,14 @@ func newWorkflowTaskHandler(
 ) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		domain:                 domain,
-		logger:                 params.Logger,
-		ppMgr:                  ppMgr,
-		metricsScope:           metrics.NewTaggedScope(params.MetricsScope),
-		identity:               params.Identity,
-		enableLoggingInReplay:  params.EnableLoggingInReplay,
-		disableStickyExecution: params.DisableStickyExecution,
-		hostEnv:                hostEnv,
+		domain:                         domain,
+		logger:                         params.Logger,
+		ppMgr:                          ppMgr,
+		metricsScope:                   metrics.NewTaggedScope(params.MetricsScope),
+		identity:                       params.Identity,
+		enableLoggingInReplay:          params.EnableLoggingInReplay,
+		disableStickyExecution:         params.DisableStickyExecution,
+		hostEnv:                        hostEnv,
 		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
 		dataConverter:                  params.DataConverter,
 	}
@@ -501,8 +501,8 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		},
 		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
-		Domain:  wth.domain,
-		Attempt: attributes.GetAttempt(),
+		Domain:                              wth.domain,
+		Attempt:                             attributes.GetAttempt(),
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
@@ -1246,9 +1246,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
 		closeDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType: workflowTypePtr(*contErr.params.workflowType),
-			Input:        contErr.params.input,
-			TaskList:     common.TaskListPtr(s.TaskList{Name: contErr.params.taskListName}),
+			WorkflowType:                        workflowTypePtr(*contErr.params.workflowType),
+			Input:                               contErr.params.input,
+			TaskList:                            common.TaskListPtr(s.TaskList{Name: contErr.params.taskListName}),
 			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
 		}

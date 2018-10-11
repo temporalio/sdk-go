@@ -73,7 +73,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
-		Logger: logger,
+		Logger:                    logger,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
@@ -94,7 +94,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
-		Logger: logger,
+		Logger:                    logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -116,7 +116,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
-		Logger: zap.NewNop(),
+		Logger:                    zap.NewNop(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
@@ -165,7 +165,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 			EventId:   common.Int64Ptr(1),
 			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionStarted),
 			WorkflowExecutionStartedEventAttributes: &m.WorkflowExecutionStartedEventAttributes{
-				TaskList: &m.TaskList{Name: &taskList},
+				TaskList:                            &m.TaskList{Name: &taskList},
 				ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(10),
 				TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(2),
 				WorkflowType:                        &m.WorkflowType{Name: common.StringPtr("long-running-decision-workflow-type")},
@@ -178,8 +178,8 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 			EventId:   common.Int64Ptr(5),
 			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName: common.StringPtr(localActivityMarkerName),
-				Details:    s.createLocalActivityMarkerDataForTest("0"),
+				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				Details:                      s.createLocalActivityMarkerDataForTest("0"),
 				DecisionTaskCompletedEventId: common.Int64Ptr(4),
 			},
 		},
@@ -190,8 +190,8 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 			EventId:   common.Int64Ptr(9),
 			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName: common.StringPtr(localActivityMarkerName),
-				Details:    s.createLocalActivityMarkerDataForTest("1"),
+				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				Details:                      s.createLocalActivityMarkerDataForTest("1"),
 				DecisionTaskCompletedEventId: common.Int64Ptr(8),
 			},
 		},

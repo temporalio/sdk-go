@@ -105,8 +105,8 @@ func createTestEventWorkflowExecutionStarted(eventID int64, attr *m.WorkflowExec
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *m.DecisionTaskScheduledEventAttributes) *m.HistoryEvent {
 	return &m.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(m.EventTypeDecisionTaskScheduled),
+		EventId:                              common.Int64Ptr(eventID),
+		EventType:                            common.EventTypePtr(m.EventTypeDecisionTaskScheduled),
 		DecisionTaskScheduledEventAttributes: attr}
 }
 

@@ -1430,7 +1430,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
 			ExecutionStartToCloseTimeout: time.Minute,
-			Domain: "test-domain",
+			Domain:                       "test-domain",
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, GetWorkflowInfo(ctx).WorkflowExecution)
@@ -1547,7 +1547,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 	workflowFn := func(ctx Context) error {
 
 		cwo := ChildWorkflowOptions{
-			Domain: "test-domain",
+			Domain:                       "test-domain",
 			ExecutionStartToCloseTimeout: time.Minute,
 		}
 

@@ -168,12 +168,12 @@ func (wc *workflowClient) StartWorkflow(
 	}
 
 	startRequest := &s.StartWorkflowExecutionRequest{
-		Domain:       common.StringPtr(wc.domain),
-		RequestId:    common.StringPtr(uuid.New()),
-		WorkflowId:   common.StringPtr(workflowID),
-		WorkflowType: workflowTypePtr(*workflowType),
-		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
-		Input:        input,
+		Domain:                              common.StringPtr(wc.domain),
+		RequestId:                           common.StringPtr(uuid.New()),
+		WorkflowId:                          common.StringPtr(workflowID),
+		WorkflowType:                        workflowTypePtr(*workflowType),
+		TaskList:                            common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+		Input:                               input,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
 		Identity:                            common.StringPtr(wc.identity),
@@ -317,12 +317,12 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
-		Domain:       common.StringPtr(wc.domain),
-		RequestId:    common.StringPtr(uuid.New()),
-		WorkflowId:   common.StringPtr(workflowID),
-		WorkflowType: workflowTypePtr(*workflowType),
-		TaskList:     common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
-		Input:        input,
+		Domain:                              common.StringPtr(wc.domain),
+		RequestId:                           common.StringPtr(uuid.New()),
+		WorkflowId:                          common.StringPtr(workflowID),
+		WorkflowType:                        workflowTypePtr(*workflowType),
+		TaskList:                            common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+		Input:                               input,
 		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
 		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
 		SignalName:                          common.StringPtr(signalName),

@@ -83,8 +83,8 @@ func createTestEventWorkflowExecutionStarted(eventID int64, attr *s.WorkflowExec
 
 func createTestEventActivityTaskScheduled(eventID int64, attr *s.ActivityTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeActivityTaskScheduled),
+		EventId:                              common.Int64Ptr(eventID),
+		EventType:                            common.EventTypePtr(s.EventTypeActivityTaskScheduled),
 		ActivityTaskScheduledEventAttributes: attr}
 }
 
@@ -97,8 +97,8 @@ func createTestEventActivityTaskStarted(eventID int64, attr *s.ActivityTaskStart
 
 func createTestEventActivityTaskCompleted(eventID int64, attr *s.ActivityTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeActivityTaskCompleted),
+		EventId:                              common.Int64Ptr(eventID),
+		EventType:                            common.EventTypePtr(s.EventTypeActivityTaskCompleted),
 		ActivityTaskCompletedEventAttributes: attr}
 }
 
@@ -111,8 +111,8 @@ func createTestEventActivityTaskTimedOut(eventID int64, attr *s.ActivityTaskTime
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *s.DecisionTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeDecisionTaskScheduled),
+		EventId:                              common.Int64Ptr(eventID),
+		EventType:                            common.EventTypePtr(s.EventTypeDecisionTaskScheduled),
 		DecisionTaskScheduledEventAttributes: attr}
 }
 
@@ -135,8 +135,8 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 
 func createTestEventDecisionTaskCompleted(eventID int64, attr *s.DecisionTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeDecisionTaskCompleted),
+		EventId:                              common.Int64Ptr(eventID),
+		EventType:                            common.EventTypePtr(s.EventTypeDecisionTaskCompleted),
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
@@ -383,9 +383,9 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		}),
 	}
 	params := workerExecutionParameters{
-		TaskList: taskList,
-		Identity: "test-id-1",
-		Logger:   zap.NewNop(),
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
 		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
 	}
 
@@ -421,9 +421,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	}
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	params := workerExecutionParameters{
-		TaskList: taskList,
-		Identity: "test-id-1",
-		Logger:   zap.NewNop(),
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
 		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
 	}
 

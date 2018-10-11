@@ -127,7 +127,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	workflowExecutionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 4,
-		Logger: logger,
+		Logger:                    logger,
 	}
 
 	domainStatus := m.DomainStatusRegistered
@@ -156,7 +156,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	activityExecutionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 10,
-		Logger: logger,
+		Logger:                    logger,
 	}
 
 	// Register activity instances and launch the worker.
