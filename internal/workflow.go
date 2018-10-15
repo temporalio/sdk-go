@@ -415,6 +415,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	params := &executeLocalActivityParams{
 		localActivityOptions: *options,
 		ActivityFn:           activity,
+		ActivityType:         lastPartOfName(getFunctionName(activity)),
 		InputArgs:            args,
 		WorkflowInfo:         GetWorkflowInfo(ctx),
 		DataConverter:        getDataConverterFromWorkflowContext(ctx),

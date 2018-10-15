@@ -80,6 +80,7 @@ type (
 	executeLocalActivityParams struct {
 		localActivityOptions
 		ActivityFn    interface{} // local activity function pointer
+		ActivityType  string      // local activity type
 		InputArgs     []interface{}
 		WorkflowInfo  *WorkflowInfo
 		DataConverter encoded.DataConverter

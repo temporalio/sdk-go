@@ -125,13 +125,14 @@ type (
 	}
 
 	localActivityMarkerData struct {
-		ActivityID string        `json:"activityId,omitempty"`
-		ErrReason  string        `json:"errReason,omitempty"`
-		ErrJSON    string        `json:"errJson,omitempty"` // string instead of []byte so the encoded blob is human readable
-		ResultJSON string        `json:"resultJson,omitempty"`
-		ReplayTime time.Time     `json:"replayTime,omitempty"`
-		Attempt    int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
-		Backoff    time.Duration `json:"backoff,omitempty"` // retry backoff duration
+		ActivityID   string        `json:"activityId,omitempty"`
+		ActivityType string        `json:"activityType,omitempty"`
+		ErrReason    string        `json:"errReason,omitempty"`
+		ErrJSON      string        `json:"errJson,omitempty"` // string instead of []byte so the encoded blob is human readable
+		ResultJSON   string        `json:"resultJson,omitempty"`
+		ReplayTime   time.Time     `json:"replayTime,omitempty"`
+		Attempt      int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
+		Backoff      time.Duration `json:"backoff,omitempty"` // retry backoff duration
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -933,6 +934,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 	}
 
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
+		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
+			// history marker mismatch to the current code.
+			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v", la.params.ActivityType, lamd.ActivityType)
+			panic(panicMsg)
+		}
 		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
@@ -959,9 +965,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
 	// convert local activity result and error to marker data
 	lamd := localActivityMarkerData{
-		ActivityID: lar.task.activityID,
-		ReplayTime: weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
-		Attempt:    lar.task.attempt,
+		ActivityID:   lar.task.activityID,
+		ActivityType: lar.task.params.ActivityType,
+		ReplayTime:   weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
+		Attempt:      lar.task.attempt,
 	}
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
