@@ -125,6 +125,8 @@ type (
 		dataConverter      encoded.DataConverter
 		attempt            int32 // starts from 0.
 		heartbeatDetails   []byte
+		workflowType       *WorkflowType
+		workflowDomain     string
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

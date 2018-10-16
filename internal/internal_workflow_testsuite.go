@@ -44,10 +44,12 @@ import (
 )
 
 const (
-	defaultTestDomain     = "default-test-domain"
-	defaultTestTaskList   = "default-test-tasklist"
-	defaultTestWorkflowID = "default-test-workflow-id"
-	defaultTestRunID      = "default-test-run-id"
+	defaultTestDomain           = "default-test-domain"
+	defaultTestTaskList         = "default-test-tasklist"
+	defaultTestWorkflowID       = "default-test-workflow-id"
+	defaultTestRunID            = "default-test-run-id"
+	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
+	defaultTestDomainName       = "default-test-domain-name"
 )
 
 type (
@@ -439,6 +441,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		defaultTestWorkflowID,
 		defaultTestRunID,
 		"0",
+		defaultTestWorkflowTypeName,
+		defaultTestDomainName,
 		params,
 	)
 
@@ -803,6 +807,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		defaultTestWorkflowID,
 		defaultTestRunID,
 		activityInfo.activityID,
+		defaultTestWorkflowTypeName,
+		defaultTestDomainName,
 		parameters,
 	)
 
@@ -1365,7 +1371,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	return taskHandler
 }
 
-func newTestActivityTask(workflowID, runID, activityID string, params executeActivityParams) *shared.PollForActivityTaskResponse {
+func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, domainName string, params executeActivityParams) *shared.PollForActivityTaskResponse {
 	task := &shared.PollForActivityTaskResponse{
 		WorkflowExecution: &shared.WorkflowExecution{
 			WorkflowId: common.StringPtr(workflowID),
@@ -1380,6 +1386,10 @@ func newTestActivityTask(workflowID, runID, activityID string, params executeAct
 		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
 		StartToCloseTimeoutSeconds:    common.Int32Ptr(params.StartToCloseTimeoutSeconds),
 		HeartbeatTimeoutSeconds:       common.Int32Ptr(params.HeartbeatTimeoutSeconds),
+		WorkflowType: &shared.WorkflowType{
+			Name: common.StringPtr(workflowTypeName),
+		},
+		WorkflowDomain: common.StringPtr(domainName),
 	}
 	return task
 }
