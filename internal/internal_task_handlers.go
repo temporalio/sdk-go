@@ -891,7 +891,11 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workfl
 }
 
 func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
-	return !w.isWorkflowCompleted && w.eventHandler != nil && len(w.eventHandler.pendingLaTasks) > 0
+	return !w.isWorkflowCompleted &&
+		w.currentDecisionTask != nil &&
+		w.currentDecisionTask.Query == nil && // don't run local activity for query task
+		w.eventHandler != nil &&
+		len(w.eventHandler.pendingLaTasks) > 0
 }
 
 func (w *workflowExecutionContextImpl) clearCurrentTask() {
