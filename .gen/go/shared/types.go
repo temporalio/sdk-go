@@ -7218,7 +7218,8 @@ func (v *DecisionType) UnmarshalJSON(text []byte) error {
 }
 
 type DeprecateDomainRequest struct {
-	Name *string `json:"name,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	SecurityToken *string `json:"securityToken,omitempty"`
 }
 
 // ToWire translates a DeprecateDomainRequest struct into a Thrift-level intermediate
@@ -7238,7 +7239,7 @@ type DeprecateDomainRequest struct {
 //   }
 func (v *DeprecateDomainRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [1]wire.Field
+		fields [2]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -7250,6 +7251,14 @@ func (v *DeprecateDomainRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.SecurityToken != nil {
+		w, err = wire.NewValueString(*(v.SecurityToken)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
 		i++
 	}
 
@@ -7288,6 +7297,16 @@ func (v *DeprecateDomainRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 20:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.SecurityToken = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -7301,10 +7320,14 @@ func (v *DeprecateDomainRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [1]string
+	var fields [2]string
 	i := 0
 	if v.Name != nil {
 		fields[i] = fmt.Sprintf("Name: %v", *(v.Name))
+		i++
+	}
+	if v.SecurityToken != nil {
+		fields[i] = fmt.Sprintf("SecurityToken: %v", *(v.SecurityToken))
 		i++
 	}
 
@@ -7319,6 +7342,9 @@ func (v *DeprecateDomainRequest) Equals(rhs *DeprecateDomainRequest) bool {
 	if !_String_EqualsPtr(v.Name, rhs.Name) {
 		return false
 	}
+	if !_String_EqualsPtr(v.SecurityToken, rhs.SecurityToken) {
+		return false
+	}
 
 	return true
 }
@@ -7328,6 +7354,16 @@ func (v *DeprecateDomainRequest) Equals(rhs *DeprecateDomainRequest) bool {
 func (v *DeprecateDomainRequest) GetName() (o string) {
 	if v.Name != nil {
 		return *v.Name
+	}
+
+	return
+}
+
+// GetSecurityToken returns the value of SecurityToken if it is set or its
+// zero value if it is unset.
+func (v *DeprecateDomainRequest) GetSecurityToken() (o string) {
+	if v.SecurityToken != nil {
+		return *v.SecurityToken
 	}
 
 	return
@@ -18482,6 +18518,7 @@ type RegisterDomainRequest struct {
 	Clusters                               []*ClusterReplicationConfiguration `json:"clusters,omitempty"`
 	ActiveClusterName                      *string                            `json:"activeClusterName,omitempty"`
 	Data                                   map[string]string                  `json:"data,omitempty"`
+	SecurityToken                          *string                            `json:"securityToken,omitempty"`
 }
 
 // ToWire translates a RegisterDomainRequest struct into a Thrift-level intermediate
@@ -18501,7 +18538,7 @@ type RegisterDomainRequest struct {
 //   }
 func (v *RegisterDomainRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [8]wire.Field
+		fields [9]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -18569,6 +18606,14 @@ func (v *RegisterDomainRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 80, Value: w}
+		i++
+	}
+	if v.SecurityToken != nil {
+		w, err = wire.NewValueString(*(v.SecurityToken)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 90, Value: w}
 		i++
 	}
 
@@ -18673,6 +18718,16 @@ func (v *RegisterDomainRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 90:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.SecurityToken = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -18686,7 +18741,7 @@ func (v *RegisterDomainRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [8]string
+	var fields [9]string
 	i := 0
 	if v.Name != nil {
 		fields[i] = fmt.Sprintf("Name: %v", *(v.Name))
@@ -18720,6 +18775,10 @@ func (v *RegisterDomainRequest) String() string {
 		fields[i] = fmt.Sprintf("Data: %v", v.Data)
 		i++
 	}
+	if v.SecurityToken != nil {
+		fields[i] = fmt.Sprintf("SecurityToken: %v", *(v.SecurityToken))
+		i++
+	}
 
 	return fmt.Sprintf("RegisterDomainRequest{%v}", strings.Join(fields[:i], ", "))
 }
@@ -18751,6 +18810,9 @@ func (v *RegisterDomainRequest) Equals(rhs *RegisterDomainRequest) bool {
 		return false
 	}
 	if !((v.Data == nil && rhs.Data == nil) || (v.Data != nil && rhs.Data != nil && _Map_String_String_Equals(v.Data, rhs.Data))) {
+		return false
+	}
+	if !_String_EqualsPtr(v.SecurityToken, rhs.SecurityToken) {
 		return false
 	}
 
@@ -18812,6 +18874,16 @@ func (v *RegisterDomainRequest) GetEmitMetric() (o bool) {
 func (v *RegisterDomainRequest) GetActiveClusterName() (o string) {
 	if v.ActiveClusterName != nil {
 		return *v.ActiveClusterName
+	}
+
+	return
+}
+
+// GetSecurityToken returns the value of SecurityToken if it is set or its
+// zero value if it is unset.
+func (v *RegisterDomainRequest) GetSecurityToken() (o string) {
+	if v.SecurityToken != nil {
+		return *v.SecurityToken
 	}
 
 	return
@@ -29464,6 +29536,7 @@ type UpdateDomainRequest struct {
 	UpdatedInfo              *UpdateDomainInfo               `json:"updatedInfo,omitempty"`
 	Configuration            *DomainConfiguration            `json:"configuration,omitempty"`
 	ReplicationConfiguration *DomainReplicationConfiguration `json:"replicationConfiguration,omitempty"`
+	SecurityToken            *string                         `json:"securityToken,omitempty"`
 }
 
 // ToWire translates a UpdateDomainRequest struct into a Thrift-level intermediate
@@ -29483,7 +29556,7 @@ type UpdateDomainRequest struct {
 //   }
 func (v *UpdateDomainRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -29519,6 +29592,14 @@ func (v *UpdateDomainRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+	if v.SecurityToken != nil {
+		w, err = wire.NewValueString(*(v.SecurityToken)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
 		i++
 	}
 
@@ -29587,6 +29668,16 @@ func (v *UpdateDomainRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 50:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.SecurityToken = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -29600,7 +29691,7 @@ func (v *UpdateDomainRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [5]string
 	i := 0
 	if v.Name != nil {
 		fields[i] = fmt.Sprintf("Name: %v", *(v.Name))
@@ -29616,6 +29707,10 @@ func (v *UpdateDomainRequest) String() string {
 	}
 	if v.ReplicationConfiguration != nil {
 		fields[i] = fmt.Sprintf("ReplicationConfiguration: %v", v.ReplicationConfiguration)
+		i++
+	}
+	if v.SecurityToken != nil {
+		fields[i] = fmt.Sprintf("SecurityToken: %v", *(v.SecurityToken))
 		i++
 	}
 
@@ -29639,6 +29734,9 @@ func (v *UpdateDomainRequest) Equals(rhs *UpdateDomainRequest) bool {
 	if !((v.ReplicationConfiguration == nil && rhs.ReplicationConfiguration == nil) || (v.ReplicationConfiguration != nil && rhs.ReplicationConfiguration != nil && v.ReplicationConfiguration.Equals(rhs.ReplicationConfiguration))) {
 		return false
 	}
+	if !_String_EqualsPtr(v.SecurityToken, rhs.SecurityToken) {
+		return false
+	}
 
 	return true
 }
@@ -29648,6 +29746,16 @@ func (v *UpdateDomainRequest) Equals(rhs *UpdateDomainRequest) bool {
 func (v *UpdateDomainRequest) GetName() (o string) {
 	if v.Name != nil {
 		return *v.Name
+	}
+
+	return
+}
+
+// GetSecurityToken returns the value of SecurityToken if it is set or its
+// zero value if it is unset.
+func (v *UpdateDomainRequest) GetSecurityToken() (o string) {
+	if v.SecurityToken != nil {
+		return *v.SecurityToken
 	}
 
 	return
