@@ -40,8 +40,6 @@ type (
 	// ActivityInfo contains information about currently executing activity.
 	ActivityInfo struct {
 		TaskToken          []byte
-		WorkflowType       *WorkflowType
-		WorkflowDomain     string
 		WorkflowExecution  WorkflowExecution
 		ActivityID         string
 		ActivityType       ActivityType
@@ -163,8 +161,6 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 		StartedTimestamp:   env.startedTimestamp,
 		TaskList:           env.taskList,
 		Attempt:            env.attempt,
-		WorkflowType:       env.workflowType,
-		WorkflowDomain:     env.workflowDomain,
 	}
 }
 
@@ -281,10 +277,6 @@ func WithActivityTask(
 		dataConverter:      dataConverter,
 		attempt:            task.GetAttempt(),
 		heartbeatDetails:   task.HeartbeatDetails,
-		workflowType: &WorkflowType{
-			Name: *task.WorkflowType.Name,
-		},
-		workflowDomain: *task.WorkflowDomain,
 	})
 }
 

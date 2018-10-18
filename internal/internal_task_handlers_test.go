@@ -666,10 +666,6 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			ScheduleToCloseTimeoutSeconds: common.Int32Ptr(d.ScheduleDuration),
 			StartedTimestamp:              common.Int64Ptr(d.StartTS.UnixNano()),
 			StartToCloseTimeoutSeconds:    common.Int32Ptr(d.StartDuration),
-			WorkflowType: &s.WorkflowType{
-				Name: common.StringPtr("wType"),
-			},
-			WorkflowDomain: common.StringPtr("domain"),
 		}
 		td := fmt.Sprintf("testIndex: %v, testDetails: %v", i, d)
 		r, err := activityHandler.Execute(tasklist, pats)
