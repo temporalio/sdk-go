@@ -463,7 +463,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.True(len(response.Decisions) > 0)
 	closeDecision := response.Decisions[len(response.Decisions)-1]
 	t.Equal(*closeDecision.DecisionType, s.DecisionTypeFailWorkflowExecution)
-	t.Contains(*closeDecision.FailWorkflowExecutionDecisionAttributes.Reason, "nondeterministic")
+	t.Contains(*closeDecision.FailWorkflowExecutionDecisionAttributes.Reason, "NonDeterministicWorkflowPolicyFailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")

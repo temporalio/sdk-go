@@ -113,7 +113,7 @@ type (
 
 	// PanicError contains information about panicked workflow/activity.
 	PanicError struct {
-		value      string
+		value      interface{}
 		stackTrace string
 	}
 
@@ -296,12 +296,12 @@ func (e *CanceledError) Details(d ...interface{}) error {
 }
 
 func newPanicError(value interface{}, stackTrace string) *PanicError {
-	return &PanicError{value: fmt.Sprintf("%v", value), stackTrace: stackTrace}
+	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
 // Error from error interface
 func (e *PanicError) Error() string {
-	return e.value
+	return fmt.Sprintf("%v", e.value)
 }
 
 // StackTrace return stack trace of the panic

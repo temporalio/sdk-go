@@ -111,6 +111,11 @@ type (
 		scheduledEventIDToCancellationID map[int64]string
 		scheduledEventIDToSignalID       map[int64]string
 	}
+
+	// panic when decision state machine is in illegal state
+	stateMachineIllegalStatePanic struct {
+		message string
+	}
 )
 
 const (
@@ -306,9 +311,17 @@ func (d *decisionStateMachineBase) moveState(newState decisionState, event strin
 	}
 }
 
+func (d stateMachineIllegalStatePanic) String() string {
+	return d.message
+}
+
+func panicIllegalState(message string) {
+	panic(stateMachineIllegalStatePanic{message: message})
+}
+
 func (d *decisionStateMachineBase) failStateTransition(event string) {
 	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic decider code
-	panic(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
+	panicIllegalState(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
 }
 
 func (d *decisionStateMachineBase) handleDecisionSent() {
@@ -660,7 +673,7 @@ func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 	if !ok {
 		panicMsg := fmt.Sprintf("unknown decision %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
-		panic(panicMsg)
+		panicIllegalState(panicMsg)
 	}
 	// Move the last update decision state machine to the back of the list.
 	// Otherwise decisions (like timer cancellations) can end up out of order.
@@ -671,7 +684,7 @@ func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
 	if _, ok := h.decisions[decision.getID()]; ok {
 		panicMsg := fmt.Sprintf("adding duplicate decision %v", decision)
-		panic(panicMsg)
+		panicIllegalState(panicMsg)
 	}
 	element := h.orderedDecisions.PushBack(decision)
 	h.decisions[decision.getID()] = element
@@ -730,12 +743,12 @@ func (h *decisionsHelper) getActivityID(event *s.HistoryEvent) string {
 	case s.EventTypeActivityTaskTimedOut:
 		scheduledEventID = event.ActivityTaskTimedOutEventAttributes.GetScheduledEventId()
 	default:
-		panic(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
+		panicIllegalState(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
 	}
 
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panic(fmt.Sprintf("unable to find activity ID for the event %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("unable to find activity ID for the event %v", util.HistoryEventToString(event)))
 	}
 	return activityID
 }

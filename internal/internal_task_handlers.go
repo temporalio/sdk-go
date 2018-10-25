@@ -719,6 +719,14 @@ ProcessEvents:
 		}
 	}
 
+	// Non-deterministic error could happen in 2 different places:
+	//   1) the replay decisions does not match to history events. This is usually due to non backwards compatible code
+	// change to decider logic. For example, change calling one activity to a different activity.
+	//   2) the decision state machine is trying to make illegal state transition while replay a history event (like
+	// activity task completed), but the corresponding decider code that start the event has been removed. In that case
+	// the replay of that event will panic on the decision state machine and the workflow will be marked as completed
+	// with the panic error.
+	var nonDeterministicErr error
 	if !skipReplayCheck && !w.isWorkflowCompleted {
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
@@ -728,26 +736,29 @@ ProcessEvents:
 				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 				zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 				zap.Error(err))
-
-			// Whether or not we store the error in workflowContext.err makes
-			// a significant difference, to the point that it affects client's observable
-			// behavior as far as handling non-deterministic workflows.
-			//
-			// If we store it in workflowContext.err, the decision task completion code
-			// will pick up the error and correctly wrap it in the response request we sent back
-			// to the server, which in this case will contain a request to fail the workflow.
-			//
-			// If we simply return the error, the decision task completion code path will not
-			// execute at all, therefore, no response is sent back to the server and we will
-			// look like a decision task time out.
-			switch w.wth.nonDeterministicWorkflowPolicy {
-			case NonDeterministicWorkflowPolicyFailWorkflow:
-				eventHandler.Complete(nil, NewCustomError("nondeterministic workflow", err.Error()))
-			case NonDeterministicWorkflowPolicyBlockWorkflow:
-				return nil, err
-			default:
-				panic(fmt.Sprintf("unknown mismatched workflow history policy."))
+			nonDeterministicErr = err
+		}
+	}
+	if nonDeterministicErr == nil && w.err != nil {
+		if panicErr, ok := w.err.(*PanicError); ok && panicErr.value != nil {
+			if _, isStateMachinePanic := panicErr.value.(stateMachineIllegalStatePanic); isStateMachinePanic {
+				nonDeterministicErr = panicErr
 			}
+		}
+	}
+
+	if nonDeterministicErr != nil {
+		switch w.wth.nonDeterministicWorkflowPolicy {
+		case NonDeterministicWorkflowPolicyFailWorkflow:
+			// complete workflow with custom error will fail the workflow
+			eventHandler.Complete(nil, NewCustomError("NonDeterministicWorkflowPolicyFailWorkflow", nonDeterministicErr.Error()))
+		case NonDeterministicWorkflowPolicyBlockWorkflow:
+			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
+			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
+			// workflow timeout.
+			return nil, nonDeterministicErr
+		default:
+			panic(fmt.Sprintf("unknown mismatched workflow history policy."))
 		}
 	}
 
