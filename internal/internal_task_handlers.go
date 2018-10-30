@@ -1494,8 +1494,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	canCtx, cancel := context.WithCancel(rootCtx)
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds())
 	defer func() {
-		_, activityFailed := result.(*s.RespondActivityTaskFailedRequest)
-		invoker.Close(activityFailed) // flush buffered heartbeat if activity failed.
+		_, activityCompleted := result.(*s.RespondActivityTaskCompletedRequest)
+		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
 	}()
 	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope, ath.dataConverter)
 	activityType := *t.ActivityType
