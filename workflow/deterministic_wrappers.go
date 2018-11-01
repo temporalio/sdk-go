@@ -84,7 +84,7 @@ func Go(ctx Context, f func(ctx Context)) {
 
 // GoNamed creates a new coroutine with a given human readable name.
 // It has similar semantic to goroutine in a context of the workflow.
-// Name appears in stack traces that are blocked on this Channel.
+// Name appears in stack traces that include this coroutine.
 func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	internal.GoNamed(ctx, name, f)
 }
