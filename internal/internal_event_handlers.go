@@ -936,8 +936,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v", la.params.ActivityType, lamd.ActivityType)
-			panic(panicMsg)
+			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, string(markerData))
+			panicIllegalState(panicMsg)
 		}
 		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
