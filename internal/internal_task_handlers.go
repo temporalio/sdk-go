@@ -595,7 +595,7 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDeci
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-) (completeRequest interface{}, context WorkflowExecutionContext, err error) {
+) (completeRequest interface{}, context WorkflowExecutionContext, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
 		return nil, nil, errors.New("nil workflow task provided")
 	}
@@ -625,18 +625,18 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}
 
 	defer func() {
-		workflowContext.Unlock(err)
+		workflowContext.Unlock(errRet)
 	}()
 
 	response, err := workflowContext.ProcessWorkflowTask(workflowTask)
 	return response, workflowContext, err
 }
 
-func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (completeRequest interface{}, err error) {
+func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
 	task := workflowTask.task
 	historyIterator := workflowTask.historyIterator
-	if err = w.ResetIfStale(task, historyIterator); err != nil {
-		return
+	if err := w.ResetIfStale(task, historyIterator); err != nil {
+		return nil, err
 	}
 	w.SetCurrentTask(task)
 
@@ -730,12 +730,6 @@ ProcessEvents:
 	if !skipReplayCheck && !w.isWorkflowCompleted {
 		// check if decisions from reply matches to the history events
 		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
-			w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
-			w.wth.logger.Error("Replay and history mismatch.",
-				zap.String(tagWorkflowType, task.WorkflowType.GetName()),
-				zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-				zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-				zap.Error(err))
 			nonDeterministicErr = err
 		}
 	}
@@ -748,6 +742,14 @@ ProcessEvents:
 	}
 
 	if nonDeterministicErr != nil {
+
+		w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
+		w.wth.logger.Error("non-deterministic-error",
+			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
+			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
+			zap.Error(nonDeterministicErr))
+
 		switch w.wth.nonDeterministicWorkflowPolicy {
 		case NonDeterministicWorkflowPolicyFailWorkflow:
 			// complete workflow with custom error will fail the workflow
