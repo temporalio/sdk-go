@@ -168,20 +168,31 @@ func (eh *history) IsReplayEvent(event *s.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isDecisionEvent(event.GetEventType())
 }
 
-func (eh *history) IsNextDecisionFailed() bool {
-	events := eh.loadedEvents
-	eventsSize := len(events)
-	for i := eh.currentIndex; i < eventsSize; i++ {
-		switch events[i].GetEventType() {
-		case s.EventTypeDecisionTaskCompleted:
-			return false
-		case s.EventTypeDecisionTaskTimedOut:
-			return true
-		case s.EventTypeDecisionTaskFailed:
-			return true
+func (eh *history) IsNextDecisionFailed() (bool, error) {
+
+	nextIndex := eh.currentIndex + 1
+	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
+		if err := eh.loadMoreEvents(); err != nil {
+			return false, err
 		}
 	}
-	return false
+
+	if nextIndex < len(eh.loadedEvents) {
+		nextEventType := eh.loadedEvents[nextIndex].GetEventType()
+		isFailed := nextEventType == s.EventTypeDecisionTaskTimedOut || nextEventType == s.EventTypeDecisionTaskFailed
+		return isFailed, nil
+	}
+
+	return false, nil
+}
+
+func (eh *history) loadMoreEvents() error {
+	historyPage, err := eh.getMoreEvents()
+	if err != nil {
+		return err
+	}
+	eh.loadedEvents = append(eh.loadedEvents, historyPage.Events...)
+	return nil
 }
 
 func isDecisionEvent(eventType s.EventType) bool {
@@ -205,22 +216,6 @@ func isDecisionEvent(eventType s.EventType) bool {
 }
 
 // NextDecisionEvents returns events that there processed as new by the next decision.
-// It also reorders events that were added to a history during outgoing decision. Without
-// such reordering determinism is broken.
-// For Ex: (pseudo code)
-//   ResultA := Schedule_Activity_A
-//   ResultB := Schedule_Activity_B
-//   if ResultB.IsReady() { panic error }
-//   ResultC := Schedule_Activity_C(ResultA)
-// If both A and B activities complete then we could have two different paths, Either Scheduling C (or) Panic'ing.
-// Workflow events:
-// 	Workflow_Start, DecisionStart1, DecisionComplete1, A_Schedule, B_Schedule, A_Complete,
-//      DecisionStart2, B_Complete, DecisionComplete2, C_Schedule.
-// B_Complete happened concurrent to execution of the decision(2), where C_Schedule is a result made
-// by execution of decision(2).
-// To maintain determinism the concurrent decisions are moved to the one after the decisions made by current decision.
-// markers result value returns marker events that currently running decision produced. They are used to
-// implement SideEffect method execution without blocking on decision roundtrip.
 func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.HistoryEvent, err error) {
 	if eh.next == nil {
 		eh.next, _, err = eh.nextDecisionEvents()
@@ -259,18 +254,21 @@ OrderEvents:
 			if !eh.hasMoreEvents() {
 				break OrderEvents
 			}
-			historyPage, err1 := eh.getMoreEvents()
-			if err1 != nil {
+			if err1 := eh.loadMoreEvents(); err1 != nil {
 				err = err1
 				return
 			}
-			eh.loadedEvents = append(eh.loadedEvents, historyPage.Events...)
 		}
 
 		event := eh.loadedEvents[eh.currentIndex]
 		switch event.GetEventType() {
 		case s.EventTypeDecisionTaskStarted:
-			if !eh.IsNextDecisionFailed() {
+			isFailed, err1 := eh.IsNextDecisionFailed()
+			if err1 != nil {
+				err = err1
+				return
+			}
+			if !isFailed {
 				eh.currentIndex++
 				nextEvents = append(nextEvents, event)
 				break OrderEvents

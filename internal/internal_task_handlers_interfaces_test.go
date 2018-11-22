@@ -28,6 +28,7 @@ import (
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	m "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/internal/common"
 	"golang.org/x/net/context"
 )
 
@@ -134,4 +135,46 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 		err = s.service.RespondActivityTaskFailed(ctx, request.(*m.RespondActivityTaskFailedRequest))
 		s.NoError(err)
 	}
+}
+
+func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
+	// Schedule an activity and see if we complete workflow.
+	taskList := "tl1"
+	testEvents := []*m.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		{
+			EventId:   common.Int64Ptr(4),
+			EventType: common.EventTypePtr(m.EventTypeDecisionTaskFailed),
+		},
+		{
+			EventId:   common.Int64Ptr(5),
+			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionSignaled),
+		},
+		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(7),
+	}
+	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
+
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: func(nextToken []byte) (*m.History, []byte, error) {
+			return &m.History{
+				Events: testEvents[3:],
+			}, nil, nil
+		},
+		nextPageToken: []byte("test"),
+	}
+
+	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
+
+	eh := newHistory(workflowTask, nil)
+
+	events, _, err := eh.NextDecisionEvents()
+
+	s.NoError(err)
+	s.Equal(3, len(events))
+	s.Equal(m.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
+	s.Equal(m.EventTypeDecisionTaskStarted, events[2].GetEventType())
+	s.Equal(int64(7), events[2].GetEventId())
 }
