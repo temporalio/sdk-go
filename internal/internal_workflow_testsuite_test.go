@@ -1158,6 +1158,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowRegistration() {
 	env := s.NewTestWorkflowEnvironment()
 
 	env.ExecuteWorkflow(workflowFn)
+	env = s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowAlias)
 }
 

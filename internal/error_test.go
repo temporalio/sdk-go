@@ -266,6 +266,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 		return err2 // pointer in details
 	}
 	RegisterWorkflow(errorWorkflowFn2)
+	wfEnv = s.NewTestWorkflowEnvironment()
 	wfEnv.ExecuteWorkflow(errorWorkflowFn2)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)

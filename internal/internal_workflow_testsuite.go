@@ -50,6 +50,7 @@ const (
 	defaultTestRunID            = "default-test-run-id"
 	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
 	defaultTestDomainName       = "default-test-domain-name"
+	workflowTypeNotSpecified    = "workflow-type-not-specified"
 )
 
 type (
@@ -199,7 +200,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 				ID:    defaultTestWorkflowID,
 				RunID: defaultTestRunID,
 			},
-			WorkflowType: WorkflowType{Name: "workflow-type-not-specified"},
+			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
 			ExecutionStartToCloseTimeoutSeconds: 1,
@@ -371,7 +372,15 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input []byte) {
+	env.locker.Lock()
+	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
+		// Current TestWorkflowEnvironment only support to run one workflow.
+		// Created task to support testing multiple workflows with one env instancehttps://github.com/uber-go/cadence-client/issues/616
+		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", env.workflowInfo.WorkflowType.Name, workflowType))
+	}
 	env.workflowInfo.WorkflowType.Name = workflowType
+	env.locker.Unlock()
+
 	workflowDefinition, err := env.getWorkflowDefinition(env.workflowInfo.WorkflowType)
 	if err != nil {
 		panic(err)
