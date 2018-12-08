@@ -297,12 +297,13 @@ type (
 		// This value is the cap of the interval. Default is 100x of initial interval.
 		MaximumInterval time.Duration
 
-		// Maximum time to retry. This is required and must be greater than 0.
+		// Maximum time to retry. Either ExpirationInterval or MaximumAttempts is required.
 		// When exceeded the retries stop even if maximum retries is not reached yet.
 		ExpirationInterval time.Duration
 
 		// Maximum number of attempts. When exceeded the retries stop even if not expired yet.
 		// If not set or set to 0, it means unlimited, and rely on ExpirationInterval to stop.
+		// Either MaximumAttempts or ExpirationInterval is required.
 		MaximumAttempts int32
 
 		// Non-Retriable errors. This is optional. Cadence server will stop retry if error reason matches this list.
