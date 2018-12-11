@@ -5,7 +5,7 @@ default: test
 
 IMPORT_ROOT := go.uber.org/cadence
 THRIFT_GENDIR := .gen/go
-THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift idl/github.com/uber/cadence/admin.thrift
+THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
 # one or more thriftrw-generated file(s), to create / depend on generated code
 THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
 TEST_ARG ?= -coverprofile=$(BUILD)/cover.out -race
