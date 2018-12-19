@@ -94,7 +94,13 @@ type (
 		// Optional: default empty string
 		ActivityID string
 
-		// RetryPolicy specify how to retry activity if error happens.
+		// RetryPolicy specify how to retry activity if error happens. When RetryPolicy.ExpirationInterval is specified
+		// and it is larger than the activity's ScheduleToStartTimeout, then the ExpirationInterval will override activity's
+		// ScheduleToStartTimeout. This is to avoid retrying on ScheduleToStartTimeout error which only happen when worker
+		// is not picking up the task within the timeout. Retrying ScheduleToStartTimeout does not make sense as it just
+		// mark the task as failed and create a new task and put back in the queue waiting worker to pick again. Cadence
+		// server also make sure the ScheduleToStartTimeout will not be larger than the workflow's timeout.
+		// Same apply to ScheduleToCloseTimeout. See more details about RetryPolicy on the doc for RetryPolicy.
 		// Optional: default is no retry
 		RetryPolicy *RetryPolicy
 	}
