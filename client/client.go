@@ -199,14 +199,16 @@ type (
 		//	- InternalServiceError
 		RecordActivityHeartbeatByID(ctx context.Context, domain, workflowID, runID, activityID string, details ...interface{}) error
 
-		// ListClosedWorkflow gets closed workflow executions based on request filters
+		// ListClosedWorkflow gets closed workflow executions based on request filters.
+		// Retrieved workflow executions are sorted by start time in descending order.
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		ListClosedWorkflow(ctx context.Context, request *s.ListClosedWorkflowExecutionsRequest) (*s.ListClosedWorkflowExecutionsResponse, error)
 
-		// ListClosedWorkflow gets open workflow executions based on request filters
+		// ListOpenWorkflow gets open workflow executions based on request filters.
+		// Retrieved workflow executions are sorted by start time in descending order.
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
