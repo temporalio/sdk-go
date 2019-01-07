@@ -265,7 +265,7 @@ func (bw *baseWorker) pollTask() {
 	if task != nil {
 		bw.taskQueueCh <- &polledTask{task}
 	} else {
-		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new pool
+		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new poll
 	}
 }
 

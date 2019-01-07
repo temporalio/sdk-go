@@ -113,7 +113,7 @@ type (
 
 	localActivityTaskHandler struct {
 		userContext   context.Context
-		metricsScope  tally.Scope
+		metricsScope  *metrics.TaggedScope
 		logger        *zap.Logger
 		dataConverter encoded.DataConverter
 	}
@@ -449,7 +449,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:   params.UserContext,
-		metricsScope:  params.MetricsScope,
+		metricsScope:  metrics.NewTaggedScope(params.MetricsScope),
 		logger:        params.Logger,
 		dataConverter: params.DataConverter,
 	}
@@ -482,8 +482,12 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 }
 
 func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivityTask) (result *localActivityResult) {
-	lath.metricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
+	workflowType := task.params.WorkflowInfo.WorkflowType.Name
 	activityType := getFunctionName(task.params.ActivityFn)
+	metricsScope := getMetricsScopeForLocalActivity(lath.metricsScope, workflowType, activityType)
+
+	metricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
+
 	ae := activityExecutor{name: activityType, fn: task.params.ActivityFn}
 
 	rootCtx := lath.userContext
@@ -496,7 +500,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		activityID:        fmt.Sprintf("%v", task.activityID),
 		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
 		logger:            lath.logger,
-		metricsScope:      lath.metricsScope,
+		metricsScope:      metricsScope,
 		isLocalActivity:   true,
 		dataConverter:     lath.dataConverter,
 		attempt:           task.attempt,
@@ -513,7 +517,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				zap.String(tagActivityType, activityType),
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
-			lath.metricsScope.Counter(metrics.LocalActivityPanicCounter).Inc(1)
+			metricsScope.Counter(metrics.LocalActivityPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = &localActivityResult{
 				task:   task,
@@ -522,7 +526,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			}
 		}
 		if result.err != nil {
-			lath.metricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+			metricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 		}
 	}()
 
@@ -549,7 +553,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Now().Sub(laStartTime)
 		close(ch)
-		lath.metricsScope.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
+		metricsScope.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
 		if executionLatency > timeoutDuration {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
@@ -573,10 +577,10 @@ Wait_Result:
 
 		// context is done
 		if ctx.Err() == context.Canceled {
-			lath.metricsScope.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+			metricsScope.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
 			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
-			lath.metricsScope.Counter(metrics.LocalActivityTimeoutCounter).Inc(1)
+			metricsScope.Counter(metrics.LocalActivityTimeoutCounter).Inc(1)
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
 		} else {
 			// should not happen
@@ -861,7 +865,9 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
-	metricsScope := atp.metricsScope.GetTaggedScope(tagActivityType, activityTask.task.ActivityType.GetName())
+	workflowType := activityTask.task.WorkflowType.GetName()
+	activityType := activityTask.task.ActivityType.GetName()
+	metricsScope := getMetricsScopeForActivity(atp.metricsScope, workflowType, activityType)
 
 	// record tasklist queue latency
 	queueLatency := time.Duration(activityTask.task.GetStartedTimestamp() - activityTask.task.GetScheduledTimestamp())

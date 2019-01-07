@@ -944,7 +944,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:   wOptions.BackgroundActivityContext,
-		metricsScope:  wOptions.MetricsScope,
+		metricsScope:  metrics.NewTaggedScope(wOptions.MetricsScope),
 		logger:        wOptions.Logger,
 		dataConverter: wOptions.DataConverter,
 	}

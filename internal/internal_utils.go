@@ -31,9 +31,11 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	"github.com/uber-go/tally"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
+	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/yarpc"
 	"golang.org/x/net/context"
 )
@@ -244,4 +246,14 @@ func getKillSignal() <-chan os.Signal {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	return c
+}
+
+// getMetricsScopeForActivity return properly tagged tally scope for activity
+func getMetricsScopeForActivity(ts *metrics.TaggedScope, workflowType, activityType string) tally.Scope {
+	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagActivityType, activityType)
+}
+
+// getMetricsScopeForLocalActivity return properly tagged tally scope for local activity
+func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, localActivityType string) tally.Scope {
+	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }

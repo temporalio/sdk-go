@@ -204,7 +204,8 @@ func isDecisionEvent(eventType s.EventType) bool {
 		s.EventTypeActivityTaskScheduled,
 		s.EventTypeActivityTaskCancelRequested,
 		s.EventTypeTimerStarted,
-		s.EventTypeTimerCanceled, s.EventTypeCancelTimerFailed,
+		s.EventTypeTimerCanceled,
+		s.EventTypeCancelTimerFailed,
 		s.EventTypeMarkerRecorded,
 		s.EventTypeStartChildWorkflowExecutionInitiated,
 		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
@@ -1497,13 +1498,17 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 		_, activityCompleted := result.(*s.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
 	}()
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, ath.metricsScope, ath.dataConverter)
-	activityType := *t.ActivityType
-	activityImplementation := ath.getActivity(activityType.GetName())
+
+	workflowType := t.WorkflowType.GetName()
+	activityType := t.ActivityType.GetName()
+	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter)
+
+	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
 		// Couldn't find the activity implementation.
 		supported := strings.Join(ath.getRegisteredActivityNames(), ", ")
-		return nil, fmt.Errorf("unable to find activityType=%v. Supported types: [%v]", activityType.GetName(), supported)
+		return nil, fmt.Errorf("unable to find activityType=%v. Supported types: [%v]", activityType, supported)
 	}
 
 	// panic handler
@@ -1514,11 +1519,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 			ath.logger.Error("Activity panic.",
 				zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
 				zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
-				zap.String(tagActivityType, t.ActivityType.GetName()),
+				zap.String(tagActivityType, activityType),
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
-			scope := ath.metricsScope.GetTaggedScope(tagActivityType, t.ActivityType.GetName())
-			scope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
+			metricsScope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
 		}
