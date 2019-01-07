@@ -354,6 +354,11 @@ struct ContinueAsNewWorkflowExecutionDecisionAttributes {
   50: optional i32 taskStartToCloseTimeoutSeconds
   60: optional i32 backoffStartIntervalInSeconds
   70: optional RetryPolicy retryPolicy
+  80: optional ContinueAsNewInitiator initiator
+  90: optional string failureReason
+  100: optional binary failureDetails
+  110: optional binary lastCompletionResult
+  120: optional string cronSchedule
 }
 
 struct StartChildWorkflowExecutionDecisionAttributes {
@@ -368,6 +373,7 @@ struct StartChildWorkflowExecutionDecisionAttributes {
   90: optional binary control
   100: optional WorkflowIdReusePolicy workflowIdReusePolicy
   110: optional RetryPolicy retryPolicy
+  120: optional string cronSchedule
 }
 
 struct Decision {
@@ -397,10 +403,16 @@ struct WorkflowExecutionStartedEventAttributes {
   50: optional i32 taskStartToCloseTimeoutSeconds
   52: optional ChildPolicy childPolicy
   54: optional string continuedExecutionRunId
+  55: optional ContinueAsNewInitiator initiator
+  56: optional string continuedFailureReason
+  57: optional binary continuedFailureDetails
+  58: optional binary lastCompletionResult
   60: optional string identity
   70: optional RetryPolicy retryPolicy
   80: optional i32 attempt
   90: optional i64 (js.type = "Long") expirationTimestamp
+  100: optional string cronSchedule
+  110: optional i32 firstDecisionTaskBackoffSeconds
 }
 
 struct WorkflowExecutionCompletedEventAttributes {
@@ -418,6 +430,12 @@ struct WorkflowExecutionTimedOutEventAttributes {
   10: optional TimeoutType timeoutType
 }
 
+enum ContinueAsNewInitiator {
+  Decider,
+  RetryPolicy,
+  CronSchedule,
+}
+
 struct WorkflowExecutionContinuedAsNewEventAttributes {
   10: optional string newExecutionRunId
   20: optional WorkflowType workflowType
@@ -427,6 +445,10 @@ struct WorkflowExecutionContinuedAsNewEventAttributes {
   60: optional i32 taskStartToCloseTimeoutSeconds
   70: optional i64 (js.type = "Long") decisionTaskCompletedEventId
   80: optional i32 backoffStartIntervalInSeconds
+  90: optional ContinueAsNewInitiator initiator
+  100: optional string failureReason
+  110: optional binary failureDetails
+  120: optional binary lastCompletionResult
 }
 
 struct DecisionTaskScheduledEventAttributes {
@@ -643,6 +665,7 @@ struct StartChildWorkflowExecutionInitiatedEventAttributes {
   100: optional i64 (js.type = "Long") decisionTaskCompletedEventId
   110: optional WorkflowIdReusePolicy workflowIdReusePolicy
   120: optional RetryPolicy retryPolicy
+  130: optional string cronSchedule
 }
 
 struct StartChildWorkflowExecutionFailedEventAttributes {
@@ -871,6 +894,7 @@ struct StartWorkflowExecutionRequest {
   100: optional WorkflowIdReusePolicy workflowIdReusePolicy
   110: optional ChildPolicy childPolicy
   120: optional RetryPolicy retryPolicy
+  130: optional string cronSchedule
 }
 
 struct StartWorkflowExecutionResponse {
@@ -1061,6 +1085,7 @@ struct SignalWithStartWorkflowExecutionRequest {
   120: optional binary signalInput
   130: optional binary control
   140: optional RetryPolicy retryPolicy
+  150: optional string cronSchedule
 }
 
 struct TerminateWorkflowExecutionRequest {
@@ -1143,6 +1168,8 @@ struct PendingActivityInfo {
   30: optional PendingActivityState state
   40: optional binary heartbeatDetails
   50: optional i64 (js.type = "Long") lastHeartbeatTimestamp
+  60: optional i64 (js.type = "Long") lastStartedTimestamp
+  70: optional i32 attempt
 }
 
 struct DescribeWorkflowExecutionResponse {
@@ -1220,4 +1247,21 @@ struct RetryPolicy {
 
   // Expiration time for the whole retry process.
   60: optional i32 expirationIntervalInSeconds
+}
+
+// HistoryBranchRange represents a piece of range for a branch.
+struct HistoryBranchRange{
+  // branchID of original branch forked from
+  10: optional string branchID
+  // beinning node for the range, inclusive
+  20: optional i64 beginNodeID
+  // ending node for the range, exclusive
+  30: optional i64 endNodeID
+}
+
+// For history persistence to serialize/deserialize branch details
+struct HistoryBranch{
+  10: optional string treeID
+  20: optional string branchID
+  30: optional list<HistoryBranchRange>  ancestors
 }

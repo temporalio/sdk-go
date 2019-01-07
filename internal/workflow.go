@@ -180,6 +180,21 @@ type (
 		// RetryPolicy specify how to retry child workflow if error happens.
 		// Optional: default is no retry
 		RetryPolicy *RetryPolicy
+
+		// CronSchedule - Optional cron schedule for workflow. If a cron schedule is specified, the workflow will run
+		// as a cron based on the schedule. The scheduling will be based on Cadence server's timezone. Schedule for next
+		// run only happen when the current run is completed/failed/timedout. So if the workflow is still running while
+		// next schedule is due, then it will skip that schedule. Cron workflow never stop until it is terminated or
+		// cancelled (by returning cadence.CanceledError). The cron spec is as following:
+		// ┌───────────── minute (0 - 59)
+		// │ ┌───────────── hour (0 - 23)
+		// │ │ ┌───────────── day of the month (1 - 31)
+		// │ │ │ ┌───────────── month (1 - 12)
+		// │ │ │ │ ┌───────────── day of the week (0 - 6) (Sunday to Saturday)
+		// │ │ │ │ │
+		// │ │ │ │ │
+		// * * * * *
+		CronSchedule string
 	}
 
 	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
@@ -583,6 +598,7 @@ type WorkflowInfo struct {
 	TaskStartToCloseTimeoutSeconds      int32
 	Domain                              string
 	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
+	lastCompletionResult                []byte
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
@@ -761,6 +777,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
+	wfOptions.cronSchedule = cwo.CronSchedule
 
 	return ctx1
 }
@@ -1046,4 +1063,29 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // workflow causes decision task to fail and cadence server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
 	return getWorkflowEnvironment(ctx).IsReplaying()
+}
+
+// HasLastCompletionResult checks if there is completion result from previous runs.
+// This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
+// If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
+// available when next run starts.
+// This HasLastCompletionResult() checks if there is such data available passing down from previous successful run.
+func HasLastCompletionResult(ctx Context) bool {
+	info := GetWorkflowInfo(ctx)
+	return len(info.lastCompletionResult) > 0
+}
+
+// GetLastCompletionResult extract last completion result from previous run for this cron workflow.
+// This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
+// If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
+// available when next run starts.
+// This GetLastCompletionResult() extract the data into expected data structure.
+func GetLastCompletionResult(ctx Context, d ...interface{}) error {
+	info := GetWorkflowInfo(ctx)
+	if len(info.lastCompletionResult) == 0 {
+		return ErrNoData
+	}
+
+	encoded := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
+	return encoded.Get(d...)
 }

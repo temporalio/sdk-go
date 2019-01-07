@@ -125,6 +125,14 @@
   revision = "780932d4fbbe0e69b84c34c20f5c8d0981e109ea"
 
 [[projects]]
+  digest = "1:6ab228f39a195cb1dab3564a0f27dc24a52bb3a19fa58dd2967f1e7b2482d82b"
+  name = "github.com/robfig/cron"
+  packages = ["."]
+  pruneopts = ""
+  revision = "b41be1df696709bb6395fe435af20370037c0b4c"
+  version = "v1.1"
+
+[[projects]]
   digest = "1:b9585eba46f28b2dbdb61168d95d34d7646825ceb0111666c0326a835a59b6f2"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
@@ -298,6 +306,7 @@
     "github.com/facebookgo/clock",
     "github.com/golang/mock/gomock",
     "github.com/pborman/uuid",
+    "github.com/robfig/cron",
     "github.com/sirupsen/logrus",
     "github.com/stretchr/testify/assert",
     "github.com/stretchr/testify/mock",

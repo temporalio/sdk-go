@@ -25,6 +25,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"github.com/robfig/cron"
 	"reflect"
 	"runtime"
 	"strings"
@@ -170,14 +171,16 @@ type (
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       encoded.DataConverter
 		retryPolicy                         *shared.RetryPolicy
+		cronSchedule                        string
 	}
 
 	executeWorkflowParams struct {
 		workflowOptions
-		workflowType  *WorkflowType
-		input         []byte
-		attempt       int32     // used by test framework to support child workflow retry
-		scheduledTime time.Time // used by test framework to support child workflow retry
+		workflowType         *WorkflowType
+		input                []byte
+		attempt              int32     // used by test framework to support child workflow retry
+		scheduledTime        time.Time // used by test framework to support child workflow retry
+		lastCompletionResult []byte    // used by test framework to support cron
 	}
 
 	// decodeFutureImpl
@@ -1097,8 +1100,20 @@ func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
 	if err := validateRetryPolicy(p.retryPolicy); err != nil {
 		return nil, err
 	}
+	if err := validateCronSchedule(p.cronSchedule); err != nil {
+		return nil, err
+	}
 
 	return p, nil
+}
+
+func validateCronSchedule(cronSchedule string) error {
+	if len(cronSchedule) == 0 {
+		return nil
+	}
+
+	_, err := cron.ParseStandard(cronSchedule)
+	return err
 }
 
 func getWorkflowEnvOptions(ctx Context) *workflowOptions {

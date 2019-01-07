@@ -179,6 +179,7 @@ func (wc *workflowClient) StartWorkflow(
 		Identity:                            common.StringPtr(wc.identity),
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
+		CronSchedule:                        common.StringPtr(options.CronSchedule),
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -329,6 +330,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		SignalInput:                         signalInput,
 		Identity:                            common.StringPtr(wc.identity),
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
+		CronSchedule:                        common.StringPtr(options.CronSchedule),
 	}
 
 	var response *s.StartWorkflowExecutionResponse

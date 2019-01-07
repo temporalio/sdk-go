@@ -502,6 +502,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
 		Domain:                              wth.domain,
 		Attempt:                             attributes.GetAttempt(),
+		lastCompletionResult:                attributes.LastCompletionResult,
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())

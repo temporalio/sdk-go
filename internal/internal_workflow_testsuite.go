@@ -31,6 +31,7 @@ import (
 
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
+	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
@@ -311,6 +312,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.TaskListName = *params.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *params.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *params.taskStartToCloseTimeoutSeconds
+	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
 	childEnv.executionTimeout = time.Duration(*params.executionStartToCloseTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
@@ -405,11 +407,12 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	}, false)
 
 	if env.executionTimeout > 0 {
+		timeoutDuration := env.executionTimeout + delayStart
 		env.registerDelayedCallback(func() {
 			if !env.isTestCompleted {
 				env.Complete(nil, ErrDeadlineExceeded)
 			}
-		}, env.executionTimeout)
+		}, timeoutDuration)
 	}
 	env.startMainLoop()
 }
@@ -530,7 +533,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		return
 	}
 
-	for {
+	for !env.isTestCompleted {
 		// use non-blocking-select to check if there is anything pending in the main thread.
 		select {
 		case c := <-env.callbackChannel:
@@ -719,12 +722,12 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 			// would have already been removed from the runningWorkflows map by RequestCancelWorkflow().
 			childWorkflowHandle.handled = true
 			// check if a retry is needed
-			if childWorkflowHandle.retryAsChild() {
-				// retry requested, so we don't want to post the error to parent workflow, return here.
+			if childWorkflowHandle.rerunAsChild() {
+				// rerun requested, so we don't want to post the error to parent workflow, return here.
 				return
 			}
 
-			// no retry, child workflow is done.
+			// no rerun, child workflow is done.
 			env.parentEnv.postCallback(func() {
 				// deliver result
 				childWorkflowHandle.err = env.testError
@@ -737,12 +740,24 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 	}
 }
 
-func (h *testWorkflowHandle) retryAsChild() bool {
+func (h *testWorkflowHandle) rerunAsChild() bool {
 	env := h.env
 	if !env.isChildWorkflow() {
 		return false
 	}
 	params := h.params
+
+	// pass down the last completion result
+	var result []byte
+	if env.testResult != nil {
+		env.testResult.Get(&result)
+	}
+	if len(result) == 0 {
+		// not successful run this time, carry over from whatever previous run pass to this run.
+		result = env.workflowInfo.lastCompletionResult
+	}
+	params.lastCompletionResult = result
+
 	if params.retryPolicy != nil && env.testError != nil {
 		errReason, _ := getErrorDetails(env.testError, env.GetDataConverter())
 		var expireTime time.Time
@@ -757,6 +772,22 @@ func (h *testWorkflowHandle) retryAsChild() bool {
 			params.attempt++
 			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 
+			return true
+		}
+	}
+
+	if len(params.cronSchedule) > 0 {
+		schedule, err := cron.ParseStandard(params.cronSchedule)
+		if err != nil {
+			panic(fmt.Errorf("invalid cron schedule %v, err: %v", params.cronSchedule, err))
+		}
+		workflowNow := env.Now()
+		backoff := schedule.Next(workflowNow).Sub(workflowNow)
+		if backoff > 0 {
+			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
+			params.attempt = 0
+			params.scheduledTime = env.Now()
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
 		}
 	}

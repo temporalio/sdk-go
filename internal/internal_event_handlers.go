@@ -300,6 +300,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.ChildPolicy = params.childPolicy.toThriftChildPolicyPtr()
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
 	attributes.RetryPolicy = params.retryPolicy
+	if len(params.cronSchedule) > 0 {
+		attributes.CronSchedule = common.StringPtr(params.cronSchedule)
+	}
 
 	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
 	decision.setData(&scheduledChildWorkflow{

@@ -81,3 +81,7 @@ ignored = ["go.uber.org/cadence/.tmp"]
 [[override]]
   name = "golang.org/x/tools"
   source = "golang.org/x/tools"
+
+[[constraint]]
+  name = "github.com/robfig/cron"
+  version = "1.1.0"

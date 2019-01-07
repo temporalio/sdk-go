@@ -280,6 +280,21 @@ type (
 		// RetryPolicy - Optional retry policy for workflow. If a retry policy is specified, in case of workflow failure
 		// server will start new workflow execution if needed based on the retry policy.
 		RetryPolicy *RetryPolicy
+
+		// CronSchedule - Optional cron schedule for workflow. If a cron schedule is specified, the workflow will run
+		// as a cron based on the schedule. The scheduling will be based on Cadence server's timezone. Schedule for next
+		// run only happen when the current run is completed/failed/timedout. So if the workflow is still running while
+		// next schedule is due, then it will skip that schedule. Cron workflow never stop until it is terminated or
+		// cancelled (by returning cadence.CanceledError). The cron spec is as following:
+		// ┌───────────── minute (0 - 59)
+		// │ ┌───────────── hour (0 - 23)
+		// │ │ ┌───────────── day of the month (1 - 31)
+		// │ │ │ ┌───────────── month (1 - 12)
+		// │ │ │ │ ┌───────────── day of the week (0 - 6) (Sunday to Saturday)
+		// │ │ │ │ │
+		// │ │ │ │ │
+		// * * * * *
+		CronSchedule string
 	}
 
 	// RetryPolicy defines the retry policy

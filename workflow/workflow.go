@@ -402,3 +402,21 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 func IsReplaying(ctx Context) bool {
 	return internal.IsReplaying(ctx)
 }
+
+// HasLastCompletionResult checks if there is completion result from previous runs.
+// This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
+// If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
+// available when next run starts.
+// This HasLastCompletionResult() checks if there is such data available passing down from previous successful run.
+func HasLastCompletionResult(ctx Context) bool {
+	return internal.HasLastCompletionResult(ctx)
+}
+
+// GetLastCompletionResult extract last completion result from previous run for this cron workflow.
+// This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
+// If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
+// available when next run starts.
+// This GetLastCompletionResult() extract the data into expected data structure.
+func GetLastCompletionResult(ctx Context, d ...interface{}) error {
+	return internal.GetLastCompletionResult(ctx, d...)
+}
