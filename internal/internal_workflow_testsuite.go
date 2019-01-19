@@ -781,7 +781,8 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		if err != nil {
 			panic(fmt.Errorf("invalid cron schedule %v, err: %v", params.cronSchedule, err))
 		}
-		workflowNow := env.Now()
+
+		workflowNow := env.Now().In(time.UTC)
 		backoff := schedule.Next(workflowNow).Sub(workflowNow)
 		if backoff > 0 {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
