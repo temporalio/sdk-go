@@ -71,6 +71,10 @@ exception AccessDeniedError {
 
 exception RetryTaskError {
   1: required string message
+  2: optional string domainId
+  3: optional string workflowId
+  4: optional string runId
+  5: optional i64 (js.type = "Long") nextEventId
 }
 
 enum WorkflowIdReusePolicy {
@@ -187,6 +191,7 @@ enum DecisionTaskFailedCause {
   FORCE_CLOSE_DECISION,
   FAILOVER_CLOSE_DECISION,
   BAD_SIGNAL_INPUT_SIZE,
+  RESET_WORKFLOW,
 }
 
 enum CancelExternalWorkflowExecutionFailedCause {
@@ -237,6 +242,12 @@ enum TaskListKind {
   STICKY,
 }
 
+enum ArchivalStatus {
+  NEVER_ENABLED,
+  DISABLED,
+  ENABLED,
+}
+
 struct Header {
     10: optional map<string, binary> fields
 }
@@ -252,6 +263,20 @@ struct ActivityType {
 struct TaskList {
   10: optional string name
   20: optional TaskListKind kind
+}
+
+enum EncodingType {
+  ThriftRW,
+}
+
+struct DataBlob {
+  10: optional EncodingType EncodingType
+  20: optional binary Data
+}
+
+struct ReplicationInfo {
+  10: optional i64 (js.type = "Long") version
+  20: optional i64 (js.type = "Long") lastEventId
 }
 
 struct TaskListMetadata {
@@ -483,6 +508,11 @@ struct DecisionTaskFailedEventAttributes {
   30: optional DecisionTaskFailedCause cause
   35: optional binary details
   40: optional string identity
+  50: optional string reason
+  // for reset workflow
+  60: optional string baseRunId
+  70: optional string newRunId
+  80: optional i64 (js.type = "Long") forkEventVersion
 }
 
 struct ActivityTaskScheduledEventAttributes {
@@ -807,6 +837,10 @@ struct DomainInfo {
 struct DomainConfiguration {
   10: optional i32 workflowExecutionRetentionPeriodInDays
   20: optional bool emitMetric
+  30: optional string archivalBucketName
+  40: optional i32 archivalRetentionPeriodInDays
+  50: optional ArchivalStatus archivalStatus
+  60: optional string archivalBucketOwner
 }
 
 struct UpdateDomainInfo {
@@ -836,6 +870,8 @@ struct RegisterDomainRequest {
   // A key-value map for any customized purpose
   80: optional map<string,string> data
   90: optional string securityToken
+  100: optional ArchivalStatus archivalStatus
+  110: optional string archivalBucketName
 }
 
 struct ListDomainsRequest {
@@ -1094,6 +1130,18 @@ struct TerminateWorkflowExecutionRequest {
   30: optional string reason
   40: optional binary details
   50: optional string identity
+}
+
+struct ResetWorkflowExecutionRequest {
+  10: optional string domain
+  20: optional WorkflowExecution workflowExecution
+  30: optional string reason
+  40: optional i64 (js.type = "Long") decisionFinishEventId
+  50: optional string requestId
+}
+
+struct ResetWorkflowExecutionResponse {
+  10: optional string runId
 }
 
 struct ListOpenWorkflowExecutionsRequest {

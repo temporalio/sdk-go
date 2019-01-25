@@ -70,6 +70,7 @@ const (
 	scopeNameSignalWithStartWorkflowExecution = CadenceMetricsPrefix + "SignalWithStartWorkflowExecution"
 	scopeNameStartWorkflowExecution           = CadenceMetricsPrefix + "StartWorkflowExecution"
 	scopeNameTerminateWorkflowExecution       = CadenceMetricsPrefix + "TerminateWorkflowExecution"
+	scopeNameResetWorkflowExecution           = CadenceMetricsPrefix + "ResetWorkflowExecution"
 	scopeNameUpdateDomain                     = CadenceMetricsPrefix + "UpdateDomain"
 	scopeNameQueryWorkflow                    = CadenceMetricsPrefix + "QueryWorkflow"
 	scopeNameDescribeTaskList                 = CadenceMetricsPrefix + "DescribeTaskList"
@@ -292,6 +293,13 @@ func (w *workflowServiceMetricsWrapper) TerminateWorkflowExecution(ctx context.C
 	err := w.service.TerminateWorkflowExecution(ctx, request, opts...)
 	scope.handleError(err)
 	return err
+}
+
+func (w *workflowServiceMetricsWrapper) ResetWorkflowExecution(ctx context.Context, request *shared.ResetWorkflowExecutionRequest, opts ...yarpc.CallOption) (*shared.ResetWorkflowExecutionResponse, error) {
+	scope := w.getOperationScope(scopeNameResetWorkflowExecution)
+	result, err := w.service.ResetWorkflowExecution(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) UpdateDomain(ctx context.Context, request *shared.UpdateDomainRequest, opts ...yarpc.CallOption) (*shared.UpdateDomainResponse, error) {
