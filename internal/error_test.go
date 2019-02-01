@@ -23,11 +23,12 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
-	"testing"
 )
 
 const (
@@ -353,4 +354,35 @@ func TestErrorDetailsValues(t *testing.T) {
 	require.Equal(t, testErrorDetails3, a3)
 
 	require.Equal(t, ErrTooManyArg, e.Get(&a1, &a2, &a3, &a3))
+}
+
+func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
+	context := &workflowEnvironmentImpl{
+		decisionsHelper: newDecisionsHelper(),
+		dataConverter:   getDefaultDataConverter(),
+	}
+	h := newDecisionsHelper()
+	var actualErr error
+	var initiatedEventID int64 = 101
+	signalID := "signalID"
+	context.decisionsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
+	di := h.newSignalExternalWorkflowStateMachine(
+		&shared.SignalExternalWorkflowExecutionDecisionAttributes{},
+		signalID,
+	)
+	di.state = decisionStateInitiated
+	di.setData(&scheduledSignal{
+		callback: func(r []byte, e error) {
+			actualErr = e
+		},
+	})
+	context.decisionsHelper.addDecision(di)
+	weh := &workflowExecutionEventHandlerImpl{context, nil}
+	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &shared.SignalExternalWorkflowExecutionFailedEventAttributes{
+		InitiatedEventId: common.Int64Ptr(initiatedEventID),
+		Cause:            shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution.Ptr(),
+	})
+	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
+	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)
+	require.True(t, ok)
 }

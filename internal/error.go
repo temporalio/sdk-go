@@ -123,6 +123,9 @@ type (
 		args   []interface{}
 		params *executeWorkflowParams
 	}
+
+	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	UnknownExternalWorkflowExecutionError struct{}
 )
 
 const (
@@ -322,4 +325,14 @@ func newTerminatedError() *TerminatedError {
 // Error from error interface
 func (e *TerminatedError) Error() string {
 	return "Terminated"
+}
+
+// newUnknownExternalWorkflowExecutionError creates UnknownExternalWorkflowExecutionError instance
+func newUnknownExternalWorkflowExecutionError() *UnknownExternalWorkflowExecutionError {
+	return &UnknownExternalWorkflowExecutionError{}
+}
+
+// Error from error interface
+func (e *UnknownExternalWorkflowExecutionError) Error() string {
+	return "UnknownExternalWorkflowExecution"
 }

@@ -140,6 +140,14 @@ func createTestEventDecisionTaskCompleted(eventID int64, attr *s.DecisionTaskCom
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
+func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *s.SignalExternalWorkflowExecutionFailedEventAttributes) *s.HistoryEvent {
+	return &s.HistoryEvent{
+		EventId:   common.Int64Ptr(eventID),
+		EventType: common.EventTypePtr(s.EventTypeSignalExternalWorkflowExecutionFailed),
+		SignalExternalWorkflowExecutionFailedEventAttributes: attr,
+	}
+}
+
 func createWorkflowTask(
 	events []*s.HistoryEvent,
 	previousStartEventID int64,

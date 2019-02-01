@@ -100,6 +100,9 @@ type (
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
 	// the workflow should continue as new with the same WorkflowID, but new RunID and new history.
 	ContinueAsNewError = internal.ContinueAsNewError
+
+	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
 )
 
 // NewContinueAsNewError creates ContinueAsNewError instance

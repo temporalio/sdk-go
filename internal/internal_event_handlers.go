@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/.gen/go/shared"
 	m "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
@@ -1179,7 +1180,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 	if signal.handled {
 		return nil
 	}
-	err := fmt.Errorf("signal external workflow failed, %v", attributes.GetCause())
+
+	var err error
+	switch attributes.GetCause() {
+	case shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution:
+		err = newUnknownExternalWorkflowExecutionError()
+	default:
+		err = fmt.Errorf("signal external workflow failed, %v", attributes.GetCause())
+	}
+
 	signal.handle(nil, err)
 
 	return nil
