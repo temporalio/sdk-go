@@ -2268,3 +2268,56 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 	s.Equal(4, successCount)
 	s.Equal(4, lastCompletionResult)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastResult() {
+	cronWorkflow := func(ctx Context) (int, error) {
+		var result int
+		if HasLastCompletionResult(ctx) {
+			GetLastCompletionResult(ctx, &result)
+		}
+
+		return result + 1, nil
+	}
+
+	RegisterWorkflow(cronWorkflow)
+
+	env := s.NewTestWorkflowEnvironment()
+	lastResult := 3
+	env.SetLastCompletionResult(lastResult)
+	env.ExecuteWorkflow(cronWorkflow)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result int
+	err := env.GetWorkflowResult(&result)
+	s.NoError(err)
+
+	s.Equal(lastResult+1, result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProgress() {
+	activityFn := func(ctx context.Context) (int, error) {
+		var progress int
+		if HasHeartbeatDetails(ctx) {
+			GetHeartbeatDetails(ctx, &progress)
+		}
+
+		return progress + 1, nil
+	}
+
+	RegisterActivity(activityFn)
+
+	env := s.NewTestActivityEnvironment()
+	lastProgress := 3
+	env.SetHeartbeatDetails(lastProgress)
+	result, err := env.ExecuteActivity(activityFn)
+
+	s.NoError(err)
+
+	var newProgress int
+	err = result.Get(&newProgress)
+	s.NoError(err)
+
+	s.Equal(lastProgress+1, newProgress)
+}

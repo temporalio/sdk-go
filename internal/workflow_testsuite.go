@@ -165,6 +165,11 @@ func (t *TestActivityEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 	return t
 }
 
+// SetHeartbeatDetails sets the heartbeat details to be returned from activity.GetHeartbeatDetails()
+func (t *TestActivityEnvironment) SetHeartbeatDetails(details interface{}) {
+	t.impl.setHeartbeatDetails(details)
+}
+
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (t *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
@@ -544,4 +549,9 @@ func (t *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // activity is set to a particular tasklist, that activity will only be available to that tasklist.
 func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
 	t.impl.setActivityTaskList(tasklist, activityFn...)
+}
+
+// SetLastCompletionResult sets the result to be returned from workflow.GetLastCompletionResult().
+func (t *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
+	t.impl.setLastCompletionResult(result)
 }

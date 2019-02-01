@@ -417,6 +417,7 @@ func HasLastCompletionResult(ctx Context) bool {
 // If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
 // available when next run starts.
 // This GetLastCompletionResult() extract the data into expected data structure.
+// See TestWorkflowEnvironment.SetLastCompletionResult() for unit test support.
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }

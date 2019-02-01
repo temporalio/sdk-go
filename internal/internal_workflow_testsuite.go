@@ -172,6 +172,8 @@ type (
 		doneChannel      chan struct{}
 		workerOptions    WorkerOptions
 		executionTimeout time.Duration
+
+		heartbeatDetails []byte
 	}
 )
 
@@ -457,6 +459,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		defaultTestDomainName,
 		params,
 	)
+
+	task.HeartbeatDetails = env.heartbeatDetails
 
 	// ensure activityFn is registered to defaultTestTaskList
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList, env.GetDataConverter())
@@ -1719,6 +1723,22 @@ func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrappe
 	return func(args mock.Arguments) {
 		env.runBeforeMockCallReturns(callWrapper, args)
 	}
+}
+
+func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface{}) {
+	data, err := encodeArg(env.GetDataConverter(), result)
+	if err != nil {
+		panic(err)
+	}
+	env.workflowInfo.lastCompletionResult = data
+}
+
+func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {
+	data, err := encodeArg(env.GetDataConverter(), details)
+	if err != nil {
+		panic(err)
+	}
+	env.heartbeatDetails = data
 }
 
 // function signature for mock SignalExternalWorkflow
