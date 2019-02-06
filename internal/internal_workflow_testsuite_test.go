@@ -1078,6 +1078,56 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
+	oldActivity := func(ctx context.Context, msg string) (string, error) {
+		return "hello" + "_" + msg, nil
+	}
+	newActivity := func(ctx context.Context, msg string) (string, error) {
+		return "hello" + "_" + msg, nil
+	}
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var f Future
+		v1 := GetVersion(ctx, "change_1", DefaultVersion, 2)
+		if v1 == DefaultVersion {
+			f = ExecuteActivity(ctx, oldActivity, "old1")
+		} else {
+			f = ExecuteActivity(ctx, newActivity, "new1")
+		}
+		var ret1 string
+		err := f.Get(ctx, &ret1) // wait for result
+
+		v2 := GetVersion(ctx, "change_2", DefaultVersion, 2)
+		if v2 == DefaultVersion {
+			f = ExecuteActivity(ctx, oldActivity, "old2")
+		} else {
+			f = ExecuteActivity(ctx, newActivity, "new2")
+		}
+		var ret2 string
+		err = f.Get(ctx, &ret2) // wait for result
+
+		return ret1 + ret2, err
+	}
+
+	RegisterWorkflow(workflowFn)
+	RegisterActivity(oldActivity)
+	RegisterActivity(newActivity)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.OnGetVersion("change_1", DefaultVersion, 2).Return(func(string, Version, Version) Version {
+		return DefaultVersion
+	})
+	env.OnGetVersion(mock.Anything, DefaultVersion, 2).Return(Version(2))
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	var ret string
+	s.NoError(env.GetWorkflowResult(&ret))
+	s.Equal("hello_old1hello_new2", ret)
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	actualValues := []string{}
 	retVal := &shared.WorkflowExecution{WorkflowId: common.StringPtr("retwID2"), RunId: common.StringPtr("retrID2")}

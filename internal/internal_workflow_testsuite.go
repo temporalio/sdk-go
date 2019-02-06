@@ -1622,13 +1622,55 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), cal
 	callback(f())
 }
 
-func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
+func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) (retVersion Version) {
+	if mockVersion, ok := env.getMockedVersion(changeID, changeID, minSupported, maxSupported); ok {
+		// GetVersion for changeID is mocked
+		return mockVersion
+	}
+	if mockVersion, ok := env.getMockedVersion(mock.Anything, changeID, minSupported, maxSupported); ok {
+		// GetVersion is mocked with any changeID.
+		return mockVersion
+	}
+
+	// no mock setup, so call regular path
 	if version, ok := env.changeVersions[changeID]; ok {
 		validateVersion(changeID, version, minSupported, maxSupported)
 		return version
 	}
 	env.changeVersions[changeID] = maxSupported
 	return maxSupported
+}
+
+func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeID string, minSupported, maxSupported Version) (Version, bool) {
+	mockMethod := getMockMethodForGetVersion(mockedChangeID)
+	if _, ok := env.expectedMockCalls[mockMethod]; !ok {
+		// mock not found
+		return DefaultVersion, false
+	}
+
+	args := []interface{}{changeID, minSupported, maxSupported}
+	// below call will panic if mock is not properly setup.
+	mockRet := env.mock.MethodCalled(mockMethod, args...)
+	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
+	if mockFn := m.getMockFn(mockRet); mockFn != nil {
+		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
+		reflectValues := executor.executeWithActualArgsWithoutParseResult(nil, args)
+		if len(reflectValues) != 1 || !reflect.TypeOf(reflectValues[0].Interface()).AssignableTo(reflect.TypeOf(DefaultVersion)) {
+			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
+				reflectValues[0].Interface(), reflectValues[0].Interface()))
+		}
+		return reflectValues[0].Interface().(Version), true
+	} else {
+		if len(mockRet) != 1 || !reflect.TypeOf(mockRet[0]).AssignableTo(reflect.TypeOf(DefaultVersion)) {
+			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
+				mockRet[0], mockRet[0]))
+		}
+		return mockRet[0].(Version), true
+	}
+}
+
+func getMockMethodForGetVersion(changeID string) string {
+	return fmt.Sprintf("%v_%v", mockMethodForGetVersion, changeID)
 }
 
 func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
@@ -1749,6 +1791,11 @@ func mockFnSignalExternalWorkflow(domainName, workflowID, runID, signalName stri
 // function signature for mock RequestCancelExternalWorkflow
 func mockFnRequestCancelExternalWorkflow(domainName, workflowID, runID string) error {
 	return nil
+}
+
+// function signature for mock GetVersion
+func mockFnGetVersion(changeID string, minSupported, maxSupported Version) Version {
+	return DefaultVersion
 }
 
 // make sure interface is implemented

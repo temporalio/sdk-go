@@ -832,9 +832,15 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) ([]byte, error) {
+	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
+	dataConverter := getDataConverterFromActivityCtx(ctx)
+
+	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+}
+
+func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []reflect.Value {
 	fnType := reflect.TypeOf(ae.fn)
 	args := []reflect.Value{}
-	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
 	argsOffeset := 0
@@ -853,7 +859,7 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 
 	fnValue := reflect.ValueOf(ae.fn)
 	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+	return retValues
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) encoded.DataConverter {
