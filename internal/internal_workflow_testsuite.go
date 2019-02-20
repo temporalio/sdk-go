@@ -863,14 +863,23 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	env.setActivityHandle(activityInfo.activityID, activityHandle)
 	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
+	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
 	go func() {
-		result := env.executeActivityWithRetryForTest(taskHandler, parameters, task)
-
-		// post activity result to workflow dispatcher
-		env.postCallback(func() {
-			env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
-			env.runningCount--
-		}, false /* do not auto schedule decision task, because activity might be still pending */)
+		var result interface{}
+		defer func() {
+			if result == nil && recover() == nil {
+				reason := "activity called runtime.Goexit"
+				result = &shared.RespondActivityTaskFailedRequest{
+					Reason: &reason,
+				}
+			}
+			// post activity result to workflow dispatcher
+			env.postCallback(func() {
+				env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
+				env.runningCount--
+			}, false /* do not auto schedule decision task, because activity might be still pending */)
+		}()
+		result = env.executeActivityWithRetryForTest(taskHandler, parameters, task)
 	}()
 
 	return activityInfo

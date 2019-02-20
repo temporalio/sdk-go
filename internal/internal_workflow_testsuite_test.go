@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -2370,4 +2371,29 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProgress() {
 	s.NoError(err)
 
 	s.Equal(lastProgress+1, newProgress)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
+	fn := func(ctx context.Context) error {
+		runtime.Goexit() // usually this is called by t.FailNow(), but can't call FailNow here since that would mark the test as failed.
+		return nil
+	}
+
+	wf := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    5 * time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		err := ExecuteActivity(ctx, fn).Get(ctx, nil)
+		return err
+	}
+
+	RegisterActivity(fn)
+	RegisterWorkflow(wf)
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(wf)
+	err := env.GetWorkflowError()
+	s.EqualError(err, "activity called runtime.Goexit")
 }
