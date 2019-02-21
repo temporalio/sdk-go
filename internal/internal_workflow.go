@@ -1147,7 +1147,7 @@ func getDataConverterFromWorkflowContext(ctx Context) encoded.DataConverter {
 	return options.dataConverter
 }
 
-// getSignalChannel finds the assosciated channel for the signal.
+// getSignalChannel finds the associated channel for the signal.
 func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Channel {
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
