@@ -1360,7 +1360,16 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
 	}
 }
 
-func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) ([]byte, error) {
+func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) (result []byte, err error) {
+	// have to handle panics here to support calling ExecuteChildWorkflow(...).GetChildWorkflowExecution().Get(...)
+	// when a child is mocked.
+	defer func() {
+		if r := recover(); r != nil {
+			st := getStackTrace("executeMock", "panic", 4)
+			err = newPanicError(r, st)
+		}
+	}()
+
 	fnName := m.name
 	// check if mock returns function which must match to the actual function.
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {

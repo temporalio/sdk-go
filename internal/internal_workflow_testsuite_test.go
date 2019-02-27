@@ -643,6 +643,35 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
 	s.Equal("mock_msg mock_msg mock_heartbeat", actualResult)
 }
 
+// Test_ChildWorkflow_Mock_Panic_GetChildWorkflowExecution verifies that
+// ExecuteChildWorkflow(...).GetChildWorkflowExecution().Get() doesn't block forever when mock panics
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkflowExecution() {
+	workflowFn := func(ctx Context) (string, error) {
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		childWorkflow := ExecuteChildWorkflow(ctx, testWorkflowHello)
+		childWorkflow.GetChildWorkflowExecution().Get(ctx, nil)
+		err := childWorkflow.Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+		return helloWorkflowResult, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.OnWorkflow(testWorkflowHello, mock.Anything, mock.Anything, mock.Anything).
+		Return("mock_result", nil, "extra_argument") // extra arg causes panic
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	workflowError := env.GetWorkflowError()
+	s.Error(workflowError)
+	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3",
+		workflowError.Error())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
