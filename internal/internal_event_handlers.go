@@ -635,7 +635,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 				zap.String("PanicError", fmt.Sprintf("%v", p)),
 				zap.String("PanicStack", st))
 
-			weh.Complete(nil, newPanicError(p, st))
+			weh.Complete(nil, newWorkflowPanicError(p, st))
 		}
 	}()
 

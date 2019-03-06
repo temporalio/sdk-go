@@ -708,6 +708,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
 		switch err := err.(type) {
 		case *CanceledError, *ContinueAsNewError, *TimeoutError:
 			env.testError = err
+		case *workflowPanicError:
+			env.testError = newPanicError(err.value, err.stackTrace)
 		default:
 			reason, details := getErrorDetails(err, dc)
 			env.testError = constructError(reason, details, dc)

@@ -54,6 +54,7 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(receiveAysnc_CorruptSignalWorkflowTest)
 	RegisterWorkflow(receiveWithSelector_CorruptSignalWorkflowTest)
 	RegisterWorkflow(splitJoinActivityWorkflow)
+	RegisterWorkflow(returnPanicWorkflow)
 	RegisterWorkflow(activityOptionsWorkflow)
 	RegisterWorkflow(receiveAsync_CorruptSignalOnClosedChannelWorkflowTest)
 	RegisterWorkflow(receive_CorruptSignalOnClosedChannelWorkflowTest)
@@ -180,6 +181,10 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 	return result1 + result2, nil
 }
 
+func returnPanicWorkflow(ctx Context) (err error) {
+	return newPanicError("panicError", "stackTrace")
+}
+
 func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testAct, mock.Anything).Return(func(ctx context.Context) (string, error) {
@@ -212,6 +217,18 @@ func TestWorkflowPanic(t *testing.T) {
 	resultErr := env.GetWorkflowError().(*PanicError)
 	require.EqualValues(t, "simulated", resultErr.Error())
 	require.Contains(t, resultErr.StackTrace(), "cadence/internal.splitJoinActivityWorkflow")
+}
+
+func TestWorkflowReturnsPanic(t *testing.T) {
+	ts := &WorkflowTestSuite{}
+	ts.SetLogger(zap.NewNop()) // this test simulate panic, use nop logger to avoid logging noise
+	env := ts.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(returnPanicWorkflow)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NotNil(t, env.GetWorkflowError())
+	resultErr := env.GetWorkflowError().(*PanicError)
+	require.EqualValues(t, "panicError", resultErr.Error())
+	require.EqualValues(t, "stackTrace", resultErr.StackTrace())
 }
 
 func testClockWorkflow(ctx Context) (time.Time, error) {

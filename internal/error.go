@@ -117,6 +117,13 @@ type (
 		stackTrace string
 	}
 
+	// workflowPanicError contains information about panicked workflow.
+	// Used to distinguish go panic in the workflow code from a PanicError returned from a workflow function.
+	workflowPanicError struct {
+		value      interface{}
+		stackTrace string
+	}
+
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
 		wfn    interface{}
@@ -302,6 +309,10 @@ func newPanicError(value interface{}, stackTrace string) *PanicError {
 	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
+func newWorkflowPanicError(value interface{}, stackTrace string) *workflowPanicError {
+	return &workflowPanicError{value: value, stackTrace: stackTrace}
+}
+
 // Error from error interface
 func (e *PanicError) Error() string {
 	return fmt.Sprintf("%v", e.value)
@@ -309,6 +320,16 @@ func (e *PanicError) Error() string {
 
 // StackTrace return stack trace of the panic
 func (e *PanicError) StackTrace() string {
+	return e.stackTrace
+}
+
+// Error from error interface
+func (e *workflowPanicError) Error() string {
+	return fmt.Sprintf("%v", e.value)
+}
+
+// StackTrace return stack trace of the panic
+func (e *workflowPanicError) StackTrace() string {
 	return e.stackTrace
 }
 

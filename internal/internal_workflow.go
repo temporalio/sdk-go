@@ -73,7 +73,7 @@ type (
 	dispatcher interface {
 		// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
 		// until all of them are completed or blocked on Channel or Selector
-		ExecuteUntilAllBlocked() (err *PanicError)
+		ExecuteUntilAllBlocked() (err *workflowPanicError)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
 		Close()             // Destroys all coroutines without waiting for their completion
@@ -143,7 +143,7 @@ type (
 		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
 		closed       bool             // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
-		panicError   *PanicError // non nil if coroutine had unhandled panic
+		panicError   *workflowPanicError // non nil if coroutine had unhandled panic
 	}
 
 	dispatcherImpl struct {
@@ -792,7 +792,7 @@ func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx 
 		defer func() {
 			if r := recover(); r != nil {
 				st := getStackTrace(name, "panic", 4)
-				crt.panicError = newPanicError(r, st)
+				crt.panicError = newWorkflowPanicError(r, st)
 			}
 		}()
 		crt.initialYield(1, "")
@@ -813,7 +813,7 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 	return c
 }
 
-func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err *PanicError) {
+func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err *workflowPanicError) {
 	d.mutex.Lock()
 	if d.closed {
 		panic("dispatcher is closed")

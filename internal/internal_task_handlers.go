@@ -1237,7 +1237,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
 
 	// fail decision task on decider panic
-	if panicErr, ok := workflowContext.err.(*PanicError); ok {
+	if panicErr, ok := workflowContext.err.(*workflowPanicError); ok {
 		// Workflow panic
 		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",

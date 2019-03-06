@@ -23,6 +23,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,10 +59,26 @@ func init() {
 		helloWorldWorkflowCancelFunc,
 		RegisterWorkflowOptions{Name: "HelloWorld_WorkflowCancel"},
 	)
+	RegisterWorkflowWithOptions(
+		returnPanicWorkflowFunc,
+		RegisterWorkflowOptions{Name: "ReturnPanicWorkflow"},
+	)
+	RegisterWorkflowWithOptions(
+		panicWorkflowFunc,
+		RegisterWorkflowOptions{Name: "PanicWorkflow"},
+	)
 	RegisterActivityWithOptions(
 		greeterActivityFunc,
 		RegisterActivityOptions{Name: "Greeter_Activity"},
 	)
+}
+
+func returnPanicWorkflowFunc(ctx Context, input []byte) error {
+	return newPanicError("panicError", "stackTrace")
+}
+
+func panicWorkflowFunc(ctx Context, input []byte) error {
+	panic("panicError")
 }
 
 // Test suite.
@@ -479,6 +496,59 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	request, _, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
 	t.NoError(err)
 	t.NotNil(request)
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 3, "ReturnPanicWorkflow")
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
+	t.NoError(err)
+	t.NotNil(request)
+	r, ok := request.(*s.RespondDecisionTaskCompletedRequest)
+	t.True(ok)
+	t.EqualValues(s.DecisionTypeFailWorkflowExecution, r.Decisions[0].GetDecisionType())
+	attr := r.Decisions[0].FailWorkflowExecutionDecisionAttributes
+	t.EqualValues("cadenceInternal:Panic", attr.GetReason())
+	details := string(attr.Details)
+	t.True(strings.HasPrefix(details, "\"panicError"), details)
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
+	t.NoError(err)
+	t.NotNil(request)
+	r, ok := request.(*s.RespondDecisionTaskFailedRequest)
+	t.True(ok)
+	t.EqualValues("WORKFLOW_WORKER_UNHANDLED_FAILURE", r.Cause.String())
+	t.EqualValues("panicError", string(r.Details))
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
