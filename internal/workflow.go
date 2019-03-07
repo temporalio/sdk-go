@@ -601,6 +601,10 @@ type WorkflowInfo struct {
 	Domain                              string
 	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
 	lastCompletionResult                []byte
+	CronSchedule                        *string
+	ContinuedExecutionRunID             *string
+	ParentWorkflowDomain                *string
+	ParentWorkflowExecution             *WorkflowExecution
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.

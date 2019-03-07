@@ -491,6 +491,13 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 	workflowID := task.WorkflowExecution.GetWorkflowId()
 
 	// Setup workflow Info
+	var parentWorkflowExecution *WorkflowExecution
+	if attributes.ParentWorkflowExecution != nil {
+		parentWorkflowExecution = &WorkflowExecution{
+			ID:    attributes.ParentWorkflowExecution.GetWorkflowId(),
+			RunID: attributes.ParentWorkflowExecution.GetRunId(),
+		}
+	}
 	workflowInfo := &WorkflowInfo{
 		WorkflowType: flowWorkflowTypeFrom(*task.WorkflowType),
 		TaskListName: taskList.GetName(),
@@ -502,6 +509,10 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
 		Domain:                              wth.domain,
 		Attempt:                             attributes.GetAttempt(),
+		CronSchedule:                        attributes.CronSchedule,
+		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
+		ParentWorkflowDomain:                attributes.ParentWorkflowDomain,
+		ParentWorkflowExecution:             parentWorkflowExecution,
 		lastCompletionResult:                attributes.LastCompletionResult,
 	}
 

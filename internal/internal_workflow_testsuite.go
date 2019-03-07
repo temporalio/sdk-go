@@ -306,6 +306,10 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if params.workflowID == "" {
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
 	}
+	var cronSchedule *string
+	if len(params.cronSchedule) > 0 {
+		cronSchedule = &params.cronSchedule
+	}
 	// set workflow info data for child workflow
 	childEnv.workflowInfo.Attempt = params.attempt
 	childEnv.workflowInfo.WorkflowExecution.ID = params.workflowID
@@ -315,6 +319,9 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = *params.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = *params.taskStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
+	childEnv.workflowInfo.CronSchedule = cronSchedule
+	childEnv.workflowInfo.ParentWorkflowDomain = &env.workflowInfo.Domain
+	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
 	childEnv.executionTimeout = time.Duration(*params.executionStartToCloseTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID

@@ -22,6 +22,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -67,6 +68,10 @@ func init() {
 		panicWorkflowFunc,
 		RegisterWorkflowOptions{Name: "PanicWorkflow"},
 	)
+	RegisterWorkflowWithOptions(
+		getWorkflowInfoWorkflowFunc,
+		RegisterWorkflowOptions{Name: "GetWorkflowInfoWorkflow"},
+	)
 	RegisterActivityWithOptions(
 		greeterActivityFunc,
 		RegisterActivityOptions{Name: "Greeter_Activity"},
@@ -79,6 +84,19 @@ func returnPanicWorkflowFunc(ctx Context, input []byte) error {
 
 func panicWorkflowFunc(ctx Context, input []byte) error {
 	panic("panicError")
+}
+
+func getWorkflowInfoWorkflowFunc(ctx Context, expectedLastCompletionResult string) (info *WorkflowInfo, err error) {
+	result := GetWorkflowInfo(ctx)
+	var lastCompletionResult string
+	err = getDefaultDataConverter().FromData(result.lastCompletionResult, &lastCompletionResult)
+	if err != nil {
+		return nil, err
+	}
+	if lastCompletionResult != expectedLastCompletionResult {
+		return nil, errors.New("lastCompletionResult is not " + expectedLastCompletionResult)
+	}
+	return result, nil
 }
 
 // Test suite.
@@ -549,6 +567,71 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.True(ok)
 	t.EqualValues("WORKFLOW_WORKER_UNHANDLED_FAILURE", r.Cause.String())
 	t.EqualValues("panicError", string(r.Details))
+}
+
+func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
+	taskList := "taskList"
+	parentID := "parentID"
+	parentRunID := "parentRun"
+	cronSchedule := "5 4 * * *"
+	continuedRunID := uuid.New()
+	parentExecution := &s.WorkflowExecution{
+		WorkflowId: &parentID,
+		RunId:      &parentRunID,
+	}
+	parentDomain := "parentDomain"
+	var attempt int32 = 123
+	var executionTimeout int32 = 213456
+	var taskTimeout int32 = 21
+	workflowType := "GetWorkflowInfoWorkflow"
+	lastCompletionResult, err := getDefaultDataConverter().ToData("lastCompletionData")
+	t.NoError(err)
+	startedEventAttributes := &s.WorkflowExecutionStartedEventAttributes{
+		Input:                               lastCompletionResult,
+		TaskList:                            &s.TaskList{Name: &taskList},
+		ParentWorkflowExecution:             parentExecution,
+		CronSchedule:                        &cronSchedule,
+		ContinuedExecutionRunId:             &continuedRunID,
+		ParentWorkflowDomain:                &parentDomain,
+		Attempt:                             &attempt,
+		ExecutionStartToCloseTimeoutSeconds: &executionTimeout,
+		TaskStartToCloseTimeoutSeconds:      &taskTimeout,
+		LastCompletionResult:                lastCompletionResult,
+	}
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 3, workflowType)
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
+	t.NoError(err)
+	t.NotNil(request)
+	r, ok := request.(*s.RespondDecisionTaskCompletedRequest)
+	t.True(ok)
+	t.EqualValues(s.DecisionTypeCompleteWorkflowExecution, r.Decisions[0].GetDecisionType())
+	attr := r.Decisions[0].CompleteWorkflowExecutionDecisionAttributes
+	var result WorkflowInfo
+	t.NoError(getDefaultDataConverter().FromData(attr.Result, &result))
+	t.EqualValues(taskList, result.TaskListName)
+	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
+	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
+	t.EqualValues(cronSchedule, *result.CronSchedule)
+	t.EqualValues(continuedRunID, *result.ContinuedExecutionRunID)
+	t.EqualValues(parentDomain, *result.ParentWorkflowDomain)
+	t.EqualValues(attempt, result.Attempt)
+	t.EqualValues(executionTimeout, result.ExecutionStartToCloseTimeoutSeconds)
+	t.EqualValues(taskTimeout, result.TaskStartToCloseTimeoutSeconds)
+	t.EqualValues(workflowType, result.WorkflowType.Name)
+	t.EqualValues(testDomain, result.Domain)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
