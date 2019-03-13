@@ -672,6 +672,7 @@ func (wtp *workflowTaskPoller) poll() (*workflowTask, error) {
 		} else {
 			wtp.metricsScope.Counter(metrics.DecisionPollFailedCounter).Inc(1)
 		}
+		wtp.updateBacklog(request.TaskList.GetKind(), 0)
 		return nil, err
 	}
 
