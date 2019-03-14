@@ -165,7 +165,7 @@ type (
 		TaskStartToCloseTimeout time.Duration
 
 		// ChildPolicy defines the behavior of child workflow when parent workflow is terminated.
-		// Optional: default to use ChildWorkflowPolicyTerminate if this is not provided
+		// Optional: default to use ChildWorkflowPolicyAbandon. We currently only support this policy.
 		ChildPolicy ChildWorkflowPolicy
 
 		// WaitForCancellation - Whether to wait for cancelled child workflow to be ended (child workflow can be ended
@@ -205,9 +205,11 @@ type (
 
 const (
 	// ChildWorkflowPolicyTerminate is policy that will terminate all child workflows when parent workflow is terminated.
+	// TODO: this is not supported yet
 	ChildWorkflowPolicyTerminate ChildWorkflowPolicy = 0
 	// ChildWorkflowPolicyRequestCancel is policy that will send cancel request to all open child workflows when parent
 	// workflow is terminated.
+	// TODO: this is not supported yet
 	ChildWorkflowPolicyRequestCancel ChildWorkflowPolicy = 1
 	// ChildWorkflowPolicyAbandon is policy that will have no impact to child workflow execution when parent workflow is
 	// terminated.
