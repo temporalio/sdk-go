@@ -25,13 +25,14 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"github.com/robfig/cron"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/robfig/cron"
 
 	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
@@ -584,6 +585,18 @@ func (c *channelImpl) receiveAsyncImpl(callback *receiveCallback) (v interface{}
 		r := c.buffer[0]
 		c.buffer[0] = nil
 		c.buffer = c.buffer[1:]
+
+		// Move blocked sends into buffer
+		for len(c.blockedSends) > 0 {
+			b := c.blockedSends[0]
+			c.blockedSends[0] = nil
+			c.blockedSends = c.blockedSends[1:]
+			if b.fn() {
+				c.buffer = append(c.buffer, b.value)
+				break
+			}
+		}
+
 		return r, true, true
 	}
 	if c.closed {

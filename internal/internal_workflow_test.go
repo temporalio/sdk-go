@@ -58,6 +58,8 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(activityOptionsWorkflow)
 	RegisterWorkflow(receiveAsync_CorruptSignalOnClosedChannelWorkflowTest)
 	RegisterWorkflow(receive_CorruptSignalOnClosedChannelWorkflowTest)
+	RegisterWorkflow(bufferedChanWorkflowTest)
+	RegisterWorkflow(bufferedChanWithSelectorWorkflowTest)
 
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -755,6 +757,83 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_S
 	var result []message
 	env.GetWorkflowResult(&result)
 	s.EqualValues(0, len(result))
+}
+
+func bufferedChanWorkflowTest(ctx Context, bufferSize int) error {
+	bufferedCh := NewBufferedChannel(ctx, bufferSize)
+
+	Go(ctx, func(ctx Context) {
+		var dummy int
+		for i := 0; i < bufferSize; i++ {
+			bufferedCh.Receive(ctx, &dummy)
+		}
+	})
+
+	for i := 0; i < bufferSize+1; i++ {
+		bufferedCh.Send(ctx, i)
+	}
+	return nil
+}
+
+func (s *WorkflowUnitTest) Test_BufferedChanWorkflow() {
+	bufferSizeList := []int{1, 5}
+	for _, bufferSize := range bufferSizeList {
+		env := s.NewTestWorkflowEnvironment()
+		env.ExecuteWorkflow(bufferedChanWorkflowTest, bufferSize)
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+	}
+}
+
+func bufferedChanWithSelectorWorkflowTest(ctx Context, bufferSize int) error {
+	bufferedCh := NewBufferedChannel(ctx, bufferSize)
+	selectedCh := NewChannel(ctx)
+	done := NewChannel(ctx)
+	var dummy struct{}
+
+	// 1. First we need to fill the buffer
+	for i := 0; i < bufferSize; i++ {
+		bufferedCh.Send(ctx, dummy)
+	}
+
+	// DO NOT change the order of these coroutines.
+	Go(ctx, func(ctx Context) {
+		// 3. Add another send callback to bufferedCh's blockedSends.
+		bufferedCh.Send(ctx, dummy)
+		done.Send(ctx, dummy)
+	})
+
+	Go(ctx, func(ctx Context) {
+		// 4.  Make sure selectedCh is selected
+		selectedCh.Receive(ctx, nil)
+
+		// 5. Get a value from channel buffer. Receive call will also check if there's any blocked sends.
+		// The first blockedSends is added by Select(). Since bufferedCh is not selected, it's fn() will
+		// return false. The Receive call should continue to check other blockedSends, until fn() returns
+		// true or the list is empty. In this case, it will move the value sent in step 3 into buffer
+		// and thus unblocks it.
+		bufferedCh.Receive(ctx, nil)
+	})
+
+	selector := NewSelector(ctx)
+	selector.AddSend(selectedCh, dummy, func() {})
+	selector.AddSend(bufferedCh, dummy, func() {})
+	// 2. When select is called, callback for the second send will be added to bufferedCh's blockedSends
+	selector.Select(ctx)
+
+	// Make sure no coroutine blocks
+	done.Receive(ctx, nil)
+	return nil
+}
+
+func (s *WorkflowUnitTest) Test_BufferedChanWithSelectorWorkflow() {
+	bufferSizeList := []int{1, 5}
+	for _, bufferSize := range bufferSizeList {
+		env := s.NewTestWorkflowEnvironment()
+		env.ExecuteWorkflow(bufferedChanWithSelectorWorkflowTest, bufferSize)
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+	}
 }
 
 func activityOptionsWorkflow(ctx Context) (result string, err error) {
