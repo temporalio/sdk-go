@@ -1687,13 +1687,13 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 				reflectValues[0].Interface(), reflectValues[0].Interface()))
 		}
 		return reflectValues[0].Interface().(Version), true
-	} else {
-		if len(mockRet) != 1 || !reflect.TypeOf(mockRet[0]).AssignableTo(reflect.TypeOf(DefaultVersion)) {
-			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
-				mockRet[0], mockRet[0]))
-		}
-		return mockRet[0].(Version), true
 	}
+
+	if len(mockRet) != 1 || !reflect.TypeOf(mockRet[0]).AssignableTo(reflect.TypeOf(DefaultVersion)) {
+		panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
+			mockRet[0], mockRet[0]))
+	}
+	return mockRet[0].(Version), true
 }
 
 func getMockMethodForGetVersion(changeID string) string {

@@ -21,32 +21,35 @@
 package metrics
 
 import (
-	"github.com/uber-go/tally"
 	"io"
 	"time"
+
+	"github.com/uber-go/tally"
 )
 
+// NewMetricsScope returns a new metric scope
 func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
 	reporter := &CapturingStatsReporter{}
 	opts := tally.ScopeOptions{Reporter: reporter}
 	scope, closer := tally.NewRootScope(opts, time.Second)
-	return WrapScope(isReplay, scope, &RealClock{}), closer, reporter
+	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }
 
+// NewTaggedMetricsScope return NewTaggedMetricsScope
 func NewTaggedMetricsScope() (*TaggedScope, io.Closer, *CapturingStatsReporter) {
 	isReplay := false
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	return &TaggedScope{Scope: scope}, closer, reporter
 }
 
-type RealClock struct {
+type realClock struct {
 }
 
-func (c *RealClock) Now() time.Time {
+func (c *realClock) Now() time.Time {
 	return time.Now()
 }
 
-// capturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
+// CapturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
 type CapturingStatsReporter struct {
 	counts                   []CapturedCount
 	gauges                   []CapturedGauge
@@ -57,80 +60,98 @@ type CapturingStatsReporter struct {
 	flush                    int
 }
 
+// HistogramDurationSamples return HistogramDurationSamples
 func (c *CapturingStatsReporter) HistogramDurationSamples() []CapturedHistogramDurationSamples {
 	return c.histogramDurationSamples
 }
 
+// HistogramValueSamples return HistogramValueSamples
 func (c *CapturingStatsReporter) HistogramValueSamples() []CapturedHistogramValueSamples {
 	return c.histogramValueSamples
 }
 
+// Timers return Timers
 func (c *CapturingStatsReporter) Timers() []CapturedTimer {
 	return c.timers
 }
 
+// Gauges return Gauges
 func (c *CapturingStatsReporter) Gauges() []CapturedGauge {
 	return c.gauges
 }
 
+// Counts return Counts
 func (c *CapturingStatsReporter) Counts() []CapturedCount {
 	return c.counts
 }
 
+// CapturedCount has associated name, tags and value
 type CapturedCount struct {
 	name  string
 	tags  map[string]string
 	value int64
 }
 
+// Value return the value of CapturedCount
 func (c *CapturedCount) Value() int64 {
 	return c.value
 }
 
+// Tags return CapturedCount tags
 func (c *CapturedCount) Tags() map[string]string {
 	return c.tags
 }
 
+// Name return the name of CapturedCount
 func (c *CapturedCount) Name() string {
 	return c.name
 }
 
+// CapturedGauge has CapturedGauge name, tag and values
 type CapturedGauge struct {
 	name  string
 	tags  map[string]string
 	value float64
 }
 
+// Value return the value of CapturedGauge
 func (c *CapturedGauge) Value() float64 {
 	return c.value
 }
 
+// Tags return the tags of CapturedGauge
 func (c *CapturedGauge) Tags() map[string]string {
 	return c.tags
 }
 
+// Name return the name of CapturedGauge
 func (c *CapturedGauge) Name() string {
 	return c.name
 }
 
+// CapturedTimer has related name , tags and value
 type CapturedTimer struct {
 	name  string
 	tags  map[string]string
 	value time.Duration
 }
 
+// Value return the value of CapturedTimer
 func (c *CapturedTimer) Value() time.Duration {
 	return c.value
 }
 
+// Tags return the tag of CapturedTimer
 func (c *CapturedTimer) Tags() map[string]string {
 	return c.tags
 }
 
+// Name return the name of CapturedTimer
 func (c *CapturedTimer) Name() string {
 	return c.name
 }
 
+// CapturedHistogramValueSamples has related information for CapturedHistogramValueSamples
 type CapturedHistogramValueSamples struct {
 	name             string
 	tags             map[string]string
@@ -139,6 +160,7 @@ type CapturedHistogramValueSamples struct {
 	samples          int64
 }
 
+// CapturedHistogramDurationSamples has related information for CapturedHistogramDurationSamples
 type CapturedHistogramDurationSamples struct {
 	name             string
 	tags             map[string]string
@@ -147,31 +169,35 @@ type CapturedHistogramDurationSamples struct {
 	samples          int64
 }
 
-func (r *CapturingStatsReporter) ReportCounter(
+// ReportCounter reports the counts
+func (c *CapturingStatsReporter) ReportCounter(
 	name string,
 	tags map[string]string,
 	value int64,
 ) {
-	r.counts = append(r.counts, CapturedCount{name, tags, value})
+	c.counts = append(c.counts, CapturedCount{name, tags, value})
 }
 
-func (r *CapturingStatsReporter) ReportGauge(
+// ReportGauge reports the gauges
+func (c *CapturingStatsReporter) ReportGauge(
 	name string,
 	tags map[string]string,
 	value float64,
 ) {
-	r.gauges = append(r.gauges, CapturedGauge{name, tags, value})
+	c.gauges = append(c.gauges, CapturedGauge{name, tags, value})
 }
 
-func (r *CapturingStatsReporter) ReportTimer(
+// ReportTimer reports timers
+func (c *CapturingStatsReporter) ReportTimer(
 	name string,
 	tags map[string]string,
 	value time.Duration,
 ) {
-	r.timers = append(r.timers, CapturedTimer{name, tags, value})
+	c.timers = append(c.timers, CapturedTimer{name, tags, value})
 }
 
-func (r *CapturingStatsReporter) ReportHistogramValueSamples(
+// ReportHistogramValueSamples reports histogramValueSamples
+func (c *CapturingStatsReporter) ReportHistogramValueSamples(
 	name string,
 	tags map[string]string,
 	buckets tally.Buckets,
@@ -181,10 +207,11 @@ func (r *CapturingStatsReporter) ReportHistogramValueSamples(
 ) {
 	elem := CapturedHistogramValueSamples{name, tags,
 		bucketLowerBound, bucketUpperBound, samples}
-	r.histogramValueSamples = append(r.histogramValueSamples, elem)
+	c.histogramValueSamples = append(c.histogramValueSamples, elem)
 }
 
-func (r *CapturingStatsReporter) ReportHistogramDurationSamples(
+// ReportHistogramDurationSamples reports ReportHistogramDurationSamples
+func (c *CapturingStatsReporter) ReportHistogramDurationSamples(
 	name string,
 	tags map[string]string,
 	buckets tally.Buckets,
@@ -194,22 +221,26 @@ func (r *CapturingStatsReporter) ReportHistogramDurationSamples(
 ) {
 	elem := CapturedHistogramDurationSamples{name, tags,
 		bucketLowerBound, bucketUpperBound, samples}
-	r.histogramDurationSamples = append(r.histogramDurationSamples, elem)
+	c.histogramDurationSamples = append(c.histogramDurationSamples, elem)
 }
 
-func (r *CapturingStatsReporter) Capabilities() tally.Capabilities {
-	r.capabilities++
-	return r
+// Capabilities return tally.Capabilities
+func (c *CapturingStatsReporter) Capabilities() tally.Capabilities {
+	c.capabilities++
+	return c
 }
 
-func (r *CapturingStatsReporter) Reporting() bool {
+// Reporting will always return true
+func (c *CapturingStatsReporter) Reporting() bool {
 	return true
 }
 
-func (r *CapturingStatsReporter) Tagging() bool {
+// Tagging will always return true
+func (c *CapturingStatsReporter) Tagging() bool {
 	return true
 }
 
-func (r *CapturingStatsReporter) Flush() {
-	r.flush++
+// Flush will add one to flush
+func (c *CapturingStatsReporter) Flush() {
+	c.flush++
 }

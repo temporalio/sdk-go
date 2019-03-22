@@ -190,13 +190,6 @@ func newTaggedMetricsScope() (*TaggedScope, io.Closer, *capturingStatsReporter) 
 	return &TaggedScope{Scope: scope}, closer, reporter
 }
 
-type realClock struct {
-}
-
-func (c *realClock) Now() time.Time {
-	return time.Now()
-}
-
 // capturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
 type capturingStatsReporter struct {
 	counts                   []capturedCount

@@ -724,7 +724,7 @@ func decodeAndAssignValue(dc encoded.DataConverter, from interface{}, toValuePtr
 		toType := reflect.TypeOf(toValuePtr).Elem()
 		assignable := fromType.AssignableTo(toType)
 		if !assignable {
-			return errors.New(fmt.Sprintf("%s is not assignable to  %s", fromType.Name(), toType.Name()))
+			return fmt.Errorf("%s is not assignable to  %s", fromType.Name(), toType.Name())
 		}
 		reflect.ValueOf(toValuePtr).Elem().Set(fv)
 	}
@@ -1249,10 +1249,10 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 	return nil
 }
 
-var defaultJsonDataConverter encoded.DataConverter = &defaultDataConverter{}
+var defaultJSONDataConverter encoded.DataConverter = &defaultDataConverter{}
 
 func getDefaultDataConverter() encoded.DataConverter {
-	return defaultJsonDataConverter
+	return defaultJSONDataConverter
 }
 
 func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
