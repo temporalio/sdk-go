@@ -229,7 +229,7 @@ func verifyDomainExist(client workflowserviceclient.Interface, domain string, lo
 	}
 
 	// exponential backoff retry for upto a minute
-	return backoff.Retry(ctx, descDomainOp, serviceOperationRetryPolicy, isServiceTransientError)
+	return backoff.Retry(ctx, descDomainOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
 func newWorkflowWorkerInternal(

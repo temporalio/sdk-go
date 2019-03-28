@@ -789,19 +789,18 @@ type deadlineTest struct {
 	err              error
 }
 
-var deadlineTests = []deadlineTest{
-	{time.Duration(0), time.Now(), 3, time.Now(), 3, nil},
-	{time.Duration(0), time.Now(), 4, time.Now(), 3, nil},
-	{time.Duration(0), time.Now(), 3, time.Now(), 4, nil},
-	{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
-	{time.Duration(0), time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-	{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-	{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
-	{time.Duration(1 * time.Second), time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
-	{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
-}
-
 func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
+	deadlineTests := []deadlineTest{
+		{time.Duration(0), time.Now(), 3, time.Now(), 3, nil},
+		{time.Duration(0), time.Now(), 4, time.Now(), 3, nil},
+		{time.Duration(0), time.Now(), 3, time.Now(), 4, nil},
+		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
+		{time.Duration(0), time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
+		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
+		{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
+		{time.Duration(1 * time.Second), time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
+		{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
+	}
 	a := &testActivityDeadline{logger: t.logger}
 	hostEnv := getHostEnvironment()
 	hostEnv.addActivity(a.ActivityType().Name, a)

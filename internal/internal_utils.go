@@ -58,6 +58,10 @@ const (
 
 	// defaultRPCTimeout is the default tchannel rpc call timeout
 	defaultRPCTimeout = 10 * time.Second
+	//minRPCTimeout is minimum rpc call timeout allowed
+	minRPCTimeout = 1 * time.Second
+	//maxRPCTimeout is maximum rpc call timeout allowed
+	maxRPCTimeout = 20 * time.Second
 )
 
 var (
@@ -98,7 +102,21 @@ func chanTimeout(timeout time.Duration) func(builder *contextBuilder) {
 
 // newChannelContext - Get a rpc channel context
 func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc, []yarpc.CallOption) {
-	builder := &contextBuilder{Timeout: defaultRPCTimeout}
+	rpcTimeout := defaultRPCTimeout
+	if ctx != nil {
+		// Set rpc timeout less than context timeout to allow for retries when call gets lost
+		now := time.Now()
+		if expiration, ok := ctx.Deadline(); ok && expiration.After(now) {
+			rpcTimeout = expiration.Sub(now) / 2
+			// Make sure to not set rpc timeout lower than minRPCTimeout
+			if rpcTimeout < minRPCTimeout {
+				rpcTimeout = minRPCTimeout
+			} else if rpcTimeout > maxRPCTimeout {
+				rpcTimeout = maxRPCTimeout
+			}
+		}
+	}
+	builder := &contextBuilder{Timeout: rpcTimeout}
 	if ctx != nil {
 		builder.ParentContext = ctx
 	}

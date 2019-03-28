@@ -22,10 +22,8 @@ package internal
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"fmt"
+	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -33,7 +31,6 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/yarpc"
 )
 
@@ -72,13 +69,8 @@ func (s *activityTestSuite) TestActivityHeartbeat() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
-	p := backoff.NewExponentialRetryPolicy(time.Millisecond)
-	p.SetMaximumInterval(100 * time.Millisecond)
-	p.SetExpirationInterval(100 * time.Millisecond)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
-	invoker.(*cadenceInvoker).retryPolicy = p
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})

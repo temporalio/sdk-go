@@ -1375,7 +1375,6 @@ type cadenceInvoker struct {
 	service               workflowserviceclient.Interface
 	taskToken             []byte
 	cancelHandler         func()
-	retryPolicy           backoff.RetryPolicy
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
 	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport   *[]byte
@@ -1440,7 +1439,14 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 
 func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 	isActivityCancelled := false
-	err := recordActivityHeartbeat(context.Background(), i.service, i.identity, i.taskToken, details, i.retryPolicy)
+	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
+	if timeout <= 0 {
+		timeout = time.Duration(defaultHeartBeatIntervalInSec) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
 	switch err.(type) {
 	case *CanceledError:
@@ -1485,7 +1491,6 @@ func newServiceInvoker(
 		identity:              identity,
 		service:               service,
 		cancelHandler:         cancelHandler,
-		retryPolicy:           serviceOperationRetryPolicy,
 		heartBeatTimeoutInSec: heartBeatTimeoutInSec,
 		closeCh:               make(chan struct{}),
 	}
@@ -1582,7 +1587,6 @@ func recordActivityHeartbeat(
 	service workflowserviceclient.Interface,
 	identity string,
 	taskToken, details []byte,
-	retryPolicy backoff.RetryPolicy,
 ) error {
 	request := &s.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -1598,7 +1602,7 @@ func recordActivityHeartbeat(
 			var err error
 			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request, opt...)
 			return err
-		}, retryPolicy, isServiceTransientError)
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
@@ -1613,7 +1617,6 @@ func recordActivityHeartbeatByID(
 	identity string,
 	domain, workflowID, runID, activityID string,
 	details []byte,
-	retryPolicy backoff.RetryPolicy,
 ) error {
 	request := &s.RecordActivityTaskHeartbeatByIDRequest{
 		Domain:     common.StringPtr(domain),
@@ -1632,7 +1635,7 @@ func recordActivityHeartbeatByID(
 			var err error
 			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request, opt...)
 			return err
-		}, retryPolicy, isServiceTransientError)
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
