@@ -29,6 +29,7 @@ import (
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type (
@@ -269,6 +270,15 @@ func WithActivityTask(
 	} else {
 		deadline = startToCloseDeadline
 	}
+
+	logger.With(
+		zapcore.Field{Key: tagActivityID, Type: zapcore.StringType, String: *task.ActivityId},
+		zapcore.Field{Key: tagActivityType, Type: zapcore.StringType, String: *task.ActivityType.Name},
+		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: *task.WorkflowType.Name},
+		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: *task.WorkflowExecution.WorkflowId},
+		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: *task.WorkflowExecution.RunId},
+	)
+
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
