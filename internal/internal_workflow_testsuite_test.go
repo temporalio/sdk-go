@@ -2426,3 +2426,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 	err := env.GetWorkflowError()
 	s.EqualError(err, "activity called runtime.Goexit")
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_SetWorkerStopChannel() {
+	env := newTestWorkflowEnvironmentImpl(&s.WorkflowTestSuite)
+	c := make(chan struct{})
+	env.setWorkerStopChannel(c)
+	s.NotNil(env.workerStopChannel)
+}

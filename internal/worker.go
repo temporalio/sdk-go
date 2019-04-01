@@ -159,6 +159,10 @@ type (
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Cadence
 		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
 		DataConverter encoded.DataConverter
+
+		// Optional: worker graceful shutdown timeout
+		// default: 0s
+		WorkerStopTimeout time.Duration
 	}
 )
 

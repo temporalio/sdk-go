@@ -170,6 +170,13 @@ func (t *TestActivityEnvironment) SetHeartbeatDetails(details interface{}) {
 	t.impl.setHeartbeatDetails(details)
 }
 
+// SetWorkerStopChannel sets the worker stop channel to be returned from activity.GetWorkerStopChannel(context)
+// To test your activity on worker stop, you can provide a go channel with this function and call ExecuteActivity().
+// Then call close(channel) to test the activity worker stop logic.
+func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
+	t.impl.setWorkerStopChannel(c)
+}
+
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (t *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
@@ -383,6 +390,13 @@ func (t *TestWorkflowEnvironment) Now() time.Time {
 func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
 	t.impl.setWorkerOptions(options)
 	return t
+}
+
+// SetWorkerStopChannel sets the activity worker stop channel to be returned from activity.GetWorkerStopChannel(context)
+// You can use this function to set the activity worker stop channel and use close(channel) to test your activity execution
+// from workflow execution.
+func (t *TestWorkflowEnvironment) SetWorkerStopChannel(c chan struct{}) {
+	t.impl.setWorkerStopChannel(c)
 }
 
 // SetTestTimeout sets the idle timeout based on wall clock for this tested workflow. Idle is when workflow is blocked

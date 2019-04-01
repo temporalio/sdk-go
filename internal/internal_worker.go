@@ -149,6 +149,9 @@ type (
 		// Context to store user provided key/value pairs
 		UserContext context.Context
 
+		// Context cancel function to cancel user context
+		UserContextCancel context.CancelFunc
+
 		// Disable sticky execution
 		DisableStickyExecution bool
 
@@ -159,6 +162,12 @@ type (
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 
 		DataConverter encoded.DataConverter
+
+		// WorkerStopTimeout is the time delay before hard terminate worker
+		WorkerStopTimeout time.Duration
+
+		// WorkerStopChannel is a read only channel listen on worker close. The worker will close the channel before exit.
+		WorkerStopChannel <-chan struct{}
 	}
 
 	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
@@ -271,9 +280,11 @@ func newWorkflowTaskWorkerInternal(
 		maxTaskPerSecond:  params.WorkerDecisionTasksPerSecond,
 		taskWorker:        poller,
 		identity:          params.Identity,
-		workerType:        "DecisionWorker"},
+		workerType:        "DecisionWorker",
+		shutdownTimeout:   params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
+		nil,
 	)
 
 	// laTunnel is the glue that hookup 3 parts
@@ -295,9 +306,11 @@ func newWorkflowTaskWorkerInternal(
 		maxTaskPerSecond:  params.WorkerLocalActivitiesPerSecond,
 		taskWorker:        localActivityTaskPoller,
 		identity:          params.Identity,
-		workerType:        "LocalActivityWorker"},
+		workerType:        "LocalActivityWorker",
+		shutdownTimeout:   params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
+		nil,
 	)
 
 	// 3) the result pushed to laTunnel will be send as task to workflow worker to process.
@@ -347,6 +360,7 @@ func newActivityWorker(
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 	env *hostEnvImpl,
+	activityShutdownCh chan struct{},
 ) Worker {
 	ensureRequiredParams(&params)
 	// Get a activity task handler.
@@ -356,7 +370,7 @@ func newActivityWorker(
 	} else {
 		taskHandler = newActivityTaskHandler(service, params, env)
 	}
-	return newActivityTaskWorker(taskHandler, service, domain, params)
+	return newActivityTaskWorker(taskHandler, service, domain, params, activityShutdownCh)
 }
 
 func newActivityTaskWorker(
@@ -364,6 +378,7 @@ func newActivityTaskWorker(
 	service workflowserviceclient.Interface,
 	domain string,
 	workerParams workerExecutionParameters,
+	workerStopCh chan struct{},
 ) (worker Worker) {
 	ensureRequiredParams(&workerParams)
 
@@ -383,9 +398,11 @@ func newActivityTaskWorker(
 			taskWorker:        poller,
 			identity:          workerParams.Identity,
 			workerType:        "ActivityWorker",
-		},
+			shutdownTimeout:   workerParams.WorkerStopTimeout,
+			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
 		workerParams.MetricsScope,
+		workerStopCh,
 	)
 
 	return &activityWorker{
@@ -985,6 +1002,14 @@ func newAggregatedWorker(
 	options WorkerOptions,
 ) (worker Worker) {
 	wOptions := fillWorkerOptionsDefaults(options)
+	workerStopChannel := make(chan struct{}, 1)
+	readOnlyWorkerStopCh := getReadOnlyChannel(workerStopChannel)
+	ctx := wOptions.BackgroundActivityContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
+
 	workerParams := workerExecutionParameters{
 		TaskList:                             taskList,
 		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
@@ -998,12 +1023,15 @@ func newAggregatedWorker(
 		MetricsScope:                         wOptions.MetricsScope,
 		Logger:                               wOptions.Logger,
 		EnableLoggingInReplay:                wOptions.EnableLoggingInReplay,
-		UserContext:                          wOptions.BackgroundActivityContext,
+		UserContext:                          backgroundActivityContext,
+		UserContextCancel:                    backgroundActivityContextCancel,
 		DisableStickyExecution:               wOptions.DisableStickyExecution,
 		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
 		NonDeterministicWorkflowPolicy:       wOptions.NonDeterministicWorkflowPolicy,
 		DataConverter:                        wOptions.DataConverter,
+		WorkerStopTimeout:                    wOptions.WorkerStopTimeout,
+		WorkerStopChannel:                    readOnlyWorkerStopCh,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1052,6 +1080,7 @@ func newAggregatedWorker(
 			workerParams,
 			nil,
 			hostEnv,
+			workerStopChannel,
 		)
 	}
 	return &aggregatedWorker{
@@ -1120,6 +1149,10 @@ func getFunctionName(i interface{}) string {
 
 func isInterfaceNil(i interface{}) bool {
 	return i == nil || reflect.ValueOf(i).IsNil()
+}
+
+func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
+	return c
 }
 
 // encoding is capable of encoding and decoding objects

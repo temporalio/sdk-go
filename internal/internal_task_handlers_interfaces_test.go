@@ -21,8 +21,6 @@
 package internal
 
 import (
-	"testing"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber/tchannel-go/thrift"
@@ -30,6 +28,7 @@ import (
 	m "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
 	"golang.org/x/net/context"
+	"testing"
 )
 
 type (

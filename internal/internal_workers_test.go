@@ -22,6 +22,7 @@ package internal
 
 import (
 	"context"
+	"github.com/pborman/uuid"
 	"testing"
 	"time"
 
@@ -34,6 +35,27 @@ import (
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )
+
+// ActivityTaskHandler never returns response
+type noResponseActivityTaskHandler struct {
+	isExecuteCalled chan struct{}
+}
+
+func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
+	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
+}
+
+func (ath noResponseActivityTaskHandler) Execute(taskList string, task *m.PollForActivityTaskResponse) (interface{}, error) {
+	close(ath.isExecuteCalled)
+	c := make(chan struct{})
+	<-c
+	return nil, nil
+}
+
+func (ath noResponseActivityTaskHandler) BlockedOnExecuteCalled() error {
+	<-ath.isExecuteCalled
+	return nil
+}
 
 type (
 	WorkersTestSuite struct {
@@ -70,10 +92,13 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
 
+	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    logger,
+		UserContext:               ctx,
+		UserContextCancel:         cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
@@ -81,6 +106,8 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	)
 	workflowWorker.Start()
 	workflowWorker.Stop()
+
+	s.Nil(ctx.Err())
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
@@ -101,10 +128,66 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	hostEnv := getHostEnvironment()
 	hostEnv.addActivity(a.ActivityType().Name, a)
 	activityWorker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, hostEnv,
+		s.service, domain, executionParameters, overrides, hostEnv, nil,
 	)
 	activityWorker.Start()
 	activityWorker.Stop()
+}
+
+func (s *WorkersTestSuite) TestActivityWorkerStop() {
+	domain := "testDomain"
+	logger, _ := zap.NewDevelopment()
+
+	pats := &m.PollForActivityTaskResponse{
+		TaskToken: []byte("token"),
+		WorkflowExecution: &m.WorkflowExecution{
+			WorkflowId: common.StringPtr("wID"),
+			RunId:      common.StringPtr("rID")},
+		ActivityType:                  &m.ActivityType{Name: common.StringPtr("test")},
+		ActivityId:                    common.StringPtr(uuid.New()),
+		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(1),
+		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
+		StartToCloseTimeoutSeconds:    common.Int32Ptr(1),
+		WorkflowType: &m.WorkflowType{
+			Name: common.StringPtr("wType"),
+		},
+		WorkflowDomain: common.StringPtr("domain"),
+	}
+
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(pats, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopChannel := make(chan struct{})
+	executionParameters := workerExecutionParameters{
+		TaskList:                        "testTaskList",
+		ConcurrentPollRoutineSize:       5,
+		ConcurrentActivityExecutionSize: 2,
+		Logger:                          logger,
+		UserContext:                     ctx,
+		UserContextCancel:               cancel,
+		WorkerStopTimeout:               time.Second * 2,
+	}
+	activityTaskHandler := newNoResponseActivityTaskHandler()
+	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
+	a := &greeterActivity{}
+	hostEnv := getHostEnvironment()
+	hostEnv.addActivity(a.ActivityType().Name, a)
+	activityWorker := newActivityWorker(
+		s.service, domain, executionParameters, overrides, hostEnv, stopChannel,
+	)
+	activityWorker.Start()
+	activityTaskHandler.BlockedOnExecuteCalled()
+	go activityWorker.Stop()
+	<-stopChannel
+	err := ctx.Err()
+	s.NoError(err)
+
+	<-ctx.Done()
+	err = ctx.Err()
+	s.Error(err)
 }
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {

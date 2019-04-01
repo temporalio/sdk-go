@@ -127,6 +127,7 @@ type (
 		heartbeatDetails   []byte
 		workflowType       *WorkflowType
 		workflowDomain     string
+		workerStopChannel  <-chan struct{}
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

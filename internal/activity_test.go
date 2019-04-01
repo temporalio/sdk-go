@@ -59,7 +59,7 @@ var callOptions = []interface{}{gomock.Any(), gomock.Any(), gomock.Any()}
 
 func (s *activityTestSuite) TestActivityHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
@@ -70,7 +70,7 @@ func (s *activityTestSuite) TestActivityHeartbeat() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -86,7 +86,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -101,7 +101,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 1, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -116,7 +116,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 2)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 2, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -131,7 +131,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 
 	// No HB timeout configured.
 	service2 := workflowservicetest.NewMockClient(s.mockCtrl)
-	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0)
+	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker2,
 		logger:         getLogger()})
@@ -144,7 +144,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	// simulate batch picks before expiry.
 	waitCh := make(chan struct{})
 	service3 := workflowservicetest.NewMockClient(s.mockCtrl)
-	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2)
+	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker3,
 		logger:         getLogger()})
@@ -174,7 +174,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	// simulate batch picks before expiry, with out any progress specified.
 	waitCh2 := make(chan struct{})
 	service4 := workflowservicetest.NewMockClient(s.mockCtrl)
-	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2)
+	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2, make(chan struct{}))
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker4,
 		logger:         getLogger()})
@@ -193,4 +193,36 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	RecordActivityHeartbeat(ctx, nil)
 	<-waitCh2
 	invoker4.Close(false)
+}
+
+func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {
+	ctx, cancel := context.WithCancel(context.Background())
+	workerStopChannel := make(chan struct{})
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 5, workerStopChannel)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
+
+	heartBeatDetail := "testDetails"
+	waitCh := make(chan struct{}, 1)
+	waitCh <- struct{}{}
+	waitC2 := make(chan struct{}, 1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+		Return(&shared.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+			if _, ok := <-waitCh; ok {
+				close(waitCh)
+				return
+			}
+			close(waitC2)
+		}).Times(2)
+	RecordActivityHeartbeat(ctx, heartBeatDetail)
+	RecordActivityHeartbeat(ctx, "testDetails")
+	close(workerStopChannel)
+	<-waitC2
+}
+
+func (s *activityTestSuite) TestGetWorkerStopChannel() {
+	ch := make(chan struct{}, 1)
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{workerStopChannel: ch})
+	channel := GetWorkerStopChannel(ctx)
+	s.NotNil(channel)
 }

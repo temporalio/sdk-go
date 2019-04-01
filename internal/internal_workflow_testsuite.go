@@ -174,6 +174,8 @@ type (
 		executionTimeout time.Duration
 
 		heartbeatDetails []byte
+
+		workerStopChannel chan struct{}
 	}
 )
 
@@ -213,6 +215,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		changeVersions: make(map[string]Version),
 
 		doneChannel: make(chan struct{}),
+		workerStopChannel: make(chan struct{}),
 	}
 
 	// move forward the mock clock to start time.
@@ -360,6 +363,10 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if options.DataConverter != nil {
 		env.workerOptions.DataConverter = options.DataConverter
 	}
+}
+
+func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
+	env.workerStopChannel = c
 }
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
@@ -1408,12 +1415,13 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter encoded.DataConverter) ActivityTaskHandler {
 	wOptions := fillWorkerOptionsDefaults(env.workerOptions)
 	params := workerExecutionParameters{
-		TaskList:      taskList,
-		Identity:      wOptions.Identity,
-		MetricsScope:  wOptions.MetricsScope,
-		Logger:        wOptions.Logger,
-		UserContext:   wOptions.BackgroundActivityContext,
-		DataConverter: dataConverter,
+		TaskList:          taskList,
+		Identity:          wOptions.Identity,
+		MetricsScope:      wOptions.MetricsScope,
+		Logger:            wOptions.Logger,
+		UserContext:       wOptions.BackgroundActivityContext,
+		DataConverter:     dataConverter,
+		WorkerStopChannel: env.workerStopChannel,
 	}
 	ensureRequiredParams(&params)
 

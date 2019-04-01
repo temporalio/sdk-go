@@ -65,12 +65,12 @@ func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
 	switch err.(type) {
 	case *s.BadRequestError,
-	*s.EntityNotExistsError,
-	*s.WorkflowExecutionAlreadyStartedError,
-	*s.DomainAlreadyExistsError,
-	*s.QueryFailedError,
-	*s.DomainNotActiveError,
-	*s.CancellationAlreadyRequestedError:
+		*s.EntityNotExistsError,
+		*s.WorkflowExecutionAlreadyStartedError,
+		*s.DomainAlreadyExistsError,
+		*s.QueryFailedError,
+		*s.DomainNotActiveError,
+		*s.CancellationAlreadyRequestedError:
 		return false
 	}
 

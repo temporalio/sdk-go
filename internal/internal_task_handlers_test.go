@@ -723,7 +723,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		"Test_Cadence_Invoker",
 		mockService,
 		func() {},
-		0)
+		0,
+		make(chan struct{}))
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
@@ -746,7 +747,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 		"Test_Cadence_Invoker",
 		mockService,
 		cancelHandler,
-		0)
+		0,
+		make(chan struct{}))
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
@@ -839,6 +841,57 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			t.Nil(r, td)
 		}
 	}
+}
+
+func activityWithWorkerStop(ctx context.Context) error {
+	fmt.Println("Executing Activity with worker stop")
+	workerStopCh := GetWorkerStopChannel(ctx)
+
+	select {
+	case <-workerStopCh:
+		return nil
+	case <-time.NewTimer(time.Second * 5).C:
+		return fmt.Errorf("Activity failed to handle worker stop event")
+	}
+}
+
+func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
+	a := &testActivityDeadline{logger: t.logger}
+	hostEnv := getHostEnvironment()
+	hostEnv.addActivityFn(a.ActivityType().Name, activityWithWorkerStop)
+
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicetest.NewMockClient(mockCtrl)
+	workerStopCh := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	wep := workerExecutionParameters{
+		Logger:            t.logger,
+		DataConverter:     getDefaultDataConverter(),
+		UserContext:       ctx,
+		UserContextCancel: cancel,
+		WorkerStopChannel: workerStopCh,
+	}
+	activityHandler := newActivityTaskHandler(mockService, wep, hostEnv)
+	pats := &s.PollForActivityTaskResponse{
+		TaskToken: []byte("token"),
+		WorkflowExecution: &s.WorkflowExecution{
+			WorkflowId: common.StringPtr("wID"),
+			RunId:      common.StringPtr("rID")},
+		ActivityType:                  &s.ActivityType{Name: common.StringPtr("test")},
+		ActivityId:                    common.StringPtr(uuid.New()),
+		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
+		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(1),
+		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
+		StartToCloseTimeoutSeconds:    common.Int32Ptr(1),
+		WorkflowType: &s.WorkflowType{
+			Name: common.StringPtr("wType"),
+		},
+		WorkflowDomain: common.StringPtr("domain"),
+	}
+	close(workerStopCh)
+	r, err := activityHandler.Execute(tasklist, pats)
+	t.NoError(err)
+	t.NotNil(r)
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {

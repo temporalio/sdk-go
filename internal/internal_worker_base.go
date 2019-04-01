@@ -102,13 +102,16 @@ type (
 		taskWorker        taskPoller
 		identity          string
 		workerType        string
+		shutdownTimeout   time.Duration
+		userContextCancel context.CancelFunc
 	}
 
 	// baseWorker that wraps worker activities.
 	baseWorker struct {
 		options              baseWorkerOptions
 		isWorkerStarted      bool
-		shutdownCh           chan struct{}  // Channel used to shut down the go routines.
+		shutdownCh           chan struct{} // Channel used to shut down the go routines.
+		workerStopCh         chan struct{}
 		shutdownWG           sync.WaitGroup // The WaitGroup for shutting down existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
@@ -139,17 +142,18 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, workerStopCh chan struct{}) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
-		options:         options,
-		shutdownCh:      make(chan struct{}),
-		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
-		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
-		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
-		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
-		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+		options:            options,
+		shutdownCh:         make(chan struct{}),
+		workerStopCh:       workerStopCh,
+		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
+		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:             logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		metricsScope:       tagScope(metricsScope, tagWorkerType, options.workerType),
+		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
+		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
@@ -241,6 +245,7 @@ func (bw *baseWorker) runTaskDispatcher() {
 					return
 				}
 			}
+			bw.shutdownWG.Add(1)
 			go bw.processTask(task)
 		}
 	}
@@ -270,6 +275,7 @@ func (bw *baseWorker) pollTask() {
 }
 
 func (bw *baseWorker) processTask(task interface{}) {
+	defer bw.shutdownWG.Done()
 	// If the task is from poller, after processing it we would need to request a new poll. Otherwise, the task is from
 	// local activity worker, we don't need a new poll from server.
 	polledTask, isPolledTask := task.(*polledTask)
@@ -309,7 +315,7 @@ func (bw *baseWorker) Run() {
 	bw.Stop()
 }
 
-// Shutdown is a blocking call and cleans up all the resources assosciated with worker.
+// Shutdown is a blocking call and cleans up all the resources associated with worker.
 func (bw *baseWorker) Stop() {
 	if !bw.isWorkerStarted {
 		return
@@ -317,12 +323,20 @@ func (bw *baseWorker) Stop() {
 	close(bw.shutdownCh)
 	bw.limiterContextCancel()
 
-	// TODO: The poll is longer than wait time, we need some way to hard terminate the
-	// poll routines.
+	// Close activity channel
+	if bw.workerStopCh != nil {
+		close(bw.workerStopCh)
+	}
 
-	if success := awaitWaitGroup(&bw.shutdownWG, 2*time.Second); !success {
+	if success := awaitWaitGroup(&bw.shutdownWG, bw.options.shutdownTimeout); !success {
 		traceLog(func() {
-			bw.logger.Info("Worker timed out on waiting for shutdown.")
+			bw.logger.Info("Worker graceful shutdown timed out.", zap.Duration("Shutdown timeout", bw.options.shutdownTimeout))
 		})
 	}
+
+	// Close context
+	if bw.options.userContextCancel != nil {
+		bw.options.userContextCancel()
+	}
+	return
 }
