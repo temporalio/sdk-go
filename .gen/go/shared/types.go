@@ -35071,6 +35071,7 @@ type WorkflowExecutionInfo struct {
 	HistoryLength   *int64                        `json:"historyLength,omitempty"`
 	ParentDomainId  *string                       `json:"parentDomainId,omitempty"`
 	ParentExecution *WorkflowExecution            `json:"parentExecution,omitempty"`
+	ExecutionTime   *int64                        `json:"executionTime,omitempty"`
 }
 
 // ToWire translates a WorkflowExecutionInfo struct into a Thrift-level intermediate
@@ -35090,7 +35091,7 @@ type WorkflowExecutionInfo struct {
 //   }
 func (v *WorkflowExecutionInfo) ToWire() (wire.Value, error) {
 	var (
-		fields [8]wire.Field
+		fields [9]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -35158,6 +35159,14 @@ func (v *WorkflowExecutionInfo) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 80, Value: w}
+		i++
+	}
+	if v.ExecutionTime != nil {
+		w, err = wire.NewValueI64(*(v.ExecutionTime)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 90, Value: w}
 		i++
 	}
 
@@ -35260,6 +35269,16 @@ func (v *WorkflowExecutionInfo) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 90:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.ExecutionTime = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -35273,7 +35292,7 @@ func (v *WorkflowExecutionInfo) String() string {
 		return "<nil>"
 	}
 
-	var fields [8]string
+	var fields [9]string
 	i := 0
 	if v.Execution != nil {
 		fields[i] = fmt.Sprintf("Execution: %v", v.Execution)
@@ -35307,6 +35326,10 @@ func (v *WorkflowExecutionInfo) String() string {
 		fields[i] = fmt.Sprintf("ParentExecution: %v", v.ParentExecution)
 		i++
 	}
+	if v.ExecutionTime != nil {
+		fields[i] = fmt.Sprintf("ExecutionTime: %v", *(v.ExecutionTime))
+		i++
+	}
 
 	return fmt.Sprintf("WorkflowExecutionInfo{%v}", strings.Join(fields[:i], ", "))
 }
@@ -35338,6 +35361,9 @@ func (v *WorkflowExecutionInfo) Equals(rhs *WorkflowExecutionInfo) bool {
 		return false
 	}
 	if !((v.ParentExecution == nil && rhs.ParentExecution == nil) || (v.ParentExecution != nil && rhs.ParentExecution != nil && v.ParentExecution.Equals(rhs.ParentExecution))) {
+		return false
+	}
+	if !_I64_EqualsPtr(v.ExecutionTime, rhs.ExecutionTime) {
 		return false
 	}
 
@@ -35389,6 +35415,16 @@ func (v *WorkflowExecutionInfo) GetHistoryLength() (o int64) {
 func (v *WorkflowExecutionInfo) GetParentDomainId() (o string) {
 	if v.ParentDomainId != nil {
 		return *v.ParentDomainId
+	}
+
+	return
+}
+
+// GetExecutionTime returns the value of ExecutionTime if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionInfo) GetExecutionTime() (o int64) {
+	if v.ExecutionTime != nil {
+		return *v.ExecutionTime
 	}
 
 	return
