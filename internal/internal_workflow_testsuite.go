@@ -214,7 +214,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 		changeVersions: make(map[string]Version),
 
-		doneChannel: make(chan struct{}),
+		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
 	}
 

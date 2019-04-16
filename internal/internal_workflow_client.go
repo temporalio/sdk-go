@@ -167,6 +167,11 @@ func (wc *workflowClient) StartWorkflow(
 		return nil, err
 	}
 
+	memo, err := getWorkflowMemo(options.Memo, wc.dataConverter)
+	if err != nil {
+		return nil, err
+	}
+
 	startRequest := &s.StartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -180,6 +185,7 @@ func (wc *workflowClient) StartWorkflow(
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
+		Memo:                                memo,
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -317,6 +323,11 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return nil, err
 	}
 
+	memo, err := getWorkflowMemo(options.Memo, wc.dataConverter)
+	if err != nil {
+		return nil, err
+	}
+
 	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -331,6 +342,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		Identity:                            common.StringPtr(wc.identity),
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
+		Memo:                                memo,
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -838,4 +850,20 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = fmt.Errorf("Unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
 	return err
+}
+
+func getWorkflowMemo(input map[string]interface{}, dc encoded.DataConverter) (*s.Memo, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	memo := make(map[string][]byte)
+	for k, v := range input {
+		memoBytes, err := encodeArg(dc, v)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("encode workflow memo error: %v", err.Error()))
+		}
+		memo[k] = memoBytes
+	}
+	return &s.Memo{Fields: memo}, nil
 }

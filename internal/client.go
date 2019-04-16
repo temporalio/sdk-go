@@ -298,6 +298,9 @@ type (
 		// │ │ │ │ │
 		// * * * * *
 		CronSchedule string
+
+		// Memo - Optional info that will be showed in list workflow.
+		Memo map[string]interface{}
 	}
 
 	// RetryPolicy defines the retry policy

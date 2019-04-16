@@ -782,3 +782,29 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
+
+func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
+	var input1 map[string]interface{}
+	result1, err := getWorkflowMemo(input1, nil)
+	s.NoError(err)
+	s.Nil(result1)
+
+	input1 = make(map[string]interface{})
+	result2, err := getWorkflowMemo(input1, nil)
+	s.NoError(err)
+	s.NotNil(result2)
+	s.Equal(0, len(result2.Fields))
+
+	input1["t1"] = "v1"
+	result3, err := getWorkflowMemo(input1, nil)
+	s.NoError(err)
+	s.NotNil(result3)
+	s.Equal(1, len(result3.Fields))
+	var resultString string
+	decodeArg(nil, result3.Fields["t1"], &resultString)
+	s.Equal("v1", resultString)
+
+	input1["non-serializable"] = make(chan int)
+	_, err = getWorkflowMemo(input1, nil)
+	s.Error(err)
+}

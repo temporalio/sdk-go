@@ -287,6 +287,10 @@ struct WorkflowExecution {
   20: optional string runId
 }
 
+struct Memo {
+  10: optional map<string,binary> fields
+}
+
 struct WorkflowExecutionInfo {
   10: optional WorkflowExecution execution
   20: optional WorkflowType type
@@ -297,6 +301,7 @@ struct WorkflowExecutionInfo {
   70: optional string parentDomainId
   80: optional WorkflowExecution parentExecution
   90: optional i64 (js.type = "Long") executionTime
+  100: optional Memo memo
 }
 
 struct WorkflowExecutionConfiguration {
@@ -440,6 +445,7 @@ struct WorkflowExecutionStartedEventAttributes {
   90: optional i64 (js.type = "Long") expirationTimestamp
   100: optional string cronSchedule
   110: optional i32 firstDecisionTaskBackoffSeconds
+  120: optional Memo memo
 }
 
 struct WorkflowExecutionCompletedEventAttributes {
@@ -936,6 +942,7 @@ struct StartWorkflowExecutionRequest {
   110: optional ChildPolicy childPolicy
   120: optional RetryPolicy retryPolicy
   130: optional string cronSchedule
+  140: optional Memo memo
 }
 
 struct StartWorkflowExecutionResponse {
@@ -1128,6 +1135,7 @@ struct SignalWithStartWorkflowExecutionRequest {
   130: optional binary control
   140: optional RetryPolicy retryPolicy
   150: optional string cronSchedule
+  160: optional Memo memo
 }
 
 struct TerminateWorkflowExecutionRequest {
@@ -1251,6 +1259,7 @@ struct TaskListStatus {
   10: optional i64 (js.type = "Long") backlogCountHint
   20: optional i64 (js.type = "Long") readLevel
   30: optional i64 (js.type = "Long") ackLevel
+  35: optional double ratePerSecond
   40: optional TaskIDBlock taskIDBlock
 }
 
@@ -1294,6 +1303,7 @@ struct PollerInfo {
   // Unix Nano
   10: optional i64 (js.type = "Long")  lastAccessTime
   20: optional string identity
+  30: optional double ratePerSecond
 }
 
 struct RetryPolicy {
