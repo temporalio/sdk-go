@@ -861,7 +861,7 @@ func getWorkflowMemo(input map[string]interface{}, dc encoded.DataConverter) (*s
 	for k, v := range input {
 		memoBytes, err := encodeArg(dc, v)
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("encode workflow memo error: %v", err.Error()))
+			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
 		memo[k] = memoBytes
 	}
