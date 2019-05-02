@@ -1,0 +1,24 @@
+version: "3.5"
+
+services:
+  unit-test:
+    build:
+      context: ../../
+      dockerfile: ./docker/buildkite/Dockerfile
+    command:
+      - /bin/sh
+      - -e
+      - -c
+      - |
+        make test
+    volumes:
+      - ../../:/go/src/go.uber.org/cadence
+    networks:
+      services-network:
+        aliases:
+          - unit-test
+
+networks:
+  services-network:
+    name: services-network
+    driver: bridge

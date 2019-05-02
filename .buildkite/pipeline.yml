@@ -1,0 +1,12 @@
+steps:
+  - label: ":golang: Unit test"
+    agents:
+      queue: "workers"
+      docker: "*"
+    command: "make test"
+    plugins:
+      - docker-compose#v3.0.0:
+          run: unit-test
+          config: docker/buildkite/docker-compose.yml
+
+  - wait
