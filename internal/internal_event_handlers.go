@@ -569,7 +569,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 
 	if wc.isReplay {
 		// This should not happen
-		panic("MutableSideEffect with given ID not found during replay")
+		panic(fmt.Sprintf("Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
 	return wc.recordMutableSideEffect(id, wc.encodeValue(f()))
