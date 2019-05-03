@@ -610,9 +610,10 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *s.PollForDecisionT
 		Kind: common.TaskListKindPtr(taskListKind),
 	}
 	return &s.PollForDecisionTaskRequest{
-		Domain:   common.StringPtr(wtp.domain),
-		TaskList: common.TaskListPtr(taskList),
-		Identity: common.StringPtr(wtp.identity),
+		Domain:         common.StringPtr(wtp.domain),
+		TaskList:       common.TaskListPtr(taskList),
+		Identity:       common.StringPtr(wtp.identity),
+		BinaryChecksum: common.StringPtr(getBinaryChecksum()),
 	}
 }
 

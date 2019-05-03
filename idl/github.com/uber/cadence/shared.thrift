@@ -77,6 +77,12 @@ exception RetryTaskError {
   5: optional i64 (js.type = "Long") nextEventId
 }
 
+exception ClientVersionNotSupportedError {
+  1: required string featureVersion
+  2: required string clientImpl
+  3: required string supportedVersions
+}
+
 enum WorkflowIdReusePolicy {
   /*
    * allow start a workflow execution using the same workflow ID,
@@ -192,6 +198,7 @@ enum DecisionTaskFailedCause {
   FAILOVER_CLOSE_DECISION,
   BAD_SIGNAL_INPUT_SIZE,
   RESET_WORKFLOW,
+  BAD_BINARY,
 }
 
 enum CancelExternalWorkflowExecutionFailedCause {
@@ -327,6 +334,7 @@ struct ScheduleActivityTaskDecisionAttributes {
   55: optional i32 startToCloseTimeoutSeconds
   60: optional i32 heartbeatTimeoutSeconds
   70: optional RetryPolicy retryPolicy
+  80: optional Header header
 }
 
 struct RequestCancelActivityTaskDecisionAttributes {
@@ -391,6 +399,7 @@ struct ContinueAsNewWorkflowExecutionDecisionAttributes {
   100: optional binary failureDetails
   110: optional binary lastCompletionResult
   120: optional string cronSchedule
+  130: optional Header header
 }
 
 struct StartChildWorkflowExecutionDecisionAttributes {
@@ -406,6 +415,7 @@ struct StartChildWorkflowExecutionDecisionAttributes {
   100: optional WorkflowIdReusePolicy workflowIdReusePolicy
   110: optional RetryPolicy retryPolicy
   120: optional string cronSchedule
+  130: optional Header header
 }
 
 struct Decision {
@@ -446,6 +456,21 @@ struct WorkflowExecutionStartedEventAttributes {
   100: optional string cronSchedule
   110: optional i32 firstDecisionTaskBackoffSeconds
   120: optional Memo memo
+  130: optional ResetPoints prevAutoResetPoints
+  140: optional Header header
+}
+
+struct ResetPoints{
+  10: optional list<ResetPointInfo> points
+}
+
+ struct ResetPointInfo{
+  10: optional string binaryChecksum
+  20: optional string runId
+  30: optional i64 firstDecisionCompletedId
+  40: optional i64 (js.type = "Long") createdTimeNano
+  50: optional i64 (js.type = "Long") expiringTimeNano //the time that the run is deleted due to retention
+  60: optional bool resettable                         // false if the resset point has pending childWFs/reqCancels/signalExternals.
 }
 
 struct WorkflowExecutionCompletedEventAttributes {
@@ -482,6 +507,7 @@ struct WorkflowExecutionContinuedAsNewEventAttributes {
   100: optional string failureReason
   110: optional binary failureDetails
   120: optional binary lastCompletionResult
+  130: optional Header header
 }
 
 struct DecisionTaskScheduledEventAttributes {
@@ -535,6 +561,7 @@ struct ActivityTaskScheduledEventAttributes {
   60: optional i32 heartbeatTimeoutSeconds
   90: optional i64 (js.type = "Long") decisionTaskCompletedEventId
   110: optional RetryPolicy retryPolicy
+  120: optional Header header
 }
 
 struct ActivityTaskStartedEventAttributes {
@@ -704,6 +731,7 @@ struct StartChildWorkflowExecutionInitiatedEventAttributes {
   110: optional WorkflowIdReusePolicy workflowIdReusePolicy
   120: optional RetryPolicy retryPolicy
   130: optional string cronSchedule
+  140: optional Header header
 }
 
 struct StartChildWorkflowExecutionFailedEventAttributes {
@@ -721,6 +749,7 @@ struct ChildWorkflowExecutionStartedEventAttributes {
   20: optional i64 (js.type = "Long") initiatedEventId
   30: optional WorkflowExecution workflowExecution
   40: optional WorkflowType workflowType
+  50: optional Header header
 }
 
 struct ChildWorkflowExecutionCompletedEventAttributes {
@@ -851,6 +880,17 @@ struct DomainConfiguration {
   40: optional i32 archivalRetentionPeriodInDays
   50: optional ArchivalStatus archivalStatus
   60: optional string archivalBucketOwner
+  70: optional BadBinaries badBinaries
+}
+
+struct BadBinaries{
+  10: optional map<string, BadBinaryInfo> binaries
+}
+
+struct BadBinaryInfo{
+  10: optional string reason
+  20: optional string operator
+  30: optional i64 (js.type = "Long") createdTimeNano
 }
 
 struct UpdateDomainInfo {
@@ -913,6 +953,7 @@ struct UpdateDomainRequest {
  30: optional DomainConfiguration configuration
  40: optional DomainReplicationConfiguration replicationConfiguration
  50: optional string securityToken
+ 60: optional string deleteBadBinary
 }
 
 struct UpdateDomainResponse {
@@ -943,6 +984,7 @@ struct StartWorkflowExecutionRequest {
   120: optional RetryPolicy retryPolicy
   130: optional string cronSchedule
   140: optional Memo memo
+  150: optional Header header
 }
 
 struct StartWorkflowExecutionResponse {
@@ -953,6 +995,7 @@ struct PollForDecisionTaskRequest {
   10: optional string domain
   20: optional TaskList taskList
   30: optional string identity
+  40: optional string binaryChecksum
 }
 
 struct PollForDecisionTaskResponse {
@@ -1019,6 +1062,7 @@ struct PollForActivityTaskResponse {
   140: optional binary heartbeatDetails
   150: optional WorkflowType workflowType
   160: optional string workflowDomain
+  170: optional Header header
 }
 
 struct RecordActivityTaskHeartbeatRequest {
@@ -1183,6 +1227,18 @@ struct ListClosedWorkflowExecutionsRequest {
 }
 
 struct ListClosedWorkflowExecutionsResponse {
+  10: optional list<WorkflowExecutionInfo> executions
+  20: optional binary nextPageToken
+}
+
+struct ListWorkflowExecutionsRequest {
+  10: optional string domain
+  20: optional i32 pageSize
+  30: optional binary nextPageToken
+  40: optional string query
+}
+
+struct ListWorkflowExecutionsResponse {
   10: optional list<WorkflowExecutionInfo> executions
   20: optional binary nextPageToken
 }
