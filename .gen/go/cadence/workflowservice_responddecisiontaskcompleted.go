@@ -227,6 +227,8 @@ func init() {
 			return true
 		case *shared.ServiceBusyError:
 			return true
+		case *shared.ClientVersionNotSupportedError:
+			return true
 		default:
 			return false
 		}
@@ -268,6 +270,11 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RespondDecisionTaskCompleted_Result.ServiceBusyError")
 			}
 			return &WorkflowService_RespondDecisionTaskCompleted_Result{ServiceBusyError: e}, nil
+		case *shared.ClientVersionNotSupportedError:
+			if e == nil {
+				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RespondDecisionTaskCompleted_Result.ClientVersionNotSupportedError")
+			}
+			return &WorkflowService_RespondDecisionTaskCompleted_Result{ClientVersionNotSupportedError: e}, nil
 		}
 
 		return nil, err
@@ -297,6 +304,10 @@ func init() {
 			err = result.ServiceBusyError
 			return
 		}
+		if result.ClientVersionNotSupportedError != nil {
+			err = result.ClientVersionNotSupportedError
+			return
+		}
 
 		if result.Success != nil {
 			success = result.Success
@@ -316,13 +327,14 @@ func init() {
 // Success is set only if the function did not throw an exception.
 type WorkflowService_RespondDecisionTaskCompleted_Result struct {
 	// Value returned by RespondDecisionTaskCompleted after a successful execution.
-	Success              *shared.RespondDecisionTaskCompletedResponse `json:"success,omitempty"`
-	BadRequestError      *shared.BadRequestError                      `json:"badRequestError,omitempty"`
-	InternalServiceError *shared.InternalServiceError                 `json:"internalServiceError,omitempty"`
-	EntityNotExistError  *shared.EntityNotExistsError                 `json:"entityNotExistError,omitempty"`
-	DomainNotActiveError *shared.DomainNotActiveError                 `json:"domainNotActiveError,omitempty"`
-	LimitExceededError   *shared.LimitExceededError                   `json:"limitExceededError,omitempty"`
-	ServiceBusyError     *shared.ServiceBusyError                     `json:"serviceBusyError,omitempty"`
+	Success                        *shared.RespondDecisionTaskCompletedResponse `json:"success,omitempty"`
+	BadRequestError                *shared.BadRequestError                      `json:"badRequestError,omitempty"`
+	InternalServiceError           *shared.InternalServiceError                 `json:"internalServiceError,omitempty"`
+	EntityNotExistError            *shared.EntityNotExistsError                 `json:"entityNotExistError,omitempty"`
+	DomainNotActiveError           *shared.DomainNotActiveError                 `json:"domainNotActiveError,omitempty"`
+	LimitExceededError             *shared.LimitExceededError                   `json:"limitExceededError,omitempty"`
+	ServiceBusyError               *shared.ServiceBusyError                     `json:"serviceBusyError,omitempty"`
+	ClientVersionNotSupportedError *shared.ClientVersionNotSupportedError       `json:"clientVersionNotSupportedError,omitempty"`
 }
 
 // ToWire translates a WorkflowService_RespondDecisionTaskCompleted_Result struct into a Thrift-level intermediate
@@ -342,7 +354,7 @@ type WorkflowService_RespondDecisionTaskCompleted_Result struct {
 //   }
 func (v *WorkflowService_RespondDecisionTaskCompleted_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [7]wire.Field
+		fields [8]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -402,6 +414,14 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) ToWire() (wire.Val
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 6, Value: w}
+		i++
+	}
+	if v.ClientVersionNotSupportedError != nil {
+		w, err = v.ClientVersionNotSupportedError.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 7, Value: w}
 		i++
 	}
 
@@ -496,6 +516,14 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) FromWire(w wire.Va
 				}
 
 			}
+		case 7:
+			if field.Value.Type() == wire.TStruct {
+				v.ClientVersionNotSupportedError, err = _ClientVersionNotSupportedError_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -521,6 +549,9 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) FromWire(w wire.Va
 	if v.ServiceBusyError != nil {
 		count++
 	}
+	if v.ClientVersionNotSupportedError != nil {
+		count++
+	}
 	if count != 1 {
 		return fmt.Errorf("WorkflowService_RespondDecisionTaskCompleted_Result should have exactly one field: got %v fields", count)
 	}
@@ -535,7 +566,7 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [7]string
+	var fields [8]string
 	i := 0
 	if v.Success != nil {
 		fields[i] = fmt.Sprintf("Success: %v", v.Success)
@@ -563,6 +594,10 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) String() string {
 	}
 	if v.ServiceBusyError != nil {
 		fields[i] = fmt.Sprintf("ServiceBusyError: %v", v.ServiceBusyError)
+		i++
+	}
+	if v.ClientVersionNotSupportedError != nil {
+		fields[i] = fmt.Sprintf("ClientVersionNotSupportedError: %v", v.ClientVersionNotSupportedError)
 		i++
 	}
 
@@ -593,6 +628,9 @@ func (v *WorkflowService_RespondDecisionTaskCompleted_Result) Equals(rhs *Workfl
 		return false
 	}
 	if !((v.ServiceBusyError == nil && rhs.ServiceBusyError == nil) || (v.ServiceBusyError != nil && rhs.ServiceBusyError != nil && v.ServiceBusyError.Equals(rhs.ServiceBusyError))) {
+		return false
+	}
+	if !((v.ClientVersionNotSupportedError == nil && rhs.ClientVersionNotSupportedError == nil) || (v.ClientVersionNotSupportedError != nil && rhs.ClientVersionNotSupportedError != nil && v.ClientVersionNotSupportedError.Equals(rhs.ClientVersionNotSupportedError))) {
 		return false
 	}
 
