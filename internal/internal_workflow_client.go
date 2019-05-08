@@ -343,6 +343,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
 		Memo:                                memo,
+		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
 	}
 
 	var response *s.StartWorkflowExecutionResponse
