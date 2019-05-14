@@ -650,13 +650,14 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 		return
 	}
 	for {
-		// Check for closed in the loop as close can be called when send is blocked
-		if c.closed {
-			panic("Closed channel")
-		}
 		if valueConsumed {
 			state.unblocked()
 			return
+		}
+
+		// Check for closed in the loop as close can be called when send is blocked
+		if c.closed {
+			panic("Closed channel")
 		}
 		state.yield(fmt.Sprintf("blocked on %s.Send", c.name))
 	}
@@ -695,9 +696,6 @@ func (c *channelImpl) Close() {
 		callback.fn(nil, false)
 	}
 	// All blocked sends are going to panic
-	for _, callback := range c.blockedSends {
-		callback.fn()
-	}
 }
 
 // Takes a value and assigns that 'to' value. logs a metric if it is unable to deserialize

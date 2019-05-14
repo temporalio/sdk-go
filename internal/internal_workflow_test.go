@@ -60,6 +60,8 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(receiveCorruptSignalOnClosedChannelWorkflowTest)
 	RegisterWorkflow(bufferedChanWorkflowTest)
 	RegisterWorkflow(bufferedChanWithSelectorWorkflowTest)
+	RegisterWorkflow(closeChannelTest)
+	RegisterWorkflow(closeChannelInSelectTest)
 
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -757,6 +759,57 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_S
 	var result []message
 	env.GetWorkflowResult(&result)
 	s.EqualValues(0, len(result))
+}
+
+func closeChannelTest(ctx Context) error {
+	ch := NewChannel(ctx)
+	Go(ctx, func(ctx Context) {
+		var dummy struct{}
+		ch.Receive(ctx, &dummy)
+		ch.Close()
+	})
+
+	ch.Send(ctx, struct{}{})
+	return nil
+}
+
+func (s *WorkflowUnitTest) Test_CloseChannelWorkflow() {
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(closeChannelTest)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func closeChannelInSelectTest(ctx Context) error {
+	s := NewSelector(ctx)
+	sendCh := NewChannel(ctx)
+	receiveCh := NewChannel(ctx)
+	expectedValue := "expected value"
+
+	Go(ctx, func(ctx Context) {
+		sendCh.Close()
+		receiveCh.Send(ctx, expectedValue)
+	})
+
+	var v string
+	s.AddSend(sendCh, struct{}{}, func() {
+		panic("callback for sendCh should not be executed")
+	})
+	s.AddReceive(receiveCh, func(c Channel, m bool) {
+		c.Receive(ctx, &v)
+	})
+	s.Select(ctx)
+	if v != expectedValue {
+		panic("callback for receiveCh is not executed")
+	}
+	return nil
+}
+
+func (s *WorkflowUnitTest) Test_CloseChannelInSelectWorkflow() {
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(closeChannelInSelectTest)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
 }
 
 func bufferedChanWorkflowTest(ctx Context, bufferSize int) error {
