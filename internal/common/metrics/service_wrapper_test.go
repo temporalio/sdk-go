@@ -21,18 +21,41 @@
 package metrics
 
 import (
+	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/yarpc"
+)
+
+var (
+	safeCharacters = []rune{'_'}
+
+	sanitizeOptions = tally.SanitizeOptions{
+		NameCharacters: tally.ValidCharacters{
+			Ranges:     tally.AlphanumericRange,
+			Characters: safeCharacters,
+		},
+		KeyCharacters: tally.ValidCharacters{
+			Ranges:     tally.AlphanumericRange,
+			Characters: safeCharacters,
+		},
+		ValueCharacters: tally.ValidCharacters{
+			Ranges:     tally.AlphanumericRange,
+			Characters: safeCharacters,
+		},
+		ReplacementCharacter: tally.DefaultReplacementCharacter,
+	}
 )
 
 type testCase struct {
@@ -44,7 +67,6 @@ type testCase struct {
 
 func Test_Wrapper(t *testing.T) {
 	ctx, _ := thrift.NewContext(time.Minute)
-	callOption := yarpc.CallOption{}
 	tests := []testCase{
 		// one case for each service call
 		{"DeprecateDomain", []interface{}{ctx, &s.DeprecateDomainRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
@@ -77,9 +99,22 @@ func Test_Wrapper(t *testing.T) {
 		{"RespondQueryTaskCompleted", []interface{}{ctx, &s.RespondQueryTaskCompletedRequest{}}, []interface{}{&s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
 	}
 
+	// run each test twice - once with the regular scope, once with a sanitized metrics scope
 	for _, test := range tests {
-		mockService, wrapperService, closer, reporter := newService(t)
+		runTest(t, test, newService, assertMetrics, fmt.Sprintf("%v_normal", test.serviceMethod))
+		runTest(t, test, newPromService, assertPromMetrics, fmt.Sprintf("%v_prom_sanitized", test.serviceMethod))
+	}
+}
 
+func runTest(
+	t *testing.T,
+	test testCase,
+	serviceFunc func(*testing.T) (*workflowservicetest.MockClient, workflowserviceclient.Interface, io.Closer, *CapturingStatsReporter),
+	validationFunc func(*testing.T, *CapturingStatsReporter, string, []string),
+	name string,
+) {
+	t.Run(name, func(t *testing.T) {
+		mockService, wrapperService, closer, reporter := serviceFunc(t)
 		switch test.serviceMethod {
 		case "DeprecateDomain":
 			mockService.EXPECT().DeprecateDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
@@ -135,6 +170,7 @@ func Test_Wrapper(t *testing.T) {
 			mockService.EXPECT().RespondQueryTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		}
 
+		callOption := yarpc.CallOption{}
 		inputs := make([]reflect.Value, len(test.callArgs))
 		for i, arg := range test.callArgs {
 			inputs[i] = reflect.ValueOf(arg)
@@ -143,8 +179,8 @@ func Test_Wrapper(t *testing.T) {
 		method := reflect.ValueOf(wrapperService).MethodByName(test.serviceMethod)
 		method.Call(inputs)
 		closer.Close()
-		assertMetrics(t, reporter, test.serviceMethod, test.expectedCounters)
-	}
+		validationFunc(t, reporter, test.serviceMethod, test.expectedCounters)
+	})
 }
 
 func assertMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
@@ -165,7 +201,33 @@ func assertMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName st
 	require.Equal(t, CadenceMetricsPrefix+methodName+"."+CadenceLatency, reporter.timers[0].name)
 }
 
-func newService(t *testing.T) (mockService *workflowservicetest.MockClient,
+func assertPromMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
+	require.Equal(t, len(counterNames), len(reporter.counts))
+	for _, name := range counterNames {
+		counterName := makePromCompatible(CadenceMetricsPrefix + methodName + "." + name)
+		find := false
+		// counters are not in order
+		for _, counter := range reporter.counts {
+			if counterName == counter.name {
+				find = true
+				break
+			}
+		}
+		require.True(t, find)
+	}
+	require.Equal(t, 1, len(reporter.timers))
+	expected := makePromCompatible(CadenceMetricsPrefix + methodName + "." + CadenceLatency)
+	require.Equal(t, expected, reporter.timers[0].name)
+}
+
+func makePromCompatible(name string) string {
+	name = strings.Replace(name, "-", "_", -1)
+	name = strings.Replace(name, ".", "_", -1)
+	return name
+}
+
+func newService(t *testing.T) (
+	mockService *workflowservicetest.MockClient,
 	wrapperService workflowserviceclient.Interface,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
@@ -176,4 +238,28 @@ func newService(t *testing.T) (mockService *workflowservicetest.MockClient,
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
 	return
+}
+
+func newPromService(t *testing.T) (
+	mockService *workflowservicetest.MockClient,
+	wrapperService workflowserviceclient.Interface,
+	closer io.Closer,
+	reporter *CapturingStatsReporter,
+) {
+	mockCtrl := gomock.NewController(t)
+	mockService = workflowservicetest.NewMockClient(mockCtrl)
+	isReplay := false
+	scope, closer, reporter := newPromScope(&isReplay)
+	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
+	return
+}
+
+func newPromScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
+	reporter := &CapturingStatsReporter{}
+	opts := tally.ScopeOptions{
+		Reporter:        reporter,
+		SanitizeOptions: &sanitizeOptions,
+	}
+	scope, closer := tally.NewRootScope(opts, time.Second)
+	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }

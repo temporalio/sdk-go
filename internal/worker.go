@@ -22,11 +22,12 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"math"
 	"time"
 
-	"encoding/json"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -36,7 +37,6 @@ import (
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
-	"io/ioutil"
 )
 
 type (
@@ -109,7 +109,32 @@ type (
 		// default: default identity that include hostname, groupName and process ID.
 		Identity string
 
-		// Optional: Metrics to be reported.
+		// Optional: Metrics to be reported. Metrics emitted by the cadence client are not prometheus compatible by
+		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
+		// options set.
+		// var (
+		// _safeCharacters = []rune{'_'}
+		// _sanitizeOptions = tally.SanitizeOptions{
+		// 	NameCharacters: tally.ValidCharacters{
+		// 		Ranges:     tally.AlphanumericRange,
+		// 		Characters: _safeCharacters,
+		// 	},
+		// 		KeyCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ValueCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ReplacementCharacter: tally.DefaultReplacementCharacter,
+		// 	}
+		// )
+		// opts := tally.ScopeOptions{
+		// 	Reporter:        reporter,
+		// 	SanitizeOptions: &_sanitizeOptions,
+		// }
+		// scope, _ := tally.NewRootScope(opts, time.Second)
 		// default: no metrics.
 		MetricsScope tally.Scope
 
