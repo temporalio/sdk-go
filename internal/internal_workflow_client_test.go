@@ -625,6 +625,43 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	s.Equal(workflowResult, decodedResult)
 }
 
+func (s *workflowRunSuite) TestGetWorkflow() {
+	filterType := shared.HistoryEventFilterTypeCloseEvent
+	eventType := shared.EventTypeWorkflowExecutionCompleted
+	workflowResult := time.Hour * 59
+	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
+	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
+		History: &shared.History{
+			Events: []*shared.HistoryEvent{
+				&shared.HistoryEvent{
+					EventType: &eventType,
+					WorkflowExecutionCompletedEventAttributes: &shared.WorkflowExecutionCompletedEventAttributes{
+						Result: encodedResult,
+					},
+				},
+			},
+		},
+		NextPageToken: nil,
+	}
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), getRequest, gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
+
+	workflowID := workflowID
+	runID := runID
+
+	workflowRun := s.workflowClient.GetWorkflow(
+		context.Background(),
+		workflowID,
+		runID,
+	)
+	s.Equal(workflowRun.GetID(), workflowID)
+	s.Equal(workflowRun.GetRunID(), runID)
+	decodedResult := time.Minute
+	err := workflowRun.Get(context.Background(), &decodedResult)
+	s.Nil(err)
+	s.Equal(workflowResult, decodedResult)
+}
+
 func getGetWorkflowExecutionHistoryRequest(filterType shared.HistoryEventFilterType) *shared.GetWorkflowExecutionHistoryRequest {
 	isLongPoll := true
 

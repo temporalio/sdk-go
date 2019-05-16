@@ -78,7 +78,6 @@ type (
 		// The errors it can return:
 		//	- EntityNotExistsError, if domain does not exists
 		//	- BadRequestError
-		//	- WorkflowExecutionAlreadyStartedError
 		//	- InternalServiceError
 		//
 		// WorkflowRun has 2 methods:
@@ -94,6 +93,23 @@ type (
 		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
+
+		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance (described above)
+		// - workflow ID of the workflow.
+		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
+		// WorkflowRun has 2 methods:
+		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
+		//    error. This is a blocking API.
+		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
+		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
+		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
+		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
+		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:
+		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
+		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
 		// SignalWorkflow sends a signals to a workflow in execution
 		// - workflow ID of the workflow.

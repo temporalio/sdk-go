@@ -216,13 +216,13 @@ func (wc *workflowClient) StartWorkflow(
 	return executionInfo, nil
 }
 
-// ExecuteWorkflow starts a workflow execution and wait until this workflow reaches the end state, such as
-// workflow finished successfully or timeout.
+// ExecuteWorkflow starts a workflow execution and returns a WorkflowRun that will allow you to wait until this workflow
+// reaches the end state, such as workflow finished successfully or timeout.
 // The user can use this to start using a functor like below and get the workflow execution result, as encoded.Value
 // Either by
-//     RunWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
+//     ExecuteWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
-//     RunWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+//     ExecuteWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
@@ -258,6 +258,25 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 		iterFn:        iterFn,
 		dataConverter: wc.dataConverter,
 	}, nil
+}
+
+// GetWorkflow gets a workflow execution and returns a WorkflowRun that will allow you to wait until this workflow
+// reaches the end state, such as workflow finished successfully or timeout.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func (wc *workflowClient) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
+
+	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, s.HistoryEventFilterTypeCloseEvent)
+	}
+
+	return &workflowRunImpl{
+		workflowID:    workflowID,
+		firstRunID:    runID,
+		currentRunID:  runID,
+		iterFn:        iterFn,
+		dataConverter: wc.dataConverter,
+	}
 }
 
 // SignalWorkflow signals a workflow in execution.

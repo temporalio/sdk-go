@@ -65,7 +65,6 @@ type (
 		// The errors it can return:
 		//	- EntityNotExistsError, if domain does not exists
 		//	- BadRequestError
-		//	- WorkflowExecutionAlreadyStartedError
 		//	- InternalServiceError
 		//
 		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
@@ -85,6 +84,21 @@ type (
 		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
+
+		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance
+		// - workflow ID of the workflow.
+		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
+		// WorkflowRun has three methods:
+		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
+		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
+		//    error. This is a blocking API.
+		// NOTE: if the retrieved workflow returned ContinueAsNewError during the workflow execution, the
+		// return result of GetRunID() will be the retrieved workflow run ID, not the new run ID caused by ContinueAsNewError,
+		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
+		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
 		// SignalWorkflow sends a signals to a workflow in execution
 		// - workflow ID of the workflow.
