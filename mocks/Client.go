@@ -75,6 +75,29 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, domain string, workf
 	return r0
 }
 
+// CountWorkflow provides a mock function with given fields: ctx, request
+func (_m *Client) CountWorkflow(ctx context.Context, request *shared.CountWorkflowExecutionsRequest) (*shared.CountWorkflowExecutionsResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *shared.CountWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *shared.CountWorkflowExecutionsRequest) *shared.CountWorkflowExecutionsResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*shared.CountWorkflowExecutionsResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *shared.CountWorkflowExecutionsRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // DescribeTaskList provides a mock function with given fields: ctx, tasklist, tasklistType
 func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType shared.TaskListType) (*shared.DescribeTaskListResponse, error) {
 	ret := _m.Called(ctx, tasklist, tasklistType)
@@ -225,6 +248,29 @@ func (_m *Client) ListOpenWorkflow(ctx context.Context, request *shared.ListOpen
 	return r0, r1
 }
 
+// ListWorkflow provides a mock function with given fields: ctx, request
+func (_m *Client) ListWorkflow(ctx context.Context, request *shared.ListWorkflowExecutionsRequest) (*shared.ListWorkflowExecutionsResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *shared.ListWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListWorkflowExecutionsRequest) *shared.ListWorkflowExecutionsResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*shared.ListWorkflowExecutionsResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListWorkflowExecutionsRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // QueryWorkflow provides a mock function with given fields: ctx, workflowID, runID, queryType, args
 func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error) {
 	var _ca []interface{}
@@ -283,6 +329,29 @@ func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, domain string
 	}
 
 	return r0
+}
+
+// ScanWorkflow provides a mock function with given fields: ctx, request
+func (_m *Client) ScanWorkflow(ctx context.Context, request *shared.ListWorkflowExecutionsRequest) (*shared.ListWorkflowExecutionsResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *shared.ListWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListWorkflowExecutionsRequest) *shared.ListWorkflowExecutionsResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*shared.ListWorkflowExecutionsResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListWorkflowExecutionsRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // SignalWithStartWorkflow provides a mock function with given fields: ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs

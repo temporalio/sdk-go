@@ -845,3 +845,66 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	_, err = getWorkflowMemo(input1, nil)
 	s.Error(err)
 }
+
+func (s *workflowClientTestSuite) TestListWorkflow() {
+	request := &shared.ListWorkflowExecutionsRequest{}
+	response := &shared.ListWorkflowExecutionsResponse{}
+	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *shared.ListWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal(domain, request.GetDomain())
+		})
+	resp, err := s.client.ListWorkflow(context.Background(), request)
+	s.Nil(err)
+	s.Equal(response, resp)
+
+	responseErr := &shared.BadRequestError{}
+	request.Domain = common.StringPtr("another")
+	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
+		Do(func(_ interface{}, req *shared.ListWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal("another", request.GetDomain())
+		})
+	resp, err = s.client.ListWorkflow(context.Background(), request)
+	s.Equal(responseErr, err)
+}
+
+func (s *workflowClientTestSuite) TestScanWorkflow() {
+	request := &shared.ListWorkflowExecutionsRequest{}
+	response := &shared.ListWorkflowExecutionsResponse{}
+	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *shared.ListWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal(domain, request.GetDomain())
+		})
+	resp, err := s.client.ScanWorkflow(context.Background(), request)
+	s.Nil(err)
+	s.Equal(response, resp)
+
+	responseErr := &shared.BadRequestError{}
+	request.Domain = common.StringPtr("another")
+	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
+		Do(func(_ interface{}, req *shared.ListWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal("another", request.GetDomain())
+		})
+	resp, err = s.client.ScanWorkflow(context.Background(), request)
+	s.Equal(responseErr, err)
+}
+
+func (s *workflowClientTestSuite) TestCountWorkflow() {
+	request := &shared.CountWorkflowExecutionsRequest{}
+	response := &shared.CountWorkflowExecutionsResponse{}
+	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *shared.CountWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal(domain, request.GetDomain())
+		})
+	resp, err := s.client.CountWorkflow(context.Background(), request)
+	s.Nil(err)
+	s.Equal(response, resp)
+
+	responseErr := &shared.BadRequestError{}
+	request.Domain = common.StringPtr("another")
+	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
+		Do(func(_ interface{}, req *shared.CountWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal("another", request.GetDomain())
+		})
+	resp, err = s.client.CountWorkflow(context.Background(), request)
+	s.Equal(responseErr, err)
+}

@@ -236,6 +236,38 @@ type (
 		//  - EntityNotExistError
 		ListOpenWorkflow(ctx context.Context, request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
 
+		// ListWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
+		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
+		// examples:
+		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
+		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
+		//  - to list only open workflow use "CloseTime = missing"
+		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
+		// and sorted by CloseTime in descending order for other queries.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		ListWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error)
+
+		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
+		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// (see ListWorkflow for query examples).
+		// ScanWorkflow should be used when retrieving large amount of workflows and order is not needed.
+		// It will use more ElasticSearch resources than ListWorkflow, but will be several times faster
+		// when retrieving millions of workflows.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		ScanWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error)
+
+		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
+		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// (see ListWorkflow for query examples).
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		CountWorkflow(ctx context.Context, request *s.CountWorkflowExecutionsRequest) (*s.CountWorkflowExecutionsResponse, error)
+
 		// QueryWorkflow queries a given workflow's last execution and returns the query result synchronously. Parameter workflowID
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
 		// target workflow execution that this query will be send to. If runID is not specified (empty string), server will
