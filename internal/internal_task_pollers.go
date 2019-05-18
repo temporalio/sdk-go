@@ -809,6 +809,10 @@ func (atp *activityTaskPoller) poll() (*activityTask, error) {
 
 	atp.metricsScope.Counter(metrics.ActivityPollSucceedCounter).Inc(1)
 	atp.metricsScope.Timer(metrics.ActivityPollLatency).Record(time.Now().Sub(startTime))
+
+	scheduledTime := time.Unix(0, response.GetScheduledTimestampOfThisAttempt())
+	atp.metricsScope.Timer(metrics.ActivityScheduledToStartLatency).Record(time.Now().Sub(scheduledTime))
+
 	return &activityTask{task: response, pollStartTime: startTime}, nil
 }
 

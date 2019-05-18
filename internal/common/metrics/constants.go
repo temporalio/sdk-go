@@ -56,6 +56,7 @@ const (
 	ActivityPollNoTaskCounter          = CadenceMetricsPrefix + "activity-poll-no-task"
 	ActivityPollSucceedCounter         = CadenceMetricsPrefix + "activity-poll-succeed"
 	ActivityPollLatency                = CadenceMetricsPrefix + "activity-poll-latency"
+	ActivityScheduledToStartLatency    = CadenceMetricsPrefix + "activity-scheduled-to-start-latency"
 	ActivityExecutionFailedCounter     = CadenceMetricsPrefix + "activity-execution-failed"
 	ActivityExecutionLatency           = CadenceMetricsPrefix + "activity-execution-latency"
 	ActivityResponseLatency            = CadenceMetricsPrefix + "activity-response-latency"
