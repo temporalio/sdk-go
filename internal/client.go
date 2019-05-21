@@ -349,7 +349,12 @@ type (
 		Memo map[string]interface{}
 	}
 
-	// RetryPolicy defines the retry policy
+	// RetryPolicy defines the retry policy.
+	// Note that the history of activity with retry policy will be different: the started event will be written down into
+	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
+	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
+	// you can use CLI to describe the workflow to see the status of the activity:
+	//     cadence --do <domain> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If coefficient is 1.0 then it is used for all retries.
 		// Required, no default value.
