@@ -309,6 +309,7 @@ struct WorkflowExecutionInfo {
   80: optional WorkflowExecution parentExecution
   90: optional i64 (js.type = "Long") executionTime
   100: optional Memo memo
+  110: optional ResetPoints autoResetPoints
 }
 
 struct WorkflowExecutionConfiguration {
@@ -1010,6 +1011,8 @@ struct PollForDecisionTaskResponse {
   70: optional binary nextPageToken
   80: optional WorkflowQuery query
   90: optional TaskList WorkflowExecutionTaskList
+  100:  optional i64 (js.type = "Long") scheduledTimestamp
+  110:  optional i64 (js.type = "Long") startedTimestamp
 }
 
 struct StickyExecutionAttributes {
@@ -1180,6 +1183,7 @@ struct SignalWithStartWorkflowExecutionRequest {
   140: optional RetryPolicy retryPolicy
   150: optional string cronSchedule
   160: optional Memo memo
+  170: optional Header header
 }
 
 struct TerminateWorkflowExecutionRequest {
