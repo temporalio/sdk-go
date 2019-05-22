@@ -27,6 +27,9 @@ import (
 // A Cache is a generalized interface to a cache.  See cache.LRU for a specific
 // implementation (bounded cache with LRU eviction)
 type Cache interface {
+	// Exist checks if a given key exists in the cache
+	Exist(key string) bool
+
 	// Get retrieves an element based on a key, returning nil if the element
 	// does not exist
 	Get(key string) interface{}

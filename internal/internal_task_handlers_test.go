@@ -449,6 +449,70 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	t.EqualValues(getWorkflowCache().Size(), 0)
 }
 
+func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
+	t.testSideEffectDeferHelper(false)
+}
+
+func (t *TaskHandlersTestSuite) TestSideEffectDefer_NonSticky() {
+	t.testSideEffectDeferHelper(true)
+}
+
+func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
+	value := "should not be modified"
+	expectedValue := value
+	doneCh := make(chan struct{})
+
+	workflowFunc := func(ctx Context) error {
+		defer func() {
+			if !IsReplaying(ctx) {
+				// This is an side effect op
+				value = ""
+			}
+			close(doneCh)
+		}()
+		Sleep(ctx, 1*time.Second)
+		return nil
+	}
+	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-Sticky=%v", disableSticky)
+	RegisterWorkflowWithOptions(
+		workflowFunc,
+		RegisterWorkflowOptions{Name: workflowName},
+	)
+
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+	}
+
+	params := workerExecutionParameters{
+		TaskList:               taskList,
+		Identity:               "test-id-1",
+		Logger:                 zap.NewNop(),
+		DisableStickyExecution: disableSticky,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	task := createWorkflowTask(testEvents, 0, workflowName)
+	_, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
+	t.Nil(err)
+
+	if !params.DisableStickyExecution {
+		// 1. We can't set cache size in the test to 1, otherwise other tests will break.
+		// 2. We need to make sure cache is empty when the test is completed,
+		// So manually trigger a delete.
+		getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
+	}
+	// Make sure the workflow coroutine has exited.
+	<-doneCh
+	// The side effect op should not be executed.
+	t.Equal(expectedValue, value)
+
+	// There should be nothing in the cache.
+	t.EqualValues(getWorkflowCache().Size(), 0)
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	taskList := "taskList"
 	testEvents := []*s.HistoryEvent{

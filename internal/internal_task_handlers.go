@@ -389,7 +389,12 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
 		// if the close decision failed, the next decision will have to rebuild the state.
-		removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
+		if getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
+			removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
+		} else {
+			// sticky is disabled, manually clear the workflow state.
+			w.clearState()
+		}
 	}
 
 	w.mutex.Unlock()
@@ -454,6 +459,8 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.previousStartedEventID = 0
 	w.newDecisions = nil
 	if w.eventHandler != nil {
+		// Set isReplay to true to prevent user code in defer guarded by !isReplaying() from running
+		w.eventHandler.isReplay = true
 		w.eventHandler.Close()
 		w.eventHandler = nil
 	}

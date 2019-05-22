@@ -73,6 +73,14 @@ func NewLRUWithInitialCapacity(initialCapacity, maxSize int) Cache {
 	})
 }
 
+// Exist checks if a given key exists in the cache
+func (c *lru) Exist(key string) bool {
+	c.mut.Lock()
+	defer c.mut.Unlock()
+	_, ok := c.byKey[key]
+	return ok
+}
+
 // Get retrieves the value stored under the given key
 func (c *lru) Get(key string) interface{} {
 	c.mut.Lock()
