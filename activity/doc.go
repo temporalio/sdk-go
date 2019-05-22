@@ -183,7 +183,7 @@ Registration
 In order to for some workflow execution to be able to invoke an activity type, the worker process needs to be aware of
 all the implementations it has access to. An activity is registered with the following call:
 
-    activity.RegisterActivity(SimpleActivity)
+    activity.Register(SimpleActivity)
 
 This call essentially creates an in-memory mapping inside the worker process between the fully qualified function name
 and the implementation. Unlike in Amazon SWF, workflow and activity types are not registered with the managed service.
