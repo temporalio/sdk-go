@@ -338,6 +338,16 @@ func (e *ContinueAsNewError) Error() string {
 	return "ContinueAsNew"
 }
 
+// WorkflowType return workflowType of the new run
+func (e *ContinueAsNewError) WorkflowType() *WorkflowType {
+	return e.params.workflowType
+}
+
+// Args return workflow argument of the new run
+func (e *ContinueAsNewError) Args() []interface{} {
+	return e.args
+}
+
 // newTerminatedError creates NewTerminatedError instance
 func newTerminatedError() *TerminatedError {
 	return &TerminatedError{}

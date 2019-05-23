@@ -386,3 +386,34 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)
 	require.True(t, ok)
 }
+
+func Test_ContinueAsNewError(t *testing.T) {
+	var a1 = 1234
+	var a2 = "some random input"
+
+	continueAsNewWfName := "continueAsNewWorkflowFn"
+	continueAsNewWorkflowFn := func(ctx Context, testInt int, testString string) error {
+		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
+	}
+	RegisterWorkflowWithOptions(continueAsNewWorkflowFn, RegisterWorkflowOptions{
+		Name: continueAsNewWfName,
+	})
+
+	s := &WorkflowTestSuite{}
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(continueAsNewWorkflowFn, 101, "another random string")
+	err := wfEnv.GetWorkflowError()
+
+	require.Error(t, err)
+	continueAsNewErr, ok := err.(*ContinueAsNewError)
+	require.True(t, ok)
+	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType().Name)
+
+	args := continueAsNewErr.Args()
+	intArg, ok := args[0].(int)
+	require.True(t, ok)
+	require.Equal(t, a1, intArg)
+	stringArg, ok := args[1].(string)
+	require.True(t, ok)
+	require.Equal(t, a2, stringArg)
+}
