@@ -22,6 +22,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -172,6 +173,11 @@ func (wc *workflowClient) StartWorkflow(
 		return nil, err
 	}
 
+	searchAttr, err := serializeSearchAttributes(options.SearchAttributes)
+	if err != nil {
+		return nil, err
+	}
+
 	startRequest := &s.StartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -186,6 +192,7 @@ func (wc *workflowClient) StartWorkflow(
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
 		Memo:                                memo,
+		SearchAttributes:                    searchAttr,
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -347,6 +354,11 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return nil, err
 	}
 
+	searchAttr, err := serializeSearchAttributes(options.SearchAttributes)
+	if err != nil {
+		return nil, err
+	}
+
 	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -362,6 +374,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
 		Memo:                                memo,
+		SearchAttributes:                    searchAttr,
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
 	}
 
@@ -660,6 +673,23 @@ func (wc *workflowClient) CountWorkflow(ctx context.Context, request *s.CountWor
 	return response, nil
 }
 
+// GetSearchAttributes implementation
+func (wc *workflowClient) GetSearchAttributes(ctx context.Context) (*s.GetSearchAttributesResponse, error) {
+	var response *s.GetSearchAttributesResponse
+	err := backoff.Retry(ctx,
+		func() error {
+			var err1 error
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+			response, err1 = wc.workflowService.GetSearchAttributes(tchCtx, opt...)
+			return err1
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // DescribeWorkflowExecution returns information about the specified workflow execution.
 // The errors it can return:
 //  - BadRequestError
@@ -946,4 +976,20 @@ func getWorkflowMemo(input map[string]interface{}, dc encoded.DataConverter) (*s
 		memo[k] = memoBytes
 	}
 	return &s.Memo{Fields: memo}, nil
+}
+
+func serializeSearchAttributes(input map[string]interface{}) (*s.SearchAttributes, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	attr := make(map[string][]byte)
+	for k, v := range input {
+		attrBytes, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
+		}
+		attr[k] = attrBytes
+	}
+	return &s.SearchAttributes{IndexedFields: attr}, nil
 }

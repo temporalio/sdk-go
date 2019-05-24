@@ -251,6 +251,11 @@ type (
 		//  - InternalServiceError
 		CountWorkflow(ctx context.Context, request *s.CountWorkflowExecutionsRequest) (*s.CountWorkflowExecutionsResponse, error)
 
+		// GetSearchAttributes returns valid search attributes keys and value types.
+		// The search attributes can be used in query of List/Scan/Count APIs. Adding new search attributes requires cadence server
+		// to update dynamic config ValidSearchAttributes.
+		GetSearchAttributes(ctx context.Context) (*s.GetSearchAttributesResponse, error)
+
 		// QueryWorkflow queries a given workflow execution and returns the query result synchronously. Parameter workflowID
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
 		// target workflow execution that this query will be send to. If runID is not specified (empty string), server will
@@ -345,8 +350,13 @@ type (
 		// * * * * *
 		CronSchedule string
 
-		// Memo - Optional info that will be showed in list workflow.
+		// Memo - Optional non-indexed info that will be showed in list workflow.
 		Memo map[string]interface{}
+
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
+		// supported when using ElasticSearch). The key and value type must be registered on cadence server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes map[string]interface{}
 	}
 
 	// RetryPolicy defines the retry policy.

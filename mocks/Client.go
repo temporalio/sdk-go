@@ -173,6 +173,29 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 	return r0, r1
 }
 
+// GetSearchAttributes provides a mock function with given fields: ctx
+func (_m *Client) GetSearchAttributes(ctx context.Context) (*shared.GetSearchAttributesResponse, error) {
+	ret := _m.Called(ctx)
+
+	var r0 *shared.GetSearchAttributesResponse
+	if rf, ok := ret.Get(0).(func(context.Context) *shared.GetSearchAttributesResponse); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*shared.GetSearchAttributesResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetWorkflow provides a mock function with given fields: ctx, workflowID, runID
 func (_m *Client) GetWorkflow(ctx context.Context, workflowID string, runID string) client.WorkflowRun {
 	ret := _m.Called(ctx, workflowID, runID)
