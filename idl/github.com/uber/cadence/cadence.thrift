@@ -413,7 +413,7 @@ service WorkflowService {
       6: shared.LimitExceededError limitExceededError,
       7: shared.ClientVersionNotSupportedError clientVersionNotSupportedError,
     )
-
+    
   /**
   * TerminateWorkflowExecution terminates an existing workflow execution by recording WorkflowExecutionTerminated event
   * in the history and immediately terminating the execution instance.
