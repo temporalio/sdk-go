@@ -20,7 +20,7 @@ go get go.uber.org/cadence
 
 See [samples](https://github.com/samarabbas/cadence-samples) to get started. 
 
-Documentation is available [here](https://https://cadenceworkflow.io/docs/goclient/). 
+Documentation is available [here](https://cadenceworkflow.io/docs/03_goclient/). 
 You can also find the API documentation [here](https://godoc.org/go.uber.org/cadence).
 
 ## Contributing
