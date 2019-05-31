@@ -863,14 +863,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.ActivityTaskTimedOutEventAttributes
-	var err error
-	tt := attributes.GetTimeoutType()
-	if tt == m.TimeoutTypeHeartbeat {
-		details := newEncodedValues(attributes.Details, weh.GetDataConverter())
-		err = NewHeartbeatTimeoutError(details)
-	} else {
-		err = NewTimeoutError(attributes.GetTimeoutType())
-	}
+	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+	err := NewTimeoutError(attributes.GetTimeoutType(), details)
 	activity.handle(nil, err)
 	return nil
 }
