@@ -30,6 +30,7 @@ import (
 	"fmt"
 
 	"github.com/uber-go/tally"
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -81,11 +82,12 @@ type (
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value
 		GetDataConverter() encoded.DataConverter
+		GetContextPropagators() []ContextPropagator
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
-		Execute(env workflowEnvironment, input []byte)
+		Execute(env workflowEnvironment, header *shared.Header, input []byte)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to workflowDefinition
 		OnDecisionTaskStarted()

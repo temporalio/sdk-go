@@ -56,8 +56,10 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		ScheduleToCloseTimeout: time.Second * 3,
 	}
 	RegisterWorkflowWithOptions(testWorkflowHello, RegisterWorkflowOptions{Name: "testWorkflowHello"})
+	RegisterWorkflow(testWorkflowContext)
 	RegisterWorkflow(testWorkflowHeartbeat)
 	RegisterActivityWithOptions(testActivityHello, RegisterActivityOptions{Name: "testActivityHello"})
+	RegisterActivity(testActivityContext)
 	RegisterActivity(testActivityHeartbeat)
 }
 
@@ -362,6 +364,36 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 	s.Equal(testValue, value)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
+	workerOptions := WorkerOptions{
+		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
+	}
+
+	// inline activity using value passing through user context.
+	activityWithUserContext := func(ctx context.Context) (string, error) {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			return val, nil
+		}
+		return "", errors.New("value not found from ctx")
+	}
+	RegisterActivity(activityWithUserContext)
+
+	s.SetHeader(&shared.Header{
+		Fields: map[string][]byte{
+			testHeader: []byte("test-data"),
+		},
+	})
+
+	env := s.NewTestActivityEnvironment()
+	env.SetWorkerOptions(workerOptions)
+	blob, err := env.ExecuteActivity(activityWithUserContext)
+	s.NoError(err)
+	var value string
+	blob.Get(&value)
+	s.Equal("test-data", value)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	env := s.NewTestWorkflowEnvironment()
 	var activityInfo ActivityInfo
@@ -438,8 +470,24 @@ func testWorkflowHello(ctx Context) (string, error) {
 	return result, nil
 }
 
+func testWorkflowContext(ctx Context) (string, error) {
+	value := ctx.Value(contextKey(testHeader))
+	if val, ok := value.(string); ok {
+		return string(val), nil
+	}
+	return "", fmt.Errorf("context did not propagate to workflow")
+}
+
 func testActivityHello(ctx context.Context, msg string) (string, error) {
 	return "hello" + "_" + msg, nil
+}
+
+func testActivityContext(ctx context.Context) (string, error) {
+	value := ctx.Value(contextKey(testHeader))
+	if val, ok := value.(string); ok {
+		return string(val), nil
+	}
+	return "", fmt.Errorf("context did not propagate to workflow")
 }
 
 func testWorkflowHeartbeat(ctx Context, msg string, waitTime time.Duration) (string, error) {
@@ -1303,6 +1351,53 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 	s.Equal(2, len(called))
 	s.Equal("testWorkflowHello", called[0])
 	s.Equal("testWorkflowHello", called[1])
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
+
+	workflowFn := func(ctx Context) error {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			s.Equal("test-data", val)
+		} else {
+			return fmt.Errorf("context did not propagate to workflow")
+		}
+
+		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var result string
+		if err := ExecuteChildWorkflow(ctx, testWorkflowContext).Get(ctx, &result); err != nil {
+			return err
+		}
+		s.Equal("test-data", result)
+
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       20 * time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		if err := ExecuteActivity(ctx, testActivityContext).Get(ctx, &result); err != nil {
+			return err
+		}
+		s.Equal("test-data", result)
+		return nil
+	}
+
+	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
+	s.SetHeader(&shared.Header{
+		Fields: map[string][]byte{
+			testHeader: []byte("test-data"),
+		},
+	})
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {

@@ -51,11 +51,12 @@ const (
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
-		workflowService workflowserviceclient.Interface
-		domain          string
-		metricsScope    *metrics.TaggedScope
-		identity        string
-		dataConverter   encoded.DataConverter
+		workflowService    workflowserviceclient.Interface
+		domain             string
+		metricsScope       *metrics.TaggedScope
+		identity           string
+		dataConverter      encoded.DataConverter
+		contextPropagators []ContextPropagator
 	}
 
 	// domainClient is the client for managing domains.
@@ -177,7 +178,10 @@ func (wc *workflowClient) StartWorkflow(
 	if err != nil {
 		return nil, err
 	}
+	// get workflow headers from the context
+	header := wc.getWorkflowHeader(ctx)
 
+	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &s.StartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -193,6 +197,7 @@ func (wc *workflowClient) StartWorkflow(
 		CronSchedule:                        common.StringPtr(options.CronSchedule),
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
+		Header:                              header,
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -359,6 +364,8 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return nil, err
 	}
 
+	header := wc.getWorkflowHeader(ctx)
+
 	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
 		Domain:                              common.StringPtr(wc.domain),
 		RequestId:                           common.StringPtr(uuid.New()),
@@ -376,6 +383,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
+		Header:                              header,
 	}
 
 	var response *s.StartWorkflowExecutionResponse
@@ -795,6 +803,17 @@ func (wc *workflowClient) DescribeTaskList(ctx context.Context, tasklist string,
 	}
 
 	return resp, nil
+}
+
+func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *s.Header {
+	header := &s.Header{
+		Fields: make(map[string][]byte),
+	}
+	writer := NewHeaderWriter(header)
+	for _, ctxProp := range wc.contextPropagators {
+		ctxProp.Inject(ctx, writer)
+	}
+	return header
 }
 
 // Register a domain with cadence server

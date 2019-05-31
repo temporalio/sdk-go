@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -47,6 +48,7 @@ const (
 	identity              = "some random identity"
 	timeoutInSeconds      = 20
 	workflowIDReusePolicy = WorkflowIDReusePolicyAllowDuplicateFailedOnly
+	testHeader            = "test-header"
 )
 
 // historyEventIteratorSuite
@@ -59,6 +61,72 @@ type (
 		wfClient              *workflowClient
 	}
 )
+
+// stringMapPropagator propagates the list of keys across a workflow,
+// interpreting the payloads as strings.
+type stringMapPropagator struct {
+	keys map[string]struct{}
+}
+
+// NewStringMapPropagator returns a context propagator that propagates a set of
+// string key-value pairs across a workflow
+func NewStringMapPropagator(keys []string) ContextPropagator {
+	keyMap := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		keyMap[key] = struct{}{}
+	}
+	return &stringMapPropagator{keyMap}
+}
+
+// Inject injects values from context into headers for propagation
+func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) error {
+	for key := range s.keys {
+		value, ok := ctx.Value(contextKey(key)).(string)
+		if !ok {
+			return fmt.Errorf("unable to extract key from context %v", key)
+		}
+		writer.Set(key, []byte(value))
+	}
+	return nil
+}
+
+// InjectFromWorkflow injects values from context into headers for propagation
+func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWriter) error {
+	for key := range s.keys {
+		value, ok := ctx.Value(contextKey(key)).(string)
+		if !ok {
+			return fmt.Errorf("unable to extract key from context %v", key)
+		}
+		writer.Set(key, []byte(value))
+	}
+	return nil
+}
+
+// Extract extracts values from headers and puts them into context
+func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
+	if err := reader.ForEachKey(func(key string, value []byte) error {
+		if _, ok := s.keys[key]; ok {
+			ctx = context.WithValue(ctx, contextKey(key), string(value))
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
+
+// ExtractToWorkflow extracts values from headers and puts them into context
+func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
+	if err := reader.ForEachKey(func(key string, value []byte) error {
+		if _, ok := s.keys[key]; ok {
+			ctx = WithValue(ctx, contextKey(key), string(value))
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
 
 func TestHistoryEventIteratorSuite(t *testing.T) {
 	s := new(historyEventIteratorSuite)
@@ -782,6 +850,35 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Equal(getDefaultDataConverter(), client.dataConverter)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.RunID)
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
+	s.client = NewClient(s.service, domain, &ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
+	client, ok := s.client.(*workflowClient)
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                              workflowID,
+		TaskList:                        tasklist,
+		ExecutionStartToCloseTimeout:    timeoutInSeconds,
+		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+	}
+	f1 := func(ctx Context, r []byte) error {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.([]byte); ok {
+			s.Equal("test-data", string(val))
+			return nil
+		}
+		return fmt.Errorf("context did not propagate to workflow")
+	}
+
+	createResponse := &shared.StartWorkflowExecutionResponse{
+		RunId: common.StringPtr(runID),
+	}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
+
+	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }

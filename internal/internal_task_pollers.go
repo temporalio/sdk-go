@@ -511,6 +511,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
+	// TODO: @shreyassrivatsan - add local activity tracing here
 	var laResult []byte
 	var err error
 	doneCh := make(chan struct{})

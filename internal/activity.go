@@ -265,6 +265,7 @@ func WithActivityTask(
 	scope tally.Scope,
 	dataConverter encoded.DataConverter,
 	workerStopChannel <-chan struct{},
+	contextPropagators []ContextPropagator,
 ) context.Context {
 	var deadline time.Time
 	scheduled := time.Unix(0, task.GetScheduledTimestamp())
@@ -310,8 +311,9 @@ func WithActivityTask(
 		workflowType: &WorkflowType{
 			Name: *task.WorkflowType.Name,
 		},
-		workflowDomain:    *task.WorkflowDomain,
-		workerStopChannel: workerStopChannel,
+		workflowDomain:     *task.WorkflowDomain,
+		workerStopChannel:  workerStopChannel,
+		contextPropagators: contextPropagators,
 	})
 }
 

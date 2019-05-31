@@ -75,6 +75,7 @@ type (
 		ActivityType  ActivityType
 		Input         []byte
 		DataConverter encoded.DataConverter
+		Header        *shared.Header
 	}
 
 	executeLocalActivityParams struct {
@@ -128,6 +129,7 @@ type (
 		workflowType       *WorkflowType
 		workflowDomain     string
 		workerStopChannel  <-chan struct{}
+		contextPropagators []ContextPropagator
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

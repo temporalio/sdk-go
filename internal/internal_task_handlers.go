@@ -118,21 +118,23 @@ type (
 		laTunnel                       *localActivityTunnel
 		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 		dataConverter                  encoded.DataConverter
+		contextPropagators             []ContextPropagator
 	}
 
 	activityProvider func(name string) activity
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
-		taskListName     string
-		identity         string
-		service          workflowserviceclient.Interface
-		metricsScope     *metrics.TaggedScope
-		logger           *zap.Logger
-		userContext      context.Context
-		hostEnv          *hostEnvImpl
-		activityProvider activityProvider
-		dataConverter    encoded.DataConverter
-		workerStopCh     <-chan struct{}
+		taskListName       string
+		identity           string
+		service            workflowserviceclient.Interface
+		metricsScope       *metrics.TaggedScope
+		logger             *zap.Logger
+		userContext        context.Context
+		hostEnv            *hostEnvImpl
+		activityProvider   activityProvider
+		dataConverter      encoded.DataConverter
+		workerStopCh       <-chan struct{}
+		contextPropagators []ContextPropagator
 	}
 
 	// history wrapper method to help information about events.
@@ -320,6 +322,7 @@ func newWorkflowTaskHandler(
 		hostEnv:                        hostEnv,
 		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
 		dataConverter:                  params.DataConverter,
+		contextPropagators:             params.ContextPropagators,
 	}
 }
 
@@ -475,7 +478,8 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.enableLoggingInReplay,
 		w.wth.metricsScope,
 		w.wth.hostEnv,
-		w.wth.dataConverter).(*workflowExecutionEventHandlerImpl)
+		w.wth.dataConverter,
+		w.wth.contextPropagators).(*workflowExecutionEventHandlerImpl)
 }
 
 func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*s.History, error) {
@@ -1291,6 +1295,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			TaskList:                            common.TaskListPtr(s.TaskList{Name: contErr.params.taskListName}),
 			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
+			Header:                              contErr.params.header,
 		}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1369,16 +1374,17 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	return &activityTaskHandlerImpl{
-		taskListName:     params.TaskList,
-		identity:         params.Identity,
-		service:          service,
-		logger:           params.Logger,
-		metricsScope:     metrics.NewTaggedScope(params.MetricsScope),
-		userContext:      params.UserContext,
-		hostEnv:          env,
-		activityProvider: activityProvider,
-		dataConverter:    params.DataConverter,
-		workerStopCh:     params.WorkerStopChannel,
+		taskListName:       params.TaskList,
+		identity:           params.Identity,
+		service:            service,
+		logger:             params.Logger,
+		metricsScope:       metrics.NewTaggedScope(params.MetricsScope),
+		userContext:        params.UserContext,
+		hostEnv:            env,
+		activityProvider:   activityProvider,
+		dataConverter:      params.DataConverter,
+		workerStopCh:       params.WorkerStopChannel,
+		contextPropagators: params.ContextPropagators,
 	}
 }
 
@@ -1538,7 +1544,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators)
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
@@ -1563,9 +1569,19 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
 		}
 	}()
+
+	// propagate context information into the activity context from the headers
+	for _, ctxProp := range ath.contextPropagators {
+		var err error
+		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(t.Header)); err != nil {
+			return nil, fmt.Errorf("unable to propagate context %v", err)
+		}
+	}
+
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 
+	// TODO: @shreyassrivatsan - trace the activity execution here
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
 	dlCancelFunc()

@@ -106,9 +106,10 @@ type (
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
-		metricsScope  tally.Scope
-		hostEnv       *hostEnvImpl
-		dataConverter encoded.DataConverter
+		metricsScope       tally.Scope
+		hostEnv            *hostEnvImpl
+		dataConverter      encoded.DataConverter
+		contextPropagators []ContextPropagator
 	}
 
 	localActivityTask struct {
@@ -170,6 +171,7 @@ func newWorkflowExecutionEventHandler(
 	scope tally.Scope,
 	hostEnv *hostEnvImpl,
 	dataConverter encoded.DataConverter,
+	contextPropagators []ContextPropagator,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
@@ -183,6 +185,7 @@ func newWorkflowExecutionEventHandler(
 		enableLoggingInReplay: enableLoggingInReplay,
 		hostEnv:               hostEnv,
 		dataConverter:         dataConverter,
+		contextPropagators:    contextPropagators,
 	}
 	context.logger = logger.With(
 		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},
@@ -301,6 +304,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.ChildPolicy = params.childPolicy.toThriftChildPolicyPtr()
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
 	attributes.RetryPolicy = params.retryPolicy
+	attributes.Header = params.header
 	if len(params.cronSchedule) > 0 {
 		attributes.CronSchedule = common.StringPtr(params.cronSchedule)
 	}
@@ -339,6 +343,10 @@ func (wc *workflowEnvironmentImpl) GetDataConverter() encoded.DataConverter {
 	return wc.dataConverter
 }
 
+func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
+	return wc.contextPropagators
+}
+
 func (wc *workflowEnvironmentImpl) IsReplaying() bool {
 	return wc.isReplay
 }
@@ -375,6 +383,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = common.Int32Ptr(parameters.ScheduleToStartTimeoutSeconds)
 	scheduleTaskAttr.HeartbeatTimeoutSeconds = common.Int32Ptr(parameters.HeartbeatTimeoutSeconds)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.Header = parameters.Header
 
 	decision := wc.decisionsHelper.scheduleActivityTask(scheduleTaskAttr)
 	decision.setData(&scheduledActivity{
@@ -815,7 +824,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	}
 
 	// Invoke the workflow.
-	weh.workflowDefinition.Execute(weh, attributes.Input)
+	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)
 	return nil
 }
 

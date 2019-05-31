@@ -188,6 +188,10 @@ type (
 		// Optional: worker graceful shutdown timeout
 		// default: 0s
 		WorkerStopTimeout time.Duration
+
+		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+		// default: no ContextPropagators
+		ContextPropagators []ContextPropagator
 	}
 )
 

@@ -37,6 +37,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/shared"
+	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -173,12 +174,14 @@ type (
 		dataConverter                       encoded.DataConverter
 		retryPolicy                         *shared.RetryPolicy
 		cronSchedule                        string
+		contextPropagators                  []ContextPropagator
 	}
 
 	executeWorkflowParams struct {
 		workflowOptions
 		workflowType         *WorkflowType
 		input                []byte
+		header               *shared.Header
 		attempt              int32     // used by test framework to support child workflow retry
 		scheduledTime        time.Time // used by test framework to support child workflow retry
 		lastCompletionResult []byte    // used by test framework to support cron
@@ -392,12 +395,13 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
+	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())
 	getActivityOptions(rootCtx).OriginalTaskListName = wInfo.TaskListName
 
 	return rootCtx
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) {
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *shared.Header, input []byte) {
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env), func(ctx Context) {
 		r := &workflowResult{}
 
@@ -407,10 +411,20 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, input []byte) 
 		state := getState(d.rootCtx)
 		state.yield("yield before executing to setup state")
 
+		// TODO: @shreyassrivatsan - add workflow trace span here
 		r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 		rpp := getWorkflowResultPointerPointer(ctx)
 		*rpp = r
 	})
+
+	// set the information from the headers that is to be propagated in the workflow context
+	for _, ctxProp := range env.GetContextPropagators() {
+		var err error
+		if rootCtx, err = ctxProp.ExtractToWorkflow(rootCtx, NewHeaderReader(header)); err != nil {
+			panic(fmt.Sprintf("Unable to propagate context %v", err))
+		}
+	}
+
 	d.rootCtx, d.cancel = WithCancel(rootCtx)
 	d.dispatcher = dispatcher
 
@@ -1156,6 +1170,22 @@ func getDataConverterFromWorkflowContext(ctx Context) encoded.DataConverter {
 		return getDefaultDataConverter()
 	}
 	return options.dataConverter
+}
+
+func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
+	options := getWorkflowEnvOptions(ctx)
+	return options.contextPropagators
+}
+
+func getHeadersFromContext(ctx Context) *shared.Header {
+	header := &s.Header{
+		Fields: make(map[string][]byte),
+	}
+	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)
+	for _, ctxProp := range contextPropagators {
+		ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
+	}
+	return header
 }
 
 // getSignalChannel finds the associated channel for the signal.

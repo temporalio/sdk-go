@@ -85,3 +85,7 @@ ignored = ["go.uber.org/cadence/.tmp"]
 [[constraint]]
   name = "github.com/robfig/cron"
   version = "1.1.0"
+
+[[constraint]]
+  name = "github.com/uber/jaeger-client-go"
+  version = "2.15.0"

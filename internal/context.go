@@ -24,8 +24,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"go.uber.org/cadence/.gen/go/shared"
 )
+
+const activeSpanContextKey contextKey = "activeSpanContextKey"
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
@@ -160,6 +163,10 @@ var (
 	background = new(emptyCtx)
 	todo       = new(emptyCtx)
 )
+
+func Background() Context {
+	return background
+}
 
 // ErrCanceled is the error returned by Context.Err when the context is canceled.
 var ErrCanceled = NewCanceledError()
@@ -418,4 +425,16 @@ func (c *valueCtx) Value(key interface{}) interface{} {
 		return c.val
 	}
 	return c.Context.Value(key)
+}
+
+func spanFromContext(ctx Context) opentracing.SpanContext {
+	val := ctx.Value(activeSpanContextKey)
+	if sp, ok := val.(opentracing.SpanContext); ok {
+		return sp
+	}
+	return nil
+}
+
+func contextWithSpan(ctx Context, spanContext opentracing.SpanContext) Context {
+	return WithValue(ctx, activeSpanContextKey, spanContext)
 }

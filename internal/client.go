@@ -294,9 +294,10 @@ type (
 
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
-		MetricsScope  tally.Scope
-		Identity      string
-		DataConverter encoded.DataConverter
+		MetricsScope       tally.Scope
+		Identity           string
+		DataConverter      encoded.DataConverter
+		ContextPropagators []ContextPropagator
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -462,12 +463,17 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	} else {
 		dataConverter = getDefaultDataConverter()
 	}
+	var contextPropagators []ContextPropagator
+	if options != nil {
+		contextPropagators = options.ContextPropagators
+	}
 	return &workflowClient{
-		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
-		domain:          domain,
-		metricsScope:    metrics.NewTaggedScope(metricScope),
-		identity:        identity,
-		dataConverter:   dataConverter,
+		workflowService:    metrics.NewWorkflowServiceWrapper(service, metricScope),
+		domain:             domain,
+		metricsScope:       metrics.NewTaggedScope(metricScope),
+		identity:           identity,
+		dataConverter:      dataConverter,
+		contextPropagators: contextPropagators,
 	}
 }
 

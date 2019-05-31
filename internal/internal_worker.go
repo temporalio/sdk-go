@@ -168,6 +168,8 @@ type (
 
 		// WorkerStopChannel is a read only channel listen on worker close. The worker will close the channel before exit.
 		WorkerStopChannel <-chan struct{}
+
+		ContextPropagators []ContextPropagator
 	}
 
 	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
@@ -1032,6 +1034,7 @@ func newAggregatedWorker(
 		DataConverter:                        wOptions.DataConverter,
 		WorkerStopTimeout:                    wOptions.WorkerStopTimeout,
 		WorkerStopChannel:                    readOnlyWorkerStopCh,
+		ContextPropagators:                   wOptions.ContextPropagators,
 	}
 
 	ensureRequiredParams(&workerParams)

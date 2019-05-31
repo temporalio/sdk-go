@@ -45,8 +45,10 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger *zap.Logger
-		scope  tally.Scope
+		logger   *zap.Logger
+		scope    tally.Scope
+		ctxProps []ContextPropagator
+		header   *shared.Header
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -136,6 +138,18 @@ func (s *WorkflowTestSuite) GetLogger() *zap.Logger {
 // tally.NoopScope
 func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
 	s.scope = scope
+}
+
+// SetContextPropagators sets the context propagators for this WorkflowTestSuite. If you don't set context propagators,
+// test suite will not use context propagators
+func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) {
+	s.ctxProps = ctxProps
+}
+
+// SetHeader sets the headers for this WorkflowTestSuite. If you don't set header, test suite will not pass headers to
+// the workflow
+func (s *WorkflowTestSuite) SetHeader(header *shared.Header) {
+	s.header = header
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.

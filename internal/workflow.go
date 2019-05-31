@@ -355,11 +355,15 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 		return future
 	}
 
+	// Retrieve headers from context to pass them on
+	header := getHeadersFromContext(ctx)
+
 	params := executeActivityParams{
 		activityOptions: *options,
 		ActivityType:    *activityType,
 		Input:           input,
 		DataConverter:   dataConverter,
+		Header:          header,
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -545,6 +549,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		return result
 	}
 	options.dataConverter = dc
+	options.contextPropagators = getWorkflowEnvOptions(ctx).contextPropagators
 
 	params := executeWorkflowParams{
 		workflowOptions: *options,
@@ -843,6 +848,13 @@ func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).dataConverter = dc
+	return ctx1
+}
+
+// withContextPropagators adds ContextPropagators to the context.
+func withContextPropagators(ctx Context, contextPropagators []ContextPropagator) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).contextPropagators = contextPropagators
 	return ctx1
 }
 
