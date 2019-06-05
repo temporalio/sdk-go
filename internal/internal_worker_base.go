@@ -24,10 +24,9 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
-
-	"fmt"
 
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
@@ -82,6 +81,8 @@ type (
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value
 		GetDataConverter() encoded.DataConverter
+		AddSession(sessionInfo *SessionInfo)
+		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
 	}
 
@@ -123,8 +124,9 @@ type (
 		logger               *zap.Logger
 		metricsScope         tally.Scope
 
-		pollerRequestCh chan struct{}
-		taskQueueCh     chan interface{}
+		pollerRequestCh    chan struct{}
+		taskQueueCh        chan interface{}
+		sessionTokenBucket *sessionTokenBucket
 	}
 
 	polledTask struct {
@@ -144,7 +146,7 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, workerStopCh chan struct{}) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, workerStopCh chan struct{}, sessionTokenBucket *sessionTokenBucket) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
@@ -159,6 +161,7 @@ func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope t
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
+		sessionTokenBucket:   sessionTokenBucket,
 	}
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
@@ -211,6 +214,10 @@ func (bw *baseWorker) runPoller() {
 		case <-bw.shutdownCh:
 			return
 		case <-bw.pollerRequestCh:
+			if bw.sessionTokenBucket != nil {
+				bw.sessionTokenBucket.waitForAvailableToken()
+			}
+
 			ch := make(chan struct{})
 			go func(ch chan struct{}) {
 				bw.pollTask()

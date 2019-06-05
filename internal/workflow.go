@@ -355,6 +355,22 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 		return future
 	}
 
+	// Validate session state.
+	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
+		if sessionInfo.sessionState == sessionStateFailed && !isSessionCreationActivity(activity) {
+			settable.Set(nil, ErrSessionFailed)
+			return future
+		}
+		if sessionInfo.sessionState == sessionStateOpen {
+			// Use session tasklist
+			oldTaskListName := options.TaskListName
+			options.TaskListName = sessionInfo.tasklist
+			defer func() {
+				options.TaskListName = oldTaskListName
+			}()
+		}
+	}
+
 	// Retrieve headers from context to pass them on
 	header := getHeadersFromContext(ctx)
 

@@ -25,18 +25,23 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/cadence/encoded"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/metrics"
 )
 
-// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
-// stack of the workflow. The result will be a string encoded in the EncodedValue.
-const QueryTypeStackTrace string = "__stack_trace"
+const (
+	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
+	// stack of the workflow. The result will be a string encoded in the EncodedValue.
+	QueryTypeStackTrace string = "__stack_trace"
+
+	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
+	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
+	QueryTypeOpenSessions string = "__open_sessions"
+)
 
 type (
 	// Client is the client for starting and getting information about a workflow executions as well as

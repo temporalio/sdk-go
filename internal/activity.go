@@ -253,6 +253,7 @@ type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
 	Heartbeat(details []byte) error
 	Close(flushBufferedHeartbeat bool)
+	GetClient(domain string, options *ClientOptions) Client
 }
 
 // WithActivityTask adds activity specific information into context.

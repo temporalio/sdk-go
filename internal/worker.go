@@ -190,6 +190,22 @@ type (
 		// default: 0s
 		WorkerStopTimeout time.Duration
 
+		// Optional: Enable running session workers.
+		// Session workers is for activities within a session.
+		// Enable this option to allow worker to process sessions.
+		// default: false
+		EnableSessionWorker bool
+
+		// Uncomment this option when we support automatic restablish failed sessions.
+		// Optional: The identifier of the resource consumed by sessions.
+		// It's the user's responsibility to ensure there's only one worker using this resourceID.
+		// For now, if user doesn't specify one, a new uuid will be used as the resourceID.
+		// SessionResourceID string
+
+		// Optional: Sets the maximum number of concurrently running sessions the resource support.
+		// default: 1000
+		MaxConCurrentSessionExecutionSize int
+
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator

@@ -1508,6 +1508,10 @@ func (i *cadenceInvoker) Close(flushBufferedHeartbeat bool) {
 	}
 }
 
+func (i *cadenceInvoker) GetClient(domain string, options *ClientOptions) Client {
+	return NewClient(i.service, domain, options)
+}
+
 func newServiceInvoker(
 	taskToken []byte,
 	identity string,

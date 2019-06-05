@@ -21,7 +21,9 @@
 package internal
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"os"
@@ -30,8 +32,6 @@ import (
 	"testing"
 	"time"
 
-	"bytes"
-	"encoding/gob"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -379,6 +379,7 @@ func createWorkerWithThrottle(
 	if dc != nil {
 		workerOptions.DataConverter = dc
 	}
+	workerOptions.EnableSessionWorker = true
 
 	// Start Worker.
 	worker := NewWorker(

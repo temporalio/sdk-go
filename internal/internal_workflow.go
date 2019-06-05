@@ -33,7 +33,6 @@ import (
 	"unicode"
 
 	"github.com/robfig/cron"
-
 	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/shared"
@@ -448,7 +447,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *shared
 		eo := getWorkflowEnvOptions(d.rootCtx)
 		handler, ok := eo.queryHandlers[queryType]
 		if !ok {
-			keys := []string{QueryTypeStackTrace}
+			keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
 			for k := range eo.queryHandlers {
 				keys = append(keys, k)
 			}

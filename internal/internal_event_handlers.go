@@ -93,6 +93,7 @@ type (
 		pendingLaTasks    map[string]*localActivityTask
 		mutableSideEffect map[string][]byte
 		unstartedLaTasks  map[string]struct{}
+		openSessions      map[string]*SessionInfo
 
 		counterID         int32     // To generate sequence IDs for activity/timer etc.
 		currentReplayTime time.Time // Indicates current replay time of the decision.
@@ -184,6 +185,7 @@ func newWorkflowExecutionEventHandler(
 		changeVersions:        make(map[string]Version),
 		pendingLaTasks:        make(map[string]*localActivityTask),
 		unstartedLaTasks:      make(map[string]struct{}),
+		openSessions:          make(map[string]*SessionInfo),
 		completeHandler:       completeHandler,
 		enableLoggingInReplay: enableLoggingInReplay,
 		hostEnv:               hostEnv,
@@ -631,6 +633,22 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byt
 	return newEncodedValue(data, wc.GetDataConverter())
 }
 
+func (wc *workflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {
+	wc.openSessions[sessionInfo.SessionID] = sessionInfo
+}
+
+func (wc *workflowEnvironmentImpl) RemoveSession(sessionID string) {
+	delete(wc.openSessions, sessionID)
+}
+
+func (wc *workflowEnvironmentImpl) getOpenSessions() []*SessionInfo {
+	openSessions := make([]*SessionInfo, 0, len(wc.openSessions))
+	for _, info := range wc.openSessions {
+		openSessions = append(openSessions, info)
+	}
+	return openSessions
+}
+
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	event *m.HistoryEvent,
 	isReplay bool,
@@ -802,10 +820,14 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs []byte) ([]byte, error) {
-	if queryType == QueryTypeStackTrace {
+	switch queryType {
+	case QueryTypeStackTrace:
 		return weh.encodeArg(weh.StackTrace())
+	case QueryTypeOpenSessions:
+		return weh.encodeArg(weh.getOpenSessions())
+	default:
+		return weh.queryHandler(queryType, queryArgs)
 	}
-	return weh.queryHandler(queryType, queryArgs)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) StackTrace() string {

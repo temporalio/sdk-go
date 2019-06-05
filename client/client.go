@@ -33,9 +33,15 @@ import (
 	"go.uber.org/cadence/workflow"
 )
 
-// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
-// stack of the workflow. The result will be a string encoded in the encoded.Value.
-const QueryTypeStackTrace string = internal.QueryTypeStackTrace
+const (
+	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
+	// stack of the workflow. The result will be a string encoded in the encoded.Value.
+	QueryTypeStackTrace string = internal.QueryTypeStackTrace
+
+	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
+	// sessions in the workflow. The result will be a list of SessionInfo encoded in the encoded.Value.
+	QueryTypeOpenSessions string = internal.QueryTypeOpenSessions
+)
 
 type (
 	// Options are optional parameters for Client creation.
