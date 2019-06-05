@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
 	m "go.uber.org/cadence/.gen/go/shared"
@@ -110,6 +111,7 @@ type (
 		hostEnv            *hostEnvImpl
 		dataConverter      encoded.DataConverter
 		contextPropagators []ContextPropagator
+		tracer             opentracing.Tracer
 	}
 
 	localActivityTask struct {
@@ -172,6 +174,7 @@ func newWorkflowExecutionEventHandler(
 	hostEnv *hostEnvImpl,
 	dataConverter encoded.DataConverter,
 	contextPropagators []ContextPropagator,
+	tracer opentracing.Tracer,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
@@ -186,6 +189,7 @@ func newWorkflowExecutionEventHandler(
 		hostEnv:               hostEnv,
 		dataConverter:         dataConverter,
 		contextPropagators:    contextPropagators,
+		tracer:                tracer,
 	}
 	context.logger = logger.With(
 		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},

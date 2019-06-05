@@ -24,6 +24,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
@@ -266,6 +267,7 @@ func WithActivityTask(
 	dataConverter encoded.DataConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
+	tracer opentracing.Tracer,
 ) context.Context {
 	var deadline time.Time
 	scheduled := time.Unix(0, task.GetScheduledTimestamp())
@@ -314,6 +316,7 @@ func WithActivityTask(
 		workflowDomain:     *task.WorkflowDomain,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
+		tracer:             tracer,
 	})
 }
 

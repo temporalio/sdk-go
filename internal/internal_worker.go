@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/shared"
@@ -170,6 +171,8 @@ type (
 		WorkerStopChannel <-chan struct{}
 
 		ContextPropagators []ContextPropagator
+
+		Tracer opentracing.Tracer
 	}
 
 	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
@@ -1003,7 +1006,7 @@ func newAggregatedWorker(
 	taskList string,
 	options WorkerOptions,
 ) (worker Worker) {
-	wOptions := fillWorkerOptionsDefaults(options)
+	wOptions := augmentWorkerOptions(options)
 	workerStopChannel := make(chan struct{}, 1)
 	readOnlyWorkerStopCh := getReadOnlyChannel(workerStopChannel)
 	ctx := wOptions.BackgroundActivityContext
@@ -1035,6 +1038,7 @@ func newAggregatedWorker(
 		WorkerStopTimeout:                    wOptions.WorkerStopTimeout,
 		WorkerStopChannel:                    readOnlyWorkerStopCh,
 		ContextPropagators:                   wOptions.ContextPropagators,
+		Tracer:                               wOptions.Tracer,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1246,7 +1250,7 @@ func (g thriftEncoding) Unmarshal(data []byte, objs []interface{}) error {
 	return nil
 }
 
-func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
+func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
@@ -1273,6 +1277,13 @@ func fillWorkerOptionsDefaults(options WorkerOptions) WorkerOptions {
 	}
 	if options.DataConverter == nil {
 		options.DataConverter = getDefaultDataConverter()
+	}
+
+	// if the user passes in a tracer then add a tracing context propagator
+	if options.Tracer != nil {
+		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Tracer))
+	} else {
+		options.Tracer = opentracing.NoopTracer{}
 	}
 	return options
 }

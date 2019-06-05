@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/suite"
 
@@ -879,6 +880,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		wep := workerExecutionParameters{
 			Logger:        t.logger,
 			DataConverter: getDefaultDataConverter(),
+			Tracer:        opentracing.NoopTracer{},
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, hostEnv)
 		pats := &s.PollForActivityTaskResponse{

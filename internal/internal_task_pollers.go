@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
@@ -104,10 +105,12 @@ type (
 	}
 
 	localActivityTaskHandler struct {
-		userContext   context.Context
-		metricsScope  *metrics.TaggedScope
-		logger        *zap.Logger
-		dataConverter encoded.DataConverter
+		userContext        context.Context
+		metricsScope       *metrics.TaggedScope
+		logger             *zap.Logger
+		dataConverter      encoded.DataConverter
+		contextPropagators []ContextPropagator
+		tracer             opentracing.Tracer
 	}
 
 	localActivityResult struct {
@@ -414,10 +417,12 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 
 func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
-		userContext:   params.UserContext,
-		metricsScope:  metrics.NewTaggedScope(params.MetricsScope),
-		logger:        params.Logger,
-		dataConverter: params.DataConverter,
+		userContext:        params.UserContext,
+		metricsScope:       metrics.NewTaggedScope(params.MetricsScope),
+		logger:             params.Logger,
+		dataConverter:      params.DataConverter,
+		contextPropagators: params.ContextPropagators,
+		tracer:             params.Tracer,
 	}
 	return &localActivityTaskPoller{
 		handler:      handler,
@@ -511,12 +516,13 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
-	// TODO: @shreyassrivatsan - add local activity tracing here
 	var laResult []byte
 	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
 		laStartTime := time.Now()
+		ctx, span := createOpenTracingActivitySpan(ctx, lath.tracer, time.Now(), task.params.ActivityType, task.params.WorkflowInfo.WorkflowExecution.ID, task.params.WorkflowInfo.WorkflowExecution.RunID)
+		defer span.Finish()
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Now().Sub(laStartTime)
 		close(ch)

@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
@@ -130,6 +131,7 @@ type (
 		workflowDomain     string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
+		tracer             opentracing.Tracer
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

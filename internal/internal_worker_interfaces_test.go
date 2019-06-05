@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	m "go.uber.org/cadence/.gen/go/shared"
@@ -128,6 +129,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 4,
 		Logger:                    logger,
+		Tracer:                    opentracing.NoopTracer{},
 	}
 
 	domainStatus := m.DomainStatusRegistered
@@ -157,6 +159,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 10,
 		Logger:                    logger,
+		Tracer:                    opentracing.NoopTracer{},
 	}
 
 	// Register activity instances and launch the worker.

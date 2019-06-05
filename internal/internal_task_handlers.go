@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
@@ -119,6 +120,7 @@ type (
 		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 		dataConverter                  encoded.DataConverter
 		contextPropagators             []ContextPropagator
+		tracer                         opentracing.Tracer
 	}
 
 	activityProvider func(name string) activity
@@ -135,6 +137,7 @@ type (
 		dataConverter      encoded.DataConverter
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
+		tracer             opentracing.Tracer
 	}
 
 	// history wrapper method to help information about events.
@@ -323,6 +326,7 @@ func newWorkflowTaskHandler(
 		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
 		dataConverter:                  params.DataConverter,
 		contextPropagators:             params.ContextPropagators,
+		tracer:                         params.Tracer,
 	}
 }
 
@@ -479,7 +483,9 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.metricsScope,
 		w.wth.hostEnv,
 		w.wth.dataConverter,
-		w.wth.contextPropagators).(*workflowExecutionEventHandlerImpl)
+		w.wth.contextPropagators,
+		w.wth.tracer,
+	).(*workflowExecutionEventHandlerImpl)
 }
 
 func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*s.History, error) {
@@ -1385,6 +1391,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		dataConverter:      params.DataConverter,
 		workerStopCh:       params.WorkerStopChannel,
 		contextPropagators: params.ContextPropagators,
+		tracer:             params.Tracer,
 	}
 }
 
@@ -1544,7 +1551,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
@@ -1581,7 +1588,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 
-	// TODO: @shreyassrivatsan - trace the activity execution here
+	ctx, span := createOpenTracingActivitySpan(ctx, ath.tracer, time.Now(), activityType, t.WorkflowExecution.GetWorkflowId(), t.WorkflowExecution.GetRunId())
+	defer span.Finish()
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
 	dlCancelFunc()

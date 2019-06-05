@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
@@ -192,6 +193,10 @@ type (
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator
+
+		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
+		// default: no tracer - opentracing.NoopTracer
+		Tracer opentracing.Tracer
 	}
 )
 
