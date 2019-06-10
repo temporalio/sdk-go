@@ -21,9 +21,11 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"time"
@@ -325,6 +327,11 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 	if first.GetEventType() != shared.EventTypeWorkflowExecutionStarted {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
+	last := events[len(events)-1]
+	if last.GetEventType() != shared.EventTypeWorkflowExecutionCompleted && last.GetEventType() != shared.EventTypeWorkflowExecutionContinuedAsNew {
+		return errors.New("last event is not WorkflowExecutionCompleted or WorkflowExecutionContinuedAsNew")
+	}
+
 	attr := first.WorkflowExecutionStartedEventAttributes
 	if attr == nil {
 		return errors.New("corrupted WorkflowExecutionStarted")
@@ -361,7 +368,36 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 		Logger:   logger,
 	}
 	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
-	_, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator})
+	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator})
+	if err != nil {
+		return err
+	}
+	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
+	if resp != nil {
+		completeReq, ok := resp.(*shared.RespondDecisionTaskCompletedRequest)
+		if ok {
+			for _, d := range completeReq.Decisions {
+				if d.GetDecisionType() == shared.DecisionTypeContinueAsNewWorkflowExecution {
+					if last.GetEventType() == shared.EventTypeWorkflowExecutionContinuedAsNew {
+						inputA := d.ContinueAsNewWorkflowExecutionDecisionAttributes.Input
+						inputB := last.WorkflowExecutionContinuedAsNewEventAttributes.Input
+						if bytes.Compare(inputA, inputB) == 0 {
+							return nil
+						}
+					}
+				}
+				if d.GetDecisionType() == shared.DecisionTypeCompleteWorkflowExecution {
+					if last.GetEventType() == shared.EventTypeWorkflowExecutionCompleted {
+						resultA := last.WorkflowExecutionCompletedEventAttributes.Result
+						resultB := d.CompleteWorkflowExecutionDecisionAttributes.Result
+						if bytes.Compare(resultA, resultB) == 0 {
+							return nil
+						}
+					}
+				}
+			}
+		}
+	}
 	return err
 }
 

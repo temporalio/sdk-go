@@ -113,8 +113,19 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 	suite.Run(t, new(TaskHandlersTestSuite))
 }
 
+func createTestEventWorkflowExecutionCompleted(eventID int64, attr *s.WorkflowExecutionCompletedEventAttributes) *s.HistoryEvent {
+	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionCompleted), WorkflowExecutionCompletedEventAttributes: attr}
+}
+
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *s.WorkflowExecutionStartedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionStarted), WorkflowExecutionStartedEventAttributes: attr}
+}
+
+func createTestEventLocalActivity(eventID int64, attr *s.MarkerRecordedEventAttributes) *s.HistoryEvent {
+	return &s.HistoryEvent{
+		EventId:                       common.Int64Ptr(eventID),
+		EventType:                     common.EventTypePtr(s.EventTypeMarkerRecorded),
+		MarkerRecordedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskScheduled(eventID int64, attr *s.ActivityTaskScheduledEventAttributes) *s.HistoryEvent {

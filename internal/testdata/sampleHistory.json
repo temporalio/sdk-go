@@ -66,5 +66,80 @@
       "heartbeatTimeoutSeconds": 20,
       "decisionTaskCompletedEventId": 4
     }
+  },
+  {
+    "eventId":6,
+    "timestamp":1558126757393919000,
+    "eventType":"ActivityTaskStarted",
+    "version":-24,
+    "taskId":33554446,
+    "activityTaskStartedEventAttributes":{
+      "scheduledEventId":5,
+      "identity": "50114@user-C02WC08UHTDG@taskList1",
+      "requestId":"45c4006a-ae7c-4392-baa6-c090857f884b",
+      "attempt":0
+    }
+  },
+  {
+    "eventId":7,
+    "timestamp":1558126757403468000,
+    "eventType":"ActivityTaskCompleted",
+    "version":-24,
+    "taskId":33554447,
+    "activityTaskCompletedEventAttributes":{
+      "result":"IkhlbGxvIENhZGVuY2UhIgo=",
+      "scheduledEventId":5,
+      "startedEventId":6,
+      "identity": "50114@user-C02WC08UHTDG@taskList1"
+    }
+  },
+  {
+    "eventId":8,
+    "timestamp":1558126757403476000,
+    "eventType":"DecisionTaskScheduled",
+    "version":-24,
+    "taskId":33554450,
+    "decisionTaskScheduledEventAttributes":{
+      "taskList":{
+        "name":"longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
+      },
+      "startToCloseTimeoutSeconds":10,
+      "attempt":0
+    }
+  },
+  {
+    "eventId":9,
+    "timestamp":1558126757410564000,
+    "eventType":"DecisionTaskStarted",
+    "version":-24,
+    "taskId":33554454,
+    "decisionTaskStartedEventAttributes":{
+      "scheduledEventId":8,
+      "identity": "50114@user-C02WC08UHTDG@taskList1",
+      "requestId":"cb1fdadf-f46b-4840-9b97-863f4b3b6b11"
+    }
+  },
+  {
+    "eventId":10,
+    "timestamp":1558126757491491000,
+    "eventType":"DecisionTaskCompleted",
+    "version":-24,
+    "taskId":33554457,
+    "decisionTaskCompletedEventAttributes":{
+      "scheduledEventId":8,
+      "startedEventId":9,
+      "identity": "50114@user-C02WC08UHTDG@taskList1",
+      "binaryChecksum":"b2e32759177ccbb3e67ad7694aec233c"
+    }
+  },
+  {
+    "eventId":11,
+    "timestamp":1558126757491513000,
+    "eventType":"WorkflowExecutionCompleted",
+    "version":-24,
+    "taskId":33554458,
+    "workflowExecutionCompletedEventAttributes":{
+      "decisionTaskCompletedEventId":10
+    }
   }
 ]
