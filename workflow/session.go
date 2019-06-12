@@ -72,7 +72,11 @@ var ErrSessionFailed = internal.ErrSessionFailed
 // New session can be created if necessary to retry the whole session.
 //
 // Example:
-//    sessionCtx, err := CreateSession(ctx)
+//    so := &SessionOptions{
+// 	      ExecutionTimeout: time.Minute,
+// 	      CreationTimeout:  time.Minute,
+//    }
+//    sessionCtx, err := CreateSession(ctx, so)
 //    if err != nil {
 //		    // Creation failed. Wrong ctx or too many outstanding sessions.
 //    }
