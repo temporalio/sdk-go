@@ -598,6 +598,9 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDe
 	}
 
 	err = workflowContext.resetStateIfDestroyed(task, historyIterator)
+	if err != nil {
+		workflowContext.Unlock(err)
+	}
 
 	return
 }
