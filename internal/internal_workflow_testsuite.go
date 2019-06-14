@@ -1804,14 +1804,14 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interface{}) {
+func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interface{}, startDecisionTask bool) {
 	data, err := encodeArg(env.GetDataConverter(), input)
 	if err != nil {
 		panic(err)
 	}
 	env.postCallback(func() {
 		env.signalHandler(name, data)
-	}, true)
+	}, startDecisionTask)
 }
 
 func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalName string, input interface{}) error {
@@ -1888,7 +1888,7 @@ func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentI
 }
 
 func (t *testSessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
-	t.testWorkflowEnvironment.signalWorkflow(sessionID, t.sessionEnvironmentImpl.getCreationResponse())
+	t.testWorkflowEnvironment.signalWorkflow(sessionID, t.sessionEnvironmentImpl.getCreationResponse(), true)
 	return nil
 }
 

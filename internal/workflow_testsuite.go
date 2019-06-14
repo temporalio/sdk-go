@@ -563,7 +563,14 @@ func (t *TestWorkflowEnvironment) CancelWorkflow() {
 
 // SignalWorkflow sends signal to the currently running test workflow.
 func (t *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
-	t.impl.signalWorkflow(name, input)
+	t.impl.signalWorkflow(name, input, true)
+}
+
+// SignalWorkflowSkippingDecision sends signal to the currently running test workflow without invoking workflow code.
+// Used to test processing of multiple buffered signals before completing workflow.
+// It must be followed by SignalWorkflow, CancelWorkflow or CompleteActivity to force a decision.
+func (t *TestWorkflowEnvironment) SignalWorkflowSkippingDecision(name string, input interface{}) {
+	t.impl.signalWorkflow(name, input, false)
 }
 
 // SignalWorkflowByID sends signal to the currently running test workflow.

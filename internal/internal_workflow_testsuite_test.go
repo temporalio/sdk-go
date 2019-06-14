@@ -1968,6 +1968,38 @@ func (s *WorkflowTestSuiteUnitTest) Test_ContextMisuse() {
 	s.Contains(env.GetWorkflowError().Error(), "block on coroutine which is already blocked")
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_DrainSignalChannel() {
+	workflowFn := func(ctx Context) (string, error) {
+
+		signalCh := GetSignalChannel(ctx, "test-signal")
+		var s1, s2, s3 string
+		signalCh.Receive(ctx, &s1)
+		if !signalCh.ReceiveAsync(&s2) {
+			return "", errors.New("expected signal")
+		}
+		if signalCh.ReceiveAsync(&s3) {
+			return "", errors.New("unexpected signal")
+		}
+		return s1 + s2, nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflowSkippingDecision("test-signal", "s1")
+		env.SignalWorkflow("test-signal", "s2")
+	}, time.Minute)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal("s1s2", result)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	attempt1Count := 0
 	activityFailedFn := func(ctx context.Context) (string, error) {
