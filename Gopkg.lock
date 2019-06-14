@@ -2,6 +2,22 @@
 
 
 [[projects]]
+  digest = "1:e4b30804a381d7603b8a344009987c1ba351c26043501b23b8c7ce21f0b67474"
+  name = "github.com/BurntSushi/toml"
+  packages = ["."]
+  pruneopts = ""
+  revision = "3012a1dbe2e4bd1391d42b32f0577cb7bbc7f005"
+  version = "v0.3.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:3c292d5c4fe036d536e3a5945caa056f295e82142f1cbb493cf3d9ec7198e0e3"
+  name = "github.com/anmitsu/go-shlex"
+  packages = ["."]
+  pruneopts = ""
+  revision = "648efa622239a2f6ff949fed78ee37b48d499ba4"
+
+[[projects]]
   digest = "1:06ed9e0df8145bc071b49db538b523f3f154b21f8414ab01bc10c2ec8e831ef1"
   name = "github.com/apache/thrift"
   packages = ["lib/go/thrift"]
@@ -41,9 +57,56 @@
   revision = "600d898af40aa09a7a93ecb9265d87b0504b6f03"
 
 [[projects]]
+  digest = "1:f7ad09e1bd153d7de18080ccd5e7bef5ebdba9403aa3cde487f0daf7ef67820d"
+  name = "github.com/fatih/structtag"
+  packages = ["."]
+  pruneopts = ""
+  revision = "76ae1d6d2117609598c7d4e8f3e938145f204e8f"
+  version = "v1.0.0"
+
+[[projects]]
+  digest = "1:fd53b471edb4c28c7d297f617f4da0d33402755f58d6301e7ca1197ef0a90937"
+  name = "github.com/gogo/protobuf"
+  packages = [
+    "gogoproto",
+    "plugin/compare",
+    "plugin/defaultcheck",
+    "plugin/description",
+    "plugin/embedcheck",
+    "plugin/enumstringer",
+    "plugin/equal",
+    "plugin/face",
+    "plugin/gostring",
+    "plugin/marshalto",
+    "plugin/oneofcheck",
+    "plugin/populate",
+    "plugin/size",
+    "plugin/stringer",
+    "plugin/testgen",
+    "plugin/union",
+    "plugin/unmarshal",
+    "proto",
+    "protoc-gen-gogo/descriptor",
+    "protoc-gen-gogo/generator",
+    "protoc-gen-gogo/generator/internal/remap",
+    "protoc-gen-gogo/grpc",
+    "protoc-gen-gogo/plugin",
+    "protoc-gen-gogoslick",
+    "vanity",
+    "vanity/command",
+  ]
+  pruneopts = ""
+  revision = "ba06b47c162d49f2af050fb4c75bcbc86a159d5c"
+  version = "v1.2.1"
+
+[[projects]]
   digest = "1:73a7106c799f98af4f3da7552906efc6a2570329f4cd2d2f5fb8f9d6c053ff2f"
   name = "github.com/golang/mock"
-  packages = ["gomock"]
+  packages = [
+    "gomock",
+    "mockgen",
+    "mockgen/model",
+  ]
   pruneopts = ""
   revision = "c34cdb4725f4c3844d095133c6e40e448b86589b"
   version = "v1.1.1"
@@ -54,6 +117,25 @@
   packages = ["proto"]
   pruneopts = ""
   revision = "e09c5db296004fbe3f74490e84dcd62c3c5ddb1b"
+
+[[projects]]
+  digest = "1:ca5c90960520407749b98c49650f54f5f90a667796e85c5ee1597478f702fb91"
+  name = "github.com/jessevdk/go-flags"
+  packages = ["."]
+  pruneopts = ""
+  revision = "c6ca198ec95c841fdb89fc0de7496fed11ab854e"
+  version = "v1.4.0"
+
+[[projects]]
+  digest = "1:e6b65ec5a09e42738d13762852d50a13865d9fccfd29576926e8ef05469388d9"
+  name = "github.com/kisielk/errcheck"
+  packages = [
+    ".",
+    "internal/errcheck",
+  ]
+  pruneopts = ""
+  revision = "e14f8d59a22d460d56c5ee92507cd94c78fbf274"
+  version = "v1.2.0"
 
 [[projects]]
   digest = "1:63722a4b1e1717be7b98fc686e0b30d5e7f734b9e93d7dee86293b6deab7ea28"
@@ -149,6 +231,14 @@
   version = "v1.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:7f10a9aff574ffa9cc40f41761b96c844becc0332e80bb95275a1bff9ef34040"
+  name = "github.com/samuel/go-thrift"
+  packages = ["parser"]
+  pruneopts = ""
+  revision = "e8b6b52668fe9c972220addc130edf46a9b466b1"
+
+[[projects]]
   digest = "1:b9585eba46f28b2dbdb61168d95d34d7646825ceb0111666c0326a835a59b6f2"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
@@ -176,6 +266,17 @@
   pruneopts = ""
   revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
   version = "v1.2.1"
+
+[[projects]]
+  digest = "1:861312e1c66a6935183495ad08db511fb7cf434a9da12c49d0be9b7725f3a22b"
+  name = "github.com/uber-go/mapdecode"
+  packages = [
+    ".",
+    "internal/mapstructure",
+  ]
+  pruneopts = ""
+  revision = "718b4994083e432669f44a00174c5f1bcdb1434d"
+  version = "v1.0.0"
 
 [[projects]]
   digest = "1:05670618bcc6809bca47c5fa89af029b4edd569c1a04ea1e59a4009f3cecdfe0"
@@ -220,19 +321,23 @@
   version = "v1.5.0"
 
 [[projects]]
-  digest = "1:e04fd5ac3dc6bde26e35bc7612df4df3326fa10e75883dd16eca84014e531089"
+  digest = "1:226a83352ebbbf5009b3d767bc998ced618b028055a48b367d9cf357f2f3e714"
   name = "github.com/uber/tchannel-go"
   packages = [
     ".",
-    "atomic",
+    "internal/argreader",
+    "relay",
     "thrift",
     "thrift/gen-go/meta",
+    "thrift/thrift-gen",
     "tnet",
+    "tos",
+    "trand",
     "typed",
   ]
   pruneopts = ""
-  revision = "ebbdb72d34776a9d97fe099f9e2b795eaf3fa512"
-  version = "v1.0.6"
+  revision = "58b01ae38cfff68102223e374c580a40c1d91dda"
+  version = "v1.14.0"
 
 [[projects]]
   digest = "1:74f86c458e82e1c4efbab95233e0cf51b7cc02dc03193be9f62cd81224e10401"
@@ -241,6 +346,17 @@
   pruneopts = ""
   revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
   version = "v1.3.2"
+
+[[projects]]
+  digest = "1:60bdcc3a64276ffef2e43430704d6b2488e3fd934475149e932e220251dbe131"
+  name = "go.uber.org/goleak"
+  packages = [
+    ".",
+    "internal/stack",
+  ]
+  pruneopts = ""
+  revision = "1ac8aeca0a53163331564467638f6ffb639636bf"
+  version = "v0.10.0"
 
 [[projects]]
   digest = "1:22c7effcb4da0eacb2bb1940ee173fac010e9ef3c691f5de4b524d538bd980f5"
@@ -267,10 +383,29 @@
   digest = "1:b50bac83809e6745137252658557d4adf3a64e89545414442c88a3749cc29b5a"
   name = "go.uber.org/thriftrw"
   packages = [
+    ".",
+    "ast",
+    "compile",
     "envelope",
+    "gen",
+    "idl",
+    "idl/internal",
+    "internal/concurrent",
+    "internal/curry",
+    "internal/envelope",
     "internal/envelope/exception",
+    "internal/frame",
+    "internal/goast",
+    "internal/multiplex",
+    "internal/plugin",
+    "internal/plugin/builtin/pluginapigen",
+    "internal/process",
+    "internal/semver",
+    "plugin",
+    "plugin/api",
     "protocol",
     "protocol/binary",
+    "ptr",
     "thriftreflect",
     "version",
     "wire",
@@ -280,34 +415,54 @@
   version = "v1.11.0"
 
 [[projects]]
-  digest = "1:ff9353e2595c27cbd5163a8f6d7a104373147fbc228d58e299fccc4deb6618ee"
+  branch = "master"
+  digest = "1:cb4f191bba441440c18a22999bb931367ed341beebad3b55089c696c9ecf395b"
+  name = "go.uber.org/tools"
+  packages = ["update-license"]
+  pruneopts = ""
+  revision = "422a61c266e12d86fe775edb822dce48a1e7b979"
+
+[[projects]]
+  digest = "1:312460722a6d4be1972817c860cd885b83fb17ef5b3c766b789600e2f5d14cfa"
   name = "go.uber.org/yarpc"
   packages = [
     ".",
+    "api/backoff",
     "api/encoding",
     "api/middleware",
+    "api/peer",
     "api/transport",
     "encoding/thrift",
     "encoding/thrift/internal",
     "internal",
+    "internal/backoff",
     "internal/bufferpool",
+    "internal/config",
     "internal/digester",
     "internal/errorsync",
     "internal/humanize",
     "internal/inboundmiddleware",
+    "internal/interpolate",
     "internal/introspection",
+    "internal/iopool",
     "internal/observability",
     "internal/outboundmiddleware",
     "internal/request",
+    "internal/yarpcerrors",
+    "peer",
+    "peer/hostport",
     "pkg/encoding",
     "pkg/errors",
     "pkg/lifecycle",
     "pkg/procedure",
+    "transport/tchannel",
+    "transport/tchannel/internal",
+    "yarpcconfig",
     "yarpcerrors",
   ]
   pruneopts = ""
-  revision = "4ac8938c1046d4db2dc26a1436699935a8c5bb35"
-  version = "v1.29.1"
+  revision = "515ae026b5555b1fa00a77ffa650ab4dc32c72ed"
+  version = "v1.38.0"
 
 [[projects]]
   digest = "1:6c2f76bad9a8ae48ec06108899e065a327d01afa43300f652443a05678cdca17"
@@ -325,9 +480,25 @@
   version = "v1.8.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:99dc4c94284ccd0d515bc11c906edcc33da407af228c6cf75b6f20e2cd3e6ab6"
+  name = "golang.org/x/lint"
+  packages = [
+    ".",
+    "golint",
+  ]
+  pruneopts = ""
+  revision = "959b441ac422379a43da2230f62be024250818b0"
+
+[[projects]]
   digest = "1:b05c431b613ae495517cdcb37d263dd983f99eec15d25f350afd68e03339de6f"
   name = "golang.org/x/net"
-  packages = ["context"]
+  packages = [
+    "context",
+    "internal/iana",
+    "ipv4",
+    "ipv6",
+  ]
   pruneopts = ""
   revision = "6c89489cafabcbc76df9dbf84ebf07204673fecf"
   source = "golang.org/x/net"
@@ -348,6 +519,67 @@
   pruneopts = ""
   revision = "6dc17368e09b0e8634d71cac8168d853e869a0c7"
 
+[[projects]]
+  branch = "master"
+  digest = "1:653e09c0b436e583239fa6dc95a8fa6d08b030a59c80941319753d120a0d259b"
+  name = "golang.org/x/tools"
+  packages = [
+    "cmd/stringer",
+    "go/ast/astutil",
+    "go/buildutil",
+    "go/gcexportdata",
+    "go/internal/cgo",
+    "go/internal/gcimporter",
+    "go/internal/packagesdriver",
+    "go/loader",
+    "go/packages",
+    "go/types/typeutil",
+    "internal/fastwalk",
+    "internal/gopathwalk",
+    "internal/semver",
+  ]
+  pruneopts = ""
+  revision = "fb6c8ffd22070e69b7642308d055748cda081989"
+  source = "golang.org/x/tools"
+
+[[projects]]
+  digest = "1:cedccf16b71e86db87a24f8d4c70b0a855872eb967cb906a66b95de56aefbd0d"
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  pruneopts = ""
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+  version = "v2.2.2"
+
+[[projects]]
+  digest = "1:4bd751fab829d96d30258e6e8868584b94e2c3002b31db7f105ea42762a67b4a"
+  name = "honnef.co/go/tools"
+  packages = [
+    "arg",
+    "callgraph",
+    "callgraph/static",
+    "cmd/staticcheck",
+    "config",
+    "deprecated",
+    "functions",
+    "internal/sharedcheck",
+    "lint",
+    "lint/lintdsl",
+    "lint/lintutil",
+    "lint/lintutil/format",
+    "simple",
+    "ssa",
+    "ssa/ssautil",
+    "ssautil",
+    "staticcheck",
+    "staticcheck/vrp",
+    "stylecheck",
+    "unused",
+    "version",
+  ]
+  pruneopts = ""
+  revision = "95959eaf5e3c41c66151dcfd91779616b84077a8"
+  version = "2019.1.1"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -367,11 +599,13 @@
     "github.com/uber/jaeger-client-go/config",
     "github.com/uber/tchannel-go/thrift",
     "go.uber.org/atomic",
+    "go.uber.org/goleak",
     "go.uber.org/thriftrw/thriftreflect",
     "go.uber.org/thriftrw/wire",
     "go.uber.org/yarpc",
     "go.uber.org/yarpc/api/transport",
     "go.uber.org/yarpc/encoding/thrift",
+    "go.uber.org/yarpc/transport/tchannel",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
     "golang.org/x/net/context",

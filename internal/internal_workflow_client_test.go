@@ -952,7 +952,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.client.StartWorkflow(context.Background(), options, wf)
 }
 
-func (s *workflowClientTestSuite) SignalWithStartWorkflow_WithMemoAndSearchAttr() {
+func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}

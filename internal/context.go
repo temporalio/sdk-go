@@ -164,6 +164,8 @@ var (
 	todo       = new(emptyCtx)
 )
 
+// Background returns a non-nil, empty Context. It is never canceled, has no
+// values, and has no deadline
 func Background() Context {
 	return background
 }

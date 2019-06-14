@@ -23,6 +23,7 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -37,7 +38,6 @@ import (
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/yarpc"
-	"golang.org/x/net/context"
 )
 
 const (

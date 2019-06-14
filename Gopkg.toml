@@ -51,10 +51,6 @@ ignored = ["go.uber.org/cadence/.tmp"]
   version = "3.0.1"
 
 [[constraint]]
-  name = "github.com/uber/tchannel-go"
-  version = "1.0.6"
-
-[[constraint]]
   name = "go.uber.org/atomic"
   version = "1.2.0"
 
@@ -64,7 +60,7 @@ ignored = ["go.uber.org/cadence/.tmp"]
 
 [[constraint]]
   name = "go.uber.org/yarpc"
-  version = "1.7.1"
+  version = "1.38.0"
 
 [[constraint]]
   name = "go.uber.org/zap"
@@ -89,3 +85,7 @@ ignored = ["go.uber.org/cadence/.tmp"]
 [[constraint]]
   name = "github.com/uber/jaeger-client-go"
   version = "2.15.0"
+
+[[constraint]]
+  name = "go.uber.org/goleak"
+  version = "0.10.0"

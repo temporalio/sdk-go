@@ -74,6 +74,10 @@ func isServiceTransientError(err error) bool {
 		return false
 	}
 
+	if err == errShutdown {
+		return false
+	}
+
 	// s.InternalServiceError
 	// s.ServiceBusyError
 	// s.LimitExceededError

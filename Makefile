@@ -8,12 +8,18 @@ THRIFT_GENDIR := .gen/go
 THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
 # one or more thriftrw-generated file(s), to create / depend on generated code
 THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
-TEST_ARG ?= -coverprofile=$(BUILD)/cover.out -race
+TEST_ARG ?= -v -race
 
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 # general bins folder.  NOT cleaned via `make clean`
 BINS := .bins
+
+INTEG_TEST_ROOT := ./test
+COVER_ROOT := $(BUILD)/coverage
+UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
+INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
+INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 
 # Automatically gather all srcs + a "sentinel" thriftrw output file (which forces generation).
 ALL_SRC := $(THRIFTRW_OUT) $(shell \
@@ -23,6 +29,8 @@ ALL_SRC := $(THRIFTRW_OUT) $(shell \
 	-e .gen/ \
 	-e .build/ \
 )
+
+UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
 
 # Files that needs to run lint.  excludes testify mocks and the thrift sentinel.
 LINT_SRC := $(filter-out ./mock% $(THRIFTRW_OUT),$(ALL_SRC))
@@ -85,16 +93,39 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 $(BUILD)/dummy: vendor/dep.updated $(ALL_SRC)
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
-test $(BUILD)/cover.out: $(BUILD)/copyright $(BUILD)/dummy $(ALL_SRC)
-	go test ./... $(TEST_ARG)
 
 bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
 
-cover: $(BUILD)/cover.out
-	go tool cover -html=$(BUILD)/cover.out;
+unit_test: $(BUILD)/dummy
+	@mkdir -p $(COVER_ROOT)
+	@echo "mode: atomic" > $(UT_COVER_FILE)
+	@for dir in $(UT_DIRS); do \
+		mkdir -p $(COVER_ROOT)/"$$dir"; \
+		go test "$$dir" $(TEST_ARG) -coverprofile=$(COVER_ROOT)/"$$dir"/cover.out || exit 1; \
+		cat $(COVER_ROOT)/"$$dir"/cover.out | grep -v "mode: atomic" >> $(UT_COVER_FILE); \
+	done;
 
-cover_ci: $(BUILD)/cover.out
-	goveralls -coverprofile=$(BUILD)/cover.out -service=travis-ci || echo -e "\x1b[31mCoveralls failed\x1b[m";
+integ_test_sticky_off: $(BUILD)/dummy
+	@mkdir -p $(COVER_ROOT)
+	STICKY_OFF=true go test $(TEST_ARG) ./test -coverprofile=$(INTEG_STICKY_OFF_COVER_FILE) -coverpkg=./...
+
+integ_test_sticky_on: $(BUILD)/dummy
+	@mkdir -p $(COVER_ROOT)
+	STICKY_OFF=false go test $(TEST_ARG) ./test -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./...
+
+test: unit_test integ_test_sticky_off integ_test_sticky_on
+
+$(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_STICKY_OFF_COVER_FILE) $(INTEG_STICKY_ON_COVER_FILE)
+	@echo "mode: atomic" > $(COVER_ROOT)/cover.out
+	cat $(UT_COVER_FILE) | grep -v "mode: atomic" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
+	cat $(INTEG_STICKY_OFF_COVER_FILE) | grep -v "mode: atomic" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
+	cat $(INTEG_STICKY_ON_COVER_FILE) | grep -v "mode: atomic" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
+
+cover: $(COVER_ROOT)/cover.out
+	go tool cover -html=$(COVER_ROOT)/cover.out;
+
+cover_ci: $(COVER_ROOT)/cover.out
+	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=buildkite || echo -e "\x1b[31mCoveralls failed\x1b[m";
 
 # golint fails to report many lint failures if it is only given a single file
 # to work on at a time, and it can't handle multiple packages at once, *and*

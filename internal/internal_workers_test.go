@@ -159,6 +159,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(pats, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
+	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
 		TaskList:                        "testTaskList",
@@ -168,6 +169,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		UserContext:                     ctx,
 		UserContextCancel:               cancel,
 		WorkerStopTimeout:               time.Second * 2,
+		WorkerStopChannel:               stopC,
 	}
 	activityTaskHandler := newNoResponseActivityTaskHandler()
 	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
@@ -184,7 +186,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	activityWorker, ok := worker.(*activityWorker)
 	s.Equal(true, ok)
 
-	<-activityWorker.worker.workerStopCh
+	<-activityWorker.worker.shutdownCh
 	err := ctx.Err()
 	s.NoError(err)
 

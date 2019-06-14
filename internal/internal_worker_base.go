@@ -24,6 +24,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -46,6 +47,8 @@ const (
 var (
 	pollOperationRetryPolicy = createPollRetryPolicy()
 )
+
+var errShutdown = errors.New("worker shutting down")
 
 type (
 	// resultHandler that returns result
@@ -113,8 +116,7 @@ type (
 	baseWorker struct {
 		options              baseWorkerOptions
 		isWorkerStarted      bool
-		shutdownCh           chan struct{} // Channel used to shut down the go routines.
-		workerStopCh         chan struct{}
+		shutdownCh           chan struct{}  // Channel used to shut down the go routines.
 		shutdownWG           sync.WaitGroup // The WaitGroup for shutting down existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
@@ -146,12 +148,11 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, workerStopCh chan struct{}, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
 		shutdownCh:      make(chan struct{}),
-		workerStopCh:    workerStopCh,
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
@@ -217,19 +218,7 @@ func (bw *baseWorker) runPoller() {
 			if bw.sessionTokenBucket != nil {
 				bw.sessionTokenBucket.waitForAvailableToken()
 			}
-
-			ch := make(chan struct{})
-			go func(ch chan struct{}) {
-				bw.pollTask()
-				close(ch)
-			}(ch)
-
-			// block until previous poll completed or return immediately when shutdown
-			select {
-			case <-bw.shutdownCh:
-				return
-			case <-ch:
-			}
+			bw.pollTask()
 		}
 	}
 }
@@ -277,7 +266,10 @@ func (bw *baseWorker) pollTask() {
 	}
 
 	if task != nil {
-		bw.taskQueueCh <- &polledTask{task}
+		select {
+		case bw.taskQueueCh <- &polledTask{task}:
+		case <-bw.shutdownCh:
+		}
 	} else {
 		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new poll
 	}
@@ -331,11 +323,6 @@ func (bw *baseWorker) Stop() {
 	}
 	close(bw.shutdownCh)
 	bw.limiterContextCancel()
-
-	// Close activity channel
-	if bw.workerStopCh != nil {
-		close(bw.workerStopCh)
-	}
 
 	if success := awaitWaitGroup(&bw.shutdownWG, bw.options.shutdownTimeout); !success {
 		traceLog(func() {

@@ -40,10 +40,16 @@ services:
         aliases:
           - cadence
 
-  integ-test:
+  integ-test-sticky-off:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
+    command:
+      - /bin/sh
+      - -e
+      - -c
+      - |
+        make integ_test_sticky_off
     environment:
       - "SERVICE_ADDR=cadence:7933"
     depends_on:
@@ -53,12 +59,39 @@ services:
     networks:
       services-network:
         aliases:
-          - integ-test
+          - integ-test-sticky-off
+
+  integ-test-sticky-on:
+    build:
+      context: ../../
+      dockerfile: ./docker/buildkite/Dockerfile
+    command:
+      - /bin/sh
+      - -e
+      - -c
+      - |
+        make integ_test_sticky_on
+    environment:
+      - "SERVICE_ADDR=cadence:7933"
+    depends_on:
+      - cadence
+    volumes:
+      - ../../:/go/src/go.uber.org/cadence
+    networks:
+      services-network:
+        aliases:
+          - integ-test-sticky-on
 
   unit-test:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
+    command:
+      - /bin/sh
+      - -e
+      - -c
+      - |
+        make unit_test
     volumes:
       - ../../:/go/src/go.uber.org/cadence
     networks:
@@ -70,28 +103,14 @@ services:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
-    environment:
-      - CI
-      - BUILDKITE
-      - BUILDKITE_AGENT_ACCESS_TOKEN
-      - BUILDKITE_JOB_ID
-      - BUILDKITE_BUILD_ID
-      - BUILDKITE_BUILD_NUMBER
-      - BUILDKITE_BRANCH
-      - BUILDKITE_BUILD_URL
-      - BUILDKITE_PROJECT_SLUG
-      - BUILDKITE_COMMIT
-      - BUILDKITE_PULL_REQUEST
-      - BUILDKITE_TAG
-      - BUILDKITE_REPO
-      - BUILDKITE_BUILD_CREATOR
-      - BUILDKITE_BUILD_CREATOR_EMAIL
-      - BUILDKITE_BUILD_CREATOR_TEAMS
-      - BUILDKITE_PULL_REQUEST_REPO
-      - COVERALLS_TOKEN
+    command:
+      - /bin/sh
+      - -e
+      - -c
+      - |
+        make .build/coverage/cover.out
     volumes:
       - ../../:/go/src/go.uber.org/cadence
-      - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
 
 networks:
   services-network:

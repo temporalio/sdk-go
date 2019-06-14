@@ -91,6 +91,7 @@ type (
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
+		stopC               chan struct{}
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -102,6 +103,7 @@ type (
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
+		stopC               chan struct{}
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -268,6 +270,8 @@ func newWorkflowWorkerInternal(
 	overrides *workerOverrides,
 	hostEnv *hostEnvImpl,
 ) Worker {
+	workerStopChannel := make(chan struct{})
+	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
 	ensureRequiredParams(&params)
 	var taskHandler WorkflowTaskHandler
@@ -276,7 +280,7 @@ func newWorkflowWorkerInternal(
 	} else {
 		taskHandler = newWorkflowTaskHandler(domain, params, ppMgr, hostEnv)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, params)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, params, workerStopChannel)
 }
 
 func newWorkflowTaskWorkerInternal(
@@ -284,6 +288,7 @@ func newWorkflowTaskWorkerInternal(
 	service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
+	stopC chan struct{},
 ) Worker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(
@@ -303,7 +308,6 @@ func newWorkflowTaskWorkerInternal(
 		shutdownTimeout:   params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
-		nil,
 		nil,
 	)
 
@@ -331,7 +335,6 @@ func newWorkflowTaskWorkerInternal(
 		params.Logger,
 		params.MetricsScope,
 		nil,
-		nil,
 	)
 
 	// 3) the result pushed to laTunnel will be send as task to workflow worker to process.
@@ -345,6 +348,7 @@ func newWorkflowTaskWorkerInternal(
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
 		domain:              domain,
+		stopC:               stopC,
 	}
 }
 
@@ -371,6 +375,8 @@ func (ww *workflowWorker) Run() error {
 
 // Shutdown the worker.
 func (ww *workflowWorker) Stop() {
+	close(ww.stopC)
+	// TODO: remove the stop methods in favor of the workerStopChannel
 	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
 }
@@ -452,7 +458,7 @@ func newActivityWorker(
 	} else {
 		taskHandler = newActivityTaskHandler(service, params, env)
 	}
-	return newActivityTaskWorker(taskHandler, service, domain, params, workerStopChannel, sessionTokenBucket)
+	return newActivityTaskWorker(taskHandler, service, domain, params, sessionTokenBucket, workerStopChannel)
 }
 
 func newActivityTaskWorker(
@@ -460,8 +466,8 @@ func newActivityTaskWorker(
 	service workflowserviceclient.Interface,
 	domain string,
 	workerParams workerExecutionParameters,
-	workerStopCh chan struct{},
 	sessionTokenBucket *sessionTokenBucket,
+	stopC chan struct{},
 ) (worker Worker) {
 	ensureRequiredParams(&workerParams)
 
@@ -485,7 +491,6 @@ func newActivityTaskWorker(
 			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
 		workerParams.MetricsScope,
-		workerStopCh,
 		sessionTokenBucket,
 	)
 
@@ -496,6 +501,7 @@ func newActivityTaskWorker(
 		poller:              poller,
 		identity:            workerParams.Identity,
 		domain:              domain,
+		stopC:               stopC,
 	}
 }
 
@@ -521,6 +527,7 @@ func (aw *activityWorker) Run() error {
 
 // Shutdown the worker.
 func (aw *activityWorker) Stop() {
+	close(aw.stopC)
 	aw.worker.Stop()
 }
 

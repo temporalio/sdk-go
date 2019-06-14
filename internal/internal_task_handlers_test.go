@@ -450,7 +450,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
-	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params)
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, make(chan struct{}))
 	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
 
 	t.Error(err)
@@ -539,11 +539,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		}),
 	}
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	stopC := make(chan struct{})
 	params := workerExecutionParameters{
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
 		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		WorkerStopChannel:              stopC,
 	}
 
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
@@ -558,7 +560,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
-	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params)
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, stopC)
 	request, _, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task})
 	t.Error(err)
 	t.Nil(request)
