@@ -194,7 +194,6 @@ func getValidatedActivityOptions(ctx Context) (*activityOptions, error) {
 	if p.HeartbeatTimeoutSeconds < 0 {
 		return nil, errors.New("invalid negative HeartbeatTimeoutSeconds")
 	}
-
 	if err := validateRetryPolicy(p.RetryPolicy); err != nil {
 		return nil, err
 	}

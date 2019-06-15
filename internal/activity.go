@@ -29,6 +29,7 @@ import (
 	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
+	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -411,6 +412,9 @@ func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 func convertRetryPolicy(retryPolicy *RetryPolicy) *shared.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
+	}
+	if retryPolicy.BackoffCoefficient == 0 {
+		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
 	}
 	thriftRetryPolicy := shared.RetryPolicy{
 		InitialIntervalInSeconds:    common.Int32Ptr(common.Int32Ceil(retryPolicy.InitialInterval.Seconds())),

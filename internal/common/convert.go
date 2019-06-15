@@ -41,6 +41,11 @@ func Int32Ptr(v int32) *int32 {
 	return &v
 }
 
+// Float64Ptr makes a copy and returns the pointer to a float64.
+func Float64Ptr(v float64) *float64 {
+	return &v
+}
+
 // Int64Ptr makes a copy and returns the pointer to an int64.
 func Int64Ptr(v int64) *int64 {
 	return &v
