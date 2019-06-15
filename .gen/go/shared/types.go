@@ -38528,6 +38528,7 @@ type WorkflowExecutionStartedEventAttributes struct {
 	LastCompletionResult                []byte                  `json:"lastCompletionResult,omitempty"`
 	OriginalExecutionRunId              *string                 `json:"originalExecutionRunId,omitempty"`
 	Identity                            *string                 `json:"identity,omitempty"`
+	FirstExecutionRunId                 *string                 `json:"firstExecutionRunId,omitempty"`
 	RetryPolicy                         *RetryPolicy            `json:"retryPolicy,omitempty"`
 	Attempt                             *int32                  `json:"attempt,omitempty"`
 	ExpirationTimestamp                 *int64                  `json:"expirationTimestamp,omitempty"`
@@ -38556,7 +38557,7 @@ type WorkflowExecutionStartedEventAttributes struct {
 //   }
 func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [25]wire.Field
+		fields [26]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -38688,6 +38689,14 @@ func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 60, Value: w}
+		i++
+	}
+	if v.FirstExecutionRunId != nil {
+		w, err = wire.NewValueString(*(v.FirstExecutionRunId)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 61, Value: w}
 		i++
 	}
 	if v.RetryPolicy != nil {
@@ -38936,6 +38945,16 @@ func (v *WorkflowExecutionStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 61:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.FirstExecutionRunId = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		case 70:
 			if field.Value.Type() == wire.TStruct {
 				v.RetryPolicy, err = _RetryPolicy_Read(field.Value)
@@ -39029,7 +39048,7 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [25]string
+	var fields [26]string
 	i := 0
 	if v.WorkflowType != nil {
 		fields[i] = fmt.Sprintf("WorkflowType: %v", v.WorkflowType)
@@ -39093,6 +39112,10 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 	}
 	if v.Identity != nil {
 		fields[i] = fmt.Sprintf("Identity: %v", *(v.Identity))
+		i++
+	}
+	if v.FirstExecutionRunId != nil {
+		fields[i] = fmt.Sprintf("FirstExecutionRunId: %v", *(v.FirstExecutionRunId))
 		i++
 	}
 	if v.RetryPolicy != nil {
@@ -39186,6 +39209,9 @@ func (v *WorkflowExecutionStartedEventAttributes) Equals(rhs *WorkflowExecutionS
 		return false
 	}
 	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
+		return false
+	}
+	if !_String_EqualsPtr(v.FirstExecutionRunId, rhs.FirstExecutionRunId) {
 		return false
 	}
 	if !((v.RetryPolicy == nil && rhs.RetryPolicy == nil) || (v.RetryPolicy != nil && rhs.RetryPolicy != nil && v.RetryPolicy.Equals(rhs.RetryPolicy))) {
@@ -39314,6 +39340,16 @@ func (v *WorkflowExecutionStartedEventAttributes) GetOriginalExecutionRunId() (o
 func (v *WorkflowExecutionStartedEventAttributes) GetIdentity() (o string) {
 	if v.Identity != nil {
 		return *v.Identity
+	}
+
+	return
+}
+
+// GetFirstExecutionRunId returns the value of FirstExecutionRunId if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionStartedEventAttributes) GetFirstExecutionRunId() (o string) {
+	if v.FirstExecutionRunId != nil {
+		return *v.FirstExecutionRunId
 	}
 
 	return
