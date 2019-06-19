@@ -56,6 +56,20 @@ func TestTracingContextPropagator(t *testing.T) {
 	assert.NotNil(t, spanCtx)
 }
 
+func TestTracingContextPropagatorNoSpan(t *testing.T) {
+	ctxProp := NewTracingContextPropagator(opentracing.NoopTracer{})
+
+	header := &shared.Header{
+		Fields: map[string][]byte{},
+	}
+	err := ctxProp.Inject(context.Background(), NewHeaderWriter(header))
+	assert.NoError(t, err)
+
+	returnCtx := context.Background()
+	returnCtx, err = ctxProp.Extract(returnCtx, NewHeaderReader(header))
+	assert.NoError(t, err)
+}
+
 func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	config := jaeger_config.Configuration{}
 	closer, err := config.InitGlobalTracer("test-service")
@@ -80,4 +94,18 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	newSpanContext := spanFromContext(returnCtx)
 	assert.NotNil(t, newSpanContext)
 	assert.Equal(t, span.Context(), newSpanContext)
+}
+
+func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
+	ctxProp := NewTracingContextPropagator(opentracing.NoopTracer{})
+
+	header := &shared.Header{
+		Fields: map[string][]byte{},
+	}
+	err := ctxProp.InjectFromWorkflow(Background(), NewHeaderWriter(header))
+	assert.NoError(t, err)
+
+	returnCtx := Background()
+	returnCtx, err = ctxProp.ExtractToWorkflow(returnCtx, NewHeaderReader(header))
+	assert.NoError(t, err)
 }
