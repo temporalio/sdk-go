@@ -1184,7 +1184,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.RequestCancelExternalWorkflowExecutionDecisionAttributes
-		if eventAttributes.GetDomain() != decisionAttributes.GetDomain() ||
+		if checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
 			return false
 		}
@@ -1197,7 +1197,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.SignalExternalWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.SignalExternalWorkflowExecutionDecisionAttributes
-		if eventAttributes.GetDomain() != decisionAttributes.GetDomain() ||
+		if checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
 			return false
@@ -1232,7 +1232,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		eventAttributes := e.StartChildWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.StartChildWorkflowExecutionDecisionAttributes
 		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
-			(strictMode && eventAttributes.GetDomain() != decisionAttributes.GetDomain()) ||
+			(strictMode && checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain())) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
 			return false
 		}
@@ -1241,6 +1241,13 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 	}
 
 	return false
+}
+
+func checkIfDecisionDomainMatchEventDomain(eventDomainName, decisionDomainName string) bool {
+	if decisionDomainName == "" || IsReplayDomain(decisionDomainName) {
+		return true
+	}
+	return eventDomainName == decisionDomainName
 }
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(

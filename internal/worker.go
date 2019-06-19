@@ -235,7 +235,14 @@ const (
 	// Whereas default does *NOT* reply anything back to the server, fail workflow replies back with a request
 	// to fail the workflow execution.
 	NonDeterministicWorkflowPolicyFailWorkflow
+
+	// we have to put a domainName for replay because startEvent doesn't contain it
+	ReplayDomainName = "ReplayDomain"
 )
+
+func IsReplayDomain(dn string) bool {
+	return ReplayDomainName == dn
+}
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // service 	- thrift connection to the cadence server.
@@ -285,9 +292,7 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 	controller := gomock.NewController(testReporter)
 	service := workflowservicetest.NewMockClient(controller)
 
-	domain := "ReplayDomain"
-
-	return replayWorkflowHistory(logger, service, domain, history)
+	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
@@ -309,9 +314,7 @@ func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) 
 	controller := gomock.NewController(testReporter)
 	service := workflowservicetest.NewMockClient(controller)
 
-	domain := "ReplayDomain"
-
-	return replayWorkflowHistory(logger, service, domain, history)
+	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
 
 func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Interface, domain string, history *shared.History) error {
@@ -358,7 +361,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 	iterator := &historyIteratorImpl{
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
-		domain:        "ReplayDomain",
+		domain:        ReplayDomainName,
 		service:       service,
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
