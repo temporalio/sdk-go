@@ -31,6 +31,7 @@ import (
 	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/metrics"
+	"go.uber.org/zap"
 )
 
 const (
@@ -477,7 +478,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	var tracer opentracing.Tracer
 	if options != nil && options.Tracer != nil {
 		tracer = options.Tracer
-		contextPropagators = append(contextPropagators, NewTracingContextPropagator(tracer))
+		contextPropagators = append(contextPropagators, NewTracingContextPropagator(zap.NewNop(), tracer))
 	} else {
 		tracer = opentracing.NoopTracer{}
 	}

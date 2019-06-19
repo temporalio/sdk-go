@@ -24,12 +24,8 @@ import (
 	"context"
 
 	"github.com/opentracing/opentracing-go"
+	"go.uber.org/zap"
 )
-
-// NewTracingContextPropagator returns new tracing context propagator object
-func NewTracingContextPropagator(tracer opentracing.Tracer) ContextPropagator {
-	return &tracingContextPropagator{tracer}
-}
 
 type tracingReader struct {
 	reader HeaderReader
@@ -62,7 +58,13 @@ func (t tracingWriter) Set(key, val string) {
 //		the header and puts it in the Context object. Does not start a new span
 //		as that is started outside when the workflow is actually executed
 type tracingContextPropagator struct {
+	logger *zap.Logger
 	tracer opentracing.Tracer
+}
+
+// NewTracingContextPropagator returns new tracing context propagator object
+func NewTracingContextPropagator(logger *zap.Logger, tracer opentracing.Tracer) ContextPropagator {
+	return &tracingContextPropagator{logger, tracer}
 }
 
 func (t *tracingContextPropagator) Inject(
@@ -72,6 +74,7 @@ func (t *tracingContextPropagator) Inject(
 	// retrieve span from context object
 	span := opentracing.SpanFromContext(ctx)
 	if span == nil {
+		t.logger.Info("could not retrieve span from context")
 		return nil
 	}
 	return t.tracer.Inject(span.Context(), opentracing.TextMap, tracingWriter{hw})
@@ -84,6 +87,7 @@ func (t *tracingContextPropagator) Extract(
 	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{hr})
 	if err != nil {
 		// did not find a tracing span, just return the current context
+		t.logger.Info("could not extract span information", zap.Error(err))
 		return ctx, nil
 	}
 	return context.WithValue(ctx, activeSpanContextKey, spanContext), nil
@@ -96,6 +100,7 @@ func (t *tracingContextPropagator) InjectFromWorkflow(
 	// retrieve span from context object
 	spanContext := spanFromContext(ctx)
 	if spanContext == nil {
+		t.logger.Info("could not retrieve span from context")
 		return nil
 	}
 	return t.tracer.Inject(spanContext, opentracing.HTTPHeaders, tracingWriter{hw})
@@ -108,6 +113,7 @@ func (t *tracingContextPropagator) ExtractToWorkflow(
 	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{hr})
 	if err != nil {
 		// did not find a tracing span, just return the current context
+		t.logger.Info("could not extract span information", zap.Error(err))
 		return ctx, nil
 	}
 	return contextWithSpan(ctx, spanContext), nil

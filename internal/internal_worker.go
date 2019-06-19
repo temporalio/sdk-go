@@ -1399,7 +1399,7 @@ func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 
 	// if the user passes in a tracer then add a tracing context propagator
 	if options.Tracer != nil {
-		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Tracer))
+		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Logger, options.Tracer))
 	} else {
 		options.Tracer = opentracing.NoopTracer{}
 	}

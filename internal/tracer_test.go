@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	jaeger_config "github.com/uber/jaeger-client-go/config"
 	"go.uber.org/cadence/.gen/go/shared"
+	"go.uber.org/zap"
 )
 
 func TestTracingContextPropagator(t *testing.T) {
@@ -36,7 +37,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	assert.NoError(t, err)
 	defer closer.Close()
 	tracer := opentracing.GlobalTracer()
-	ctxProp := NewTracingContextPropagator(tracer)
+	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	ctx := context.Background()
@@ -57,7 +58,7 @@ func TestTracingContextPropagator(t *testing.T) {
 }
 
 func TestTracingContextPropagatorNoSpan(t *testing.T) {
-	ctxProp := NewTracingContextPropagator(opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
 	header := &shared.Header{
 		Fields: map[string][]byte{},
@@ -76,7 +77,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	assert.NoError(t, err)
 	defer closer.Close()
 	tracer := opentracing.GlobalTracer()
-	ctxProp := NewTracingContextPropagator(tracer)
+	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	ctx := contextWithSpan(Background(), span.Context())
@@ -97,7 +98,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 }
 
 func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
-	ctxProp := NewTracingContextPropagator(opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
 	header := &shared.Header{
 		Fields: map[string][]byte{},
