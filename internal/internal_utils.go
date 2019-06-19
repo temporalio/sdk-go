@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -203,11 +204,20 @@ func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []
 		}
 		return errReasonPanic, data
 	case *TimeoutError:
-		data, err0 := encodeArgs(dataConverter, []interface{}{err.timeoutType})
+		var data []byte
+		var err0 error
+		switch details := err.details.(type) {
+		case ErrorDetailsValues:
+			data, err0 = encodeArgs(dataConverter, details)
+		case *EncodedValues:
+			data = details.values
+		default:
+			panic("unknown error type")
+		}
 		if err0 != nil {
 			panic(err0)
 		}
-		return errReasonTimeout, data
+		return fmt.Sprintf("%v %v", errReasonTimeout, err.timeoutType), data
 	default:
 		// will be convert to GenericError when receiving from server.
 		return errReasonGeneric, []byte(err.Error())
@@ -216,6 +226,12 @@ func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []
 
 // constructError construct error from reason and details sending down from server.
 func constructError(reason string, details []byte, dataConverter encoded.DataConverter) error {
+	if strings.HasPrefix(reason, errReasonTimeout) {
+		timeoutType := getTimeoutTypeFromErrReason(reason)
+		details := newEncodedValues(details, dataConverter)
+		return NewTimeoutError(timeoutType, details)
+	}
+
 	switch reason {
 	case errReasonPanic:
 		// panic error
@@ -229,11 +245,6 @@ func constructError(reason string, details []byte, dataConverter encoded.DataCon
 	case errReasonCanceled:
 		details := newEncodedValues(details, dataConverter)
 		return NewCanceledError(details)
-	case errReasonTimeout:
-		var timeoutType s.TimeoutType
-		details := newEncodedValues(details, dataConverter)
-		details.Get(&timeoutType)
-		return NewTimeoutError(timeoutType)
 	default:
 		details := newEncodedValues(details, dataConverter)
 		err := NewCustomError(reason, details)
@@ -274,4 +285,14 @@ func getMetricsScopeForActivity(ts *metrics.TaggedScope, workflowType, activityT
 // getMetricsScopeForLocalActivity return properly tagged tally scope for local activity
 func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, localActivityType string) tally.Scope {
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
+}
+
+func getTimeoutTypeFromErrReason(reason string) s.TimeoutType {
+	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
+	var timeoutType s.TimeoutType
+	if err := timeoutType.UnmarshalText([]byte(timeoutTypeStr)); err != nil {
+		// this should never happen
+		panic(err)
+	}
+	return timeoutType
 }

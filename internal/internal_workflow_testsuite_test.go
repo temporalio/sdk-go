@@ -2560,3 +2560,54 @@ func (s *WorkflowTestSuiteUnitTest) Test_SetWorkerStopChannel() {
 	env.setWorkerStopChannel(c)
 	s.NotNil(env.workerStopChannel)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
+	count := 0
+	timeoutFn := func() error {
+		count++
+		return NewTimeoutError(shared.TimeoutTypeStartToClose, testErrorDetails1)
+	}
+	RegisterActivity(timeoutFn)
+
+	timeoutWf := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    5 * time.Second,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:          time.Second,
+				BackoffCoefficient:       1.1,
+				MaximumAttempts:          3,
+				NonRetriableErrorReasons: []string{"cadenceInternal:Timeout START_TO_CLOSE"},
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		err := ExecuteActivity(ctx, timeoutFn).Get(ctx, nil)
+		return err
+	}
+	RegisterWorkflow(timeoutWf)
+
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(timeoutWf)
+	err := wfEnv.GetWorkflowError()
+	s.Error(err)
+	timeoutErr, ok := err.(*TimeoutError)
+	s.True(ok)
+	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.True(timeoutErr.HasDetails())
+	var details string
+	err = timeoutErr.Details(&details)
+	s.NoError(err)
+	s.Equal(testErrorDetails1, details)
+	s.Equal(1, count)
+
+	activityEnv := s.NewTestActivityEnvironment()
+	_, err = activityEnv.ExecuteActivity(timeoutFn)
+	s.Error(err)
+	timeoutErr, ok = err.(*TimeoutError)
+	s.True(ok)
+	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.True(timeoutErr.HasDetails())
+	err = timeoutErr.Details(&details)
+	s.NoError(err)
+	s.Equal(testErrorDetails1, details)
+}

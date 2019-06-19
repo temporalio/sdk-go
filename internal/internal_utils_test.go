@@ -21,9 +21,12 @@
 package internal
 
 import (
-	"github.com/stretchr/testify/require"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	s "go.uber.org/cadence/.gen/go/shared"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
@@ -103,5 +106,24 @@ func TestGetErrorDetails_CancelError(t *testing.T) {
 	require.NoError(t, err)
 	reason, data = getErrorDetails(canceledErr2, dc)
 	require.Equal(t, errReasonCanceled, reason)
+	require.Equal(t, val2, data)
+}
+
+func TestGetErrorDetails_TimeoutError(t *testing.T) {
+	dc := getDefaultDataConverter()
+	details, err := dc.ToData("error details")
+	require.NoError(t, err)
+
+	val := newEncodedValues(details, dc).(*EncodedValues)
+	timeoutErr1 := NewTimeoutError(s.TimeoutTypeScheduleToStart, val)
+	reason, data := getErrorDetails(timeoutErr1, dc)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeScheduleToStart), reason)
+	require.Equal(t, val.values, data)
+
+	timeoutErr2 := NewTimeoutError(s.TimeoutTypeHeartbeat, testErrorDetails4)
+	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
+	require.NoError(t, err)
+	reason, data = getErrorDetails(timeoutErr2, dc)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeHeartbeat), reason)
 	require.Equal(t, val2, data)
 }
