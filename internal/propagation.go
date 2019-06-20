@@ -33,7 +33,7 @@ const (
 	runTag = "cadenceRunID"
 )
 
-// createOpenTracingActivitySpan creates a new context with a workflow started span
+// createOpenTracingWorkflowSpan creates a new context with a workflow started span
 func createOpenTracingWorkflowSpan(
 	ctx context.Context,
 	tracer opentracing.Tracer,
@@ -70,6 +70,8 @@ func createOpenTracingSpan(
 	var parent opentracing.SpanContext
 	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
 		parent = parentSpan.Context()
+	} else if spanCtx, ok := ctx.Value(activeSpanContextKey).(opentracing.SpanContext); ok {
+		parent = spanCtx
 	}
 
 	span := tracer.StartSpan(
