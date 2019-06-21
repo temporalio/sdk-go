@@ -357,11 +357,12 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 
 	// Validate session state.
 	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
-		if sessionInfo.sessionState == sessionStateFailed && !isSessionCreationActivity(activity) {
+		isCreationActivity := isSessionCreationActivity(activity)
+		if sessionInfo.sessionState == sessionStateFailed && !isCreationActivity {
 			settable.Set(nil, ErrSessionFailed)
 			return future
 		}
-		if sessionInfo.sessionState == sessionStateOpen {
+		if sessionInfo.sessionState == sessionStateOpen && !isCreationActivity {
 			// Use session tasklist
 			oldTaskListName := options.TaskListName
 			options.TaskListName = sessionInfo.tasklist
