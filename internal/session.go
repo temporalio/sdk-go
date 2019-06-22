@@ -216,35 +216,25 @@ func CompleteSession(ctx Context) {
 		return
 	}
 
-	retryPolicy := &RetryPolicy{
-		InitialInterval:    time.Second,
-		BackoffCoefficient: 1.1,
-		MaximumInterval:    time.Second * 10,
-		MaximumAttempts:    5,
-	}
-	ao := ActivityOptions{
-		ScheduleToStartTimeout: time.Second * 10,
-		StartToCloseTimeout:    time.Second * 10,
-		RetryPolicy:            retryPolicy,
-	}
-
 	// first cancel both the creation activity and all user activities
 	// this will cancel the ctx passed into this function
 	sessionInfo.sessionCancelFunc()
 
 	// then execute then completion activity using the completionCtx, which is not cancelled.
-	completionCtx := WithActivityOptions(sessionInfo.completionCtx, ao)
-	Go(completionCtx, func(completionCtx Context) {
-		// even though the creation activity has been cancelled, the session worker doesn't know. The worker will wait until
-		// next heartbeat to figure out that the workflow is completed and then release the resource. We need to make sure the
-		// completion activity is executed before the workflow exits.
-		// run the activity in another coroutine so it won't block user workflow.
-		// the tasklist will be overrided to use the one stored in sessionInfo.
-		err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
-		if err != nil {
-			GetLogger(completionCtx).Error("Complete session activity failed", zap.Error(err))
-		}
+	completionCtx := WithActivityOptions(sessionInfo.completionCtx, ActivityOptions{
+		ScheduleToStartTimeout: time.Second * 3,
+		StartToCloseTimeout:    time.Second * 3,
 	})
+
+	// even though the creation activity has been cancelled, the session worker doesn't know. The worker will wait until
+	// next heartbeat to figure out that the workflow is completed and then release the resource. We need to make sure the
+	// completion activity is executed before the workflow exits.
+	// the tasklist will be overrided to use the one stored in sessionInfo.
+	err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
+	if err != nil {
+		GetLogger(completionCtx).Warn("Complete session activity failed", zap.Error(err))
+	}
+
 	sessionInfo.sessionState = sessionStateClosed
 	getWorkflowEnvironment(ctx).RemoveSession(sessionInfo.SessionID)
 	GetLogger(ctx).Debug("Completed session", zap.String("sessionID", sessionInfo.SessionID))

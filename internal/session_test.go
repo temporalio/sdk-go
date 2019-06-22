@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
+
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/encoded"
@@ -504,6 +506,45 @@ func (s *SessionTestSuite) TestSessionRecreateToken() {
 	params, err := deserializeRecreateToken(token)
 	s.NoError(err)
 	s.Equal(testTasklist, params.Tasklist)
+}
+
+func (s *SessionTestSuite) TestInvalidRecreateToken() {
+	token := []byte("some invalid token")
+	sessionCtx, err := RecreateSession(Background(), token, s.sessionOptions)
+	s.Error(err)
+	s.Nil(sessionCtx)
+}
+
+func (s *SessionTestSuite) TestCompletionFailed() {
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       time.Second * 20,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		sessionCtx, err := CreateSession(ctx, s.sessionOptions)
+		if err != nil {
+			return err
+		}
+
+		CompleteSession(sessionCtx)
+
+		info := GetSessionInfo(sessionCtx)
+		if info == nil || info.sessionState != sessionStateClosed {
+			return errors.New("session state should be closed after completion even when completion activity failed")
+		}
+		return nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(errors.New("some random error")).Once()
+	env.ExecuteWorkflow(workflowFn)
+
+	env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
 }
 
 func (s *SessionTestSuite) createSessionWithoutRetry(ctx Context) (Context, error) {
