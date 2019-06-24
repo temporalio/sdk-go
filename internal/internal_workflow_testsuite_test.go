@@ -55,6 +55,10 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.localActivityOptions = LocalActivityOptions{
 		ScheduleToCloseTimeout: time.Second * 3,
 	}
+	s.header = &shared.Header{
+		Fields: map[string][]byte{"test": []byte("test-data")},
+	}
+	s.ctxProps = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
 	RegisterWorkflowWithOptions(testWorkflowHello, RegisterWorkflowOptions{Name: "testWorkflowHello"})
 	RegisterWorkflow(testWorkflowContext)
 	RegisterWorkflow(testWorkflowHeartbeat)

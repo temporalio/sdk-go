@@ -405,7 +405,14 @@ func Test_ContinueAsNewError(t *testing.T) {
 		Name: continueAsNewWfName,
 	})
 
-	s := &WorkflowTestSuite{}
+	header := &shared.Header{
+		Fields: map[string][]byte{"test": []byte("test-data")},
+	}
+
+	s := &WorkflowTestSuite{
+		header:   header,
+		ctxProps: []ContextPropagator{NewStringMapPropagator([]string{"test"})},
+	}
 	wfEnv := s.NewTestWorkflowEnvironment()
 	wfEnv.ExecuteWorkflow(continueAsNewWorkflowFn, 101, "another random string")
 	err := wfEnv.GetWorkflowError()
@@ -422,4 +429,5 @@ func Test_ContinueAsNewError(t *testing.T) {
 	stringArg, ok := args[1].(string)
 	require.True(t, ok)
 	require.Equal(t, a2, stringArg)
+	require.Equal(t, header, continueAsNewErr.params.header)
 }

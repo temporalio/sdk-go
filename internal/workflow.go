@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
@@ -572,6 +573,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		workflowOptions: *options,
 		input:           input,
 		workflowType:    wfType,
+		header:          getWorkflowHeader(ctx, options.contextPropagators),
 		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
 	}
 
@@ -613,6 +615,17 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	}
 
 	return result
+}
+
+func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *s.Header {
+	header := &s.Header{
+		Fields: make(map[string][]byte),
+	}
+	writer := NewHeaderWriter(header)
+	for _, ctxProp := range ctxProps {
+		ctxProp.InjectFromWorkflow(ctx, writer)
+	}
+	return header
 }
 
 // WorkflowInfo information about currently executing workflow
