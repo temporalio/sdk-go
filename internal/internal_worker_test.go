@@ -81,7 +81,7 @@ type internalWorkerTestSuite struct {
 	service  *workflowservicetest.MockClient
 }
 
-func TestInternalWorkferTestSuite(t *testing.T) {
+func TestInternalWorkerTestSuite(t *testing.T) {
 	s := new(internalWorkerTestSuite)
 	suite.Run(t, s)
 }
@@ -317,12 +317,8 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	}
 
 	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	_, wc, err := r.ProcessWorkflowTask(&workflowTask{task: task})
+	_, err := r.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	s.NoError(err)
-	s.NotNil(wc)
-	stackTrace := wc.StackTrace()
-	require.NotEmpty(s.T(), stackTrace, stackTrace)
-	require.Contains(s.T(), stackTrace, "cadence/internal.(*decodeFutureImpl).Get")
 }
 
 func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {

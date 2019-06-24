@@ -21,6 +21,8 @@
 package internal
 
 import (
+	"testing"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber/tchannel-go/thrift"
@@ -28,7 +30,6 @@ import (
 	m "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal/common"
 	"golang.org/x/net/context"
-	"testing"
 )
 
 type (
@@ -44,10 +45,12 @@ type sampleWorkflowTaskHandler struct {
 }
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
-	workflowTask *workflowTask) (interface{}, WorkflowExecutionContext, error) {
+	workflowTask *workflowTask,
+	d decisionHeartbeatFunc,
+) (interface{}, error) {
 	return &m.RespondDecisionTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
-	}, nil, nil
+	}, nil
 }
 
 func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
@@ -104,7 +107,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
-	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response})
+	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil)
 	completionRequest := request.(*m.RespondDecisionTaskCompletedRequest)
 	s.NoError(err)
 

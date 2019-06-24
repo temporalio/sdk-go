@@ -148,6 +148,10 @@ type (
 		currentIndex  int
 		next          []*s.HistoryEvent
 	}
+
+	decisionHeartbeatError struct {
+		Message string
+	}
 )
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
@@ -159,6 +163,10 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 	}
 
 	return result
+}
+
+func (e decisionHeartbeatError) Error() string {
+	return e.Message
 }
 
 // Get workflow start event.
@@ -545,8 +553,10 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 	return workflowContext, nil
 }
 
-func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(task *s.PollForDecisionTaskResponse,
-	historyIterator HistoryIterator) (workflowContext *workflowExecutionContextImpl, err error) {
+func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
+	task *s.PollForDecisionTaskResponse,
+	historyIterator HistoryIterator,
+) (workflowContext *workflowExecutionContextImpl, err error) {
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
 	defer func() {
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
@@ -631,9 +641,10 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDeci
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-) (completeRequest interface{}, context WorkflowExecutionContext, errRet error) {
+	heartbeatFunc decisionHeartbeatFunc,
+) (completeRequest interface{}, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
-		return nil, nil, errors.New("nil workflow task provided")
+		return nil, errors.New("nil workflow task provided")
 	}
 	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
@@ -642,7 +653,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
-		return nil, nil, errors.New("nil or empty history")
+		return nil, errors.New("nil or empty history")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -657,15 +668,53 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 
 	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	defer func() {
 		workflowContext.Unlock(errRet)
 	}()
 
-	response, err := workflowContext.ProcessWorkflowTask(workflowTask)
-	return response, workflowContext, err
+	var response interface{}
+process_Workflow_Loop:
+	for {
+		startTime := time.Now()
+		response, err = workflowContext.ProcessWorkflowTask(workflowTask)
+		if err == nil && response == nil {
+		wait_LocalActivity_Loop:
+			for {
+				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
+				delayDuration := startTime.Add(deadlineToTrigger).Sub(time.Now())
+				select {
+				case <-time.After(delayDuration):
+					// force complete, call the decision heartbeat function
+					workflowTask, err = heartbeatFunc(
+						workflowContext.CompleteDecisionTask(workflowTask, false),
+						startTime,
+					)
+					if err != nil {
+						return nil, &decisionHeartbeatError{Message: fmt.Sprintf("error sending decision heartbeat %v", err)}
+					}
+					if workflowTask == nil {
+						return nil, nil
+					}
+					continue process_Workflow_Loop
+
+				case lar := <-workflowTask.laResultCh:
+					// local activity result ready
+					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
+					if err == nil && response == nil {
+						// decision task is not done yet, still waiting for more local activities
+						continue wait_LocalActivity_Loop
+					}
+					break process_Workflow_Loop
+				}
+			}
+		} else {
+			break process_Workflow_Loop
+		}
+	}
+	return response, err
 }
 
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
@@ -956,10 +1005,6 @@ func (w *workflowExecutionContextImpl) skipReplayCheck() bool {
 	return w.currentDecisionTask.Query != nil || !isFullHistory(w.currentDecisionTask.History)
 }
 
-func (w *workflowExecutionContextImpl) GetCurrentDecisionTask() *s.PollForDecisionTaskResponse {
-	return w.currentDecisionTask
-}
-
 func (w *workflowExecutionContextImpl) SetCurrentTask(task *s.PollForDecisionTaskResponse) {
 	w.currentDecisionTask = task
 	// do not update the previousStartedEventID for query task
@@ -991,13 +1036,6 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *s.PollForDecisionTaskR
 
 func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
 	return time.Second * time.Duration(w.workflowInfo.TaskStartToCloseTimeoutSeconds)
-}
-
-func (w *workflowExecutionContextImpl) StackTrace() string {
-	if w.eventHandler == nil {
-		return "eventHandler is closed"
-	}
-	return w.eventHandler.StackTrace()
 }
 
 func skipDeterministicCheckForDecision(d *s.Decision) bool {

@@ -928,7 +928,6 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 func (iter *historyEventIteratorImpl) Next() (*s.HistoryEvent, error) {
 	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
-		// debug.PrintStack()
 		panic("HistoryEventIterator Next() called without checking HasNext()")
 	}
 
