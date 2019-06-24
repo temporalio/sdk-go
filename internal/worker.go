@@ -206,7 +206,7 @@ type (
 
 		// Optional: Sets the maximum number of concurrently running sessions the resource support.
 		// default: 1000
-		MaxConCurrentSessionExecutionSize int
+		MaxConcurrentSessionExecutionSize int
 
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: no ContextPropagators

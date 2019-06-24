@@ -279,7 +279,7 @@ func (s *SessionTestSuite) TestRecreation() {
 }
 
 func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
-	maxConCurrentSessionExecutionSize := 3
+	maxConcurrentSessionExecutionSize := 3
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
 			ScheduleToStartTimeout: time.Minute,
@@ -287,7 +287,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
 			HeartbeatTimeout:       time.Second * 20,
 		}
 		ctx = WithActivityOptions(ctx, ao)
-		for i := 0; i != maxConCurrentSessionExecutionSize+1; i++ {
+		for i := 0; i != maxConcurrentSessionExecutionSize+1; i++ {
 			if _, err := s.createSessionWithoutRetry(ctx); err != nil {
 				return err
 			}
@@ -298,7 +298,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.SetWorkerOptions(WorkerOptions{
-		MaxConCurrentSessionExecutionSize: maxConCurrentSessionExecutionSize,
+		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
 	})
 	env.ExecuteWorkflow(workflowFn)
 
@@ -307,7 +307,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
 }
 
 func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
-	maxConCurrentSessionExecutionSize := 3
+	maxConcurrentSessionExecutionSize := 3
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
 			ScheduleToStartTimeout: time.Minute,
@@ -324,7 +324,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 			return errors.New("Returned session info should not be nil")
 		}
 
-		for i := 0; i != maxConCurrentSessionExecutionSize; i++ {
+		for i := 0; i != maxConcurrentSessionExecutionSize; i++ {
 			if i%2 == 0 {
 				_, err = s.createSessionWithoutRetry(ctx)
 			} else {
@@ -340,7 +340,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.SetWorkerOptions(WorkerOptions{
-		MaxConCurrentSessionExecutionSize: maxConCurrentSessionExecutionSize,
+		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
 	})
 	env.ExecuteWorkflow(workflowFn)
 

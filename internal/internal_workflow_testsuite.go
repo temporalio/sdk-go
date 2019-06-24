@@ -383,8 +383,8 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	// if options.SessionResourceID != "" {
 	// 	env.workerOptions.SessionResourceID = options.SessionResourceID
 	// }
-	if options.MaxConCurrentSessionExecutionSize != 0 {
-		env.workerOptions.MaxConCurrentSessionExecutionSize = options.MaxConCurrentSessionExecutionSize
+	if options.MaxConcurrentSessionExecutionSize != 0 {
+		env.workerOptions.MaxConcurrentSessionExecutionSize = options.MaxConcurrentSessionExecutionSize
 	}
 	if len(options.ContextPropagators) > 0 {
 		env.workerOptions.ContextPropagators = options.ContextPropagators
@@ -1465,7 +1465,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		params.UserContext = context.Background()
 	}
 	if env.sessionEnvironment == nil {
-		env.sessionEnvironment = newTestSessionEnvironment(env, &params, wOptions.MaxConCurrentSessionExecutionSize)
+		env.sessionEnvironment = newTestSessionEnvironment(env, &params, wOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
 

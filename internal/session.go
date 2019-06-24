@@ -133,7 +133,7 @@ var (
 //     SessionResourceID: The identifier of the resource consumed by sessions.
 //         It's the user's responsibility to ensure there's only one worker using this resourceID.
 //         This option is not available for now as automatic session reestablishing is not implemented.
-//     MaxConCurrentSessionExecutionSize: the maximum number of concurrently sessions the resource
+//     MaxConcurrentSessionExecutionSize: the maximum number of concurrently sessions the resource
 //         support. By default, 1000 is used.
 
 // CreateSession creates a session and returns a new context which contains information
@@ -144,7 +144,7 @@ var (
 //     1. The context passed in already contains a session which is still open
 //        (not closed and failed).
 //     2. All the workers are busy (number of sessions currently running on all the workers have reached
-//        MaxConCurrentSessionExecutionSize, which is specified when starting the workers) and session
+//        MaxConcurrentSessionExecutionSize, which is specified when starting the workers) and session
 //        cannot be created within a specified timeout.
 //
 // If an activity is executed using the returned context, it's regarded as part of the

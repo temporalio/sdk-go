@@ -386,7 +386,7 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 	env *hostEnvImpl,
-	maxConCurrentSessionExecutionSize int,
+	maxConcurrentSessionExecutionSize int,
 ) Worker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
@@ -395,7 +395,7 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	if params.SessionResourceID == "" {
 		params.SessionResourceID = uuid.New()
 	}
-	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConCurrentSessionExecutionSize)
+	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
 	creationTasklist := getCreationTasklist(params.TaskList)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
@@ -1200,7 +1200,7 @@ func newAggregatedWorker(
 			workerParams,
 			nil,
 			hostEnv,
-			wOptions.MaxConCurrentSessionExecutionSize,
+			wOptions.MaxConcurrentSessionExecutionSize,
 		)
 	}
 
@@ -1393,8 +1393,8 @@ func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if options.DataConverter == nil {
 		options.DataConverter = getDefaultDataConverter()
 	}
-	if options.MaxConCurrentSessionExecutionSize == 0 {
-		options.MaxConCurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	if options.MaxConcurrentSessionExecutionSize == 0 {
+		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
 	}
 
 	// if the user passes in a tracer then add a tracing context propagator
