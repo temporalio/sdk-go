@@ -59,6 +59,10 @@ ignored = ["go.uber.org/cadence/.tmp"]
   version = "1.6.0"
 
 [[constraint]]
+  name = "github.com/apache/thrift"
+  version = "v0.10.0"
+
+[[constraint]]
   name = "go.uber.org/yarpc"
   version = "1.38.0"
 
