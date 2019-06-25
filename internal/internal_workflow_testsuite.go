@@ -1638,7 +1638,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 		childEnv := childHandle.env
 		if childEnv.isTestCompleted {
 			// child already completed (NOTE: we have only one failed cause now)
-			err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
+			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)
 		} else {
 			childEnv.signalHandler(signalName, input)
@@ -1650,7 +1650,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 
 	// here we signal a child workflow but we cannot find it
 	if childWorkflowOnly {
-		err := fmt.Errorf("signal external workflow failed, %v", shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution)
+		err := newUnknownExternalWorkflowExecutionError()
 		callback(nil, err)
 		return
 	}
