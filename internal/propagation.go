@@ -67,6 +67,10 @@ func createOpenTracingSpan(
 	name string,
 	tags opentracing.Tags,
 ) (context.Context, opentracing.Span) {
+	if _, ok := tracer.(opentracing.NoopTracer); ok {
+		return ctx, tracer.StartSpan("StartWorkflow-Span")
+	}
+
 	var parent opentracing.SpanContext
 	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
 		parent = parentSpan.Context()
