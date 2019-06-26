@@ -1222,7 +1222,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.RequestCancelExternalWorkflowExecutionDecisionAttributes
-		if checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
+		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
 			return false
 		}
@@ -1235,7 +1235,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.SignalExternalWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.SignalExternalWorkflowExecutionDecisionAttributes
-		if checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
+		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
 			return false
@@ -1270,7 +1270,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		eventAttributes := e.StartChildWorkflowExecutionInitiatedEventAttributes
 		decisionAttributes := d.StartChildWorkflowExecutionDecisionAttributes
 		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
-			(strictMode && checkIfDecisionDomainMatchEventDomain(eventAttributes.GetDomain(), decisionAttributes.GetDomain())) ||
+			(strictMode && checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain())) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
 			return false
 		}
@@ -1281,11 +1281,15 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 	return false
 }
 
-func checkIfDecisionDomainMatchEventDomain(eventDomainName, decisionDomainName string) bool {
+// return true if the check fails:
+//    domain is not empty in decision
+//    and domain is not replayDomain
+//    and domains unmatch in decision and events
+func checkDomainsInDecisionAndEvent(eventDomainName, decisionDomainName string) bool {
 	if decisionDomainName == "" || IsReplayDomain(decisionDomainName) {
-		return true
+		return false
 	}
-	return eventDomainName == decisionDomainName
+	return eventDomainName != decisionDomainName
 }
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(

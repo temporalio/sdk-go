@@ -52,6 +52,7 @@ func init() {
 	RegisterWorkflow(testReplayWorkflow)
 	RegisterWorkflow(testReplayWorkflow_LocalActivity)
 	RegisterWorkflow(testReplayWorkflowFromFile)
+	RegisterWorkflow(testReplayWorkflowFromFileParent)
 	RegisterActivityWithOptions(
 		testActivity,
 		RegisterActivityOptions{Name: "testActivity"},
@@ -153,6 +154,25 @@ func testReplayWorkflowFromFile(ctx Context) error {
 		panic("Failed workflow")
 	}
 	return err
+}
+
+func testReplayWorkflowFromFileParent(ctx Context) error {
+	execution := GetWorkflowInfo(ctx).WorkflowExecution
+	childID := fmt.Sprintf("child_workflow:%v", execution.RunID)
+	cwo := ChildWorkflowOptions{
+		WorkflowID:                   childID,
+		ExecutionStartToCloseTimeout: time.Minute,
+	}
+	ctx = WithChildWorkflowOptions(ctx, cwo)
+	var result string
+	cwf := ExecuteChildWorkflow(ctx, testReplayWorkflowFromFile)
+	f1 := cwf.SignalChildWorkflow(ctx, "test-signal", "test-data")
+	err := f1.Get(ctx, nil)
+	err = cwf.Get(ctx, &result)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func testActivity(ctx context.Context) error {
@@ -286,6 +306,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFileParent() {
+	logger := getLogger()
+	err := ReplayWorkflowHistoryFromJSONFile(logger, "testdata/parentWF.json")
+	require.NoError(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
