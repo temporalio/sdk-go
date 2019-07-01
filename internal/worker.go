@@ -236,10 +236,11 @@ const (
 	// to fail the workflow execution.
 	NonDeterministicWorkflowPolicyFailWorkflow
 
-	// we have to put a domainName for replay because startEvent doesn't contain it
+	// ReplayDomainName is domainName for replay because startEvent doesn't contain it
 	ReplayDomainName = "ReplayDomain"
 )
 
+// IsReplayDomain checks if the domainName is from replay
 func IsReplayDomain(dn string) bool {
 	return ReplayDomainName == dn
 }

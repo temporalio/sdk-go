@@ -32,6 +32,7 @@ const (
 	done              time.Duration = -1
 	noMaximumAttempts               = 0
 
+	// DefaultBackoffCoefficient is default backOffCoefficient for retryPolicy
 	DefaultBackoffCoefficient = 2.0
 	defaultMaximumInterval    = 10 * time.Second
 	defaultExpirationInterval = time.Minute

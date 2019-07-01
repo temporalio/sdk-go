@@ -50,7 +50,7 @@ func init() {
 		RegisterWorkflowOptions{Name: "sampleWorkflowExecute"},
 	)
 	RegisterWorkflow(testReplayWorkflow)
-	RegisterWorkflow(testReplayWorkflow_LocalActivity)
+	RegisterWorkflow(testReplayWorkflowLocalActivity)
 	RegisterWorkflow(testReplayWorkflowFromFile)
 	RegisterWorkflow(testReplayWorkflowFromFileParent)
 	RegisterActivityWithOptions(
@@ -127,7 +127,7 @@ func testReplayWorkflow(ctx Context) error {
 	return err
 }
 
-func testReplayWorkflow_LocalActivity(ctx Context) error {
+func testReplayWorkflowLocalActivity(ctx Context) error {
 	ao := LocalActivityOptions{
 		ScheduleToCloseTimeout: time.Second,
 	}
@@ -223,9 +223,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflow_LocalActivity")},
+			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflowLocalActivity")},
 			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
-			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow_LocalActivity),
+			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -252,9 +252,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflow_LocalActivity")},
+			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/internal.testReplayWorkflowLocalActivity")},
 			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
-			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow_LocalActivity),
+			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),

@@ -10482,6 +10482,7 @@ type DescribeWorkflowExecutionResponse struct {
 	ExecutionConfiguration *WorkflowExecutionConfiguration `json:"executionConfiguration,omitempty"`
 	WorkflowExecutionInfo  *WorkflowExecutionInfo          `json:"workflowExecutionInfo,omitempty"`
 	PendingActivities      []*PendingActivityInfo          `json:"pendingActivities,omitempty"`
+	PendingChildren        []*PendingChildExecutionInfo    `json:"pendingChildren,omitempty"`
 }
 
 type _List_PendingActivityInfo_ValueList []*PendingActivityInfo
@@ -10513,6 +10514,35 @@ func (_List_PendingActivityInfo_ValueList) ValueType() wire.Type {
 
 func (_List_PendingActivityInfo_ValueList) Close() {}
 
+type _List_PendingChildExecutionInfo_ValueList []*PendingChildExecutionInfo
+
+func (v _List_PendingChildExecutionInfo_ValueList) ForEach(f func(wire.Value) error) error {
+	for i, x := range v {
+		if x == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", i)
+		}
+		w, err := x.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_PendingChildExecutionInfo_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_PendingChildExecutionInfo_ValueList) ValueType() wire.Type {
+	return wire.TStruct
+}
+
+func (_List_PendingChildExecutionInfo_ValueList) Close() {}
+
 // ToWire translates a DescribeWorkflowExecutionResponse struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
 // into bytes using a ThriftRW protocol implementation.
@@ -10530,7 +10560,7 @@ func (_List_PendingActivityInfo_ValueList) Close() {}
 //   }
 func (v *DescribeWorkflowExecutionResponse) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -10558,6 +10588,14 @@ func (v *DescribeWorkflowExecutionResponse) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.PendingChildren != nil {
+		w, err = wire.NewValueList(_List_PendingChildExecutionInfo_ValueList(v.PendingChildren)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
 
@@ -10590,6 +10628,30 @@ func _List_PendingActivityInfo_Read(l wire.ValueList) ([]*PendingActivityInfo, e
 	o := make([]*PendingActivityInfo, 0, l.Size())
 	err := l.ForEach(func(x wire.Value) error {
 		i, err := _PendingActivityInfo_Read(x)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
+}
+
+func _PendingChildExecutionInfo_Read(w wire.Value) (*PendingChildExecutionInfo, error) {
+	var v PendingChildExecutionInfo
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _List_PendingChildExecutionInfo_Read(l wire.ValueList) ([]*PendingChildExecutionInfo, error) {
+	if l.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make([]*PendingChildExecutionInfo, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := _PendingChildExecutionInfo_Read(x)
 		if err != nil {
 			return err
 		}
@@ -10646,6 +10708,14 @@ func (v *DescribeWorkflowExecutionResponse) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 40:
+			if field.Value.Type() == wire.TList {
+				v.PendingChildren, err = _List_PendingChildExecutionInfo_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -10659,7 +10729,7 @@ func (v *DescribeWorkflowExecutionResponse) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.ExecutionConfiguration != nil {
 		fields[i] = fmt.Sprintf("ExecutionConfiguration: %v", v.ExecutionConfiguration)
@@ -10673,11 +10743,30 @@ func (v *DescribeWorkflowExecutionResponse) String() string {
 		fields[i] = fmt.Sprintf("PendingActivities: %v", v.PendingActivities)
 		i++
 	}
+	if v.PendingChildren != nil {
+		fields[i] = fmt.Sprintf("PendingChildren: %v", v.PendingChildren)
+		i++
+	}
 
 	return fmt.Sprintf("DescribeWorkflowExecutionResponse{%v}", strings.Join(fields[:i], ", "))
 }
 
 func _List_PendingActivityInfo_Equals(lhs, rhs []*PendingActivityInfo) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !lv.Equals(rv) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func _List_PendingChildExecutionInfo_Equals(lhs, rhs []*PendingChildExecutionInfo) bool {
 	if len(lhs) != len(rhs) {
 		return false
 	}
@@ -10704,6 +10793,9 @@ func (v *DescribeWorkflowExecutionResponse) Equals(rhs *DescribeWorkflowExecutio
 		return false
 	}
 	if !((v.PendingActivities == nil && rhs.PendingActivities == nil) || (v.PendingActivities != nil && rhs.PendingActivities != nil && _List_PendingActivityInfo_Equals(v.PendingActivities, rhs.PendingActivities))) {
+		return false
+	}
+	if !((v.PendingChildren == nil && rhs.PendingChildren == nil) || (v.PendingChildren != nil && rhs.PendingChildren != nil && _List_PendingChildExecutionInfo_Equals(v.PendingChildren, rhs.PendingChildren))) {
 		return false
 	}
 
@@ -19381,6 +19473,230 @@ func (v *PendingActivityState) UnmarshalJSON(text []byte) error {
 	default:
 		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "PendingActivityState")
 	}
+}
+
+type PendingChildExecutionInfo struct {
+	WorkflowID      *string `json:"workflowID,omitempty"`
+	RunID           *string `json:"runID,omitempty"`
+	WorkflowTypName *string `json:"workflowTypName,omitempty"`
+	InitiatedID     *int64  `json:"initiatedID,omitempty"`
+}
+
+// ToWire translates a PendingChildExecutionInfo struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *PendingChildExecutionInfo) ToWire() (wire.Value, error) {
+	var (
+		fields [4]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.WorkflowID != nil {
+		w, err = wire.NewValueString(*(v.WorkflowID)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.RunID != nil {
+		w, err = wire.NewValueString(*(v.RunID)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.WorkflowTypName != nil {
+		w, err = wire.NewValueString(*(v.WorkflowTypName)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.InitiatedID != nil {
+		w, err = wire.NewValueI64(*(v.InitiatedID)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a PendingChildExecutionInfo struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a PendingChildExecutionInfo struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v PendingChildExecutionInfo
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *PendingChildExecutionInfo) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.WorkflowID = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.RunID = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.WorkflowTypName = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 40:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.InitiatedID = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a PendingChildExecutionInfo
+// struct.
+func (v *PendingChildExecutionInfo) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [4]string
+	i := 0
+	if v.WorkflowID != nil {
+		fields[i] = fmt.Sprintf("WorkflowID: %v", *(v.WorkflowID))
+		i++
+	}
+	if v.RunID != nil {
+		fields[i] = fmt.Sprintf("RunID: %v", *(v.RunID))
+		i++
+	}
+	if v.WorkflowTypName != nil {
+		fields[i] = fmt.Sprintf("WorkflowTypName: %v", *(v.WorkflowTypName))
+		i++
+	}
+	if v.InitiatedID != nil {
+		fields[i] = fmt.Sprintf("InitiatedID: %v", *(v.InitiatedID))
+		i++
+	}
+
+	return fmt.Sprintf("PendingChildExecutionInfo{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this PendingChildExecutionInfo match the
+// provided PendingChildExecutionInfo.
+//
+// This function performs a deep comparison.
+func (v *PendingChildExecutionInfo) Equals(rhs *PendingChildExecutionInfo) bool {
+	if !_String_EqualsPtr(v.WorkflowID, rhs.WorkflowID) {
+		return false
+	}
+	if !_String_EqualsPtr(v.RunID, rhs.RunID) {
+		return false
+	}
+	if !_String_EqualsPtr(v.WorkflowTypName, rhs.WorkflowTypName) {
+		return false
+	}
+	if !_I64_EqualsPtr(v.InitiatedID, rhs.InitiatedID) {
+		return false
+	}
+
+	return true
+}
+
+// GetWorkflowID returns the value of WorkflowID if it is set or its
+// zero value if it is unset.
+func (v *PendingChildExecutionInfo) GetWorkflowID() (o string) {
+	if v.WorkflowID != nil {
+		return *v.WorkflowID
+	}
+
+	return
+}
+
+// GetRunID returns the value of RunID if it is set or its
+// zero value if it is unset.
+func (v *PendingChildExecutionInfo) GetRunID() (o string) {
+	if v.RunID != nil {
+		return *v.RunID
+	}
+
+	return
+}
+
+// GetWorkflowTypName returns the value of WorkflowTypName if it is set or its
+// zero value if it is unset.
+func (v *PendingChildExecutionInfo) GetWorkflowTypName() (o string) {
+	if v.WorkflowTypName != nil {
+		return *v.WorkflowTypName
+	}
+
+	return
+}
+
+// GetInitiatedID returns the value of InitiatedID if it is set or its
+// zero value if it is unset.
+func (v *PendingChildExecutionInfo) GetInitiatedID() (o int64) {
+	if v.InitiatedID != nil {
+		return *v.InitiatedID
+	}
+
+	return
 }
 
 type PollForActivityTaskRequest struct {
