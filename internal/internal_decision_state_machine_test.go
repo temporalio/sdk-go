@@ -500,6 +500,19 @@ func Test_MarkerStateMachine(t *testing.T) {
 	require.Equal(t, s.DecisionTypeRecordMarker, decisions[0].GetDecisionType())
 }
 
+func Test_UpsertSearchAttributesDecisionStateMachine(t *testing.T) {
+	h := newDecisionsHelper()
+
+	attr := &s.SearchAttributes{}
+	d := h.upsertSearchAttributes("1", attr)
+	require.Equal(t, decisionStateCreated, d.getState())
+
+	decisions := h.getDecisions(true)
+	require.Equal(t, decisionStateCompleted, d.getState())
+	require.Equal(t, 1, len(decisions))
+	require.Equal(t, s.DecisionTypeUpsertWorkflowSearchAttributes, decisions[0].GetDecisionType())
+}
+
 func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	domain := "test-domain"
 	workflowID := "test-workflow-id"

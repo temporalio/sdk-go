@@ -6658,6 +6658,7 @@ type Decision struct {
 	ContinueAsNewWorkflowExecutionDecisionAttributes         *ContinueAsNewWorkflowExecutionDecisionAttributes         `json:"continueAsNewWorkflowExecutionDecisionAttributes,omitempty"`
 	StartChildWorkflowExecutionDecisionAttributes            *StartChildWorkflowExecutionDecisionAttributes            `json:"startChildWorkflowExecutionDecisionAttributes,omitempty"`
 	SignalExternalWorkflowExecutionDecisionAttributes        *SignalExternalWorkflowExecutionDecisionAttributes        `json:"signalExternalWorkflowExecutionDecisionAttributes,omitempty"`
+	UpsertWorkflowSearchAttributesDecisionAttributes         *UpsertWorkflowSearchAttributesDecisionAttributes         `json:"upsertWorkflowSearchAttributesDecisionAttributes,omitempty"`
 }
 
 // ToWire translates a Decision struct into a Thrift-level intermediate
@@ -6677,7 +6678,7 @@ type Decision struct {
 //   }
 func (v *Decision) ToWire() (wire.Value, error) {
 	var (
-		fields [13]wire.Field
+		fields [14]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -6787,6 +6788,14 @@ func (v *Decision) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 110, Value: w}
 		i++
 	}
+	if v.UpsertWorkflowSearchAttributesDecisionAttributes != nil {
+		w, err = v.UpsertWorkflowSearchAttributesDecisionAttributes.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 120, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -6865,6 +6874,12 @@ func _StartChildWorkflowExecutionDecisionAttributes_Read(w wire.Value) (*StartCh
 
 func _SignalExternalWorkflowExecutionDecisionAttributes_Read(w wire.Value) (*SignalExternalWorkflowExecutionDecisionAttributes, error) {
 	var v SignalExternalWorkflowExecutionDecisionAttributes
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _UpsertWorkflowSearchAttributesDecisionAttributes_Read(w wire.Value) (*UpsertWorkflowSearchAttributesDecisionAttributes, error) {
+	var v UpsertWorkflowSearchAttributesDecisionAttributes
 	err := v.FromWire(w)
 	return &v, err
 }
@@ -6997,6 +7012,14 @@ func (v *Decision) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 120:
+			if field.Value.Type() == wire.TStruct {
+				v.UpsertWorkflowSearchAttributesDecisionAttributes, err = _UpsertWorkflowSearchAttributesDecisionAttributes_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -7010,7 +7033,7 @@ func (v *Decision) String() string {
 		return "<nil>"
 	}
 
-	var fields [13]string
+	var fields [14]string
 	i := 0
 	if v.DecisionType != nil {
 		fields[i] = fmt.Sprintf("DecisionType: %v", *(v.DecisionType))
@@ -7062,6 +7085,10 @@ func (v *Decision) String() string {
 	}
 	if v.SignalExternalWorkflowExecutionDecisionAttributes != nil {
 		fields[i] = fmt.Sprintf("SignalExternalWorkflowExecutionDecisionAttributes: %v", v.SignalExternalWorkflowExecutionDecisionAttributes)
+		i++
+	}
+	if v.UpsertWorkflowSearchAttributesDecisionAttributes != nil {
+		fields[i] = fmt.Sprintf("UpsertWorkflowSearchAttributesDecisionAttributes: %v", v.UpsertWorkflowSearchAttributesDecisionAttributes)
 		i++
 	}
 
@@ -7120,6 +7147,9 @@ func (v *Decision) Equals(rhs *Decision) bool {
 		return false
 	}
 	if !((v.SignalExternalWorkflowExecutionDecisionAttributes == nil && rhs.SignalExternalWorkflowExecutionDecisionAttributes == nil) || (v.SignalExternalWorkflowExecutionDecisionAttributes != nil && rhs.SignalExternalWorkflowExecutionDecisionAttributes != nil && v.SignalExternalWorkflowExecutionDecisionAttributes.Equals(rhs.SignalExternalWorkflowExecutionDecisionAttributes))) {
+		return false
+	}
+	if !((v.UpsertWorkflowSearchAttributesDecisionAttributes == nil && rhs.UpsertWorkflowSearchAttributesDecisionAttributes == nil) || (v.UpsertWorkflowSearchAttributesDecisionAttributes != nil && rhs.UpsertWorkflowSearchAttributesDecisionAttributes != nil && v.UpsertWorkflowSearchAttributesDecisionAttributes.Equals(rhs.UpsertWorkflowSearchAttributesDecisionAttributes))) {
 		return false
 	}
 
@@ -7408,6 +7438,8 @@ const (
 	DecisionTaskFailedCauseBadSignalInputSize                                  DecisionTaskFailedCause = 18
 	DecisionTaskFailedCauseResetWorkflow                                       DecisionTaskFailedCause = 19
 	DecisionTaskFailedCauseBadBinary                                           DecisionTaskFailedCause = 20
+	DecisionTaskFailedCauseScheduleActivityDuplicateID                         DecisionTaskFailedCause = 21
+	DecisionTaskFailedCauseBadSearchAttributes                                 DecisionTaskFailedCause = 22
 )
 
 // DecisionTaskFailedCause_Values returns all recognized values of DecisionTaskFailedCause.
@@ -7434,6 +7466,8 @@ func DecisionTaskFailedCause_Values() []DecisionTaskFailedCause {
 		DecisionTaskFailedCauseBadSignalInputSize,
 		DecisionTaskFailedCauseResetWorkflow,
 		DecisionTaskFailedCauseBadBinary,
+		DecisionTaskFailedCauseScheduleActivityDuplicateID,
+		DecisionTaskFailedCauseBadSearchAttributes,
 	}
 }
 
@@ -7506,6 +7540,12 @@ func (v *DecisionTaskFailedCause) UnmarshalText(value []byte) error {
 		return nil
 	case "BAD_BINARY":
 		*v = DecisionTaskFailedCauseBadBinary
+		return nil
+	case "SCHEDULE_ACTIVITY_DUPLICATE_ID":
+		*v = DecisionTaskFailedCauseScheduleActivityDuplicateID
+		return nil
+	case "BAD_SEARCH_ATTRIBUTES":
+		*v = DecisionTaskFailedCauseBadSearchAttributes
 		return nil
 	default:
 		return fmt.Errorf("unknown enum value %q for %q", value, "DecisionTaskFailedCause")
@@ -7590,6 +7630,10 @@ func (v DecisionTaskFailedCause) String() string {
 		return "RESET_WORKFLOW"
 	case 20:
 		return "BAD_BINARY"
+	case 21:
+		return "SCHEDULE_ACTIVITY_DUPLICATE_ID"
+	case 22:
+		return "BAD_SEARCH_ATTRIBUTES"
 	}
 	return fmt.Sprintf("DecisionTaskFailedCause(%d)", w)
 }
@@ -7650,6 +7694,10 @@ func (v DecisionTaskFailedCause) MarshalJSON() ([]byte, error) {
 		return ([]byte)("\"RESET_WORKFLOW\""), nil
 	case 20:
 		return ([]byte)("\"BAD_BINARY\""), nil
+	case 21:
+		return ([]byte)("\"SCHEDULE_ACTIVITY_DUPLICATE_ID\""), nil
+	case 22:
+		return ([]byte)("\"BAD_SEARCH_ATTRIBUTES\""), nil
 	}
 	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
 }
@@ -8665,6 +8713,7 @@ const (
 	DecisionTypeContinueAsNewWorkflowExecution         DecisionType = 9
 	DecisionTypeStartChildWorkflowExecution            DecisionType = 10
 	DecisionTypeSignalExternalWorkflowExecution        DecisionType = 11
+	DecisionTypeUpsertWorkflowSearchAttributes         DecisionType = 12
 )
 
 // DecisionType_Values returns all recognized values of DecisionType.
@@ -8682,6 +8731,7 @@ func DecisionType_Values() []DecisionType {
 		DecisionTypeContinueAsNewWorkflowExecution,
 		DecisionTypeStartChildWorkflowExecution,
 		DecisionTypeSignalExternalWorkflowExecution,
+		DecisionTypeUpsertWorkflowSearchAttributes,
 	}
 }
 
@@ -8727,6 +8777,9 @@ func (v *DecisionType) UnmarshalText(value []byte) error {
 		return nil
 	case "SignalExternalWorkflowExecution":
 		*v = DecisionTypeSignalExternalWorkflowExecution
+		return nil
+	case "UpsertWorkflowSearchAttributes":
+		*v = DecisionTypeUpsertWorkflowSearchAttributes
 		return nil
 	default:
 		return fmt.Errorf("unknown enum value %q for %q", value, "DecisionType")
@@ -8793,6 +8846,8 @@ func (v DecisionType) String() string {
 		return "StartChildWorkflowExecution"
 	case 11:
 		return "SignalExternalWorkflowExecution"
+	case 12:
+		return "UpsertWorkflowSearchAttributes"
 	}
 	return fmt.Sprintf("DecisionType(%d)", w)
 }
@@ -8835,6 +8890,8 @@ func (v DecisionType) MarshalJSON() ([]byte, error) {
 		return ([]byte)("\"StartChildWorkflowExecution\""), nil
 	case 11:
 		return ([]byte)("\"SignalExternalWorkflowExecution\""), nil
+	case 12:
+		return ([]byte)("\"UpsertWorkflowSearchAttributes\""), nil
 	}
 	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
 }
@@ -11068,9 +11125,7 @@ type DomainConfiguration struct {
 	WorkflowExecutionRetentionPeriodInDays *int32          `json:"workflowExecutionRetentionPeriodInDays,omitempty"`
 	EmitMetric                             *bool           `json:"emitMetric,omitempty"`
 	ArchivalBucketName                     *string         `json:"archivalBucketName,omitempty"`
-	ArchivalRetentionPeriodInDays          *int32          `json:"archivalRetentionPeriodInDays,omitempty"`
 	ArchivalStatus                         *ArchivalStatus `json:"archivalStatus,omitempty"`
-	ArchivalBucketOwner                    *string         `json:"archivalBucketOwner,omitempty"`
 	BadBinaries                            *BadBinaries    `json:"badBinaries,omitempty"`
 }
 
@@ -11091,7 +11146,7 @@ type DomainConfiguration struct {
 //   }
 func (v *DomainConfiguration) ToWire() (wire.Value, error) {
 	var (
-		fields [7]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -11121,28 +11176,12 @@ func (v *DomainConfiguration) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
-	if v.ArchivalRetentionPeriodInDays != nil {
-		w, err = wire.NewValueI32(*(v.ArchivalRetentionPeriodInDays)), error(nil)
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 40, Value: w}
-		i++
-	}
 	if v.ArchivalStatus != nil {
 		w, err = v.ArchivalStatus.ToWire()
 		if err != nil {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 50, Value: w}
-		i++
-	}
-	if v.ArchivalBucketOwner != nil {
-		w, err = wire.NewValueString(*(v.ArchivalBucketOwner)), error(nil)
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 60, Value: w}
 		i++
 	}
 	if v.BadBinaries != nil {
@@ -11221,31 +11260,11 @@ func (v *DomainConfiguration) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 40:
-			if field.Value.Type() == wire.TI32 {
-				var x int32
-				x, err = field.Value.GetI32(), error(nil)
-				v.ArchivalRetentionPeriodInDays = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 50:
 			if field.Value.Type() == wire.TI32 {
 				var x ArchivalStatus
 				x, err = _ArchivalStatus_Read(field.Value)
 				v.ArchivalStatus = &x
-				if err != nil {
-					return err
-				}
-
-			}
-		case 60:
-			if field.Value.Type() == wire.TBinary {
-				var x string
-				x, err = field.Value.GetString(), error(nil)
-				v.ArchivalBucketOwner = &x
 				if err != nil {
 					return err
 				}
@@ -11272,7 +11291,7 @@ func (v *DomainConfiguration) String() string {
 		return "<nil>"
 	}
 
-	var fields [7]string
+	var fields [5]string
 	i := 0
 	if v.WorkflowExecutionRetentionPeriodInDays != nil {
 		fields[i] = fmt.Sprintf("WorkflowExecutionRetentionPeriodInDays: %v", *(v.WorkflowExecutionRetentionPeriodInDays))
@@ -11286,16 +11305,8 @@ func (v *DomainConfiguration) String() string {
 		fields[i] = fmt.Sprintf("ArchivalBucketName: %v", *(v.ArchivalBucketName))
 		i++
 	}
-	if v.ArchivalRetentionPeriodInDays != nil {
-		fields[i] = fmt.Sprintf("ArchivalRetentionPeriodInDays: %v", *(v.ArchivalRetentionPeriodInDays))
-		i++
-	}
 	if v.ArchivalStatus != nil {
 		fields[i] = fmt.Sprintf("ArchivalStatus: %v", *(v.ArchivalStatus))
-		i++
-	}
-	if v.ArchivalBucketOwner != nil {
-		fields[i] = fmt.Sprintf("ArchivalBucketOwner: %v", *(v.ArchivalBucketOwner))
 		i++
 	}
 	if v.BadBinaries != nil {
@@ -11330,13 +11341,7 @@ func (v *DomainConfiguration) Equals(rhs *DomainConfiguration) bool {
 	if !_String_EqualsPtr(v.ArchivalBucketName, rhs.ArchivalBucketName) {
 		return false
 	}
-	if !_I32_EqualsPtr(v.ArchivalRetentionPeriodInDays, rhs.ArchivalRetentionPeriodInDays) {
-		return false
-	}
 	if !_ArchivalStatus_EqualsPtr(v.ArchivalStatus, rhs.ArchivalStatus) {
-		return false
-	}
-	if !_String_EqualsPtr(v.ArchivalBucketOwner, rhs.ArchivalBucketOwner) {
 		return false
 	}
 	if !((v.BadBinaries == nil && rhs.BadBinaries == nil) || (v.BadBinaries != nil && rhs.BadBinaries != nil && v.BadBinaries.Equals(rhs.BadBinaries))) {
@@ -11376,31 +11381,11 @@ func (v *DomainConfiguration) GetArchivalBucketName() (o string) {
 	return
 }
 
-// GetArchivalRetentionPeriodInDays returns the value of ArchivalRetentionPeriodInDays if it is set or its
-// zero value if it is unset.
-func (v *DomainConfiguration) GetArchivalRetentionPeriodInDays() (o int32) {
-	if v.ArchivalRetentionPeriodInDays != nil {
-		return *v.ArchivalRetentionPeriodInDays
-	}
-
-	return
-}
-
 // GetArchivalStatus returns the value of ArchivalStatus if it is set or its
 // zero value if it is unset.
 func (v *DomainConfiguration) GetArchivalStatus() (o ArchivalStatus) {
 	if v.ArchivalStatus != nil {
 		return *v.ArchivalStatus
-	}
-
-	return
-}
-
-// GetArchivalBucketOwner returns the value of ArchivalBucketOwner if it is set or its
-// zero value if it is unset.
-func (v *DomainConfiguration) GetArchivalBucketOwner() (o string) {
-	if v.ArchivalBucketOwner != nil {
-		return *v.ArchivalBucketOwner
 	}
 
 	return
@@ -12606,6 +12591,7 @@ const (
 	EventTypeSignalExternalWorkflowExecutionInitiated        EventType = 38
 	EventTypeSignalExternalWorkflowExecutionFailed           EventType = 39
 	EventTypeExternalWorkflowExecutionSignaled               EventType = 40
+	EventTypeUpsertWorkflowSearchAttributes                  EventType = 41
 )
 
 // EventType_Values returns all recognized values of EventType.
@@ -12652,6 +12638,7 @@ func EventType_Values() []EventType {
 		EventTypeSignalExternalWorkflowExecutionInitiated,
 		EventTypeSignalExternalWorkflowExecutionFailed,
 		EventTypeExternalWorkflowExecutionSignaled,
+		EventTypeUpsertWorkflowSearchAttributes,
 	}
 }
 
@@ -12785,6 +12772,9 @@ func (v *EventType) UnmarshalText(value []byte) error {
 	case "ExternalWorkflowExecutionSignaled":
 		*v = EventTypeExternalWorkflowExecutionSignaled
 		return nil
+	case "UpsertWorkflowSearchAttributes":
+		*v = EventTypeUpsertWorkflowSearchAttributes
+		return nil
 	default:
 		return fmt.Errorf("unknown enum value %q for %q", value, "EventType")
 	}
@@ -12908,6 +12898,8 @@ func (v EventType) String() string {
 		return "SignalExternalWorkflowExecutionFailed"
 	case 40:
 		return "ExternalWorkflowExecutionSignaled"
+	case 41:
+		return "UpsertWorkflowSearchAttributes"
 	}
 	return fmt.Sprintf("EventType(%d)", w)
 }
@@ -13008,6 +13000,8 @@ func (v EventType) MarshalJSON() ([]byte, error) {
 		return ([]byte)("\"SignalExternalWorkflowExecutionFailed\""), nil
 	case 40:
 		return ([]byte)("\"ExternalWorkflowExecutionSignaled\""), nil
+	case 41:
+		return ([]byte)("\"UpsertWorkflowSearchAttributes\""), nil
 	}
 	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
 }
@@ -15050,6 +15044,7 @@ type HistoryEvent struct {
 	SignalExternalWorkflowExecutionInitiatedEventAttributes        *SignalExternalWorkflowExecutionInitiatedEventAttributes        `json:"signalExternalWorkflowExecutionInitiatedEventAttributes,omitempty"`
 	SignalExternalWorkflowExecutionFailedEventAttributes           *SignalExternalWorkflowExecutionFailedEventAttributes           `json:"signalExternalWorkflowExecutionFailedEventAttributes,omitempty"`
 	ExternalWorkflowExecutionSignaledEventAttributes               *ExternalWorkflowExecutionSignaledEventAttributes               `json:"externalWorkflowExecutionSignaledEventAttributes,omitempty"`
+	UpsertWorkflowSearchAttributesEventAttributes                  *UpsertWorkflowSearchAttributesEventAttributes                  `json:"upsertWorkflowSearchAttributesEventAttributes,omitempty"`
 }
 
 // ToWire translates a HistoryEvent struct into a Thrift-level intermediate
@@ -15069,7 +15064,7 @@ type HistoryEvent struct {
 //   }
 func (v *HistoryEvent) ToWire() (wire.Value, error) {
 	var (
-		fields [46]wire.Field
+		fields [47]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -15443,6 +15438,14 @@ func (v *HistoryEvent) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 440, Value: w}
 		i++
 	}
+	if v.UpsertWorkflowSearchAttributesEventAttributes != nil {
+		w, err = v.UpsertWorkflowSearchAttributesEventAttributes.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 450, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -15695,6 +15698,12 @@ func _SignalExternalWorkflowExecutionFailedEventAttributes_Read(w wire.Value) (*
 
 func _ExternalWorkflowExecutionSignaledEventAttributes_Read(w wire.Value) (*ExternalWorkflowExecutionSignaledEventAttributes, error) {
 	var v ExternalWorkflowExecutionSignaledEventAttributes
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _UpsertWorkflowSearchAttributesEventAttributes_Read(w wire.Value) (*UpsertWorkflowSearchAttributesEventAttributes, error) {
+	var v UpsertWorkflowSearchAttributesEventAttributes
 	err := v.FromWire(w)
 	return &v, err
 }
@@ -16099,6 +16108,14 @@ func (v *HistoryEvent) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 450:
+			if field.Value.Type() == wire.TStruct {
+				v.UpsertWorkflowSearchAttributesEventAttributes, err = _UpsertWorkflowSearchAttributesEventAttributes_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -16112,7 +16129,7 @@ func (v *HistoryEvent) String() string {
 		return "<nil>"
 	}
 
-	var fields [46]string
+	var fields [47]string
 	i := 0
 	if v.EventId != nil {
 		fields[i] = fmt.Sprintf("EventId: %v", *(v.EventId))
@@ -16298,6 +16315,10 @@ func (v *HistoryEvent) String() string {
 		fields[i] = fmt.Sprintf("ExternalWorkflowExecutionSignaledEventAttributes: %v", v.ExternalWorkflowExecutionSignaledEventAttributes)
 		i++
 	}
+	if v.UpsertWorkflowSearchAttributesEventAttributes != nil {
+		fields[i] = fmt.Sprintf("UpsertWorkflowSearchAttributesEventAttributes: %v", v.UpsertWorkflowSearchAttributesEventAttributes)
+		i++
+	}
 
 	return fmt.Sprintf("HistoryEvent{%v}", strings.Join(fields[:i], ", "))
 }
@@ -16453,6 +16474,9 @@ func (v *HistoryEvent) Equals(rhs *HistoryEvent) bool {
 		return false
 	}
 	if !((v.ExternalWorkflowExecutionSignaledEventAttributes == nil && rhs.ExternalWorkflowExecutionSignaledEventAttributes == nil) || (v.ExternalWorkflowExecutionSignaledEventAttributes != nil && rhs.ExternalWorkflowExecutionSignaledEventAttributes != nil && v.ExternalWorkflowExecutionSignaledEventAttributes.Equals(rhs.ExternalWorkflowExecutionSignaledEventAttributes))) {
+		return false
+	}
+	if !((v.UpsertWorkflowSearchAttributesEventAttributes == nil && rhs.UpsertWorkflowSearchAttributesEventAttributes == nil) || (v.UpsertWorkflowSearchAttributesEventAttributes != nil && rhs.UpsertWorkflowSearchAttributesEventAttributes != nil && v.UpsertWorkflowSearchAttributesEventAttributes.Equals(rhs.UpsertWorkflowSearchAttributesEventAttributes))) {
 		return false
 	}
 
@@ -36213,6 +36237,250 @@ func (v *UpdateDomainResponse) GetFailoverVersion() (o int64) {
 func (v *UpdateDomainResponse) GetIsGlobalDomain() (o bool) {
 	if v.IsGlobalDomain != nil {
 		return *v.IsGlobalDomain
+	}
+
+	return
+}
+
+type UpsertWorkflowSearchAttributesDecisionAttributes struct {
+	SearchAttributes *SearchAttributes `json:"searchAttributes,omitempty"`
+}
+
+// ToWire translates a UpsertWorkflowSearchAttributesDecisionAttributes struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *UpsertWorkflowSearchAttributesDecisionAttributes) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.SearchAttributes != nil {
+		w, err = v.SearchAttributes.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a UpsertWorkflowSearchAttributesDecisionAttributes struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a UpsertWorkflowSearchAttributesDecisionAttributes struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v UpsertWorkflowSearchAttributesDecisionAttributes
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *UpsertWorkflowSearchAttributesDecisionAttributes) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TStruct {
+				v.SearchAttributes, err = _SearchAttributes_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a UpsertWorkflowSearchAttributesDecisionAttributes
+// struct.
+func (v *UpsertWorkflowSearchAttributesDecisionAttributes) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	if v.SearchAttributes != nil {
+		fields[i] = fmt.Sprintf("SearchAttributes: %v", v.SearchAttributes)
+		i++
+	}
+
+	return fmt.Sprintf("UpsertWorkflowSearchAttributesDecisionAttributes{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this UpsertWorkflowSearchAttributesDecisionAttributes match the
+// provided UpsertWorkflowSearchAttributesDecisionAttributes.
+//
+// This function performs a deep comparison.
+func (v *UpsertWorkflowSearchAttributesDecisionAttributes) Equals(rhs *UpsertWorkflowSearchAttributesDecisionAttributes) bool {
+	if !((v.SearchAttributes == nil && rhs.SearchAttributes == nil) || (v.SearchAttributes != nil && rhs.SearchAttributes != nil && v.SearchAttributes.Equals(rhs.SearchAttributes))) {
+		return false
+	}
+
+	return true
+}
+
+type UpsertWorkflowSearchAttributesEventAttributes struct {
+	DecisionTaskCompletedEventId *int64            `json:"decisionTaskCompletedEventId,omitempty"`
+	SearchAttributes             *SearchAttributes `json:"searchAttributes,omitempty"`
+}
+
+// ToWire translates a UpsertWorkflowSearchAttributesEventAttributes struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *UpsertWorkflowSearchAttributesEventAttributes) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.DecisionTaskCompletedEventId != nil {
+		w, err = wire.NewValueI64(*(v.DecisionTaskCompletedEventId)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.SearchAttributes != nil {
+		w, err = v.SearchAttributes.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a UpsertWorkflowSearchAttributesEventAttributes struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a UpsertWorkflowSearchAttributesEventAttributes struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v UpsertWorkflowSearchAttributesEventAttributes
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *UpsertWorkflowSearchAttributesEventAttributes) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.DecisionTaskCompletedEventId = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.SearchAttributes, err = _SearchAttributes_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a UpsertWorkflowSearchAttributesEventAttributes
+// struct.
+func (v *UpsertWorkflowSearchAttributesEventAttributes) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.DecisionTaskCompletedEventId != nil {
+		fields[i] = fmt.Sprintf("DecisionTaskCompletedEventId: %v", *(v.DecisionTaskCompletedEventId))
+		i++
+	}
+	if v.SearchAttributes != nil {
+		fields[i] = fmt.Sprintf("SearchAttributes: %v", v.SearchAttributes)
+		i++
+	}
+
+	return fmt.Sprintf("UpsertWorkflowSearchAttributesEventAttributes{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this UpsertWorkflowSearchAttributesEventAttributes match the
+// provided UpsertWorkflowSearchAttributesEventAttributes.
+//
+// This function performs a deep comparison.
+func (v *UpsertWorkflowSearchAttributesEventAttributes) Equals(rhs *UpsertWorkflowSearchAttributesEventAttributes) bool {
+	if !_I64_EqualsPtr(v.DecisionTaskCompletedEventId, rhs.DecisionTaskCompletedEventId) {
+		return false
+	}
+	if !((v.SearchAttributes == nil && rhs.SearchAttributes == nil) || (v.SearchAttributes != nil && rhs.SearchAttributes != nil && v.SearchAttributes.Equals(rhs.SearchAttributes))) {
+		return false
+	}
+
+	return true
+}
+
+// GetDecisionTaskCompletedEventId returns the value of DecisionTaskCompletedEventId if it is set or its
+// zero value if it is unset.
+func (v *UpsertWorkflowSearchAttributesEventAttributes) GetDecisionTaskCompletedEventId() (o int64) {
+	if v.DecisionTaskCompletedEventId != nil {
+		return *v.DecisionTaskCompletedEventId
 	}
 
 	return

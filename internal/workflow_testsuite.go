@@ -279,6 +279,7 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
 const mockMethodForRequestCancelExternalWorkflow = "workflow.RequestCancelExternalWorkflow"
 const mockMethodForGetVersion = "workflow.GetVersion"
+const mockMethodForUpsertSearchAttributes = "workflow.UpsertSearchAttributes"
 
 // OnSignalExternalWorkflow setup a mock for sending signal to external workflow.
 // This TestWorkflowEnvironment handles sending signals between the workflows that are started from the root workflow.
@@ -336,6 +337,14 @@ func (t *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(domainName, wo
 // will be mocked. Mock for a specific changeID has higher priority over mock.Anything.
 func (t *TestWorkflowEnvironment) OnGetVersion(changeID string, minSupported, maxSupported Version) *MockCallWrapper {
 	call := t.Mock.On(getMockMethodForGetVersion(changeID), changeID, minSupported, maxSupported)
+	return t.wrapCall(call)
+}
+
+// OnUpsertSearchAttributes setup a mock for workflow.UpsertSearchAttributes call.
+// If mock is not setup, the UpsertSearchAttributes call will only validate input attributes.
+// If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
+func (t *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes map[string]interface{}) *MockCallWrapper {
+	call := t.Mock.On(mockMethodForUpsertSearchAttributes, attributes)
 	return t.wrapCall(call)
 }
 

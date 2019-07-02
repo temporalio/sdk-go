@@ -421,3 +421,33 @@ func HasLastCompletionResult(ctx Context) bool {
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
+
+// UpsertSearchAttributes is used to add or update workflow search attributes.
+// The search attributes can be used in query of List/Scan/Count workflow APIs.
+// The key and value type must be registered on cadence server side;
+// The value has to deterministic when replay;
+// The value has to be Json serializable.
+// UpsertSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
+//   func MyWorkflow(ctx workflow.Context, input string) error {
+//	   attr1 := map[string]interface{}{
+//		   "CustomIntField": 1,
+//		   "CustomBoolField": true,
+//	   }
+//	   worklfow.UpsertSearchAttributes(ctx, attr1)
+//
+//	   attr2 := map[string]interface{}{
+//		   "CustomIntField": 2,
+//		   "CustomKeywordField": "seattle",
+//	   }
+//	   worklfow.UpsertSearchAttributes(ctx, attr2)
+//   }
+// will eventually have search attributes:
+//   map[string]interface{}{
+//   	"CustomIntField": 2,
+//   	"CustomBoolField": true,
+//   	"CustomKeywordField": "seattle",
+//   }
+// This is only supported when using ElasticSearch.
+func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+	return internal.UpsertSearchAttributes(ctx, attributes)
+}

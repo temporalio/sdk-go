@@ -974,7 +974,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 
 func Test_NonDeterministicCheck(t *testing.T) {
 	decisionTypes := s.DecisionType_Values()
-	require.Equal(t, 12, len(decisionTypes), "If you see this error, you are adding new decision type. "+
+	require.Equal(t, 13, len(decisionTypes), "If you see this error, you are adding new decision type. "+
 		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
 		"to check the new decision type. Otherwise the replay will fail on the new decision event.")
 
@@ -988,4 +988,31 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	// CancelTimer has 2 corresponding events.
 	require.Equal(t, len(decisionTypes)+1, decisionEventTypeCount, "Every decision type must have one matching event type. "+
 		"If you add new decision type, you need to update isDecisionEvent() method to include that new event type as well.")
+}
+
+func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
+	diType := s.DecisionTypeUpsertWorkflowSearchAttributes
+	searchAttr := &s.SearchAttributes{}
+	decision := &s.Decision{
+		DecisionType: &diType,
+		UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+			SearchAttributes: searchAttr,
+		},
+	}
+	historyEvent := &s.HistoryEvent{}
+	ok := isDecisionMatchEvent(decision, historyEvent, false)
+
+	eType := s.EventTypeUpsertWorkflowSearchAttributes
+	historyEvent = &s.HistoryEvent{
+		EventType: &eType,
+		UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{},
+	}
+	ok = isDecisionMatchEvent(decision, historyEvent, false)
+	require.False(t, ok)
+
+	historyEvent.UpsertWorkflowSearchAttributesEventAttributes = &s.UpsertWorkflowSearchAttributesEventAttributes{
+		SearchAttributes: searchAttr,
+	}
+	ok = isDecisionMatchEvent(decision, historyEvent, false)
+	require.True(t, ok)
 }

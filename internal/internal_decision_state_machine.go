@@ -103,6 +103,10 @@ type (
 		*naiveDecisionStateMachine
 	}
 
+	upsertSearchAttributesDecisionStateMachine struct {
+		*naiveDecisionStateMachine
+	}
+
 	decisionsHelper struct {
 		orderedDecisions *list.List
 		decisions        map[decisionID]*list.Element
@@ -132,12 +136,13 @@ const (
 )
 
 const (
-	decisionTypeActivity      decisionType = 0
-	decisionTypeChildWorkflow decisionType = 1
-	decisionTypeCancellation  decisionType = 2
-	decisionTypeMarker        decisionType = 3
-	decisionTypeTimer         decisionType = 4
-	decisionTypeSignal        decisionType = 5
+	decisionTypeActivity               decisionType = 0
+	decisionTypeChildWorkflow          decisionType = 1
+	decisionTypeCancellation           decisionType = 2
+	decisionTypeMarker                 decisionType = 3
+	decisionTypeTimer                  decisionType = 4
+	decisionTypeSignal                 decisionType = 5
+	decisionTypeUpsertSearchAttributes decisionType = 6
 )
 
 const (
@@ -275,6 +280,14 @@ func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *s.Si
 	d.SignalExternalWorkflowExecutionDecisionAttributes = attributes
 	return &signalExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
+	}
+}
+
+func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *s.UpsertWorkflowSearchAttributesDecisionAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
+	d := createNewDecision(s.DecisionTypeUpsertWorkflowSearchAttributes)
+	d.UpsertWorkflowSearchAttributesDecisionAttributes = attributes
+	return &upsertSearchAttributesDecisionStateMachine{
+		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeUpsertSearchAttributes, upsertID, d),
 	}
 }
 
@@ -657,6 +670,14 @@ func (d *markerDecisionStateMachine) handleDecisionSent() {
 	}
 }
 
+func (d *upsertSearchAttributesDecisionStateMachine) handleDecisionSent() {
+	// This decision is considered as completed once decision is sent.
+	switch d.state {
+	case decisionStateCreated:
+		d.moveState(decisionStateCompleted, eventDecisionSent)
+	}
+}
+
 func newDecisionsHelper() *decisionsHelper {
 	return &decisionsHelper{
 		orderedDecisions: list.New(),
@@ -924,6 +945,15 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(domain, workflowID, ru
 	return decision
 }
 
+func (h *decisionsHelper) upsertSearchAttributes(upsertID string, searchAttr *s.SearchAttributes) decisionStateMachine {
+	attributes := &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+		SearchAttributes: searchAttr,
+	}
+	decision := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
+	h.addDecision(decision)
+	return decision
+}
+
 func (h *decisionsHelper) handleSignalExternalWorkflowExecutionInitiated(initiatedEventID int64, signalID string) {
 	h.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	decision := h.getDecision(makeDecisionID(decisionTypeSignal, signalID))
@@ -1031,6 +1061,6 @@ func (h *decisionsHelper) isCancelExternalWorkflowEventForChildWorkflow(cancella
 	// the cancellationID, i.e. Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 	// will be empty if the event is for child workflow.
 	// for cancellation external workflow, Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
-	// will have a client generated sequency ID
+	// will have a client generated sequence ID
 	return len(cancellationID) == 0
 }

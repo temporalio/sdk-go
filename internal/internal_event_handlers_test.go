@@ -21,6 +21,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -137,4 +138,36 @@ func Test_DecodedValueNil(t *testing.T) {
 	blob = env.encodeValue(nil)
 	isEqual = env.isEqualValue("non-nil-value", blob, equals)
 	require.False(t, isEqual)
+}
+
+func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
+	_, err := validateAndSerializeSearchAttributes(nil)
+	require.EqualError(t, err, "search attributes is empty")
+
+	attr := map[string]interface{}{
+		"JustKey": make(chan int),
+	}
+	_, err = validateAndSerializeSearchAttributes(attr)
+	require.EqualError(t, err, "encode search attribute [JustKey] error: json: unsupported type: chan int")
+
+	attr = map[string]interface{}{
+		"key": 1,
+	}
+	searchAttr, err := validateAndSerializeSearchAttributes(attr)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(searchAttr.IndexedFields))
+	var resp int
+	json.Unmarshal(searchAttr.IndexedFields["key"], &resp)
+	require.Equal(t, 1, resp)
+}
+
+func Test_UpsertSearchAttributes(t *testing.T) {
+	env := &workflowEnvironmentImpl{
+		decisionsHelper: newDecisionsHelper(),
+	}
+	err := env.UpsertSearchAttributes(nil)
+	require.Error(t, err)
+
+	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
+	require.NoError(t, err)
 }

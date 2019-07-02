@@ -223,7 +223,8 @@ func isDecisionEvent(eventType s.EventType) bool {
 		s.EventTypeMarkerRecorded,
 		s.EventTypeStartChildWorkflowExecutionInitiated,
 		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
-		s.EventTypeSignalExternalWorkflowExecutionInitiated:
+		s.EventTypeSignalExternalWorkflowExecutionInitiated,
+		s.EventTypeUpsertWorkflowSearchAttributes:
 		return true
 	default:
 		return false
@@ -1276,6 +1277,18 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 
 		return true
+
+	case s.DecisionTypeUpsertWorkflowSearchAttributes:
+		if e.GetEventType() != s.EventTypeUpsertWorkflowSearchAttributes {
+			return false
+		}
+		eventAttributes := e.UpsertWorkflowSearchAttributesEventAttributes
+		decisionAttributes := d.UpsertWorkflowSearchAttributesDecisionAttributes
+		if eventAttributes.SearchAttributes != decisionAttributes.SearchAttributes {
+			return false
+		}
+		return true
+
 	}
 
 	return false

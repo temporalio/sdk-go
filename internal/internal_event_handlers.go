@@ -288,6 +288,29 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID
 	decision.setData(&scheduledSignal{callback: callback})
 }
 
+func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]interface{}) error {
+	// This has to be used in workflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
+	attr, err := validateAndSerializeSearchAttributes(attributes)
+	if err != nil {
+		return err
+	}
+
+	upsertID := wc.GenerateSequenceID()
+	wc.decisionsHelper.upsertSearchAttributes(upsertID, attr)
+	return nil
+}
+
+func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*shared.SearchAttributes, error) {
+	if len(attributes) == 0 {
+		return nil, errSearchAttributesNotSet
+	}
+	attr, err := serializeSearchAttributes(attributes)
+	if err != nil {
+		return nil, err
+	}
+	return attr, nil
+}
+
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wc.cancelHandler = handler
 }
@@ -797,6 +820,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case m.EventTypeChildWorkflowExecutionTerminated:
 		err = weh.handleChildWorkflowExecutionTerminated(event)
+
+	case m.EventTypeUpsertWorkflowSearchAttributes:
+		// No Operation.
 
 	default:
 		weh.logger.Error("unknown event type",
