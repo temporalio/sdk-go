@@ -611,3 +611,13 @@ func (t *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityF
 func (t *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 	t.impl.setLastCompletionResult(result)
 }
+
+// SetSearchAttributesOnStart sets the search attributes when start workflow.
+func (t *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
+	attr, err := serializeSearchAttributes(searchAttributes)
+	if err != nil {
+		return err
+	}
+	t.impl.workflowInfo.SearchAttributes = attr
+	return nil
+}

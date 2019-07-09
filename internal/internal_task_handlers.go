@@ -530,21 +530,22 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		}
 	}
 	workflowInfo := &WorkflowInfo{
-		WorkflowType: flowWorkflowTypeFrom(*task.WorkflowType),
-		TaskListName: taskList.GetName(),
 		WorkflowExecution: WorkflowExecution{
 			ID:    workflowID,
 			RunID: runID,
 		},
+		WorkflowType:                        flowWorkflowTypeFrom(*task.WorkflowType),
+		TaskListName:                        taskList.GetName(),
 		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
 		Domain:                              wth.domain,
 		Attempt:                             attributes.GetAttempt(),
+		lastCompletionResult:                attributes.LastCompletionResult,
 		CronSchedule:                        attributes.CronSchedule,
 		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
 		ParentWorkflowDomain:                attributes.ParentWorkflowDomain,
 		ParentWorkflowExecution:             parentWorkflowExecution,
-		lastCompletionResult:                attributes.LastCompletionResult,
+		SearchAttributes:                    attributes.SearchAttributes,
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())

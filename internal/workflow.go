@@ -643,6 +643,7 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID             *string
 	ParentWorkflowDomain                *string
 	ParentWorkflowExecution             *WorkflowExecution
+	SearchAttributes                    *s.SearchAttributes
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.

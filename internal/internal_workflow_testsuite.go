@@ -1754,7 +1754,9 @@ func getMockMethodForGetVersion(changeID string) string {
 }
 
 func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]interface{}) error {
-	_, err := validateAndSerializeSearchAttributes(attributes)
+	attr, err := validateAndSerializeSearchAttributes(attributes)
+
+	env.workflowInfo.SearchAttributes = mergeSearchAttributes(env.workflowInfo.SearchAttributes, attr)
 
 	mockMethod := mockMethodForUpsertSearchAttributes
 	if _, ok := env.expectedMockCalls[mockMethod]; !ok {

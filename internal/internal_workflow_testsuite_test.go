@@ -1216,9 +1216,19 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		err := UpsertSearchAttributes(ctx, attr)
 		s.Error(err)
 
+		wfInfo := GetWorkflowInfo(ctx)
+		s.Nil(wfInfo.SearchAttributes)
+
 		attr["CustomIntField"] = 1
 		err = UpsertSearchAttributes(ctx, attr)
 		s.NoError(err)
+
+		wfInfo = GetWorkflowInfo(ctx)
+		s.NotNil(wfInfo.SearchAttributes)
+		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
+		var result int
+		NewValue(valBytes).Get(&result)
+		s.Equal(1, result)
 
 		return nil
 	}

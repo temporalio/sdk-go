@@ -822,7 +822,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		err = weh.handleChildWorkflowExecutionTerminated(event)
 
 	case m.EventTypeUpsertWorkflowSearchAttributes:
-		// No Operation.
+		weh.handleUpsertWorkflowSearchAttributes(event)
 
 	default:
 		weh.logger.Error("unknown event type",
@@ -1167,6 +1167,23 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	childWorkflow.handle(nil, err)
 
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *m.HistoryEvent) {
+	weh.workflowInfo.SearchAttributes = mergeSearchAttributes(
+		weh.workflowInfo.SearchAttributes, event.UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes)
+}
+
+func mergeSearchAttributes(current, upsert *shared.SearchAttributes) *shared.SearchAttributes {
+	if current == nil || len(current.IndexedFields) == 0 {
+		return upsert
+	}
+
+	fields := current.IndexedFields
+	for k, v := range upsert.IndexedFields {
+		fields[k] = v
+	}
+	return current
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *m.HistoryEvent) error {

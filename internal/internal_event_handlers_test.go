@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	s "go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/zap"
 )
 
@@ -164,10 +165,62 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 func Test_UpsertSearchAttributes(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
+		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
 	}
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
 	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
 	require.NoError(t, err)
+}
+
+func Test_MergeSearchAttributes(t *testing.T) {
+	tests := []struct {
+		name     string
+		current  *s.SearchAttributes
+		upsert   *s.SearchAttributes
+		expected *s.SearchAttributes
+	}{
+		{
+			name:     "currentIsNil",
+			current:  nil,
+			upsert:   &s.SearchAttributes{},
+			expected: &s.SearchAttributes{},
+		},
+		{
+			name:     "currentIsEmpty",
+			current:  &s.SearchAttributes{IndexedFields: make(map[string][]byte)},
+			upsert:   &s.SearchAttributes{},
+			expected: &s.SearchAttributes{},
+		},
+		{
+			name: "normalMerge",
+			current: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"CustomIntField":     []byte(`1`),
+					"CustomKeywordField": []byte(`keyword`),
+				},
+			},
+			upsert: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"CustomIntField":  []byte(`2`),
+					"CustomBoolField": []byte(`true`),
+				},
+			},
+			expected: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"CustomIntField":     []byte(`2`),
+					"CustomKeywordField": []byte(`keyword`),
+					"CustomBoolField":    []byte(`true`),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := mergeSearchAttributes(test.current, test.upsert)
+			require.Equal(t, test.expected, result)
+		})
+	}
 }
