@@ -297,7 +297,24 @@ func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]
 
 	upsertID := wc.GenerateSequenceID()
 	wc.decisionsHelper.upsertSearchAttributes(upsertID, attr)
+	wc.updateWorkflowInfoWithSearchAttributes(attr) // this is for getInfo correctness
 	return nil
+}
+
+func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithSearchAttributes(attributes *shared.SearchAttributes) {
+	wc.workflowInfo.SearchAttributes = mergeSearchAttributes(wc.workflowInfo.SearchAttributes, attributes)
+}
+
+func mergeSearchAttributes(current, upsert *shared.SearchAttributes) *shared.SearchAttributes {
+	if current == nil || len(current.IndexedFields) == 0 {
+		return upsert
+	}
+
+	fields := current.IndexedFields
+	for k, v := range upsert.IndexedFields {
+		fields[k] = v
+	}
+	return current
 }
 
 func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*shared.SearchAttributes, error) {
@@ -1170,20 +1187,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *m.HistoryEvent) {
-	weh.workflowInfo.SearchAttributes = mergeSearchAttributes(
-		weh.workflowInfo.SearchAttributes, event.UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes)
-}
-
-func mergeSearchAttributes(current, upsert *shared.SearchAttributes) *shared.SearchAttributes {
-	if current == nil || len(current.IndexedFields) == 0 {
-		return upsert
-	}
-
-	fields := current.IndexedFields
-	for k, v := range upsert.IndexedFields {
-		fields[k] = v
-	}
-	return current
+	weh.updateWorkflowInfoWithSearchAttributes(event.UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *m.HistoryEvent) error {
