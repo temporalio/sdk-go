@@ -309,17 +309,17 @@ func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(domainName, workflowI
 // This TestWorkflowEnvironment handles cancellation of workflows that are started from the root workflow.
 // For example, cancellation sent from parent to child workflows. Or cancellation between 2 child workflows.
 // However, it does not know what to do if your tested workflow code is sending cancellation to external unknown workflows.
-// In that case, you will need to setup mock for those signal calls.
+// In that case, you will need to setup mock for those cancel calls.
 // Some examples of how to setup mock:
 //
 // * mock for specific target workflow that matches specific workflow ID and run ID
-// 	 env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1").Return(nil).Once()
+// 	 env.OnRequestCancelExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1").Return(nil).Once()
 // * mock for anything and succeed the cancellation
-// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+// 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 // * mock for anything and fail the cancellation
-// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
-// * mock function for SignalExternalWorkflow
-//   env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
+// 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
+// * mock function for RequestCancelExternalWorkflow
+//   env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
 //     func(domainName, workflowID, runID) error {
 //       // you can do differently based on the parameters
 //       return nil
