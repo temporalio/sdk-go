@@ -35,7 +35,6 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/yarpc"
@@ -165,7 +164,7 @@ func workflowTypePtr(t WorkflowType) *s.WorkflowType {
 }
 
 // getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []byte) {
+func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
 	switch err := err.(type) {
 	case *CustomError:
 		var data []byte
@@ -225,7 +224,7 @@ func getErrorDetails(err error, dataConverter encoded.DataConverter) (string, []
 }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details []byte, dataConverter encoded.DataConverter) error {
+func constructError(reason string, details []byte, dataConverter DataConverter) error {
 	if strings.HasPrefix(reason, errReasonTimeout) {
 		timeoutType := getTimeoutTypeFromErrReason(reason)
 		details := newEncodedValues(details, dataConverter)

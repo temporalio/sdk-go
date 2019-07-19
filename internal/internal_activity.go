@@ -32,7 +32,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -75,7 +74,7 @@ type (
 		activityOptions
 		ActivityType  ActivityType
 		Input         []byte
-		DataConverter encoded.DataConverter
+		DataConverter DataConverter
 		Header        *shared.Header
 	}
 
@@ -85,7 +84,7 @@ type (
 		ActivityType  string      // local activity type
 		InputArgs     []interface{}
 		WorkflowInfo  *WorkflowInfo
-		DataConverter encoded.DataConverter
+		DataConverter DataConverter
 		Attempt       int32
 		ScheduledTime time.Time
 	}
@@ -124,7 +123,7 @@ type (
 		scheduledTimestamp time.Time
 		startedTimestamp   time.Time
 		taskList           string
-		dataConverter      encoded.DataConverter
+		dataConverter      DataConverter
 		attempt            int32 // starts from 0.
 		heartbeatDetails   []byte
 		workflowType       *WorkflowType
@@ -283,7 +282,7 @@ func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) er
 	return nil
 }
 
-func getValidatedActivityFunction(f interface{}, args []interface{}, dataConverter encoded.DataConverter) (*ActivityType, []byte, error) {
+func getValidatedActivityFunction(f interface{}, args []interface{}, dataConverter DataConverter) (*ActivityType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(f)
 	switch getKind(fType) {
@@ -323,7 +322,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter encoded.DataConverter) ([]byte, error) {
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) ([]byte, error) {
 	fnName := getFunctionName(f)
 	resultSize := len(values)
 
@@ -361,7 +360,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interface{}, dataConverter encoded.DataConverter) error {
+func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interface{}, dataConverter DataConverter) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expecting only function type but got type: %v", fnType)
 	}
@@ -381,7 +380,7 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interf
 	return nil
 }
 
-func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter encoded.DataConverter) error {
+func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter DataConverter) error {
 	fType := reflect.TypeOf(f)
 	if dataConverter == nil {
 		dataConverter = getDefaultDataConverter()

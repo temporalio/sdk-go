@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 )
 
 /*
@@ -88,7 +87,7 @@ type (
 	// CustomError returned from workflow and activity implementations with reason and optional details.
 	CustomError struct {
 		reason  string
-		details encoded.Values
+		details Values
 	}
 
 	// GenericError returned from workflow/workflow when the implementations return errors other than from NewCustomError() API.
@@ -99,12 +98,12 @@ type (
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		timeoutType shared.TimeoutType
-		details     encoded.Values
+		details     Values
 	}
 
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
-		details encoded.Values
+		details Values
 	}
 
 	// TerminatedError returned when workflow was terminated.

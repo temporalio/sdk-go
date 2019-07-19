@@ -31,7 +31,6 @@ import (
 
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -82,8 +81,8 @@ type (
 		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value
-		GetDataConverter() encoded.DataConverter
+		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value
+		GetDataConverter() DataConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator

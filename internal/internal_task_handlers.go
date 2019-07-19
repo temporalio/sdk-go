@@ -36,7 +36,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/cache"
@@ -118,7 +117,7 @@ type (
 		hostEnv                        *hostEnvImpl
 		laTunnel                       *localActivityTunnel
 		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
-		dataConverter                  encoded.DataConverter
+		dataConverter                  DataConverter
 		contextPropagators             []ContextPropagator
 		tracer                         opentracing.Tracer
 	}
@@ -134,7 +133,7 @@ type (
 		userContext        context.Context
 		hostEnv            *hostEnvImpl
 		activityProvider   activityProvider
-		dataConverter      encoded.DataConverter
+		dataConverter      DataConverter
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer

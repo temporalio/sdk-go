@@ -29,7 +29,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
 )
@@ -281,7 +280,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
 		// The errors it can return:
@@ -303,7 +302,7 @@ type (
 	ClientOptions struct {
 		MetricsScope       tally.Scope
 		Identity           string
-		DataConverter      encoded.DataConverter
+		DataConverter      DataConverter
 		Tracer             opentracing.Tracer
 		ContextPropagators []ContextPropagator
 	}
@@ -465,7 +464,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 		metricScope = options.MetricsScope
 	}
 	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
-	var dataConverter encoded.DataConverter
+	var dataConverter DataConverter
 	if options != nil && options.DataConverter != nil {
 		dataConverter = options.DataConverter
 	} else {
@@ -534,7 +533,7 @@ func (p WorkflowIDReusePolicy) toThriftPtr() *s.WorkflowIdReusePolicy {
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data []byte) encoded.Value {
+func NewValue(data []byte) Value {
 	return newEncodedValue(data, nil)
 }
 
@@ -545,6 +544,6 @@ func NewValue(data []byte) encoded.Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data []byte) encoded.Values {
+func NewValues(data []byte) Values {
 	return newEncodedValues(data, nil)
 }

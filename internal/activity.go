@@ -27,7 +27,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/zap"
@@ -266,7 +265,7 @@ func WithActivityTask(
 	invoker ServiceInvoker,
 	logger *zap.Logger,
 	scope tally.Scope,
-	dataConverter encoded.DataConverter,
+	dataConverter DataConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,

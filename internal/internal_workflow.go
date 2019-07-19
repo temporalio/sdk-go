@@ -37,7 +37,6 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/cadence/.gen/go/shared"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -101,15 +100,15 @@ type (
 	}
 
 	channelImpl struct {
-		name            string                // human readable channel name
-		size            int                   // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}         // buffered messages
-		blockedSends    []*sendCallback       // puts waiting when buffer is full.
-		blockedReceives []*receiveCallback    // receives waiting when no messages are available.
-		closed          bool                  // true if channel is closed.
-		recValue        *interface{}          // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
-		dataConverter   encoded.DataConverter // for decode data
-		scope           tally.Scope           // Used to send metrics
+		name            string             // human readable channel name
+		size            int                // Channel buffer size. 0 for non buffered.
+		buffer          []interface{}      // buffered messages
+		blockedSends    []*sendCallback    // puts waiting when buffer is full.
+		blockedReceives []*receiveCallback // receives waiting when no messages are available.
+		closed          bool               // true if channel is closed.
+		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		dataConverter   DataConverter      // for decode data
+		scope           tally.Scope        // Used to send metrics
 		logger          *zap.Logger
 	}
 
@@ -170,7 +169,7 @@ type (
 		signalChannels                      map[string]Channel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
-		dataConverter                       encoded.DataConverter
+		dataConverter                       DataConverter
 		retryPolicy                         *shared.RetryPolicy
 		cronSchedule                        string
 		contextPropagators                  []ContextPropagator
@@ -220,7 +219,7 @@ type (
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
-		dataConverter encoded.DataConverter
+		dataConverter DataConverter
 	}
 )
 
@@ -1065,7 +1064,7 @@ func newWorkflowDefinition(workflow workflow) workflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter encoded.DataConverter) (*WorkflowType, []byte, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter) (*WorkflowType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1163,7 +1162,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) encoded.DataConverter {
+func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.dataConverter == nil {
 		return getDefaultDataConverter()

@@ -32,7 +32,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -116,7 +115,7 @@ type (
 		userContext        context.Context
 		metricsScope       *metrics.TaggedScope
 		logger             *zap.Logger
-		dataConverter      encoded.DataConverter
+		dataConverter      DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -957,7 +956,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowserviceclie
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken, result []byte, err error,
-	dataConverter encoded.DataConverter) interface{} {
+	dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -987,7 +986,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 }
 
 func convertActivityResultToRespondRequestByID(identity, domain, workflowID, runID, activityID string,
-	result []byte, err error, dataConverter encoded.DataConverter) interface{} {
+	result []byte, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

@@ -45,7 +45,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -175,7 +174,7 @@ type (
 		// mismatched history events (presumably arising from non-deterministic workflow definitions).
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 
-		DataConverter encoded.DataConverter
+		DataConverter DataConverter
 
 		// WorkerStopTimeout is the time delay before hard terminate worker
 		WorkerStopTimeout time.Duration
@@ -190,9 +189,6 @@ type (
 
 		Tracer opentracing.Tracer
 	}
-
-	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
-	defaultDataConverter struct{}
 )
 
 // newWorkflowWorker returns an instance of the workflow worker.
@@ -768,7 +764,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 }
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc encoded.DataConverter, args []interface{}) ([]byte, error) {
+func encodeArgs(dc DataConverter, args []interface{}) ([]byte, error) {
 	if dc == nil {
 		return getDefaultDataConverter().ToData(args...)
 	}
@@ -776,7 +772,7 @@ func encodeArgs(dc encoded.DataConverter, args []interface{}) ([]byte, error) {
 }
 
 // decode multiple arguments(arguments to a function).
-func decodeArgs(dc encoded.DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -801,7 +797,7 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc encoded.DataConverter, arg interface{}) ([]byte, error) {
+func encodeArg(dc DataConverter, arg interface{}) ([]byte, error) {
 	if dc == nil {
 		return getDefaultDataConverter().ToData(arg)
 	}
@@ -809,14 +805,14 @@ func encodeArg(dc encoded.DataConverter, arg interface{}) ([]byte, error) {
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc encoded.DataConverter, data []byte, to interface{}) error {
+func decodeArg(dc DataConverter, data []byte, to interface{}) error {
 	if dc == nil {
 		return getDefaultDataConverter().FromData(data, to)
 	}
 	return dc.FromData(data, to)
 }
 
-func decodeAndAssignValue(dc encoded.DataConverter, from interface{}, toValuePtr interface{}) error {
+func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {
 	if toValuePtr == nil {
 		return nil
 	}
@@ -970,7 +966,7 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 	return retValues
 }
 
-func getDataConverterFromActivityCtx(ctx context.Context) encoded.DataConverter {
+func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
 		return getDefaultDataConverter()
 	}
@@ -1415,45 +1411,4 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 		}
 	}
 	return nil
-}
-
-var defaultJSONDataConverter encoded.DataConverter = &defaultDataConverter{}
-
-func getDefaultDataConverter() encoded.DataConverter {
-	return defaultJSONDataConverter
-}
-
-func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
-	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
-		return r[0].([]byte), nil
-	}
-
-	var encoder encoding
-	if isUseThriftEncoding(r) {
-		encoder = &thriftEncoding{}
-	} else {
-		encoder = &jsonEncoding{}
-	}
-
-	data, err := encoder.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
-	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
-		reflect.ValueOf(to[0]).Elem().SetBytes(data)
-		return nil
-	}
-
-	var encoder encoding
-	if isUseThriftDecoding(to) {
-		encoder = &thriftEncoding{}
-	} else {
-		encoder = &jsonEncoding{}
-	}
-
-	return encoder.Unmarshal(data, to)
 }

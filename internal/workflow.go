@@ -28,7 +28,6 @@ import (
 
 	"github.com/uber-go/tally"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -137,7 +136,7 @@ type (
 	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
 	EncodedValue struct {
 		value         []byte
-		dataConverter encoded.DataConverter
+		dataConverter DataConverter
 	}
 	// Version represents a change version. See GetVersion call.
 	Version int
@@ -904,7 +903,7 @@ func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 }
 
 // WithDataConverter adds DataConverter to the context.
-func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
+func WithDataConverter(ctx Context, dc DataConverter) Context {
 	if dc == nil {
 		panic("data converter is nil for WithDataConverter")
 	}
@@ -925,7 +924,7 @@ func GetSignalChannel(ctx Context, signalName string) Channel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
-func newEncodedValue(value []byte, dc encoded.DataConverter) encoded.Value {
+func newEncodedValue(value []byte, dc DataConverter) Value {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -940,7 +939,7 @@ func (b EncodedValue) Get(valuePtr interface{}) error {
 	return decodeArg(b.dataConverter, b.value, valuePtr)
 }
 
-// HasValue return whether there is value encoded.
+// HasValue return whether there is value
 func (b EncodedValue) HasValue() bool {
 	return b.value != nil
 }
@@ -981,7 +980,7 @@ func (b EncodedValue) HasValue() bool {
 //  } else {
 //         ....
 //  }
-func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
+func SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() ([]byte, error) {
@@ -1014,7 +1013,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) encoded.Value {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
 	wrapperFunc := func() interface{} {
 		return f(ctx)
 	}
@@ -1168,6 +1167,6 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 		return ErrNoData
 	}
 
-	encoded := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
-	return encoded.Get(d...)
+	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
+	return encodedVal.Get(d...)
 }

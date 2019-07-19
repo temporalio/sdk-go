@@ -37,7 +37,6 @@ import (
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/zap"
 )
@@ -186,7 +185,7 @@ type (
 
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Cadence
 		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
-		DataConverter encoded.DataConverter
+		DataConverter DataConverter
 
 		// Optional: worker graceful shutdown timeout
 		// default: 0s

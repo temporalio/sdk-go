@@ -34,7 +34,6 @@ import (
 
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/cadence/internal/common/metrics"
@@ -56,7 +55,7 @@ type (
 		domain             string
 		metricsScope       *metrics.TaggedScope
 		identity           string
-		dataConverter      encoded.DataConverter
+		dataConverter      DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -97,7 +96,7 @@ type (
 		firstRunID    string
 		currentRunID  string
 		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
-		dataConverter encoded.DataConverter
+		dataConverter DataConverter
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -243,7 +242,7 @@ func (wc *workflowClient) StartWorkflow(
 
 // ExecuteWorkflow starts a workflow execution and returns a WorkflowRun that will allow you to wait until this workflow
 // reaches the end state, such as workflow finished successfully or timeout.
-// The user can use this to start using a functor like below and get the workflow execution result, as encoded.Value
+// The user can use this to start using a functor like below and get the workflow execution result, as Value
 // Either by
 //     ExecuteWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
@@ -756,7 +755,7 @@ func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error) {
+func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
 	var input []byte
 	if len(args) > 0 {
 		var err error
@@ -998,7 +997,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	return err
 }
 
-func getWorkflowMemo(input map[string]interface{}, dc encoded.DataConverter) (*s.Memo, error) {
+func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*s.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}

@@ -21,9 +21,7 @@
 package internal
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"os"
@@ -38,7 +36,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
 	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
@@ -494,7 +491,7 @@ func createWorker(service *workflowservicetest.MockClient) Worker {
 }
 
 func createWorkerWithThrottle(
-	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc encoded.DataConverter,
+	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc DataConverter,
 ) Worker {
 	domain := "testDomain"
 	domainStatus := shared.DomainStatusRegistered
@@ -915,7 +912,7 @@ type testErrorDetails struct {
 	T string
 }
 
-func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
+func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -991,7 +988,7 @@ func TestActivityErrorWithDetails_WithDataConverter(t *testing.T) {
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
-func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
+func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1062,7 +1059,7 @@ func TestActivityCancelledError_WithDataConverter(t *testing.T) {
 	testActivityCancelledErrorHelper(ctx, t, dc)
 }
 
-func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter encoded.DataConverter) {
+func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 1}, nil
@@ -1186,108 +1183,11 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter encoded.DataConverter, workflowFunc interface{}, args ...interface{}) []byte {
+func testEncodeFunctionArgs(dataConverter DataConverter, workflowFunc interface{}, args ...interface{}) []byte {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)
 		panic("Failed to encode arguments")
 	}
 	return input
-}
-
-func testDataConverterFunction(t *testing.T, dc encoded.DataConverter, f interface{}, args ...interface{}) string {
-	input, err := dc.ToData(args...)
-	require.NoError(t, err, err)
-
-	var result []interface{}
-	for _, v := range args {
-		arg := reflect.New(reflect.TypeOf(v)).Interface()
-		result = append(result, arg)
-	}
-	err = dc.FromData(input, result...)
-	require.NoError(t, err, err)
-
-	targetArgs := []reflect.Value{}
-	for _, arg := range result {
-		targetArgs = append(targetArgs, reflect.ValueOf(arg).Elem())
-	}
-	fnValue := reflect.ValueOf(f)
-	retValues := fnValue.Call(targetArgs)
-	return retValues[0].Interface().(string)
-}
-
-func testDataConverterHelper(t *testing.T, dc encoded.DataConverter) {
-	f1 := func(ctx Context, r []byte) string {
-		return "result"
-	}
-	r1 := testDataConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
-	require.Equal(t, r1, "result")
-	// No parameters.
-	f2 := func() string {
-		return "empty-result"
-	}
-	r2 := testDataConverterFunction(t, dc, f2)
-	require.Equal(t, r2, "empty-result")
-	// Nil parameter.
-	f3 := func(r []byte) string {
-		return "nil-result"
-	}
-	r3 := testDataConverterFunction(t, dc, f3, []byte(""))
-	require.Equal(t, r3, "nil-result")
-}
-
-func TestDefaultDataConverter(t *testing.T) {
-	dc := getDefaultDataConverter()
-	testDataConverterHelper(t, dc)
-}
-
-// testDataConverter implements encoded.DataConverter using gob
-type testDataConverter struct{}
-
-func newTestDataConverter() encoded.DataConverter {
-	return &testDataConverter{}
-}
-
-func (tdc *testDataConverter) ToData(value ...interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	for i, obj := range value {
-		if err := enc.Encode(obj); err != nil {
-			return nil, fmt.Errorf(
-				"unable to encode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) error {
-	dec := gob.NewDecoder(bytes.NewBuffer(input))
-	for i, obj := range valuePtr {
-		if err := dec.Decode(obj); err != nil {
-			return fmt.Errorf(
-				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return nil
-}
-
-func TestTestDataConverter(t *testing.T) {
-	dc := newTestDataConverter()
-	testDataConverterHelper(t, dc)
-}
-
-func TestDecodeArg(t *testing.T) {
-	dc := getDefaultDataConverter()
-
-	b, err := encodeArg(dc, testErrorDetails3)
-	require.NoError(t, err)
-	var r testStruct
-	err = decodeArg(dc, b, &r)
-	require.NoError(t, err)
-	require.Equal(t, testErrorDetails3, r)
-
-	// test mismatch of multi arguments
-	b, err = encodeArgs(dc, []interface{}{testErrorDetails1, testErrorDetails2})
-	require.NoError(t, err)
-	require.Error(t, decodeArg(dc, b, &r))
 }

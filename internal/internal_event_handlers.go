@@ -34,7 +34,6 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/shared"
 	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
 	"go.uber.org/cadence/internal/common"
 	"go.uber.org/cadence/internal/common/metrics"
 	"go.uber.org/zap"
@@ -110,7 +109,7 @@ type (
 
 		metricsScope       tally.Scope
 		hostEnv            *hostEnvImpl
-		dataConverter      encoded.DataConverter
+		dataConverter      DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -173,7 +172,7 @@ func newWorkflowExecutionEventHandler(
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	hostEnv *hostEnvImpl,
-	dataConverter encoded.DataConverter,
+	dataConverter DataConverter,
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
 ) workflowExecutionEventHandler {
@@ -385,7 +384,7 @@ func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return wc.metricsScope
 }
 
-func (wc *workflowEnvironmentImpl) GetDataConverter() encoded.DataConverter {
+func (wc *workflowEnvironmentImpl) GetDataConverter() DataConverter {
 	return wc.dataConverter
 }
 
@@ -607,7 +606,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback
 	wc.logger.Debug("SideEffect Marker added", zap.Int32(tagSideEffectID, sideEffectID))
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) encoded.Value {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
 	if result, ok := wc.mutableSideEffect[id]; ok {
 		encodedResult := newEncodedValue(result, wc.GetDataConverter())
 		if wc.isReplay {
@@ -641,7 +640,7 @@ func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOld
 	return equals(newValue, oldValue)
 }
 
-func decodeValue(encodedValue encoded.Value, value interface{}) interface{} {
+func decodeValue(encodedValue Value, value interface{}) interface{} {
 	// We need to decode oldValue out of encodedValue, first we need to prepare valuePtr as the same type as value
 	valuePtr := reflect.New(reflect.TypeOf(value)).Interface()
 	if err := encodedValue.Get(valuePtr); err != nil {
@@ -663,7 +662,7 @@ func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) ([]byte, error) {
 	return wc.GetDataConverter().ToData(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byte) encoded.Value {
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byte) Value {
 	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, string(data)})
 	if err != nil {
 		panic(err)
