@@ -25,6 +25,25 @@ import (
 	"testing"
 )
 
+func TestSetMemoOnStart(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	memo := map[string]interface{}{
+		"key": make(chan int),
+	}
+	err := env.SetMemoOnStart(memo)
+	require.Error(t, err)
+
+	memo = map[string]interface{}{
+		"memoKey": "memo",
+	}
+	require.Nil(t, env.impl.workflowInfo.Memo)
+	err = env.SetMemoOnStart(memo)
+	require.NoError(t, err)
+	require.NotNil(t, env.impl.workflowInfo.Memo)
+}
+
 func TestSetSearchAttributesOnStart(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()

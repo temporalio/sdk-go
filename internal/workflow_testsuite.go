@@ -611,6 +611,16 @@ func (t *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 	t.impl.setLastCompletionResult(result)
 }
 
+// SetMemoOnStart sets the memo when start workflow.
+func (t *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) error {
+	memoStruct, err := getWorkflowMemo(memo, t.impl.GetDataConverter())
+	if err != nil {
+		return err
+	}
+	t.impl.workflowInfo.Memo = memoStruct
+	return nil
+}
+
 // SetSearchAttributesOnStart sets the search attributes when start workflow.
 func (t *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
 	attr, err := serializeSearchAttributes(searchAttributes)

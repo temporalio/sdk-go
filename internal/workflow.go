@@ -642,6 +642,7 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID             *string
 	ParentWorkflowDomain                *string
 	ParentWorkflowExecution             *WorkflowExecution
+	Memo                                *s.Memo
 	SearchAttributes                    *s.SearchAttributes
 }
 

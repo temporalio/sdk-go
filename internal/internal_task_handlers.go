@@ -544,6 +544,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
 		ParentWorkflowDomain:                attributes.ParentWorkflowDomain,
 		ParentWorkflowExecution:             parentWorkflowExecution,
+		Memo:                                attributes.Memo,
 		SearchAttributes:                    attributes.SearchAttributes,
 	}
 

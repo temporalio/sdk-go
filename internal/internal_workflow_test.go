@@ -62,6 +62,7 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(bufferedChanWithSelectorWorkflowTest)
 	RegisterWorkflow(closeChannelTest)
 	RegisterWorkflow(closeChannelInSelectTest)
+	RegisterWorkflow(getMemoTest)
 
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -914,4 +915,35 @@ func (s *WorkflowUnitTest) Test_ActivityOptionsWorkflow() {
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal("id1 id2", result)
+}
+
+const (
+	memoTestKey = "testKey"
+	memoTestVal = "testVal"
+)
+
+func getMemoTest(ctx Context) (result string, err error) {
+	info := GetWorkflowInfo(ctx)
+	val, ok := info.Memo.Fields[memoTestKey]
+	if !ok {
+		return "", errors.New("no memo found")
+	}
+	err = NewValue(val).Get(&result)
+	return result, err
+}
+
+func (s *WorkflowUnitTest) Test_MemoWorkflow() {
+	env := s.NewTestWorkflowEnvironment()
+	memo := map[string]interface{}{
+		memoTestKey: memoTestVal,
+	}
+	err := env.SetMemoOnStart(memo)
+	s.NoError(err)
+
+	env.ExecuteWorkflow(getMemoTest)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	env.GetWorkflowResult(&result)
+	s.Equal(memoTestVal, result)
 }
