@@ -252,6 +252,18 @@ func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 	return workflow.ExecuteChildWorkflow(ctx, w.sleep, 2*time.Second).Get(ctx, nil)
 }
 
+func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, err error) {
+	opts := workflow.ChildWorkflowOptions{
+		TaskStartToCloseTimeout:      5 * time.Second,
+		ExecutionStartToCloseTimeout: 10 * time.Second,
+		Memo:                         map[string]interface{}{"memoKey": "memoVal"},
+		SearchAttributes:             map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
+	}
+	ctx = workflow.WithChildOptions(ctx, opts)
+	err = workflow.ExecuteChildWorkflow(ctx, w.childForMemoAndSearchAttr).Get(ctx, &result)
+	return
+}
+
 func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (string, error) {
 	var result string
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
@@ -260,6 +272,22 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 		return "", fmt.Errorf("failing-on-purpose")
 	}
 	return result, err
+}
+
+func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
+	info := workflow.GetInfo(ctx)
+	var memo, searchAttr string
+	err = client.NewValue(info.Memo.Fields["memoKey"]).Get(&memo)
+	if err != nil {
+		return
+	}
+	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttr)
+	if err != nil {
+		return
+	}
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	err = workflow.ExecuteActivity(ctx, "getMemoAndSearchAttr", memo, searchAttr).Get(ctx, &result)
+	return
 }
 
 func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
@@ -277,8 +305,10 @@ func (w *Workflows) register() {
 	workflow.Register(w.IDReusePolicy)
 	workflow.Register(w.ChildWorkflowRetryOnError)
 	workflow.Register(w.ChildWorkflowRetryOnTimeout)
+	workflow.Register(w.ChildWorkflowSuccess)
 	workflow.Register(w.sleep)
 	workflow.Register(w.child)
+	workflow.Register(w.childForMemoAndSearchAttr)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

@@ -198,6 +198,14 @@ type (
 		// │ │ │ │ │
 		// * * * * *
 		CronSchedule string
+
+		// Memo - Optional non-indexed info that will be shown in list workflow.
+		Memo map[string]interface{}
+
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
+		// supported when Cadence server is using ElasticSearch). The key and value type must be registered on Cadence server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes map[string]interface{}
 	}
 
 	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
@@ -553,7 +561,8 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl),
 	}
-	dc := getWorkflowEnvOptions(ctx).dataConverter
+	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
+	dc := workflowOptionsFromCtx.dataConverter
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflow, args, dc)
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -567,7 +576,9 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		return result
 	}
 	options.dataConverter = dc
-	options.contextPropagators = getWorkflowEnvOptions(ctx).contextPropagators
+	options.contextPropagators = workflowOptionsFromCtx.contextPropagators
+	options.memo = workflowOptionsFromCtx.memo
+	options.searchAttributes = workflowOptionsFromCtx.searchAttributes
 
 	params := executeWorkflowParams{
 		workflowOptions: *options,
@@ -853,6 +864,8 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
 	wfOptions.cronSchedule = cwo.CronSchedule
+	wfOptions.memo = cwo.Memo
+	wfOptions.searchAttributes = cwo.SearchAttributes
 
 	return ctx1
 }

@@ -173,6 +173,8 @@ type (
 		retryPolicy                         *shared.RetryPolicy
 		cronSchedule                        string
 		contextPropagators                  []ContextPropagator
+		memo                                map[string]interface{}
+		searchAttributes                    map[string]interface{}
 	}
 
 	executeWorkflowParams struct {

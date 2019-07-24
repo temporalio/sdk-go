@@ -252,6 +252,14 @@ func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 	ts.EqualValues([]string{"sleep", "sleep", "sleep"}, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
+	var result string
+	err := ts.executeWorkflow("test-childwf-success-memo-searchAttr", ts.workflows.ChildWorkflowSuccess, &result)
+	ts.NoError(err)
+	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
+	ts.Equal("memoVal, searchAttrVal", result)
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)

@@ -68,6 +68,11 @@ func (a *Activities) ToUpperWithDelay(ctx context.Context, arg string, delay tim
 	return strings.ToUpper(arg), nil
 }
 
+func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr string) (string, error) {
+	a.append("getMemoAndSearchAttr")
+	return memo + ", " + searchAttr, nil
+}
+
 func (a *Activities) Fail(ctx context.Context) error {
 	a.append("fail")
 	return errFailOnPurpose
@@ -101,4 +106,5 @@ func (a *Activities) register() {
 	activity.RegisterWithOptions(a.ToUpper, activity.RegisterOptions{Name: "toUpper"})
 	activity.RegisterWithOptions(a.ToUpperWithDelay, activity.RegisterOptions{Name: "toUpperWithDelay"})
 	activity.RegisterWithOptions(a.HeartbeatAndSleep, activity.RegisterOptions{Name: "heartbeatAndSleep"})
+	activity.RegisterWithOptions(a.GetMemoAndSearchAttr, activity.RegisterOptions{Name: "getMemoAndSearchAttr"})
 }

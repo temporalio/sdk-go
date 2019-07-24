@@ -336,6 +336,14 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.workflowID == "" {
 		params.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
+	memo, err := getWorkflowMemo(params.memo, wc.dataConverter)
+	if err != nil {
+		return err
+	}
+	searchAttr, err := serializeSearchAttributes(params.searchAttributes)
+	if err != nil {
+		return err
+	}
 
 	attributes := &m.StartChildWorkflowExecutionDecisionAttributes{}
 
@@ -350,6 +358,8 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
 	attributes.RetryPolicy = params.retryPolicy
 	attributes.Header = params.header
+	attributes.Memo = memo
+	attributes.SearchAttributes = searchAttr
 	if len(params.cronSchedule) > 0 {
 		attributes.CronSchedule = common.StringPtr(params.cronSchedule)
 	}

@@ -63,14 +63,14 @@ type (
 	defaultDataConverter struct{}
 )
 
-var defaultJsonDataConverter = &defaultDataConverter{}
+var defaultJSONDataConverter = &defaultDataConverter{}
 
 // DefaultDataConverter is default data converter used by Cadence worker
 var DefaultDataConverter = getDefaultDataConverter()
 
 // getDefaultDataConverter return default data converter used by Cadence worker
 func getDefaultDataConverter() DataConverter {
-	return defaultJsonDataConverter
+	return defaultJSONDataConverter
 }
 
 func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
