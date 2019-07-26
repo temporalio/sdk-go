@@ -42,6 +42,10 @@ type (
 	// Settable is used to set value or error on a future.
 	// See more: workflow.NewFuture(ctx).
 	Settable = internal.Settable
+
+	// WaitGroup is used to wait for a collection of
+	// coroutines to finish
+	WaitGroup = internal.WaitGroup
 )
 
 // NewChannel create new Channel instance
@@ -75,6 +79,11 @@ func NewSelector(ctx Context) Selector {
 // Name appears in stack traces that are blocked on this Selector.
 func NewNamedSelector(ctx Context, name string) Selector {
 	return internal.NewNamedSelector(ctx, name)
+}
+
+// NewWaitGroup creates a new WaitGroup instance.
+func NewWaitGroup(ctx Context) WaitGroup {
+	return internal.NewWaitGroup(ctx)
 }
 
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.

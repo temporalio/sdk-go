@@ -81,6 +81,15 @@ type (
 		Select(ctx Context)
 	}
 
+	// WaitGroup must be used instead of native go sync.WaitGroup by
+	// workflow code.  Use workflow.NewWaitGroup(ctx) method to create
+	// a new WaitGroup instance
+	WaitGroup interface {
+		Add(delta int)
+		Done()
+		Wait(ctx Context)
+	}
+
 	// Future represents the result of an asynchronous computation.
 	Future interface {
 		// Get blocks until the future is ready. When ready it either returns non nil error or assigns result value to
@@ -302,6 +311,12 @@ func NewSelector(ctx Context) Selector {
 // Name appears in stack traces that are blocked on this Selector.
 func NewNamedSelector(ctx Context, name string) Selector {
 	return &selectorImpl{name: name}
+}
+
+// NewWaitGroup creates a new WaitGroup instance.
+func NewWaitGroup(ctx Context) WaitGroup {
+	f, s := NewFuture(ctx)
+	return &waitGroupImpl{future: f, settable: s}
 }
 
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.

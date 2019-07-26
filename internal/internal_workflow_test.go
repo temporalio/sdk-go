@@ -63,12 +63,14 @@ func (s *WorkflowUnitTest) SetupSuite() {
 	RegisterWorkflow(closeChannelTest)
 	RegisterWorkflow(closeChannelInSelectTest)
 	RegisterWorkflow(getMemoTest)
+	RegisterWorkflow(sleepWorkflow)
 
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
+
 	RegisterActivity(testAct)
 	RegisterActivity(helloWorldAct)
 	RegisterActivity(getGreetingActivity)
@@ -946,4 +948,231 @@ func (s *WorkflowUnitTest) Test_MemoWorkflow() {
 	var result string
 	env.GetWorkflowResult(&result)
 	s.Equal(memoTestVal, result)
+}
+
+func sleepWorkflow(ctx Context, input time.Duration) (int, error) {
+	if err := Sleep(ctx, input); err != nil {
+		return 0, err
+	}
+
+	return 1, nil
+}
+
+func waitGroupWorkflowTest(ctx Context, n int) (int, error) {
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Second * 30,
+	})
+
+	var err error
+	results := make([]int, 0, n)
+	waitGroup := NewWaitGroup(ctx)
+	for i := 0; i < n; i++ {
+		waitGroup.Add(1)
+		t := time.Second * time.Duration(i+1)
+		Go(ctx, func(ctx Context) {
+			var result int
+			err = ExecuteChildWorkflow(ctx, sleepWorkflow, t).Get(ctx, &result)
+			results = append(results, result)
+			waitGroup.Done()
+		})
+	}
+
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	sum := 0
+	for _, v := range results {
+		sum = sum + v
+	}
+
+	return sum, nil
+}
+
+func waitGroupWaitForMWorkflowTest(ctx Context, n int, m int) (int, error) {
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Second * 30,
+	})
+
+	var err error
+	results := make([]int, 0, n)
+	waitGroup := NewWaitGroup(ctx)
+	waitGroup.Add(m)
+	for i := 0; i < n; i++ {
+		t := time.Second * time.Duration(i+1)
+		Go(ctx, func(ctx Context) {
+			var result int
+			err = ExecuteChildWorkflow(ctx, sleepWorkflow, t).Get(ctx, &result)
+			results = append(results, result)
+			waitGroup.Done()
+		})
+	}
+
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	sum := 0
+	for _, v := range results {
+		sum = sum + v
+	}
+
+	return sum, nil
+}
+
+func waitGroupMultipleWaitsWorkflowTest(ctx Context) (int, error) {
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Second * 30,
+	})
+
+	n := 10
+	var err error
+	results := make([]int, 0, n)
+	waitGroup := NewWaitGroup(ctx)
+	waitGroup.Add(4)
+	for i := 0; i < n; i++ {
+		t := time.Second * time.Duration(i+1)
+		Go(ctx, func(ctx Context) {
+			var result int
+			err = ExecuteChildWorkflow(ctx, sleepWorkflow, t).Get(ctx, &result)
+			results = append(results, result)
+			waitGroup.Done()
+		})
+	}
+
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	waitGroup.Add(6)
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	sum := 0
+	for _, v := range results {
+		sum = sum + v
+	}
+
+	return sum, nil
+}
+
+func waitGroupMultipleConcurrentWaitsPanicsWorkflowTest(ctx Context) (int, error) {
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Second * 30,
+	})
+
+	var err error
+	var result1 int
+	var result2 int
+
+	waitGroup := NewWaitGroup(ctx)
+	waitGroup.Add(2)
+
+	Go(ctx, func(ctx Context) {
+		err = ExecuteChildWorkflow(ctx, sleepWorkflow, time.Second*5).Get(ctx, &result1)
+		waitGroup.Done()
+	})
+
+	Go(ctx, func(ctx Context) {
+		err = ExecuteChildWorkflow(ctx, sleepWorkflow, time.Second*10).Get(ctx, &result2)
+		waitGroup.Wait(ctx)
+	})
+
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return result1 + result2, nil
+}
+
+func waitGroupNegativeCounterPanicsWorkflowTest(ctx Context) (int, error) {
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Second * 30,
+	})
+
+	var err error
+	var result int
+	waitGroup := NewWaitGroup(ctx)
+
+	Go(ctx, func(ctx Context) {
+		waitGroup.Done()
+		err = ExecuteChildWorkflow(ctx, sleepWorkflow, time.Second*5).Get(ctx, &result)
+	})
+
+	waitGroup.Wait(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return result, nil
+}
+
+func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
+	env.ExecuteWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
+	s.True(env.IsWorkflowCompleted())
+
+	resultErr := env.GetWorkflowError().(*PanicError)
+	s.EqualValues("negative WaitGroup counter", resultErr.Error())
+	s.Contains(resultErr.StackTrace(), "cadence/internal.waitGroupNegativeCounterPanicsWorkflowTest")
+}
+
+func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTest() {
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
+	env.ExecuteWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
+	s.True(env.IsWorkflowCompleted())
+
+	resultErr := env.GetWorkflowError().(*PanicError)
+	s.EqualValues("WaitGroup is reused before previous Wait has returned", resultErr.Error())
+	s.Contains(resultErr.StackTrace(), "cadence/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
+}
+
+func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(waitGroupMultipleWaitsWorkflowTest)
+	env.ExecuteWorkflow(waitGroupMultipleWaitsWorkflowTest)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var total int
+	env.GetWorkflowResult(&total)
+	s.Equal(10, total)
+}
+
+func (s *WorkflowUnitTest) Test_WaitGroupWaitForMWorkflowTest() {
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(waitGroupWaitForMWorkflowTest)
+
+	n := 10
+	m := 5
+	env.ExecuteWorkflow(waitGroupWaitForMWorkflowTest, n, m)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var total int
+	env.GetWorkflowResult(&total)
+	s.Equal(m, total)
+}
+
+func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
+	env := s.NewTestWorkflowEnvironment()
+	RegisterWorkflow(waitGroupWorkflowTest)
+
+	n := 10
+	env.ExecuteWorkflow(waitGroupWorkflowTest, n)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	s.NoError(env.GetWorkflowError())
+
+	var total int
+	env.GetWorkflowResult(&total)
+	s.Equal(n, total)
 }
