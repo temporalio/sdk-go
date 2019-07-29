@@ -21,6 +21,7 @@
 package test
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -175,6 +176,34 @@ func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskList stri
 	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
 }
 
+func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskList string) (string, error) {
+	info := workflow.GetInfo(ctx)
+	tl := info.TaskListName
+	if tl != taskList {
+		return "", fmt.Errorf("invalid taskListName name, expected=%v, got=%v", taskList, tl)
+	}
+
+	if info.Memo == nil || info.SearchAttributes == nil {
+		return "", errors.New("memo or search attributes are not carried over")
+	}
+	var memoVal, searchAttrVal string
+	err := client.NewValue(info.Memo.Fields["memoKey"]).Get(&memoVal)
+	if err != nil {
+		return "", errors.New("error when get memo value")
+	}
+	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
+	if err != nil {
+		return "", errors.New("error when get search attributes value")
+	}
+
+	if count == 0 {
+		return memoVal + "," + searchAttrVal, nil
+	}
+	ctx = workflow.WithTaskList(ctx, taskList)
+
+	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
+}
+
 func (w *Workflows) IDReusePolicy(
 	ctx workflow.Context,
 	childWFID string,
@@ -302,6 +331,7 @@ func (w *Workflows) register() {
 	workflow.Register(w.ActivityRetryOnTimeout)
 	workflow.Register(w.ActivityRetryOptionsChange)
 	workflow.Register(w.ContinueAsNew)
+	workflow.Register(w.ContinueAsNewWithOptions)
 	workflow.Register(w.IDReusePolicy)
 	workflow.Register(w.ChildWorkflowRetryOnError)
 	workflow.Register(w.ChildWorkflowRetryOnTimeout)

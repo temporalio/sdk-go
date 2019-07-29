@@ -1361,6 +1361,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
 			Header:                              contErr.params.header,
+			Memo:                                workflowContext.workflowInfo.Memo,
+			SearchAttributes:                    workflowContext.workflowInfo.SearchAttributes,
 		}
 	} else if workflowContext.err != nil {
 		// Workflow failures

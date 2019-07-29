@@ -148,6 +148,20 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	ts.Equal(999, result)
 }
 
+func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
+	var result string
+	startOptions := ts.startWorkflowOptions("test-continueasnew-carryover")
+	startOptions.Memo = map[string]interface{}{
+		"memoKey": "memoVal",
+	}
+	startOptions.SearchAttributes = map[string]interface{}{
+		"CustomKeywordField": "searchAttr",
+	}
+	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithOptions, &result, 4, ts.taskListName)
+	ts.Nil(err)
+	ts.Equal("memoVal,searchAttr", result)
+}
+
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -282,15 +296,21 @@ func (ts *IntegrationTestSuite) registerDomain() {
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	options := ts.startWorkflowOptions(wfID)
+	return ts.executeWorkflowWithOption(options, wfFunc, retValPtr, args...)
+}
+
+func (ts *IntegrationTestSuite) executeWorkflowWithOption(
+	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx, ts.startWorkflowOptions(wfID), wfFunc, args...)
+	run, err := ts.libClient.ExecuteWorkflow(ctx, options, wfFunc, args...)
 	if err != nil {
 		return err
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.libClient.GetWorkflowHistory(ctx, wfID, run.GetRunID(), false, shared.HistoryEventFilterTypeAllEvent)
+		iter := ts.libClient.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, shared.HistoryEventFilterTypeAllEvent)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {
