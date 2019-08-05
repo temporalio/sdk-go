@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
-
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -83,10 +82,13 @@ func (s *SessionTestSuite) TestCreationCompletion() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
@@ -106,6 +108,7 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.Equal(errFoundExistingOpenSession.Error(), env.GetWorkflowError().Error())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestCreationWithClosedSessionContext() {
@@ -132,10 +135,13 @@ func (s *SessionTestSuite) TestCreationWithClosedSessionContext() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestCreationWithFailedSessionContext() {
@@ -162,10 +168,13 @@ func (s *SessionTestSuite) TestCreationWithFailedSessionContext() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestCompletionWithClosedSessionContext() {
@@ -185,6 +194,7 @@ func (s *SessionTestSuite) TestCompletionWithClosedSessionContext() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestCompletionWithFailedSessionContext() {
@@ -204,6 +214,7 @@ func (s *SessionTestSuite) TestCompletionWithFailedSessionContext() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestGetSessionInfo() {
@@ -271,10 +282,13 @@ func (s *SessionTestSuite) TestRecreation() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
@@ -341,10 +355,12 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 	env.SetWorkerOptions(WorkerOptions{
 		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
 	})
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity)
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.Equal(errTooManySessionsMsg, env.GetWorkflowError().Error())
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestSessionTaskList() {
@@ -378,6 +394,8 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 		taskListUsed = append(taskListUsed, activityInfo.TaskList)
 	})
 	resourceID := "testResourceID"
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -387,6 +405,7 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 	for _, taskList := range taskListUsed[1:] {
 		s.Equal(expectedTaskList, taskList)
 	}
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestSessionRecreationTaskList() {
@@ -427,6 +446,8 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
 		taskListUsed = append(taskListUsed, activityInfo.TaskList)
 	})
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -434,6 +455,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 	for _, taskList := range taskListUsed {
 		s.Equal(resourceSpecificTaskList, taskList)
 	}
+	env.AssertExpectations(s.T())
 }
 
 func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
@@ -455,7 +477,6 @@ func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
-
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -485,7 +506,6 @@ func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
 		taskListUsed = activityInfo.TaskList
 	})
-
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -538,12 +558,76 @@ func (s *SessionTestSuite) TestCompletionFailed() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(errors.New("some random error")).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	env.AssertExpectations(s.T())
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+}
+
+func (s *SessionTestSuite) TestUserTimerWithinSession() {
+	workflowFn := func(ctx Context) error {
+		sessionCtx, err := CreateSession(ctx, s.sessionOptions)
+		if err != nil {
+			return err
+		}
+
+		defer CompleteSession(sessionCtx)
+
+		if err := NewTimer(sessionCtx, time.Hour).Get(sessionCtx, nil); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *SessionTestSuite) TestActivityRetryWithinSession() {
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       time.Second * 20,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:          time.Second,
+				BackoffCoefficient:       2.0,
+				MaximumInterval:          time.Minute,
+				ExpirationInterval:       time.Minute * 10,
+				NonRetriableErrorReasons: []string{"bad-error"},
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		sessionCtx, err := CreateSession(ctx, s.sessionOptions)
+		if err != nil {
+			return err
+		}
+
+		defer CompleteSession(sessionCtx)
+
+		if err := ExecuteActivity(sessionCtx, testSessionActivity, "").Get(sessionCtx, nil); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testSessionActivity, mock.Anything, mock.Anything).Return("", errors.New("some random error"))
+	env.ExecuteWorkflow(workflowFn)
+
+	env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
 }
 
 func (s *SessionTestSuite) createSessionWithoutRetry(ctx Context) (Context, error) {

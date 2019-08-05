@@ -1487,6 +1487,16 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 			return nil
 		}
 		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction()}
+
+		// Special handling for session creation and completion activities.
+		// If real creation activity is used, it will block timers from autofiring.
+		if ae.name == sessionCreationActivityName {
+			ae.fn = sessionCreationActivityForTest
+		}
+		if ae.name == sessionCompletionActivityName {
+			ae.fn = sessionCompletionActivityForTest
+		}
+
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 

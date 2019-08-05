@@ -353,17 +353,17 @@ func (t *TestWorkflowEnvironment) wrapCall(call *mock.Call) *MockCallWrapper {
 	return callWrapper
 }
 
-// Once indicates that that the mock should only return the value once.
+// Once indicates that the mock should only return the value once.
 func (c *MockCallWrapper) Once() *MockCallWrapper {
 	return c.Times(1)
 }
 
-// Twice indicates that that the mock should only return the value twice.
+// Twice indicates that the mock should only return the value twice.
 func (c *MockCallWrapper) Twice() *MockCallWrapper {
 	return c.Times(2)
 }
 
-// Times indicates that that the mock should only return the indicated number of times.
+// Times indicates that the mock should only return the indicated number of times.
 func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
 	c.call.Times(i)
 	return c
