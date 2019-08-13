@@ -715,7 +715,9 @@ func (c *channelImpl) sendAsyncImpl(v interface{}, pair *sendCallback) (ok bool)
 
 func (c *channelImpl) Close() {
 	c.closed = true
-	for _, callback := range c.blockedReceives {
+	// Use a copy of blockedReceives for iteration as invoking callback could result in modification
+	copy := append(c.blockedReceives[:0:0], c.blockedReceives...)
+	for _, callback := range copy {
 		callback.fn(nil, false)
 	}
 	// All blocked sends are going to panic

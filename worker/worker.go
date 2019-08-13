@@ -97,6 +97,16 @@ func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) 
 	return internal.ReplayWorkflowHistoryFromJSONFile(logger, jsonfileName)
 }
 
+// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
+//// lastEventID(inclusive), downloaded from the cli.
+// To download the history file: cadence workflow showid <workflow_id> -of <output_filename>
+// See https://github.com/uber/cadence/blob/master/tools/cli/README.md for full documentation
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
+	return internal.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, lastEventID)
+}
+
 // ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is the only optional parameter. Defaults to the noop logger.

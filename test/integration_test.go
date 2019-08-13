@@ -274,6 +274,19 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.Equal("memoVal, searchAttrVal", result)
 }
 
+func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
+	logger, err := zap.NewDevelopment()
+	err = worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
+	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
+	var expected []string
+	err := ts.executeWorkflow("test-activity-cancel-sm", ts.workflows.ActivityCancelRepro, &expected)
+	ts.Nil(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
