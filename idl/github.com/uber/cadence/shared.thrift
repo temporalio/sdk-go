@@ -237,6 +237,11 @@ enum QueryTaskCompletedType {
   FAILED,
 }
 
+enum QueryResultType {
+  ANSWERED,
+  FAILED,
+}
+
 enum PendingActivityState {
   SCHEDULED,
   STARTED,
@@ -286,6 +291,13 @@ struct TaskList {
 
 enum EncodingType {
   ThriftRW,
+}
+
+enum QueryRejectCondition {
+  // NOT_OPEN indicates that query should be rejected if workflow is not open
+  NOT_OPEN
+  // NOT_COMPLETED_CLEANLY indicates that query should be rejected if workflow did not complete cleanly
+  NOT_COMPLETED_CLEANLY
 }
 
 struct DataBlob {
@@ -917,9 +929,11 @@ struct DomainInfo {
 struct DomainConfiguration {
   10: optional i32 workflowExecutionRetentionPeriodInDays
   20: optional bool emitMetric
-  30: optional string archivalBucketName
-  50: optional ArchivalStatus archivalStatus
   70: optional BadBinaries badBinaries
+  80: optional ArchivalStatus historyArchivalStatus
+  90: optional string historyArchivalURI
+  100: optional ArchivalStatus visibilityArchivalStatus
+  110: optional string visibilityArchivalURI
 }
 
 struct BadBinaries{
@@ -959,9 +973,11 @@ struct RegisterDomainRequest {
   // A key-value map for any customized purpose
   80: optional map<string,string> data
   90: optional string securityToken
-  100: optional ArchivalStatus archivalStatus
-  110: optional string archivalBucketName
   120: optional bool isGlobalDomain
+  130: optional ArchivalStatus historyArchivalStatus
+  140: optional string historyArchivalURI
+  150: optional ArchivalStatus visibilityArchivalStatus
+  160: optional string visibilityArchivalURI
 }
 
 struct ListDomainsRequest {
@@ -1053,6 +1069,7 @@ struct PollForDecisionTaskResponse {
   90: optional TaskList WorkflowExecutionTaskList
   100:  optional i64 (js.type = "Long") scheduledTimestamp
   110:  optional i64 (js.type = "Long") startedTimestamp
+  120:  optional list<WorkflowQuery> queries
 }
 
 struct StickyExecutionAttributes {
@@ -1069,6 +1086,7 @@ struct RespondDecisionTaskCompletedRequest {
   60: optional bool returnNewDecisionTask
   70: optional bool forceCreateNewDecisionTask
   80: optional string binaryChecksum
+  90: optional list<WorkflowQueryResult> queryResults
 }
 
 struct RespondDecisionTaskCompletedResponse {
@@ -1305,10 +1323,17 @@ struct QueryWorkflowRequest {
   10: optional string domain
   20: optional WorkflowExecution execution
   30: optional WorkflowQuery query
+  // QueryRejectCondition can used to reject the query if workflow state does not satisify condition
+  40: optional QueryRejectCondition queryRejectCondition
+}
+
+struct QueryRejected {
+  10: optional WorkflowExecutionCloseStatus closeStatus
 }
 
 struct QueryWorkflowResponse {
   10: optional binary queryResult
+  20: optional QueryRejected queryRejected
 }
 
 struct WorkflowQuery {
@@ -1331,6 +1356,13 @@ struct RespondQueryTaskCompletedRequest {
   20: optional QueryTaskCompletedType completedType
   30: optional binary queryResult
   40: optional string errorMessage
+}
+
+struct WorkflowQueryResult {
+  10: optional QueryResultType resultType
+  20: optional binary answer
+  30: optional string errorReason
+  40: optional binary errorDetails
 }
 
 struct DescribeWorkflowExecutionRequest {

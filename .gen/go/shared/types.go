@@ -11184,9 +11184,11 @@ func (v *DomainCacheInfo) GetNumOfItemsInCacheByName() (o int64) {
 type DomainConfiguration struct {
 	WorkflowExecutionRetentionPeriodInDays *int32          `json:"workflowExecutionRetentionPeriodInDays,omitempty"`
 	EmitMetric                             *bool           `json:"emitMetric,omitempty"`
-	ArchivalBucketName                     *string         `json:"archivalBucketName,omitempty"`
-	ArchivalStatus                         *ArchivalStatus `json:"archivalStatus,omitempty"`
 	BadBinaries                            *BadBinaries    `json:"badBinaries,omitempty"`
+	HistoryArchivalStatus                  *ArchivalStatus `json:"historyArchivalStatus,omitempty"`
+	HistoryArchivalURI                     *string         `json:"historyArchivalURI,omitempty"`
+	VisibilityArchivalStatus               *ArchivalStatus `json:"visibilityArchivalStatus,omitempty"`
+	VisibilityArchivalURI                  *string         `json:"visibilityArchivalURI,omitempty"`
 }
 
 // ToWire translates a DomainConfiguration struct into a Thrift-level intermediate
@@ -11206,7 +11208,7 @@ type DomainConfiguration struct {
 //   }
 func (v *DomainConfiguration) ToWire() (wire.Value, error) {
 	var (
-		fields [5]wire.Field
+		fields [7]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -11228,22 +11230,6 @@ func (v *DomainConfiguration) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 20, Value: w}
 		i++
 	}
-	if v.ArchivalBucketName != nil {
-		w, err = wire.NewValueString(*(v.ArchivalBucketName)), error(nil)
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 30, Value: w}
-		i++
-	}
-	if v.ArchivalStatus != nil {
-		w, err = v.ArchivalStatus.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 50, Value: w}
-		i++
-	}
 	if v.BadBinaries != nil {
 		w, err = v.BadBinaries.ToWire()
 		if err != nil {
@@ -11252,20 +11238,52 @@ func (v *DomainConfiguration) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 70, Value: w}
 		i++
 	}
+	if v.HistoryArchivalStatus != nil {
+		w, err = v.HistoryArchivalStatus.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 80, Value: w}
+		i++
+	}
+	if v.HistoryArchivalURI != nil {
+		w, err = wire.NewValueString(*(v.HistoryArchivalURI)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 90, Value: w}
+		i++
+	}
+	if v.VisibilityArchivalStatus != nil {
+		w, err = v.VisibilityArchivalStatus.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 100, Value: w}
+		i++
+	}
+	if v.VisibilityArchivalURI != nil {
+		w, err = wire.NewValueString(*(v.VisibilityArchivalURI)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 110, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
-}
-
-func _ArchivalStatus_Read(w wire.Value) (ArchivalStatus, error) {
-	var v ArchivalStatus
-	err := v.FromWire(w)
-	return v, err
 }
 
 func _BadBinaries_Read(w wire.Value) (*BadBinaries, error) {
 	var v BadBinaries
 	err := v.FromWire(w)
 	return &v, err
+}
+
+func _ArchivalStatus_Read(w wire.Value) (ArchivalStatus, error) {
+	var v ArchivalStatus
+	err := v.FromWire(w)
+	return v, err
 }
 
 // FromWire deserializes a DomainConfiguration struct from its Thrift-level
@@ -11310,29 +11328,49 @@ func (v *DomainConfiguration) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 30:
-			if field.Value.Type() == wire.TBinary {
-				var x string
-				x, err = field.Value.GetString(), error(nil)
-				v.ArchivalBucketName = &x
-				if err != nil {
-					return err
-				}
-
-			}
-		case 50:
-			if field.Value.Type() == wire.TI32 {
-				var x ArchivalStatus
-				x, err = _ArchivalStatus_Read(field.Value)
-				v.ArchivalStatus = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 70:
 			if field.Value.Type() == wire.TStruct {
 				v.BadBinaries, err = _BadBinaries_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 80:
+			if field.Value.Type() == wire.TI32 {
+				var x ArchivalStatus
+				x, err = _ArchivalStatus_Read(field.Value)
+				v.HistoryArchivalStatus = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 90:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.HistoryArchivalURI = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 100:
+			if field.Value.Type() == wire.TI32 {
+				var x ArchivalStatus
+				x, err = _ArchivalStatus_Read(field.Value)
+				v.VisibilityArchivalStatus = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 110:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.VisibilityArchivalURI = &x
 				if err != nil {
 					return err
 				}
@@ -11351,7 +11389,7 @@ func (v *DomainConfiguration) String() string {
 		return "<nil>"
 	}
 
-	var fields [5]string
+	var fields [7]string
 	i := 0
 	if v.WorkflowExecutionRetentionPeriodInDays != nil {
 		fields[i] = fmt.Sprintf("WorkflowExecutionRetentionPeriodInDays: %v", *(v.WorkflowExecutionRetentionPeriodInDays))
@@ -11361,16 +11399,24 @@ func (v *DomainConfiguration) String() string {
 		fields[i] = fmt.Sprintf("EmitMetric: %v", *(v.EmitMetric))
 		i++
 	}
-	if v.ArchivalBucketName != nil {
-		fields[i] = fmt.Sprintf("ArchivalBucketName: %v", *(v.ArchivalBucketName))
-		i++
-	}
-	if v.ArchivalStatus != nil {
-		fields[i] = fmt.Sprintf("ArchivalStatus: %v", *(v.ArchivalStatus))
-		i++
-	}
 	if v.BadBinaries != nil {
 		fields[i] = fmt.Sprintf("BadBinaries: %v", v.BadBinaries)
+		i++
+	}
+	if v.HistoryArchivalStatus != nil {
+		fields[i] = fmt.Sprintf("HistoryArchivalStatus: %v", *(v.HistoryArchivalStatus))
+		i++
+	}
+	if v.HistoryArchivalURI != nil {
+		fields[i] = fmt.Sprintf("HistoryArchivalURI: %v", *(v.HistoryArchivalURI))
+		i++
+	}
+	if v.VisibilityArchivalStatus != nil {
+		fields[i] = fmt.Sprintf("VisibilityArchivalStatus: %v", *(v.VisibilityArchivalStatus))
+		i++
+	}
+	if v.VisibilityArchivalURI != nil {
+		fields[i] = fmt.Sprintf("VisibilityArchivalURI: %v", *(v.VisibilityArchivalURI))
 		i++
 	}
 
@@ -11398,13 +11444,19 @@ func (v *DomainConfiguration) Equals(rhs *DomainConfiguration) bool {
 	if !_Bool_EqualsPtr(v.EmitMetric, rhs.EmitMetric) {
 		return false
 	}
-	if !_String_EqualsPtr(v.ArchivalBucketName, rhs.ArchivalBucketName) {
-		return false
-	}
-	if !_ArchivalStatus_EqualsPtr(v.ArchivalStatus, rhs.ArchivalStatus) {
-		return false
-	}
 	if !((v.BadBinaries == nil && rhs.BadBinaries == nil) || (v.BadBinaries != nil && rhs.BadBinaries != nil && v.BadBinaries.Equals(rhs.BadBinaries))) {
+		return false
+	}
+	if !_ArchivalStatus_EqualsPtr(v.HistoryArchivalStatus, rhs.HistoryArchivalStatus) {
+		return false
+	}
+	if !_String_EqualsPtr(v.HistoryArchivalURI, rhs.HistoryArchivalURI) {
+		return false
+	}
+	if !_ArchivalStatus_EqualsPtr(v.VisibilityArchivalStatus, rhs.VisibilityArchivalStatus) {
+		return false
+	}
+	if !_String_EqualsPtr(v.VisibilityArchivalURI, rhs.VisibilityArchivalURI) {
 		return false
 	}
 
@@ -11431,21 +11483,41 @@ func (v *DomainConfiguration) GetEmitMetric() (o bool) {
 	return
 }
 
-// GetArchivalBucketName returns the value of ArchivalBucketName if it is set or its
+// GetHistoryArchivalStatus returns the value of HistoryArchivalStatus if it is set or its
 // zero value if it is unset.
-func (v *DomainConfiguration) GetArchivalBucketName() (o string) {
-	if v.ArchivalBucketName != nil {
-		return *v.ArchivalBucketName
+func (v *DomainConfiguration) GetHistoryArchivalStatus() (o ArchivalStatus) {
+	if v.HistoryArchivalStatus != nil {
+		return *v.HistoryArchivalStatus
 	}
 
 	return
 }
 
-// GetArchivalStatus returns the value of ArchivalStatus if it is set or its
+// GetHistoryArchivalURI returns the value of HistoryArchivalURI if it is set or its
 // zero value if it is unset.
-func (v *DomainConfiguration) GetArchivalStatus() (o ArchivalStatus) {
-	if v.ArchivalStatus != nil {
-		return *v.ArchivalStatus
+func (v *DomainConfiguration) GetHistoryArchivalURI() (o string) {
+	if v.HistoryArchivalURI != nil {
+		return *v.HistoryArchivalURI
+	}
+
+	return
+}
+
+// GetVisibilityArchivalStatus returns the value of VisibilityArchivalStatus if it is set or its
+// zero value if it is unset.
+func (v *DomainConfiguration) GetVisibilityArchivalStatus() (o ArchivalStatus) {
+	if v.VisibilityArchivalStatus != nil {
+		return *v.VisibilityArchivalStatus
+	}
+
+	return
+}
+
+// GetVisibilityArchivalURI returns the value of VisibilityArchivalURI if it is set or its
+// zero value if it is unset.
+func (v *DomainConfiguration) GetVisibilityArchivalURI() (o string) {
+	if v.VisibilityArchivalURI != nil {
+		return *v.VisibilityArchivalURI
 	}
 
 	return
@@ -20859,7 +20931,37 @@ type PollForDecisionTaskResponse struct {
 	WorkflowExecutionTaskList *TaskList          `json:"WorkflowExecutionTaskList,omitempty"`
 	ScheduledTimestamp        *int64             `json:"scheduledTimestamp,omitempty"`
 	StartedTimestamp          *int64             `json:"startedTimestamp,omitempty"`
+	Queries                   []*WorkflowQuery   `json:"queries,omitempty"`
 }
+
+type _List_WorkflowQuery_ValueList []*WorkflowQuery
+
+func (v _List_WorkflowQuery_ValueList) ForEach(f func(wire.Value) error) error {
+	for i, x := range v {
+		if x == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", i)
+		}
+		w, err := x.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_WorkflowQuery_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_WorkflowQuery_ValueList) ValueType() wire.Type {
+	return wire.TStruct
+}
+
+func (_List_WorkflowQuery_ValueList) Close() {}
 
 // ToWire translates a PollForDecisionTaskResponse struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
@@ -20878,7 +20980,7 @@ type PollForDecisionTaskResponse struct {
 //   }
 func (v *PollForDecisionTaskResponse) ToWire() (wire.Value, error) {
 	var (
-		fields [13]wire.Field
+		fields [14]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -20988,6 +21090,14 @@ func (v *PollForDecisionTaskResponse) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 110, Value: w}
 		i++
 	}
+	if v.Queries != nil {
+		w, err = wire.NewValueList(_List_WorkflowQuery_ValueList(v.Queries)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 120, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -20996,6 +21106,24 @@ func _WorkflowQuery_Read(w wire.Value) (*WorkflowQuery, error) {
 	var v WorkflowQuery
 	err := v.FromWire(w)
 	return &v, err
+}
+
+func _List_WorkflowQuery_Read(l wire.ValueList) ([]*WorkflowQuery, error) {
+	if l.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make([]*WorkflowQuery, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := _WorkflowQuery_Read(x)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
 }
 
 // FromWire deserializes a PollForDecisionTaskResponse struct from its Thrift-level
@@ -21136,6 +21264,14 @@ func (v *PollForDecisionTaskResponse) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 120:
+			if field.Value.Type() == wire.TList {
+				v.Queries, err = _List_WorkflowQuery_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -21149,7 +21285,7 @@ func (v *PollForDecisionTaskResponse) String() string {
 		return "<nil>"
 	}
 
-	var fields [13]string
+	var fields [14]string
 	i := 0
 	if v.TaskToken != nil {
 		fields[i] = fmt.Sprintf("TaskToken: %v", v.TaskToken)
@@ -21203,8 +21339,27 @@ func (v *PollForDecisionTaskResponse) String() string {
 		fields[i] = fmt.Sprintf("StartedTimestamp: %v", *(v.StartedTimestamp))
 		i++
 	}
+	if v.Queries != nil {
+		fields[i] = fmt.Sprintf("Queries: %v", v.Queries)
+		i++
+	}
 
 	return fmt.Sprintf("PollForDecisionTaskResponse{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _List_WorkflowQuery_Equals(lhs, rhs []*WorkflowQuery) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !lv.Equals(rv) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Equals returns true if all the fields of this PollForDecisionTaskResponse match the
@@ -21249,6 +21404,9 @@ func (v *PollForDecisionTaskResponse) Equals(rhs *PollForDecisionTaskResponse) b
 		return false
 	}
 	if !_I64_EqualsPtr(v.StartedTimestamp, rhs.StartedTimestamp) {
+		return false
+	}
+	if !((v.Queries == nil && rhs.Queries == nil) || (v.Queries != nil && rhs.Queries != nil && _List_WorkflowQuery_Equals(v.Queries, rhs.Queries))) {
 		return false
 	}
 
@@ -21623,6 +21781,392 @@ func (v *QueryFailedError) Error() string {
 	return v.String()
 }
 
+type QueryRejectCondition int32
+
+const (
+	QueryRejectConditionNotOpen             QueryRejectCondition = 0
+	QueryRejectConditionNotCompletedCleanly QueryRejectCondition = 1
+)
+
+// QueryRejectCondition_Values returns all recognized values of QueryRejectCondition.
+func QueryRejectCondition_Values() []QueryRejectCondition {
+	return []QueryRejectCondition{
+		QueryRejectConditionNotOpen,
+		QueryRejectConditionNotCompletedCleanly,
+	}
+}
+
+// UnmarshalText tries to decode QueryRejectCondition from a byte slice
+// containing its name.
+//
+//   var v QueryRejectCondition
+//   err := v.UnmarshalText([]byte("NOT_OPEN"))
+func (v *QueryRejectCondition) UnmarshalText(value []byte) error {
+	switch string(value) {
+	case "NOT_OPEN":
+		*v = QueryRejectConditionNotOpen
+		return nil
+	case "NOT_COMPLETED_CLEANLY":
+		*v = QueryRejectConditionNotCompletedCleanly
+		return nil
+	default:
+		return fmt.Errorf("unknown enum value %q for %q", value, "QueryRejectCondition")
+	}
+}
+
+// Ptr returns a pointer to this enum value.
+func (v QueryRejectCondition) Ptr() *QueryRejectCondition {
+	return &v
+}
+
+// ToWire translates QueryRejectCondition into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// Enums are represented as 32-bit integers over the wire.
+func (v QueryRejectCondition) ToWire() (wire.Value, error) {
+	return wire.NewValueI32(int32(v)), nil
+}
+
+// FromWire deserializes QueryRejectCondition from its Thrift-level
+// representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TI32)
+//   if err != nil {
+//     return QueryRejectCondition(0), err
+//   }
+//
+//   var v QueryRejectCondition
+//   if err := v.FromWire(x); err != nil {
+//     return QueryRejectCondition(0), err
+//   }
+//   return v, nil
+func (v *QueryRejectCondition) FromWire(w wire.Value) error {
+	*v = (QueryRejectCondition)(w.GetI32())
+	return nil
+}
+
+// String returns a readable string representation of QueryRejectCondition.
+func (v QueryRejectCondition) String() string {
+	w := int32(v)
+	switch w {
+	case 0:
+		return "NOT_OPEN"
+	case 1:
+		return "NOT_COMPLETED_CLEANLY"
+	}
+	return fmt.Sprintf("QueryRejectCondition(%d)", w)
+}
+
+// Equals returns true if this QueryRejectCondition value matches the provided
+// value.
+func (v QueryRejectCondition) Equals(rhs QueryRejectCondition) bool {
+	return v == rhs
+}
+
+// MarshalJSON serializes QueryRejectCondition into JSON.
+//
+// If the enum value is recognized, its name is returned. Otherwise,
+// its integer value is returned.
+//
+// This implements json.Marshaler.
+func (v QueryRejectCondition) MarshalJSON() ([]byte, error) {
+	switch int32(v) {
+	case 0:
+		return ([]byte)("\"NOT_OPEN\""), nil
+	case 1:
+		return ([]byte)("\"NOT_COMPLETED_CLEANLY\""), nil
+	}
+	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
+}
+
+// UnmarshalJSON attempts to decode QueryRejectCondition from its JSON
+// representation.
+//
+// This implementation supports both, numeric and string inputs. If a
+// string is provided, it must be a known enum name.
+//
+// This implements json.Unmarshaler.
+func (v *QueryRejectCondition) UnmarshalJSON(text []byte) error {
+	d := json.NewDecoder(bytes.NewReader(text))
+	d.UseNumber()
+	t, err := d.Token()
+	if err != nil {
+		return err
+	}
+
+	switch w := t.(type) {
+	case json.Number:
+		x, err := w.Int64()
+		if err != nil {
+			return err
+		}
+		if x > math.MaxInt32 {
+			return fmt.Errorf("enum overflow from JSON %q for %q", text, "QueryRejectCondition")
+		}
+		if x < math.MinInt32 {
+			return fmt.Errorf("enum underflow from JSON %q for %q", text, "QueryRejectCondition")
+		}
+		*v = (QueryRejectCondition)(x)
+		return nil
+	case string:
+		return v.UnmarshalText([]byte(w))
+	default:
+		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "QueryRejectCondition")
+	}
+}
+
+type QueryRejected struct {
+	CloseStatus *WorkflowExecutionCloseStatus `json:"closeStatus,omitempty"`
+}
+
+// ToWire translates a QueryRejected struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *QueryRejected) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.CloseStatus != nil {
+		w, err = v.CloseStatus.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a QueryRejected struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a QueryRejected struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v QueryRejected
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *QueryRejected) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TI32 {
+				var x WorkflowExecutionCloseStatus
+				x, err = _WorkflowExecutionCloseStatus_Read(field.Value)
+				v.CloseStatus = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a QueryRejected
+// struct.
+func (v *QueryRejected) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	if v.CloseStatus != nil {
+		fields[i] = fmt.Sprintf("CloseStatus: %v", *(v.CloseStatus))
+		i++
+	}
+
+	return fmt.Sprintf("QueryRejected{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this QueryRejected match the
+// provided QueryRejected.
+//
+// This function performs a deep comparison.
+func (v *QueryRejected) Equals(rhs *QueryRejected) bool {
+	if !_WorkflowExecutionCloseStatus_EqualsPtr(v.CloseStatus, rhs.CloseStatus) {
+		return false
+	}
+
+	return true
+}
+
+// GetCloseStatus returns the value of CloseStatus if it is set or its
+// zero value if it is unset.
+func (v *QueryRejected) GetCloseStatus() (o WorkflowExecutionCloseStatus) {
+	if v.CloseStatus != nil {
+		return *v.CloseStatus
+	}
+
+	return
+}
+
+type QueryResultType int32
+
+const (
+	QueryResultTypeAnswered QueryResultType = 0
+	QueryResultTypeFailed   QueryResultType = 1
+)
+
+// QueryResultType_Values returns all recognized values of QueryResultType.
+func QueryResultType_Values() []QueryResultType {
+	return []QueryResultType{
+		QueryResultTypeAnswered,
+		QueryResultTypeFailed,
+	}
+}
+
+// UnmarshalText tries to decode QueryResultType from a byte slice
+// containing its name.
+//
+//   var v QueryResultType
+//   err := v.UnmarshalText([]byte("ANSWERED"))
+func (v *QueryResultType) UnmarshalText(value []byte) error {
+	switch string(value) {
+	case "ANSWERED":
+		*v = QueryResultTypeAnswered
+		return nil
+	case "FAILED":
+		*v = QueryResultTypeFailed
+		return nil
+	default:
+		return fmt.Errorf("unknown enum value %q for %q", value, "QueryResultType")
+	}
+}
+
+// Ptr returns a pointer to this enum value.
+func (v QueryResultType) Ptr() *QueryResultType {
+	return &v
+}
+
+// ToWire translates QueryResultType into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// Enums are represented as 32-bit integers over the wire.
+func (v QueryResultType) ToWire() (wire.Value, error) {
+	return wire.NewValueI32(int32(v)), nil
+}
+
+// FromWire deserializes QueryResultType from its Thrift-level
+// representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TI32)
+//   if err != nil {
+//     return QueryResultType(0), err
+//   }
+//
+//   var v QueryResultType
+//   if err := v.FromWire(x); err != nil {
+//     return QueryResultType(0), err
+//   }
+//   return v, nil
+func (v *QueryResultType) FromWire(w wire.Value) error {
+	*v = (QueryResultType)(w.GetI32())
+	return nil
+}
+
+// String returns a readable string representation of QueryResultType.
+func (v QueryResultType) String() string {
+	w := int32(v)
+	switch w {
+	case 0:
+		return "ANSWERED"
+	case 1:
+		return "FAILED"
+	}
+	return fmt.Sprintf("QueryResultType(%d)", w)
+}
+
+// Equals returns true if this QueryResultType value matches the provided
+// value.
+func (v QueryResultType) Equals(rhs QueryResultType) bool {
+	return v == rhs
+}
+
+// MarshalJSON serializes QueryResultType into JSON.
+//
+// If the enum value is recognized, its name is returned. Otherwise,
+// its integer value is returned.
+//
+// This implements json.Marshaler.
+func (v QueryResultType) MarshalJSON() ([]byte, error) {
+	switch int32(v) {
+	case 0:
+		return ([]byte)("\"ANSWERED\""), nil
+	case 1:
+		return ([]byte)("\"FAILED\""), nil
+	}
+	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
+}
+
+// UnmarshalJSON attempts to decode QueryResultType from its JSON
+// representation.
+//
+// This implementation supports both, numeric and string inputs. If a
+// string is provided, it must be a known enum name.
+//
+// This implements json.Unmarshaler.
+func (v *QueryResultType) UnmarshalJSON(text []byte) error {
+	d := json.NewDecoder(bytes.NewReader(text))
+	d.UseNumber()
+	t, err := d.Token()
+	if err != nil {
+		return err
+	}
+
+	switch w := t.(type) {
+	case json.Number:
+		x, err := w.Int64()
+		if err != nil {
+			return err
+		}
+		if x > math.MaxInt32 {
+			return fmt.Errorf("enum overflow from JSON %q for %q", text, "QueryResultType")
+		}
+		if x < math.MinInt32 {
+			return fmt.Errorf("enum underflow from JSON %q for %q", text, "QueryResultType")
+		}
+		*v = (QueryResultType)(x)
+		return nil
+	case string:
+		return v.UnmarshalText([]byte(w))
+	default:
+		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "QueryResultType")
+	}
+}
+
 type QueryTaskCompletedType int32
 
 const (
@@ -21759,9 +22303,10 @@ func (v *QueryTaskCompletedType) UnmarshalJSON(text []byte) error {
 }
 
 type QueryWorkflowRequest struct {
-	Domain    *string            `json:"domain,omitempty"`
-	Execution *WorkflowExecution `json:"execution,omitempty"`
-	Query     *WorkflowQuery     `json:"query,omitempty"`
+	Domain               *string               `json:"domain,omitempty"`
+	Execution            *WorkflowExecution    `json:"execution,omitempty"`
+	Query                *WorkflowQuery        `json:"query,omitempty"`
+	QueryRejectCondition *QueryRejectCondition `json:"queryRejectCondition,omitempty"`
 }
 
 // ToWire translates a QueryWorkflowRequest struct into a Thrift-level intermediate
@@ -21781,7 +22326,7 @@ type QueryWorkflowRequest struct {
 //   }
 func (v *QueryWorkflowRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -21811,8 +22356,22 @@ func (v *QueryWorkflowRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
+	if v.QueryRejectCondition != nil {
+		w, err = v.QueryRejectCondition.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _QueryRejectCondition_Read(w wire.Value) (QueryRejectCondition, error) {
+	var v QueryRejectCondition
+	err := v.FromWire(w)
+	return v, err
 }
 
 // FromWire deserializes a QueryWorkflowRequest struct from its Thrift-level
@@ -21863,6 +22422,16 @@ func (v *QueryWorkflowRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 40:
+			if field.Value.Type() == wire.TI32 {
+				var x QueryRejectCondition
+				x, err = _QueryRejectCondition_Read(field.Value)
+				v.QueryRejectCondition = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -21876,7 +22445,7 @@ func (v *QueryWorkflowRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -21890,8 +22459,22 @@ func (v *QueryWorkflowRequest) String() string {
 		fields[i] = fmt.Sprintf("Query: %v", v.Query)
 		i++
 	}
+	if v.QueryRejectCondition != nil {
+		fields[i] = fmt.Sprintf("QueryRejectCondition: %v", *(v.QueryRejectCondition))
+		i++
+	}
 
 	return fmt.Sprintf("QueryWorkflowRequest{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _QueryRejectCondition_EqualsPtr(lhs, rhs *QueryRejectCondition) bool {
+	if lhs != nil && rhs != nil {
+
+		x := *lhs
+		y := *rhs
+		return x.Equals(y)
+	}
+	return lhs == nil && rhs == nil
 }
 
 // Equals returns true if all the fields of this QueryWorkflowRequest match the
@@ -21908,6 +22491,9 @@ func (v *QueryWorkflowRequest) Equals(rhs *QueryWorkflowRequest) bool {
 	if !((v.Query == nil && rhs.Query == nil) || (v.Query != nil && rhs.Query != nil && v.Query.Equals(rhs.Query))) {
 		return false
 	}
+	if !_QueryRejectCondition_EqualsPtr(v.QueryRejectCondition, rhs.QueryRejectCondition) {
+		return false
+	}
 
 	return true
 }
@@ -21922,8 +22508,19 @@ func (v *QueryWorkflowRequest) GetDomain() (o string) {
 	return
 }
 
+// GetQueryRejectCondition returns the value of QueryRejectCondition if it is set or its
+// zero value if it is unset.
+func (v *QueryWorkflowRequest) GetQueryRejectCondition() (o QueryRejectCondition) {
+	if v.QueryRejectCondition != nil {
+		return *v.QueryRejectCondition
+	}
+
+	return
+}
+
 type QueryWorkflowResponse struct {
-	QueryResult []byte `json:"queryResult,omitempty"`
+	QueryResult   []byte         `json:"queryResult,omitempty"`
+	QueryRejected *QueryRejected `json:"queryRejected,omitempty"`
 }
 
 // ToWire translates a QueryWorkflowResponse struct into a Thrift-level intermediate
@@ -21943,7 +22540,7 @@ type QueryWorkflowResponse struct {
 //   }
 func (v *QueryWorkflowResponse) ToWire() (wire.Value, error) {
 	var (
-		fields [1]wire.Field
+		fields [2]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -21957,8 +22554,22 @@ func (v *QueryWorkflowResponse) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 10, Value: w}
 		i++
 	}
+	if v.QueryRejected != nil {
+		w, err = v.QueryRejected.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _QueryRejected_Read(w wire.Value) (*QueryRejected, error) {
+	var v QueryRejected
+	err := v.FromWire(w)
+	return &v, err
 }
 
 // FromWire deserializes a QueryWorkflowResponse struct from its Thrift-level
@@ -21991,6 +22602,14 @@ func (v *QueryWorkflowResponse) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.QueryRejected, err = _QueryRejected_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -22004,10 +22623,14 @@ func (v *QueryWorkflowResponse) String() string {
 		return "<nil>"
 	}
 
-	var fields [1]string
+	var fields [2]string
 	i := 0
 	if v.QueryResult != nil {
 		fields[i] = fmt.Sprintf("QueryResult: %v", v.QueryResult)
+		i++
+	}
+	if v.QueryRejected != nil {
+		fields[i] = fmt.Sprintf("QueryRejected: %v", v.QueryRejected)
 		i++
 	}
 
@@ -22020,6 +22643,9 @@ func (v *QueryWorkflowResponse) String() string {
 // This function performs a deep comparison.
 func (v *QueryWorkflowResponse) Equals(rhs *QueryWorkflowResponse) bool {
 	if !((v.QueryResult == nil && rhs.QueryResult == nil) || (v.QueryResult != nil && rhs.QueryResult != nil && bytes.Equal(v.QueryResult, rhs.QueryResult))) {
+		return false
+	}
+	if !((v.QueryRejected == nil && rhs.QueryRejected == nil) || (v.QueryRejected != nil && rhs.QueryRejected != nil && v.QueryRejected.Equals(rhs.QueryRejected))) {
 		return false
 	}
 
@@ -22764,9 +23390,11 @@ type RegisterDomainRequest struct {
 	ActiveClusterName                      *string                            `json:"activeClusterName,omitempty"`
 	Data                                   map[string]string                  `json:"data,omitempty"`
 	SecurityToken                          *string                            `json:"securityToken,omitempty"`
-	ArchivalStatus                         *ArchivalStatus                    `json:"archivalStatus,omitempty"`
-	ArchivalBucketName                     *string                            `json:"archivalBucketName,omitempty"`
 	IsGlobalDomain                         *bool                              `json:"isGlobalDomain,omitempty"`
+	HistoryArchivalStatus                  *ArchivalStatus                    `json:"historyArchivalStatus,omitempty"`
+	HistoryArchivalURI                     *string                            `json:"historyArchivalURI,omitempty"`
+	VisibilityArchivalStatus               *ArchivalStatus                    `json:"visibilityArchivalStatus,omitempty"`
+	VisibilityArchivalURI                  *string                            `json:"visibilityArchivalURI,omitempty"`
 }
 
 // ToWire translates a RegisterDomainRequest struct into a Thrift-level intermediate
@@ -22786,7 +23414,7 @@ type RegisterDomainRequest struct {
 //   }
 func (v *RegisterDomainRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [12]wire.Field
+		fields [14]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -22864,28 +23492,44 @@ func (v *RegisterDomainRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 90, Value: w}
 		i++
 	}
-	if v.ArchivalStatus != nil {
-		w, err = v.ArchivalStatus.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 100, Value: w}
-		i++
-	}
-	if v.ArchivalBucketName != nil {
-		w, err = wire.NewValueString(*(v.ArchivalBucketName)), error(nil)
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 110, Value: w}
-		i++
-	}
 	if v.IsGlobalDomain != nil {
 		w, err = wire.NewValueBool(*(v.IsGlobalDomain)), error(nil)
 		if err != nil {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 120, Value: w}
+		i++
+	}
+	if v.HistoryArchivalStatus != nil {
+		w, err = v.HistoryArchivalStatus.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 130, Value: w}
+		i++
+	}
+	if v.HistoryArchivalURI != nil {
+		w, err = wire.NewValueString(*(v.HistoryArchivalURI)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 140, Value: w}
+		i++
+	}
+	if v.VisibilityArchivalStatus != nil {
+		w, err = v.VisibilityArchivalStatus.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 150, Value: w}
+		i++
+	}
+	if v.VisibilityArchivalURI != nil {
+		w, err = wire.NewValueString(*(v.VisibilityArchivalURI)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 160, Value: w}
 		i++
 	}
 
@@ -23000,31 +23644,51 @@ func (v *RegisterDomainRequest) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 100:
-			if field.Value.Type() == wire.TI32 {
-				var x ArchivalStatus
-				x, err = _ArchivalStatus_Read(field.Value)
-				v.ArchivalStatus = &x
-				if err != nil {
-					return err
-				}
-
-			}
-		case 110:
-			if field.Value.Type() == wire.TBinary {
-				var x string
-				x, err = field.Value.GetString(), error(nil)
-				v.ArchivalBucketName = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 120:
 			if field.Value.Type() == wire.TBool {
 				var x bool
 				x, err = field.Value.GetBool(), error(nil)
 				v.IsGlobalDomain = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 130:
+			if field.Value.Type() == wire.TI32 {
+				var x ArchivalStatus
+				x, err = _ArchivalStatus_Read(field.Value)
+				v.HistoryArchivalStatus = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 140:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.HistoryArchivalURI = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 150:
+			if field.Value.Type() == wire.TI32 {
+				var x ArchivalStatus
+				x, err = _ArchivalStatus_Read(field.Value)
+				v.VisibilityArchivalStatus = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 160:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.VisibilityArchivalURI = &x
 				if err != nil {
 					return err
 				}
@@ -23043,7 +23707,7 @@ func (v *RegisterDomainRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [12]string
+	var fields [14]string
 	i := 0
 	if v.Name != nil {
 		fields[i] = fmt.Sprintf("Name: %v", *(v.Name))
@@ -23081,16 +23745,24 @@ func (v *RegisterDomainRequest) String() string {
 		fields[i] = fmt.Sprintf("SecurityToken: %v", *(v.SecurityToken))
 		i++
 	}
-	if v.ArchivalStatus != nil {
-		fields[i] = fmt.Sprintf("ArchivalStatus: %v", *(v.ArchivalStatus))
-		i++
-	}
-	if v.ArchivalBucketName != nil {
-		fields[i] = fmt.Sprintf("ArchivalBucketName: %v", *(v.ArchivalBucketName))
-		i++
-	}
 	if v.IsGlobalDomain != nil {
 		fields[i] = fmt.Sprintf("IsGlobalDomain: %v", *(v.IsGlobalDomain))
+		i++
+	}
+	if v.HistoryArchivalStatus != nil {
+		fields[i] = fmt.Sprintf("HistoryArchivalStatus: %v", *(v.HistoryArchivalStatus))
+		i++
+	}
+	if v.HistoryArchivalURI != nil {
+		fields[i] = fmt.Sprintf("HistoryArchivalURI: %v", *(v.HistoryArchivalURI))
+		i++
+	}
+	if v.VisibilityArchivalStatus != nil {
+		fields[i] = fmt.Sprintf("VisibilityArchivalStatus: %v", *(v.VisibilityArchivalStatus))
+		i++
+	}
+	if v.VisibilityArchivalURI != nil {
+		fields[i] = fmt.Sprintf("VisibilityArchivalURI: %v", *(v.VisibilityArchivalURI))
 		i++
 	}
 
@@ -23129,13 +23801,19 @@ func (v *RegisterDomainRequest) Equals(rhs *RegisterDomainRequest) bool {
 	if !_String_EqualsPtr(v.SecurityToken, rhs.SecurityToken) {
 		return false
 	}
-	if !_ArchivalStatus_EqualsPtr(v.ArchivalStatus, rhs.ArchivalStatus) {
-		return false
-	}
-	if !_String_EqualsPtr(v.ArchivalBucketName, rhs.ArchivalBucketName) {
-		return false
-	}
 	if !_Bool_EqualsPtr(v.IsGlobalDomain, rhs.IsGlobalDomain) {
+		return false
+	}
+	if !_ArchivalStatus_EqualsPtr(v.HistoryArchivalStatus, rhs.HistoryArchivalStatus) {
+		return false
+	}
+	if !_String_EqualsPtr(v.HistoryArchivalURI, rhs.HistoryArchivalURI) {
+		return false
+	}
+	if !_ArchivalStatus_EqualsPtr(v.VisibilityArchivalStatus, rhs.VisibilityArchivalStatus) {
+		return false
+	}
+	if !_String_EqualsPtr(v.VisibilityArchivalURI, rhs.VisibilityArchivalURI) {
 		return false
 	}
 
@@ -23212,31 +23890,51 @@ func (v *RegisterDomainRequest) GetSecurityToken() (o string) {
 	return
 }
 
-// GetArchivalStatus returns the value of ArchivalStatus if it is set or its
-// zero value if it is unset.
-func (v *RegisterDomainRequest) GetArchivalStatus() (o ArchivalStatus) {
-	if v.ArchivalStatus != nil {
-		return *v.ArchivalStatus
-	}
-
-	return
-}
-
-// GetArchivalBucketName returns the value of ArchivalBucketName if it is set or its
-// zero value if it is unset.
-func (v *RegisterDomainRequest) GetArchivalBucketName() (o string) {
-	if v.ArchivalBucketName != nil {
-		return *v.ArchivalBucketName
-	}
-
-	return
-}
-
 // GetIsGlobalDomain returns the value of IsGlobalDomain if it is set or its
 // zero value if it is unset.
 func (v *RegisterDomainRequest) GetIsGlobalDomain() (o bool) {
 	if v.IsGlobalDomain != nil {
 		return *v.IsGlobalDomain
+	}
+
+	return
+}
+
+// GetHistoryArchivalStatus returns the value of HistoryArchivalStatus if it is set or its
+// zero value if it is unset.
+func (v *RegisterDomainRequest) GetHistoryArchivalStatus() (o ArchivalStatus) {
+	if v.HistoryArchivalStatus != nil {
+		return *v.HistoryArchivalStatus
+	}
+
+	return
+}
+
+// GetHistoryArchivalURI returns the value of HistoryArchivalURI if it is set or its
+// zero value if it is unset.
+func (v *RegisterDomainRequest) GetHistoryArchivalURI() (o string) {
+	if v.HistoryArchivalURI != nil {
+		return *v.HistoryArchivalURI
+	}
+
+	return
+}
+
+// GetVisibilityArchivalStatus returns the value of VisibilityArchivalStatus if it is set or its
+// zero value if it is unset.
+func (v *RegisterDomainRequest) GetVisibilityArchivalStatus() (o ArchivalStatus) {
+	if v.VisibilityArchivalStatus != nil {
+		return *v.VisibilityArchivalStatus
+	}
+
+	return
+}
+
+// GetVisibilityArchivalURI returns the value of VisibilityArchivalURI if it is set or its
+// zero value if it is unset.
+func (v *RegisterDomainRequest) GetVisibilityArchivalURI() (o string) {
+	if v.VisibilityArchivalURI != nil {
+		return *v.VisibilityArchivalURI
 	}
 
 	return
@@ -27155,6 +27853,7 @@ type RespondDecisionTaskCompletedRequest struct {
 	ReturnNewDecisionTask      *bool                      `json:"returnNewDecisionTask,omitempty"`
 	ForceCreateNewDecisionTask *bool                      `json:"forceCreateNewDecisionTask,omitempty"`
 	BinaryChecksum             *string                    `json:"binaryChecksum,omitempty"`
+	QueryResults               []*WorkflowQueryResult     `json:"queryResults,omitempty"`
 }
 
 type _List_Decision_ValueList []*Decision
@@ -27186,6 +27885,35 @@ func (_List_Decision_ValueList) ValueType() wire.Type {
 
 func (_List_Decision_ValueList) Close() {}
 
+type _List_WorkflowQueryResult_ValueList []*WorkflowQueryResult
+
+func (v _List_WorkflowQueryResult_ValueList) ForEach(f func(wire.Value) error) error {
+	for i, x := range v {
+		if x == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", i)
+		}
+		w, err := x.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_WorkflowQueryResult_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_WorkflowQueryResult_ValueList) ValueType() wire.Type {
+	return wire.TStruct
+}
+
+func (_List_WorkflowQueryResult_ValueList) Close() {}
+
 // ToWire translates a RespondDecisionTaskCompletedRequest struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
 // into bytes using a ThriftRW protocol implementation.
@@ -27203,7 +27931,7 @@ func (_List_Decision_ValueList) Close() {}
 //   }
 func (v *RespondDecisionTaskCompletedRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [8]wire.Field
+		fields [9]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -27273,6 +28001,14 @@ func (v *RespondDecisionTaskCompletedRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 80, Value: w}
 		i++
 	}
+	if v.QueryResults != nil {
+		w, err = wire.NewValueList(_List_WorkflowQueryResult_ValueList(v.QueryResults)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 90, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -27305,6 +28041,30 @@ func _StickyExecutionAttributes_Read(w wire.Value) (*StickyExecutionAttributes, 
 	var v StickyExecutionAttributes
 	err := v.FromWire(w)
 	return &v, err
+}
+
+func _WorkflowQueryResult_Read(w wire.Value) (*WorkflowQueryResult, error) {
+	var v WorkflowQueryResult
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _List_WorkflowQueryResult_Read(l wire.ValueList) ([]*WorkflowQueryResult, error) {
+	if l.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make([]*WorkflowQueryResult, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := _WorkflowQueryResult_Read(x)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
 }
 
 // FromWire deserializes a RespondDecisionTaskCompletedRequest struct from its Thrift-level
@@ -27401,6 +28161,14 @@ func (v *RespondDecisionTaskCompletedRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 90:
+			if field.Value.Type() == wire.TList {
+				v.QueryResults, err = _List_WorkflowQueryResult_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -27414,7 +28182,7 @@ func (v *RespondDecisionTaskCompletedRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [8]string
+	var fields [9]string
 	i := 0
 	if v.TaskToken != nil {
 		fields[i] = fmt.Sprintf("TaskToken: %v", v.TaskToken)
@@ -27448,11 +28216,30 @@ func (v *RespondDecisionTaskCompletedRequest) String() string {
 		fields[i] = fmt.Sprintf("BinaryChecksum: %v", *(v.BinaryChecksum))
 		i++
 	}
+	if v.QueryResults != nil {
+		fields[i] = fmt.Sprintf("QueryResults: %v", v.QueryResults)
+		i++
+	}
 
 	return fmt.Sprintf("RespondDecisionTaskCompletedRequest{%v}", strings.Join(fields[:i], ", "))
 }
 
 func _List_Decision_Equals(lhs, rhs []*Decision) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !lv.Equals(rv) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func _List_WorkflowQueryResult_Equals(lhs, rhs []*WorkflowQueryResult) bool {
 	if len(lhs) != len(rhs) {
 		return false
 	}
@@ -27494,6 +28281,9 @@ func (v *RespondDecisionTaskCompletedRequest) Equals(rhs *RespondDecisionTaskCom
 		return false
 	}
 	if !_String_EqualsPtr(v.BinaryChecksum, rhs.BinaryChecksum) {
+		return false
+	}
+	if !((v.QueryResults == nil && rhs.QueryResults == nil) || (v.QueryResults != nil && rhs.QueryResults != nil && _List_WorkflowQueryResult_Equals(v.QueryResults, rhs.QueryResults))) {
 		return false
 	}
 
@@ -40814,6 +41604,222 @@ func (v *WorkflowQuery) Equals(rhs *WorkflowQuery) bool {
 func (v *WorkflowQuery) GetQueryType() (o string) {
 	if v.QueryType != nil {
 		return *v.QueryType
+	}
+
+	return
+}
+
+type WorkflowQueryResult struct {
+	ResultType   *QueryResultType `json:"resultType,omitempty"`
+	Answer       []byte           `json:"answer,omitempty"`
+	ErrorReason  *string          `json:"errorReason,omitempty"`
+	ErrorDetails []byte           `json:"errorDetails,omitempty"`
+}
+
+// ToWire translates a WorkflowQueryResult struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *WorkflowQueryResult) ToWire() (wire.Value, error) {
+	var (
+		fields [4]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.ResultType != nil {
+		w, err = v.ResultType.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.Answer != nil {
+		w, err = wire.NewValueBinary(v.Answer), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+	if v.ErrorReason != nil {
+		w, err = wire.NewValueString(*(v.ErrorReason)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.ErrorDetails != nil {
+		w, err = wire.NewValueBinary(v.ErrorDetails), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _QueryResultType_Read(w wire.Value) (QueryResultType, error) {
+	var v QueryResultType
+	err := v.FromWire(w)
+	return v, err
+}
+
+// FromWire deserializes a WorkflowQueryResult struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a WorkflowQueryResult struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v WorkflowQueryResult
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *WorkflowQueryResult) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TI32 {
+				var x QueryResultType
+				x, err = _QueryResultType_Read(field.Value)
+				v.ResultType = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TBinary {
+				v.Answer, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.ErrorReason = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 40:
+			if field.Value.Type() == wire.TBinary {
+				v.ErrorDetails, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a WorkflowQueryResult
+// struct.
+func (v *WorkflowQueryResult) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [4]string
+	i := 0
+	if v.ResultType != nil {
+		fields[i] = fmt.Sprintf("ResultType: %v", *(v.ResultType))
+		i++
+	}
+	if v.Answer != nil {
+		fields[i] = fmt.Sprintf("Answer: %v", v.Answer)
+		i++
+	}
+	if v.ErrorReason != nil {
+		fields[i] = fmt.Sprintf("ErrorReason: %v", *(v.ErrorReason))
+		i++
+	}
+	if v.ErrorDetails != nil {
+		fields[i] = fmt.Sprintf("ErrorDetails: %v", v.ErrorDetails)
+		i++
+	}
+
+	return fmt.Sprintf("WorkflowQueryResult{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _QueryResultType_EqualsPtr(lhs, rhs *QueryResultType) bool {
+	if lhs != nil && rhs != nil {
+
+		x := *lhs
+		y := *rhs
+		return x.Equals(y)
+	}
+	return lhs == nil && rhs == nil
+}
+
+// Equals returns true if all the fields of this WorkflowQueryResult match the
+// provided WorkflowQueryResult.
+//
+// This function performs a deep comparison.
+func (v *WorkflowQueryResult) Equals(rhs *WorkflowQueryResult) bool {
+	if !_QueryResultType_EqualsPtr(v.ResultType, rhs.ResultType) {
+		return false
+	}
+	if !((v.Answer == nil && rhs.Answer == nil) || (v.Answer != nil && rhs.Answer != nil && bytes.Equal(v.Answer, rhs.Answer))) {
+		return false
+	}
+	if !_String_EqualsPtr(v.ErrorReason, rhs.ErrorReason) {
+		return false
+	}
+	if !((v.ErrorDetails == nil && rhs.ErrorDetails == nil) || (v.ErrorDetails != nil && rhs.ErrorDetails != nil && bytes.Equal(v.ErrorDetails, rhs.ErrorDetails))) {
+		return false
+	}
+
+	return true
+}
+
+// GetResultType returns the value of ResultType if it is set or its
+// zero value if it is unset.
+func (v *WorkflowQueryResult) GetResultType() (o QueryResultType) {
+	if v.ResultType != nil {
+		return *v.ResultType
+	}
+
+	return
+}
+
+// GetErrorReason returns the value of ErrorReason if it is set or its
+// zero value if it is unset.
+func (v *WorkflowQueryResult) GetErrorReason() (o string) {
+	if v.ErrorReason != nil {
+		return *v.ErrorReason
 	}
 
 	return
