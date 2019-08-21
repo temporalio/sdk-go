@@ -42,7 +42,6 @@ var (
 )
 
 type (
-
 	// Channel must be used instead of native go channel by workflow code.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	Channel interface {
@@ -670,6 +669,7 @@ type WorkflowInfo struct {
 	ParentWorkflowExecution             *WorkflowExecution
 	Memo                                *s.Memo
 	SearchAttributes                    *s.SearchAttributes
+	BinaryChecksum                      *string
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.

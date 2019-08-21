@@ -72,6 +72,16 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 	return err
 }
 
+func binaryChecksumWorkflowFunc(ctx Context) ([]*string, error) {
+	var result []*string
+	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
+	Sleep(ctx, time.Hour)
+	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
+	Sleep(ctx, time.Hour)
+	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
+	return result, nil
+}
+
 func helloWorldWorkflowCancelFunc(ctx Context, input []byte) error {
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{

@@ -304,7 +304,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			StartToCloseTimeout:    9 * time.Second,
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "toUpperWithDelay", "hello", 1 * time.Second)
+		activityF := workflow.ExecuteActivity(activityCtx, "toUpperWithDelay", "hello", 1*time.Second)
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -351,7 +351,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 	})
 
 	// Cause the workflow to block on sleep
-	workflow.Sleep(ctx, 10 * time.Second)
+	workflow.Sleep(ctx, 10*time.Second)
 
 	return []string{"toUpperWithDelay"}, nil
 }
