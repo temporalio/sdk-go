@@ -612,6 +612,10 @@ func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayD
 	timerCallback := func(result []byte, err error) {
 		f()
 	}
+	if delayDuration == 0 {
+		env.postCallback(f, false)
+		return
+	}
 	mainLoopCallback := func() {
 		env.newTimer(delayDuration, timerCallback, false)
 	}

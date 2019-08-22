@@ -491,7 +491,10 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	var result string
 	ch := GetSignalChannel(ctx, "testSig1")
 	var v string
-	ch.Receive(ctx, &v)
+	ok := ch.ReceiveAsync(&v)
+	if !ok {
+		return nil, errors.New("testSig1 not received")
+	}
 	result += v
 	ch.Receive(ctx, &v)
 	result += v
@@ -551,9 +554,13 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	// Setup signals.
 	for i := 0; i < 2; i++ {
 		msg := expected[i]
+		var delay time.Duration = 0
+		if i > 0 {
+			delay = time.Second
+		}
 		env.RegisterDelayedCallback(func() {
 			env.SignalWorkflow("testSig1", msg)
-		}, time.Second)
+		}, delay)
 	}
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow("testSig3", expected[9])
