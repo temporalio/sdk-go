@@ -44,25 +44,11 @@ type (
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
 	ChildWorkflowOptions = internal.ChildWorkflowOptions
 
-	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
-	ChildWorkflowPolicy = internal.ChildWorkflowPolicy
-
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
-)
-
-const (
-	// ChildWorkflowPolicyTerminate is policy that will terminate all child workflows when parent workflow is terminated.
-	ChildWorkflowPolicyTerminate ChildWorkflowPolicy = internal.ChildWorkflowPolicyTerminate
-	// ChildWorkflowPolicyRequestCancel is policy that will send cancel request to all open child workflows when parent
-	// workflow is terminated.
-	ChildWorkflowPolicyRequestCancel ChildWorkflowPolicy = internal.ChildWorkflowPolicyRequestCancel
-	// ChildWorkflowPolicyAbandon is policy that will have no impact to child workflow execution when parent workflow is
-	// terminated.
-	ChildWorkflowPolicyAbandon ChildWorkflowPolicy = internal.ChildWorkflowPolicyAbandon
 )
 
 // Register - registers a workflow function with the framework.

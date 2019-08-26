@@ -173,10 +173,6 @@ type (
 		// Optional: default is 10s if this is not provided (or if 0 is provided).
 		TaskStartToCloseTimeout time.Duration
 
-		// ChildPolicy defines the behavior of child workflow when parent workflow is terminated.
-		// Optional: default to use ChildWorkflowPolicyAbandon. We currently only support this policy.
-		ChildPolicy ChildWorkflowPolicy
-
 		// WaitForCancellation - Whether to wait for cancelled child workflow to be ended (child workflow can be ended
 		// as: completed/failed/timedout/terminated/canceled)
 		// Optional: default false
@@ -215,22 +211,6 @@ type (
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes map[string]interface{}
 	}
-
-	// ChildWorkflowPolicy defines child workflow behavior when parent workflow is terminated.
-	ChildWorkflowPolicy int32
-)
-
-const (
-	// ChildWorkflowPolicyTerminate is policy that will terminate all child workflows when parent workflow is terminated.
-	// TODO: this is not supported yet
-	ChildWorkflowPolicyTerminate ChildWorkflowPolicy = 0
-	// ChildWorkflowPolicyRequestCancel is policy that will send cancel request to all open child workflows when parent
-	// workflow is terminated.
-	// TODO: this is not supported yet
-	ChildWorkflowPolicyRequestCancel ChildWorkflowPolicy = 1
-	// ChildWorkflowPolicyAbandon is policy that will have no impact to child workflow execution when parent workflow is
-	// terminated.
-	ChildWorkflowPolicyAbandon ChildWorkflowPolicy = 2
 )
 
 // RegisterWorkflowOptions consists of options for registering a workflow
@@ -874,7 +854,6 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.workflowID = cwo.WorkflowID
 	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds()))
 	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds()))
-	wfOptions.childPolicy = cwo.ChildPolicy
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
@@ -903,13 +882,6 @@ func WithWorkflowTaskList(ctx Context, name string) Context {
 func WithWorkflowID(ctx Context, workflowID string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).workflowID = workflowID
-	return ctx1
-}
-
-// WithChildPolicy adds a ChildWorkflowPolicy to the context.
-func WithChildPolicy(ctx Context, childPolicy ChildWorkflowPolicy) Context {
-	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).childPolicy = childPolicy
 	return ctx1
 }
 

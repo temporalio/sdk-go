@@ -74,7 +74,6 @@
     "input": "MAo1Cg==",
     "executionStartToCloseTimeoutSeconds": 60,
     "taskStartToCloseTimeoutSeconds": 10,
-    "childPolicy": "TERMINATE",
     "decisionTaskCompletedEventId": 4,
     "workflowIdReusePolicy": "AllowDuplicateFailedOnly",
     "header": {}

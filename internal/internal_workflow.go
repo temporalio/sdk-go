@@ -172,7 +172,6 @@ type (
 		taskStartToCloseTimeoutSeconds      *int32
 		domain                              *string
 		workflowID                          string
-		childPolicy                         ChildWorkflowPolicy
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
@@ -1244,21 +1243,6 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return err
 	}
 	return d.futureImpl.err
-}
-
-func (p ChildWorkflowPolicy) toThriftChildPolicyPtr() *shared.ChildPolicy {
-	var childPolicy shared.ChildPolicy
-	switch p {
-	case ChildWorkflowPolicyTerminate:
-		childPolicy = shared.ChildPolicyTerminate
-	case ChildWorkflowPolicyRequestCancel:
-		childPolicy = shared.ChildPolicyRequestCancel
-	case ChildWorkflowPolicyAbandon:
-		childPolicy = shared.ChildPolicyAbandon
-	default:
-		panic(fmt.Sprintf("unknown child policy %v", p))
-	}
-	return &childPolicy
 }
 
 // newDecodeFuture creates a new future as well as associated Settable that is used to set its value.

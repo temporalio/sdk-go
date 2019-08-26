@@ -47,11 +47,6 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 	return internal.WithWorkflowID(ctx, workflowID)
 }
 
-// WithChildPolicy adds a ChildWorkflowPolicy to the context.
-func WithChildPolicy(ctx Context, childPolicy ChildWorkflowPolicy) Context {
-	return internal.WithChildPolicy(ctx, childPolicy)
-}
-
 // WithExecutionStartToCloseTimeout adds a workflow execution timeout to the context.
 func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithExecutionStartToCloseTimeout(ctx, d)

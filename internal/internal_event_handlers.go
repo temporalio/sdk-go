@@ -354,7 +354,6 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.TaskStartToCloseTimeoutSeconds = params.taskStartToCloseTimeoutSeconds
 	attributes.Input = params.input
 	attributes.WorkflowType = workflowTypePtr(*params.workflowType)
-	attributes.ChildPolicy = params.childPolicy.toThriftChildPolicyPtr()
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
 	attributes.RetryPolicy = params.retryPolicy
 	attributes.Header = params.header

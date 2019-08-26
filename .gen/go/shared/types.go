@@ -3384,150 +3384,6 @@ func (v *CancellationAlreadyRequestedError) Error() string {
 	return v.String()
 }
 
-type ChildPolicy int32
-
-const (
-	ChildPolicyTerminate     ChildPolicy = 0
-	ChildPolicyRequestCancel ChildPolicy = 1
-	ChildPolicyAbandon       ChildPolicy = 2
-)
-
-// ChildPolicy_Values returns all recognized values of ChildPolicy.
-func ChildPolicy_Values() []ChildPolicy {
-	return []ChildPolicy{
-		ChildPolicyTerminate,
-		ChildPolicyRequestCancel,
-		ChildPolicyAbandon,
-	}
-}
-
-// UnmarshalText tries to decode ChildPolicy from a byte slice
-// containing its name.
-//
-//   var v ChildPolicy
-//   err := v.UnmarshalText([]byte("TERMINATE"))
-func (v *ChildPolicy) UnmarshalText(value []byte) error {
-	switch string(value) {
-	case "TERMINATE":
-		*v = ChildPolicyTerminate
-		return nil
-	case "REQUEST_CANCEL":
-		*v = ChildPolicyRequestCancel
-		return nil
-	case "ABANDON":
-		*v = ChildPolicyAbandon
-		return nil
-	default:
-		return fmt.Errorf("unknown enum value %q for %q", value, "ChildPolicy")
-	}
-}
-
-// Ptr returns a pointer to this enum value.
-func (v ChildPolicy) Ptr() *ChildPolicy {
-	return &v
-}
-
-// ToWire translates ChildPolicy into a Thrift-level intermediate
-// representation. This intermediate representation may be serialized
-// into bytes using a ThriftRW protocol implementation.
-//
-// Enums are represented as 32-bit integers over the wire.
-func (v ChildPolicy) ToWire() (wire.Value, error) {
-	return wire.NewValueI32(int32(v)), nil
-}
-
-// FromWire deserializes ChildPolicy from its Thrift-level
-// representation.
-//
-//   x, err := binaryProtocol.Decode(reader, wire.TI32)
-//   if err != nil {
-//     return ChildPolicy(0), err
-//   }
-//
-//   var v ChildPolicy
-//   if err := v.FromWire(x); err != nil {
-//     return ChildPolicy(0), err
-//   }
-//   return v, nil
-func (v *ChildPolicy) FromWire(w wire.Value) error {
-	*v = (ChildPolicy)(w.GetI32())
-	return nil
-}
-
-// String returns a readable string representation of ChildPolicy.
-func (v ChildPolicy) String() string {
-	w := int32(v)
-	switch w {
-	case 0:
-		return "TERMINATE"
-	case 1:
-		return "REQUEST_CANCEL"
-	case 2:
-		return "ABANDON"
-	}
-	return fmt.Sprintf("ChildPolicy(%d)", w)
-}
-
-// Equals returns true if this ChildPolicy value matches the provided
-// value.
-func (v ChildPolicy) Equals(rhs ChildPolicy) bool {
-	return v == rhs
-}
-
-// MarshalJSON serializes ChildPolicy into JSON.
-//
-// If the enum value is recognized, its name is returned. Otherwise,
-// its integer value is returned.
-//
-// This implements json.Marshaler.
-func (v ChildPolicy) MarshalJSON() ([]byte, error) {
-	switch int32(v) {
-	case 0:
-		return ([]byte)("\"TERMINATE\""), nil
-	case 1:
-		return ([]byte)("\"REQUEST_CANCEL\""), nil
-	case 2:
-		return ([]byte)("\"ABANDON\""), nil
-	}
-	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
-}
-
-// UnmarshalJSON attempts to decode ChildPolicy from its JSON
-// representation.
-//
-// This implementation supports both, numeric and string inputs. If a
-// string is provided, it must be a known enum name.
-//
-// This implements json.Unmarshaler.
-func (v *ChildPolicy) UnmarshalJSON(text []byte) error {
-	d := json.NewDecoder(bytes.NewReader(text))
-	d.UseNumber()
-	t, err := d.Token()
-	if err != nil {
-		return err
-	}
-
-	switch w := t.(type) {
-	case json.Number:
-		x, err := w.Int64()
-		if err != nil {
-			return err
-		}
-		if x > math.MaxInt32 {
-			return fmt.Errorf("enum overflow from JSON %q for %q", text, "ChildPolicy")
-		}
-		if x < math.MinInt32 {
-			return fmt.Errorf("enum underflow from JSON %q for %q", text, "ChildPolicy")
-		}
-		*v = (ChildPolicy)(x)
-		return nil
-	case string:
-		return v.UnmarshalText([]byte(w))
-	default:
-		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "ChildPolicy")
-	}
-}
-
 type ChildWorkflowExecutionCanceledEventAttributes struct {
 	Details           []byte             `json:"details,omitempty"`
 	Domain            *string            `json:"domain,omitempty"`
@@ -31993,7 +31849,6 @@ type StartChildWorkflowExecutionDecisionAttributes struct {
 	Input                               []byte                 `json:"input,omitempty"`
 	ExecutionStartToCloseTimeoutSeconds *int32                 `json:"executionStartToCloseTimeoutSeconds,omitempty"`
 	TaskStartToCloseTimeoutSeconds      *int32                 `json:"taskStartToCloseTimeoutSeconds,omitempty"`
-	ChildPolicy                         *ChildPolicy           `json:"childPolicy,omitempty"`
 	Control                             []byte                 `json:"control,omitempty"`
 	WorkflowIdReusePolicy               *WorkflowIdReusePolicy `json:"workflowIdReusePolicy,omitempty"`
 	RetryPolicy                         *RetryPolicy           `json:"retryPolicy,omitempty"`
@@ -32020,7 +31875,7 @@ type StartChildWorkflowExecutionDecisionAttributes struct {
 //   }
 func (v *StartChildWorkflowExecutionDecisionAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [15]wire.Field
+		fields [14]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -32082,14 +31937,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) ToWire() (wire.Value, er
 		fields[i] = wire.Field{ID: 70, Value: w}
 		i++
 	}
-	if v.ChildPolicy != nil {
-		w, err = v.ChildPolicy.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 80, Value: w}
-		i++
-	}
 	if v.Control != nil {
 		w, err = wire.NewValueBinary(v.Control), error(nil)
 		if err != nil {
@@ -32148,12 +31995,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) ToWire() (wire.Value, er
 	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
-}
-
-func _ChildPolicy_Read(w wire.Value) (ChildPolicy, error) {
-	var v ChildPolicy
-	err := v.FromWire(w)
-	return v, err
 }
 
 // FromWire deserializes a StartChildWorkflowExecutionDecisionAttributes struct from its Thrift-level
@@ -32242,16 +32083,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) FromWire(w wire.Value) e
 				}
 
 			}
-		case 80:
-			if field.Value.Type() == wire.TI32 {
-				var x ChildPolicy
-				x, err = _ChildPolicy_Read(field.Value)
-				v.ChildPolicy = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 90:
 			if field.Value.Type() == wire.TBinary {
 				v.Control, err = field.Value.GetBinary(), error(nil)
@@ -32325,7 +32156,7 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [15]string
+	var fields [14]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -32353,10 +32184,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) String() string {
 	}
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
-		i++
-	}
-	if v.ChildPolicy != nil {
-		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
 		i++
 	}
 	if v.Control != nil {
@@ -32391,16 +32218,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) String() string {
 	return fmt.Sprintf("StartChildWorkflowExecutionDecisionAttributes{%v}", strings.Join(fields[:i], ", "))
 }
 
-func _ChildPolicy_EqualsPtr(lhs, rhs *ChildPolicy) bool {
-	if lhs != nil && rhs != nil {
-
-		x := *lhs
-		y := *rhs
-		return x.Equals(y)
-	}
-	return lhs == nil && rhs == nil
-}
-
 // Equals returns true if all the fields of this StartChildWorkflowExecutionDecisionAttributes match the
 // provided StartChildWorkflowExecutionDecisionAttributes.
 //
@@ -32425,9 +32242,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) Equals(rhs *StartChildWo
 		return false
 	}
 	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
-		return false
-	}
-	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
 		return false
 	}
 	if !((v.Control == nil && rhs.Control == nil) || (v.Control != nil && rhs.Control != nil && bytes.Equal(v.Control, rhs.Control))) {
@@ -32490,16 +32304,6 @@ func (v *StartChildWorkflowExecutionDecisionAttributes) GetExecutionStartToClose
 func (v *StartChildWorkflowExecutionDecisionAttributes) GetTaskStartToCloseTimeoutSeconds() (o int32) {
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		return *v.TaskStartToCloseTimeoutSeconds
-	}
-
-	return
-}
-
-// GetChildPolicy returns the value of ChildPolicy if it is set or its
-// zero value if it is unset.
-func (v *StartChildWorkflowExecutionDecisionAttributes) GetChildPolicy() (o ChildPolicy) {
-	if v.ChildPolicy != nil {
-		return *v.ChildPolicy
 	}
 
 	return
@@ -32857,7 +32661,6 @@ type StartChildWorkflowExecutionInitiatedEventAttributes struct {
 	Input                               []byte                 `json:"input,omitempty"`
 	ExecutionStartToCloseTimeoutSeconds *int32                 `json:"executionStartToCloseTimeoutSeconds,omitempty"`
 	TaskStartToCloseTimeoutSeconds      *int32                 `json:"taskStartToCloseTimeoutSeconds,omitempty"`
-	ChildPolicy                         *ChildPolicy           `json:"childPolicy,omitempty"`
 	Control                             []byte                 `json:"control,omitempty"`
 	DecisionTaskCompletedEventId        *int64                 `json:"decisionTaskCompletedEventId,omitempty"`
 	WorkflowIdReusePolicy               *WorkflowIdReusePolicy `json:"workflowIdReusePolicy,omitempty"`
@@ -32885,7 +32688,7 @@ type StartChildWorkflowExecutionInitiatedEventAttributes struct {
 //   }
 func (v *StartChildWorkflowExecutionInitiatedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [16]wire.Field
+		fields [15]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -32945,14 +32748,6 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) ToWire() (wire.Val
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 70, Value: w}
-		i++
-	}
-	if v.ChildPolicy != nil {
-		w, err = v.ChildPolicy.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 80, Value: w}
 		i++
 	}
 	if v.Control != nil {
@@ -33109,16 +32904,6 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) FromWire(w wire.Va
 				}
 
 			}
-		case 80:
-			if field.Value.Type() == wire.TI32 {
-				var x ChildPolicy
-				x, err = _ChildPolicy_Read(field.Value)
-				v.ChildPolicy = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 90:
 			if field.Value.Type() == wire.TBinary {
 				v.Control, err = field.Value.GetBinary(), error(nil)
@@ -33202,7 +32987,7 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [16]string
+	var fields [15]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -33230,10 +33015,6 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) String() string {
 	}
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
-		i++
-	}
-	if v.ChildPolicy != nil {
-		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
 		i++
 	}
 	if v.Control != nil {
@@ -33296,9 +33077,6 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) Equals(rhs *StartC
 		return false
 	}
 	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
-		return false
-	}
-	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
 		return false
 	}
 	if !((v.Control == nil && rhs.Control == nil) || (v.Control != nil && rhs.Control != nil && bytes.Equal(v.Control, rhs.Control))) {
@@ -33364,16 +33142,6 @@ func (v *StartChildWorkflowExecutionInitiatedEventAttributes) GetExecutionStartT
 func (v *StartChildWorkflowExecutionInitiatedEventAttributes) GetTaskStartToCloseTimeoutSeconds() (o int32) {
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		return *v.TaskStartToCloseTimeoutSeconds
-	}
-
-	return
-}
-
-// GetChildPolicy returns the value of ChildPolicy if it is set or its
-// zero value if it is unset.
-func (v *StartChildWorkflowExecutionInitiatedEventAttributes) GetChildPolicy() (o ChildPolicy) {
-	if v.ChildPolicy != nil {
-		return *v.ChildPolicy
 	}
 
 	return
@@ -33724,7 +33492,6 @@ type StartWorkflowExecutionRequest struct {
 	Identity                            *string                `json:"identity,omitempty"`
 	RequestId                           *string                `json:"requestId,omitempty"`
 	WorkflowIdReusePolicy               *WorkflowIdReusePolicy `json:"workflowIdReusePolicy,omitempty"`
-	ChildPolicy                         *ChildPolicy           `json:"childPolicy,omitempty"`
 	RetryPolicy                         *RetryPolicy           `json:"retryPolicy,omitempty"`
 	CronSchedule                        *string                `json:"cronSchedule,omitempty"`
 	Memo                                *Memo                  `json:"memo,omitempty"`
@@ -33749,7 +33516,7 @@ type StartWorkflowExecutionRequest struct {
 //   }
 func (v *StartWorkflowExecutionRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [16]wire.Field
+		fields [15]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -33833,14 +33600,6 @@ func (v *StartWorkflowExecutionRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 100, Value: w}
-		i++
-	}
-	if v.ChildPolicy != nil {
-		w, err = v.ChildPolicy.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 110, Value: w}
 		i++
 	}
 	if v.RetryPolicy != nil {
@@ -34003,16 +33762,6 @@ func (v *StartWorkflowExecutionRequest) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 110:
-			if field.Value.Type() == wire.TI32 {
-				var x ChildPolicy
-				x, err = _ChildPolicy_Read(field.Value)
-				v.ChildPolicy = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 120:
 			if field.Value.Type() == wire.TStruct {
 				v.RetryPolicy, err = _RetryPolicy_Read(field.Value)
@@ -34068,7 +33817,7 @@ func (v *StartWorkflowExecutionRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [16]string
+	var fields [15]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -34108,10 +33857,6 @@ func (v *StartWorkflowExecutionRequest) String() string {
 	}
 	if v.WorkflowIdReusePolicy != nil {
 		fields[i] = fmt.Sprintf("WorkflowIdReusePolicy: %v", *(v.WorkflowIdReusePolicy))
-		i++
-	}
-	if v.ChildPolicy != nil {
-		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
 		i++
 	}
 	if v.RetryPolicy != nil {
@@ -34171,9 +33916,6 @@ func (v *StartWorkflowExecutionRequest) Equals(rhs *StartWorkflowExecutionReques
 		return false
 	}
 	if !_WorkflowIdReusePolicy_EqualsPtr(v.WorkflowIdReusePolicy, rhs.WorkflowIdReusePolicy) {
-		return false
-	}
-	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
 		return false
 	}
 	if !((v.RetryPolicy == nil && rhs.RetryPolicy == nil) || (v.RetryPolicy != nil && rhs.RetryPolicy != nil && v.RetryPolicy.Equals(rhs.RetryPolicy))) {
@@ -34260,16 +34002,6 @@ func (v *StartWorkflowExecutionRequest) GetRequestId() (o string) {
 func (v *StartWorkflowExecutionRequest) GetWorkflowIdReusePolicy() (o WorkflowIdReusePolicy) {
 	if v.WorkflowIdReusePolicy != nil {
 		return *v.WorkflowIdReusePolicy
-	}
-
-	return
-}
-
-// GetChildPolicy returns the value of ChildPolicy if it is set or its
-// zero value if it is unset.
-func (v *StartWorkflowExecutionRequest) GetChildPolicy() (o ChildPolicy) {
-	if v.ChildPolicy != nil {
-		return *v.ChildPolicy
 	}
 
 	return
@@ -38500,10 +38232,9 @@ func (v *WorkflowExecutionCompletedEventAttributes) GetDecisionTaskCompletedEven
 }
 
 type WorkflowExecutionConfiguration struct {
-	TaskList                            *TaskList    `json:"taskList,omitempty"`
-	ExecutionStartToCloseTimeoutSeconds *int32       `json:"executionStartToCloseTimeoutSeconds,omitempty"`
-	TaskStartToCloseTimeoutSeconds      *int32       `json:"taskStartToCloseTimeoutSeconds,omitempty"`
-	ChildPolicy                         *ChildPolicy `json:"childPolicy,omitempty"`
+	TaskList                            *TaskList `json:"taskList,omitempty"`
+	ExecutionStartToCloseTimeoutSeconds *int32    `json:"executionStartToCloseTimeoutSeconds,omitempty"`
+	TaskStartToCloseTimeoutSeconds      *int32    `json:"taskStartToCloseTimeoutSeconds,omitempty"`
 }
 
 // ToWire translates a WorkflowExecutionConfiguration struct into a Thrift-level intermediate
@@ -38523,7 +38254,7 @@ type WorkflowExecutionConfiguration struct {
 //   }
 func (v *WorkflowExecutionConfiguration) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [3]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -38551,14 +38282,6 @@ func (v *WorkflowExecutionConfiguration) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
-		i++
-	}
-	if v.ChildPolicy != nil {
-		w, err = v.ChildPolicy.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
 
@@ -38615,16 +38338,6 @@ func (v *WorkflowExecutionConfiguration) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 40:
-			if field.Value.Type() == wire.TI32 {
-				var x ChildPolicy
-				x, err = _ChildPolicy_Read(field.Value)
-				v.ChildPolicy = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		}
 	}
 
@@ -38638,7 +38351,7 @@ func (v *WorkflowExecutionConfiguration) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [3]string
 	i := 0
 	if v.TaskList != nil {
 		fields[i] = fmt.Sprintf("TaskList: %v", v.TaskList)
@@ -38650,10 +38363,6 @@ func (v *WorkflowExecutionConfiguration) String() string {
 	}
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
-		i++
-	}
-	if v.ChildPolicy != nil {
-		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
 		i++
 	}
 
@@ -38672,9 +38381,6 @@ func (v *WorkflowExecutionConfiguration) Equals(rhs *WorkflowExecutionConfigurat
 		return false
 	}
 	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
-		return false
-	}
-	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
 		return false
 	}
 
@@ -38696,16 +38402,6 @@ func (v *WorkflowExecutionConfiguration) GetExecutionStartToCloseTimeoutSeconds(
 func (v *WorkflowExecutionConfiguration) GetTaskStartToCloseTimeoutSeconds() (o int32) {
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		return *v.TaskStartToCloseTimeoutSeconds
-	}
-
-	return
-}
-
-// GetChildPolicy returns the value of ChildPolicy if it is set or its
-// zero value if it is unset.
-func (v *WorkflowExecutionConfiguration) GetChildPolicy() (o ChildPolicy) {
-	if v.ChildPolicy != nil {
-		return *v.ChildPolicy
 	}
 
 	return
@@ -40158,7 +39854,6 @@ type WorkflowExecutionStartedEventAttributes struct {
 	Input                               []byte                  `json:"input,omitempty"`
 	ExecutionStartToCloseTimeoutSeconds *int32                  `json:"executionStartToCloseTimeoutSeconds,omitempty"`
 	TaskStartToCloseTimeoutSeconds      *int32                  `json:"taskStartToCloseTimeoutSeconds,omitempty"`
-	ChildPolicy                         *ChildPolicy            `json:"childPolicy,omitempty"`
 	ContinuedExecutionRunId             *string                 `json:"continuedExecutionRunId,omitempty"`
 	Initiator                           *ContinueAsNewInitiator `json:"initiator,omitempty"`
 	ContinuedFailureReason              *string                 `json:"continuedFailureReason,omitempty"`
@@ -40195,7 +39890,7 @@ type WorkflowExecutionStartedEventAttributes struct {
 //   }
 func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [26]wire.Field
+		fields [25]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -40263,14 +39958,6 @@ func (v *WorkflowExecutionStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 50, Value: w}
-		i++
-	}
-	if v.ChildPolicy != nil {
-		w, err = v.ChildPolicy.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 52, Value: w}
 		i++
 	}
 	if v.ContinuedExecutionRunId != nil {
@@ -40507,16 +40194,6 @@ func (v *WorkflowExecutionStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 52:
-			if field.Value.Type() == wire.TI32 {
-				var x ChildPolicy
-				x, err = _ChildPolicy_Read(field.Value)
-				v.ChildPolicy = &x
-				if err != nil {
-					return err
-				}
-
-			}
 		case 54:
 			if field.Value.Type() == wire.TBinary {
 				var x string
@@ -40686,7 +40363,7 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [26]string
+	var fields [25]string
 	i := 0
 	if v.WorkflowType != nil {
 		fields[i] = fmt.Sprintf("WorkflowType: %v", v.WorkflowType)
@@ -40718,10 +40395,6 @@ func (v *WorkflowExecutionStartedEventAttributes) String() string {
 	}
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		fields[i] = fmt.Sprintf("TaskStartToCloseTimeoutSeconds: %v", *(v.TaskStartToCloseTimeoutSeconds))
-		i++
-	}
-	if v.ChildPolicy != nil {
-		fields[i] = fmt.Sprintf("ChildPolicy: %v", *(v.ChildPolicy))
 		i++
 	}
 	if v.ContinuedExecutionRunId != nil {
@@ -40825,9 +40498,6 @@ func (v *WorkflowExecutionStartedEventAttributes) Equals(rhs *WorkflowExecutionS
 	if !_I32_EqualsPtr(v.TaskStartToCloseTimeoutSeconds, rhs.TaskStartToCloseTimeoutSeconds) {
 		return false
 	}
-	if !_ChildPolicy_EqualsPtr(v.ChildPolicy, rhs.ChildPolicy) {
-		return false
-	}
 	if !_String_EqualsPtr(v.ContinuedExecutionRunId, rhs.ContinuedExecutionRunId) {
 		return false
 	}
@@ -40918,16 +40588,6 @@ func (v *WorkflowExecutionStartedEventAttributes) GetExecutionStartToCloseTimeou
 func (v *WorkflowExecutionStartedEventAttributes) GetTaskStartToCloseTimeoutSeconds() (o int32) {
 	if v.TaskStartToCloseTimeoutSeconds != nil {
 		return *v.TaskStartToCloseTimeoutSeconds
-	}
-
-	return
-}
-
-// GetChildPolicy returns the value of ChildPolicy if it is set or its
-// zero value if it is unset.
-func (v *WorkflowExecutionStartedEventAttributes) GetChildPolicy() (o ChildPolicy) {
-	if v.ChildPolicy != nil {
-		return *v.ChildPolicy
 	}
 
 	return
