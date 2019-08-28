@@ -1066,27 +1066,121 @@ func Test_NonDeterministicCheck(t *testing.T) {
 
 func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 	diType := s.DecisionTypeUpsertWorkflowSearchAttributes
-	searchAttr := &s.SearchAttributes{}
-	decision := &s.Decision{
-		DecisionType: &diType,
-		UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
-			SearchAttributes: searchAttr,
+	eType := s.EventTypeUpsertWorkflowSearchAttributes
+
+	testCases := []struct {
+		name     string
+		decision *s.Decision
+		event    *s.HistoryEvent
+		expected bool
+	}{
+		{
+			name: "event type not match",
+			decision: &s.Decision{
+				DecisionType: &diType,
+				UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+					SearchAttributes: &s.SearchAttributes{},
+				},
+			},
+			event:    &s.HistoryEvent{},
+			expected: false,
+		},
+		{
+			name: "attributes not match",
+			decision: &s.Decision{
+				DecisionType: &diType,
+				UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+					SearchAttributes: &s.SearchAttributes{},
+				},
+			},
+			event: &s.HistoryEvent{
+				EventType: &eType,
+				UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{},
+			},
+			expected: false,
+		},
+		{
+			name: "attributes match",
+			decision: &s.Decision{
+				DecisionType: &diType,
+				UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+					SearchAttributes: &s.SearchAttributes{},
+				},
+			},
+			event: &s.HistoryEvent{
+				EventType: &eType,
+				UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{
+					SearchAttributes: &s.SearchAttributes{},
+				},
+			},
+			expected: true,
 		},
 	}
-	historyEvent := &s.HistoryEvent{}
-	ok := isDecisionMatchEvent(decision, historyEvent, false)
 
-	eType := s.EventTypeUpsertWorkflowSearchAttributes
-	historyEvent = &s.HistoryEvent{
-		EventType: &eType,
-		UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{},
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, false))
+		})
 	}
-	ok = isDecisionMatchEvent(decision, historyEvent, false)
-	require.False(t, ok)
+}
 
-	historyEvent.UpsertWorkflowSearchAttributesEventAttributes = &s.UpsertWorkflowSearchAttributesEventAttributes{
-		SearchAttributes: searchAttr,
+func Test_IsSearchAttributesMatched(t *testing.T) {
+	testCases := []struct {
+		name     string
+		lhs      *s.SearchAttributes
+		rhs      *s.SearchAttributes
+		expected bool
+	}{
+		{
+			name:     "both nil",
+			lhs:      nil,
+			rhs:      nil,
+			expected: true,
+		},
+		{
+			name:     "left nil",
+			lhs:      nil,
+			rhs:      &s.SearchAttributes{},
+			expected: false,
+		},
+		{
+			name:     "right nil",
+			lhs:      &s.SearchAttributes{},
+			rhs:      nil,
+			expected: false,
+		},
+		{
+			name: "not match",
+			lhs: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"key1": []byte("1"),
+					"key2": []byte("abc"),
+				},
+			},
+			rhs:      &s.SearchAttributes{},
+			expected: false,
+		},
+		{
+			name: "match",
+			lhs: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"key1": []byte("1"),
+					"key2": []byte("abc"),
+				},
+			},
+			rhs: &s.SearchAttributes{
+				IndexedFields: map[string][]byte{
+					"key2": []byte("abc"),
+					"key1": []byte("1"),
+				},
+			},
+			expected: true,
+		},
 	}
-	ok = isDecisionMatchEvent(decision, historyEvent, false)
-	require.True(t, ok)
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, isSearchAttributesMatched(testCase.lhs, testCase.rhs))
+		})
+	}
 }

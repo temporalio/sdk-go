@@ -73,7 +73,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	// sleep for a while to allow the pollers to shutdown
 	// then assert that there are no lingering go routines
-	time.Sleep(11 * time.Second)
+	time.Sleep(20 * time.Second)
 	// https://github.com/uber-go/cadence-client/issues/739
 	goleak.VerifyNoLeaks(ts.T(), goleak.IgnoreTopFunction("go.uber.org/cadence/internal.(*coroutineState).initialYield"))
 }

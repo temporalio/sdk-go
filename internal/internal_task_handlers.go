@@ -1289,14 +1289,17 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.UpsertWorkflowSearchAttributesEventAttributes
 		decisionAttributes := d.UpsertWorkflowSearchAttributesDecisionAttributes
-		if eventAttributes.SearchAttributes != decisionAttributes.SearchAttributes {
-			return false
-		}
-		return true
-
+		return isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes)
 	}
 
 	return false
+}
+
+func isSearchAttributesMatched(attrFromEvent, attrFromDecision *s.SearchAttributes) bool {
+	if attrFromEvent != nil && attrFromDecision != nil {
+		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromDecision.IndexedFields)
+	}
+	return attrFromEvent == nil && attrFromDecision == nil
 }
 
 // return true if the check fails:
