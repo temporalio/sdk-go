@@ -140,7 +140,7 @@ the information necessary to be able to be completed from an external system and
 waiting for that outside callback:
 
     // retrieve activity information needed to complete activity asynchronously
-    activityInfo := activity.GetActivityInfo(ctx)
+    activityInfo := activity.GetInfo(ctx)
     taskToken := activityInfo.TaskToken
 
     // send the taskToken to external service that will complete the activity
