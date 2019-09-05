@@ -109,7 +109,7 @@ type (
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options
 // provided to this function.
-//  ctx - use context to override any options for the new workflow like execution time out, decision task time out, task list.
+//  ctx - use context to override any options for the new workflow like execution timeout, decision task timeout, task list.
 //	  if not mentioned it would use the defaults that the current workflow is using.
 //        ctx := WithExecutionStartToCloseTimeout(ctx, 30 * time.Minute)
 //        ctx := WithWorkflowTaskStartToCloseTimeout(ctx, time.Minute)

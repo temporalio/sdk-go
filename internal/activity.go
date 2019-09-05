@@ -68,16 +68,16 @@ type (
 		// optional: The default task list with the same name as the workflow task list.
 		TaskList string
 
-		// ScheduleToCloseTimeout - The end to end time out for the activity needed.
+		// ScheduleToCloseTimeout - The end to end timeout for the activity needed.
 		// The zero value of this uses default value.
 		// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
 		ScheduleToCloseTimeout time.Duration
 
-		// ScheduleToStartTimeout - The queue time out before the activity starts executed.
+		// ScheduleToStartTimeout - The queue timeout before the activity starts executed.
 		// Mandatory: No default.
 		ScheduleToStartTimeout time.Duration
 
-		// StartToCloseTimeout - The time out from the start of execution to end of it.
+		// StartToCloseTimeout - The timeout from the start of execution to end of it.
 		// Mandatory: No default.
 		StartToCloseTimeout time.Duration
 

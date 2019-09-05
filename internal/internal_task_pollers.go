@@ -241,7 +241,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 
 func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	if task.task == nil {
-		// We didn't have task, poll might have time out.
+		// We didn't have task, poll might have timeout.
 		traceLog(func() {
 			wtp.logger.Debug("Workflow task unavailable")
 		})
@@ -817,7 +817,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	activityTask := task.(*activityTask)
 	if activityTask.task == nil {
-		// We didn't have task, poll might have time out.
+		// We didn't have task, poll might have timeout.
 		traceLog(func() {
 			atp.logger.Debug("Activity task unavailable")
 		})

@@ -321,12 +321,12 @@ type (
 		// Mandatory: No default.
 		TaskList string
 
-		// ExecutionStartToCloseTimeout - The time out for duration of workflow execution.
+		// ExecutionStartToCloseTimeout - The timeout for duration of workflow execution.
 		// The resolution is seconds.
 		// Mandatory: No default.
 		ExecutionStartToCloseTimeout time.Duration
 
-		// DecisionTaskStartToCloseTimeout - The time out for processing decision task from the time the worker
+		// DecisionTaskStartToCloseTimeout - The timeout for processing decision task from the time the worker
 		// pulled this task. If a decision task is lost, it is retried after this timeout.
 		// The resolution is seconds.
 		// Optional: defaulted to 10 secs.
