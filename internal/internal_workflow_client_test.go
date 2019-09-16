@@ -1060,6 +1060,27 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 	s.Equal(responseErr, err)
 }
 
+func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
+	request := &shared.ListArchivedWorkflowExecutionsRequest{}
+	response := &shared.ListArchivedWorkflowExecutionsResponse{}
+	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *shared.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal(domain, request.GetDomain())
+		})
+	resp, err := s.client.ListArchivedWorkflow(context.Background(), request)
+	s.Nil(err)
+	s.Equal(response, resp)
+
+	responseErr := &shared.BadRequestError{}
+	request.Domain = common.StringPtr("another")
+	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
+		Do(func(_ interface{}, req *shared.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
+			s.Equal("another", request.GetDomain())
+		})
+	resp, err = s.client.ListArchivedWorkflow(context.Background(), request)
+	s.Equal(responseErr, err)
+}
+
 func (s *workflowClientTestSuite) TestScanWorkflow() {
 	request := &shared.ListWorkflowExecutionsRequest{}
 	response := &shared.ListWorkflowExecutionsResponse{}

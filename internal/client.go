@@ -238,6 +238,15 @@ type (
 		//  - InternalServiceError
 		ListWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error)
 
+		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Cadence
+		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
+		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
+		// by your domain to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		ListArchivedWorkflow(ctx context.Context, request *s.ListArchivedWorkflowExecutionsRequest) (*s.ListArchivedWorkflowExecutionsResponse, error)
+
 		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
 		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).

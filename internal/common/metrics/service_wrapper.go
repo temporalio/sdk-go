@@ -53,6 +53,7 @@ const (
 	scopeNameListClosedWorkflowExecutions     = CadenceMetricsPrefix + "ListClosedWorkflowExecutions"
 	scopeNameListOpenWorkflowExecutions       = CadenceMetricsPrefix + "ListOpenWorkflowExecutions"
 	scopeNameListWorkflowExecutions           = CadenceMetricsPrefix + "ListWorkflowExecutions"
+	scopeNameListArchivedWorkflowExecutions   = CadenceMetricsPrefix + "ListArchviedExecutions"
 	scopeNameScanWorkflowExecutions           = CadenceMetricsPrefix + "ScanWorkflowExecutions"
 	scopeNameCountWorkflowExecutions          = CadenceMetricsPrefix + "CountWorkflowExecutions"
 	scopeNamePollForActivityTask              = CadenceMetricsPrefix + "PollForActivityTask"
@@ -176,6 +177,13 @@ func (w *workflowServiceMetricsWrapper) ListOpenWorkflowExecutions(ctx context.C
 func (w *workflowServiceMetricsWrapper) ListWorkflowExecutions(ctx context.Context, request *shared.ListWorkflowExecutionsRequest, opts ...yarpc.CallOption) (*shared.ListWorkflowExecutionsResponse, error) {
 	scope := w.getOperationScope(scopeNameListWorkflowExecutions)
 	result, err := w.service.ListWorkflowExecutions(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) ListArchivedWorkflowExecutions(ctx context.Context, request *shared.ListArchivedWorkflowExecutionsRequest, opts ...yarpc.CallOption) (*shared.ListArchivedWorkflowExecutionsResponse, error) {
+	scope := w.getOperationScope(scopeNameListArchivedWorkflowExecutions)
+	result, err := w.service.ListArchivedWorkflowExecutions(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }

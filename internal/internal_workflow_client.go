@@ -658,6 +658,26 @@ func (wc *workflowClient) ListWorkflow(ctx context.Context, request *s.ListWorkf
 	return response, nil
 }
 
+// ListArchivedWorkflow implementation
+func (wc *workflowClient) ListArchivedWorkflow(ctx context.Context, request *s.ListArchivedWorkflowExecutionsRequest) (*s.ListArchivedWorkflowExecutionsResponse, error) {
+	if len(request.GetDomain()) == 0 {
+		request.Domain = common.StringPtr(wc.domain)
+	}
+	var response *s.ListArchivedWorkflowExecutionsResponse
+	err := backoff.Retry(ctx,
+		func() error {
+			var err1 error
+			tchCtx, cancel, opt := newChannelContext(ctx)
+			defer cancel()
+			response, err1 = wc.workflowService.ListArchivedWorkflowExecutions(tchCtx, request, opt...)
+			return err1
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // ScanWorkflow implementation
 func (wc *workflowClient) ScanWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
