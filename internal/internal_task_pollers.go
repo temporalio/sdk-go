@@ -649,8 +649,8 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
 	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Now().Sub(startTime))
 
-	scheduledTime := time.Unix(0, response.GetScheduledTimestamp())
-	wtp.metricsScope.Timer(metrics.DecisionScheduledToStartLatency).Record(time.Now().Sub(scheduledTime))
+	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestamp())
+	wtp.metricsScope.Timer(metrics.DecisionScheduledToStartLatency).Record(scheduledToStartLatency)
 	return task, nil
 }
 
@@ -793,8 +793,8 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	atp.metricsScope.Counter(metrics.ActivityPollSucceedCounter).Inc(1)
 	atp.metricsScope.Timer(metrics.ActivityPollLatency).Record(time.Now().Sub(startTime))
 
-	scheduledTime := time.Unix(0, response.GetScheduledTimestampOfThisAttempt())
-	atp.metricsScope.Timer(metrics.ActivityScheduledToStartLatency).Record(time.Now().Sub(scheduledTime))
+	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestampOfThisAttempt())
+	atp.metricsScope.Timer(metrics.ActivityScheduledToStartLatency).Record(scheduledToStartLatency)
 
 	return &activityTask{task: response, pollStartTime: startTime}, nil
 }
