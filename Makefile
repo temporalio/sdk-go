@@ -25,7 +25,6 @@ INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 ALL_SRC := $(THRIFTRW_OUT) $(shell \
 	find . -name "*.go" | \
 	grep -v \
-	-e vendor/ \
 	-e .gen/ \
 	-e .build/ \
 )
@@ -61,14 +60,6 @@ $(BINS)/thriftrw-plugin-yarpc: $(BINS)/versions/yarpc-$(YARPC_VERSION)
 $(BINS)/golint: $(BINS)/versions/golint-$(GOLINT_VERSION)
 	@ln -fs $(CURDIR)/$< $@
 
-vendor: vendor/dep.updated
-
-DEP ?= $(shell which dep)
-
-vendor/dep.updated: Gopkg.lock
-	${DEP} ensure
-	touch vendor/dep.updated
-
 $(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
 	@mkdir -p $(dir $@)
@@ -90,7 +81,7 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
 	@touch $(BUILD)/copyright
 
-$(BUILD)/dummy: vendor/dep.updated $(ALL_SRC)
+$(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
 

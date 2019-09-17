@@ -131,6 +131,12 @@ fi
 # Pull the repo, set to the correct version
 #
 
+# TODO: use go modules
+# See:
+#  * https://github.com/myitcv/gobin
+#  * https://github.com/golang/go/issues/25922
+export GO111MODULE=off
+
 go get -d "$GO_GETTABLE_BIN"
 # eval so redirection works when quiet
 eval "pushd $GOPATH/src/$GO_GETTABLE_REPO $TO_DEV_NULL"

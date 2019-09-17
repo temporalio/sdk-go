@@ -232,9 +232,9 @@ func createQueryTask(
 }
 
 func createTestEventTimerStarted(eventID int64, id int) *s.HistoryEvent {
-	timerId := fmt.Sprintf("%v", id)
+	timerID := fmt.Sprintf("%v", id)
 	attr := &s.TimerStartedEventAttributes{
-		TimerId:                      common.StringPtr(timerId),
+		TimerId:                      common.StringPtr(timerID),
 		StartToFireTimeoutSeconds:    nil,
 		DecisionTaskCompletedEventId: nil,
 	}
@@ -245,9 +245,9 @@ func createTestEventTimerStarted(eventID int64, id int) *s.HistoryEvent {
 }
 
 func createTestEventTimerFired(eventID int64, id int) *s.HistoryEvent {
-	timerId := fmt.Sprintf("%v", id)
+	timerID := fmt.Sprintf("%v", id)
 	attr := &s.TimerFiredEventAttributes{
-		TimerId: common.StringPtr(timerId),
+		TimerId: common.StringPtr(timerID),
 	}
 
 	return &s.HistoryEvent{
@@ -327,9 +327,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
 	t.Equal(s.DecisionTypeCompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
-	checksumsJson := string(response.Decisions[0].CompleteWorkflowExecutionDecisionAttributes.Result)
+	checksumsJSON := string(response.Decisions[0].CompleteWorkflowExecutionDecisionAttributes.Result)
 	var checksums []string
-	json.Unmarshal([]byte(checksumsJson), &checksums)
+	json.Unmarshal([]byte(checksumsJSON), &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])

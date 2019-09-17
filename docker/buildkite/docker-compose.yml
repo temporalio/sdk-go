@@ -46,6 +46,7 @@ services:
       dockerfile: ./docker/buildkite/Dockerfile
     environment:
       - "SERVICE_ADDR=cadence:7933"
+      - "GO111MODULE=on"
     depends_on:
       - cadence
     volumes:
@@ -59,6 +60,8 @@ services:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
+    environment:
+      - "GO111MODULE=on"
     volumes:
       - ../../:/go/src/go.uber.org/cadence
     networks:
@@ -89,6 +92,7 @@ services:
       - BUILDKITE_BUILD_CREATOR_TEAMS
       - BUILDKITE_PULL_REQUEST_REPO
       - COVERALLS_TOKEN
+      - "GO111MODULE=on"
     volumes:
       - ../../:/go/src/go.uber.org/cadence
       - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent

@@ -303,7 +303,7 @@ func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) 
 	return ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
 }
 
-// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file upto provided
+// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the given json history file upto provided
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.

@@ -554,7 +554,7 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	// Setup signals.
 	for i := 0; i < 2; i++ {
 		msg := expected[i]
-		var delay time.Duration = 0
+		var delay time.Duration
 		if i > 0 {
 			delay = time.Second
 		}

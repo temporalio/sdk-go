@@ -52,6 +52,7 @@ services:
         make integ_test_sticky_off
     environment:
       - "SERVICE_ADDR=cadence:7933"
+      - "GO111MODULE=on"
     depends_on:
       - cadence
     volumes:
@@ -73,6 +74,7 @@ services:
         make integ_test_sticky_on
     environment:
       - "SERVICE_ADDR=cadence:7933"
+      - "GO111MODULE=on"
     depends_on:
       - cadence
     volumes:
@@ -92,6 +94,8 @@ services:
       - -c
       - |
         make unit_test
+    environment:
+      - "GO111MODULE=on"
     volumes:
       - ../../:/go/src/go.uber.org/cadence
     networks:
@@ -109,6 +113,8 @@ services:
       - -c
       - |
         make .build/coverage/cover.out
+    environment:
+      - "GO111MODULE=on"
     volumes:
       - ../../:/go/src/go.uber.org/cadence
 
