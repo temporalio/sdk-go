@@ -776,23 +776,79 @@ func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - EntityNotExistError
 //  - QueryFailError
 func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
+	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
+		WorkflowID: workflowID,
+		RunID: runID,
+		QueryType: queryType,
+		Args: args,
+	}
+	result, err := wc.QueryWorkflowWithOptions(ctx, queryWorkflowWithOptionsRequest)
+	if err != nil {
+		return nil, err
+	}
+	return result.QueryResult, nil
+}
+
+// QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
+type QueryWorkflowWithOptionsRequest struct {
+	// WorkflowID is a required field indicating the workflow which should be queried.
+	WorkflowID string
+
+	// RunID is an optional field used to identify a specific run of the queried workflow.
+	// If RunID is not provided the latest run will be used.
+	RunID string
+
+	// QueryType is a required field which specifies the query you want to run.
+	// By default, cadence supports "__stack_trace" as a standard query type, which will return string value
+	// representing the call stack of the target workflow. The target workflow could also setup different query handler to handle custom query types.
+	// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details on how to setup query handler within the target workflow.
+	QueryType string
+
+	// Args is an optional field used to identify the arguments passed to the query.
+	Args []interface{}
+
+	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
+	// QueryRejectConditionNotOpen will reject queries to workflows which are not open
+	// QueryRejectConditionNotCompletedCleanly will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...)
+	QueryRejectCondition *s.QueryRejectCondition
+}
+
+// QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
+type QueryWorkflowWithOptionsResponse struct {
+	// QueryResult contains the result of executing the query.
+	// This will only be set if the query was completed successfully and not rejected.
+	QueryResult Value
+
+	// QueryRejected contains information about the query rejection.
+	QueryRejected *s.QueryRejected
+}
+
+// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
+// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResult for more information.
+// The errors it can return:
+//  - BadRequestError
+//  - InternalServiceError
+//  - EntityNotExistError
+//  - QueryFailError
+func (wc *workflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
 	var input []byte
-	if len(args) > 0 {
+	if len(request.Args) > 0 {
 		var err error
-		if input, err = encodeArgs(wc.dataConverter, args); err != nil {
+		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
 			return nil, err
 		}
 	}
-	request := &s.QueryWorkflowRequest{
+	req := &s.QueryWorkflowRequest{
 		Domain: common.StringPtr(wc.domain),
 		Execution: &s.WorkflowExecution{
-			WorkflowId: common.StringPtr(workflowID),
-			RunId:      getRunID(runID),
+			WorkflowId: common.StringPtr(request.WorkflowID),
+			RunId:      getRunID(request.RunID),
 		},
 		Query: &s.WorkflowQuery{
-			QueryType: common.StringPtr(queryType),
+			QueryType: common.StringPtr(request.QueryType),
 			QueryArgs: input,
 		},
+		QueryRejectCondition: request.QueryRejectCondition,
 	}
 
 	var resp *s.QueryWorkflowResponse
@@ -801,14 +857,23 @@ func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 			tchCtx, cancel, opt := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			resp, err = wc.workflowService.QueryWorkflow(tchCtx, request, opt...)
+			resp, err = wc.workflowService.QueryWorkflow(tchCtx, req, opt...)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	if err != nil {
 		return nil, err
 	}
 
-	return newEncodedValue(resp.QueryResult, wc.dataConverter), nil
+	if resp.QueryRejected != nil {
+		return &QueryWorkflowWithOptionsResponse{
+			QueryRejected: resp.QueryRejected,
+			QueryResult: nil,
+		}, nil
+	}
+	return &QueryWorkflowWithOptionsResponse{
+		QueryRejected: nil,
+		QueryResult: newEncodedValue(resp.QueryResult, wc.dataConverter),
+	}, nil
 }
 
 // DescribeTaskList returns information about the target tasklist, right now this API returns the

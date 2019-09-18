@@ -349,6 +349,31 @@ func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID st
 	return r0, r1
 }
 
+// QueryWorkflowWithOptions provides a mock function with given fields: ctx, request
+func (_m *Client) QueryWorkflowWithOptions(ctx context.Context, request *client.QueryWorkflowWithOptionsRequest) (*client.QueryWorkflowWithOptionsResponse, error) {
+	var _ca []interface{}
+	_ca = append(_ca, ctx, request)
+	ret := _m.Called(_ca...)
+
+	var r0 *client.QueryWorkflowWithOptionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *client.QueryWorkflowWithOptionsRequest) *client.QueryWorkflowWithOptionsResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.QueryWorkflowWithOptionsResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *client.QueryWorkflowWithOptionsRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // RecordActivityHeartbeat provides a mock function with given fields: ctx, taskToken, details
 func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
 	var _ca []interface{}

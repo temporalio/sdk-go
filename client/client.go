@@ -59,6 +59,12 @@ type (
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
 	WorkflowIDReusePolicy = internal.WorkflowIDReusePolicy
 
+	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions
+	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
+
+	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions
+	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -307,6 +313,15 @@ type (
 		//  - EntityNotExistError
 		//  - QueryFailError
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error)
+
+		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
+		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
+		// The errors it can return:
+		//  - BadRequestError
+		//  - InternalServiceError
+		//  - EntityNotExistError
+		//  - QueryFailError
+		QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
