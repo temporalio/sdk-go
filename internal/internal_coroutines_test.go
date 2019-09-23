@@ -358,6 +358,48 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
+func TestSelectOnClosedChannel(t *testing.T) {
+	var history []string
+	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+		c := NewBufferedChannel(ctx, 1)
+		c.Send(ctx, 5)
+		c.Close()
+
+		selector := NewNamedSelector(ctx, "waiting for channel")
+
+		selector.AddReceive(c, func(f Channel, more bool) {
+			var n int
+
+			if !more {
+				history = append(history, "more from function is false")
+				return
+			}
+
+			more = f.Receive(ctx, &n)
+			if !more {
+				history = append(history, "more from receive is false")
+				return
+			}
+			history = append(history, fmt.Sprintf("got message on channel: %v", n))
+		})
+
+		selector.Select(ctx)
+		selector.Select(ctx)
+		selector.Select(ctx)
+		selector.Select(ctx)
+	})
+	d.ExecuteUntilAllBlocked()
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+
+	expected := []string{
+		"got message on channel: 5",
+		"more from function is false",
+		"more from function is false",
+		"more from function is false",
+	}
+	require.EqualValues(t, expected, history)
+}
+
 func TestBlockingSelectAsyncSend2(t *testing.T) {
 	var history []string
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {

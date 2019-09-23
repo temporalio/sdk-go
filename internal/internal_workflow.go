@@ -986,7 +986,11 @@ func (s *selectorImpl) Select(ctx Context) {
 				// become ready they won't consume the value for this Select() call.
 				readyBranch = func() {
 				}
-				c.recValue = &v
+				// Avoid assigning pointer to nil interface which makes
+				// c.RecValue != nil and breaks the nil check at the beginning of receiveAsyncImpl
+				if more {
+					c.recValue = &v
+				}
 				f(c, more)
 				return
 			}
