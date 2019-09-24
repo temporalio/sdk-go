@@ -65,6 +65,9 @@ type (
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
 
+	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed
+	ParentClosePolicy = internal.ParentClosePolicy
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -382,6 +385,15 @@ const (
 
 	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all
 	WorkflowIDReusePolicyRejectDuplicate WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyRejectDuplicate
+)
+
+const (
+	// Terminate means terminating the child workflow
+	ParentClosePolicyTerminate = internal.ParentClosePolicyTerminate
+	// RequestCancel means requesting cancellation on the child workflow
+	ParentClosePolicyRequestCancel = internal.ParentClosePolicyRequestCancel
+	// Abandon means not doing anything on the child workflow
+	ParentClosePolicyAbandon = internal.ParentClosePolicyAbandon
 )
 
 // NewClient creates an instance of a workflow client

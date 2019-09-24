@@ -355,6 +355,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Input = params.input
 	attributes.WorkflowType = workflowTypePtr(*params.workflowType)
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toThriftPtr()
+	attributes.ParentClosePolicy = params.parentClosePolicy.toThriftPtr()
 	attributes.RetryPolicy = params.retryPolicy
 	attributes.Header = params.header
 	attributes.Memo = memo
