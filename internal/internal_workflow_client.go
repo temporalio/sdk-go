@@ -778,9 +778,9 @@ func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
 	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
 		WorkflowID: workflowID,
-		RunID: runID,
-		QueryType: queryType,
-		Args: args,
+		RunID:      runID,
+		QueryType:  queryType,
+		Args:       args,
 	}
 	result, err := wc.QueryWorkflowWithOptions(ctx, queryWorkflowWithOptionsRequest)
 	if err != nil {
@@ -867,12 +867,12 @@ func (wc *workflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	if resp.QueryRejected != nil {
 		return &QueryWorkflowWithOptionsResponse{
 			QueryRejected: resp.QueryRejected,
-			QueryResult: nil,
+			QueryResult:   nil,
 		}, nil
 	}
 	return &QueryWorkflowWithOptionsResponse{
 		QueryRejected: nil,
-		QueryResult: newEncodedValue(resp.QueryResult, wc.dataConverter),
+		QueryResult:   newEncodedValue(resp.QueryResult, wc.dataConverter),
 	}, nil
 }
 
