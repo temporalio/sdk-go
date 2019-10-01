@@ -294,7 +294,14 @@ func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]
 		return err
 	}
 
-	upsertID := wc.GenerateSequenceID()
+	var upsertID string
+	if changeVersion, ok := attributes[CadenceChangeVersion]; ok {
+		// to ensure backward compatibility on searchable GetVersion, use latest changeVersion as upsertID
+		upsertID = changeVersion.([]string)[0]
+	} else {
+		upsertID = wc.GenerateSequenceID()
+	}
+
 	wc.decisionsHelper.upsertSearchAttributes(upsertID, attr)
 	wc.updateWorkflowInfoWithSearchAttributes(attr) // this is for getInfo correctness
 	return nil
@@ -560,6 +567,9 @@ func validateVersion(changeID string, version, minSupported, maxSupported Versio
 func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
 	if version, ok := wc.changeVersions[changeID]; ok {
 		validateVersion(changeID, version, minSupported, maxSupported)
+		if wc.isReplay {
+			wc.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions))
+		}
 		return version
 	}
 
@@ -568,14 +578,34 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 		// GetVersion for changeID is called first time in replay mode, use DefaultVersion
 		version = DefaultVersion
 	} else {
-		// GetVersion for changeID is called first time (non-replay mode), we need to generate a marker decision for it.
+		// GetVersion for changeID is called first time (non-replay mode), generate a marker decision for it.
+		// Also upsert search attributes to enable ability to search by changeVersion.
 		version = maxSupported
 		wc.decisionsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter())
+		wc.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions))
 	}
 
 	validateVersion(changeID, version, minSupported, maxSupported)
 	wc.changeVersions[changeID] = version
 	return version
+}
+
+func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]interface{} {
+	return map[string]interface{}{
+		CadenceChangeVersion: getChangeVersions(changeID, version, existingChangeVersions),
+	}
+}
+
+func getChangeVersions(changeID string, version Version, existingChangeVersions map[string]Version) []string {
+	res := []string{getChangeVersion(changeID, version)}
+	for k, v := range existingChangeVersions {
+		res = append(res, getChangeVersion(k, v))
+	}
+	return res
+}
+
+func getChangeVersion(changeID string, version Version) string {
+	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {

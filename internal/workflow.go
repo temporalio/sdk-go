@@ -844,6 +844,9 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 //   }
 // This is only supported when using ElasticSearch.
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+	if _, ok := attributes[CadenceChangeVersion]; ok {
+		return errors.New("CadenceChangeVersion is a reserved key that cannot be set, please use other key")
+	}
 	return getWorkflowEnvironment(ctx).UpsertSearchAttributes(attributes)
 }
 
@@ -1028,6 +1031,9 @@ func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, 
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
 const DefaultVersion Version = -1
+
+// CadenceChangeVersion is used as search attributes key to find workflows with specific change version.
+const CadenceChangeVersion = "CadenceChangeVersion"
 
 // GetVersion is used to safely perform backwards incompatible changes to workflow definitions.
 // It is not allowed to update workflow code while there are workflows running as it is going to break

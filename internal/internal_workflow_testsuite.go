@@ -1718,10 +1718,14 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), cal
 func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) (retVersion Version) {
 	if mockVersion, ok := env.getMockedVersion(changeID, changeID, minSupported, maxSupported); ok {
 		// GetVersion for changeID is mocked
+		env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
 	if mockVersion, ok := env.getMockedVersion(mock.Anything, changeID, minSupported, maxSupported); ok {
 		// GetVersion is mocked with any changeID.
+		env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
 
@@ -1730,6 +1734,7 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 		validateVersion(changeID, version, minSupported, maxSupported)
 		return version
 	}
+	env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, maxSupported, env.changeVersions))
 	env.changeVersions[changeID] = maxSupported
 	return maxSupported
 }

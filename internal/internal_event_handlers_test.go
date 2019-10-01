@@ -170,8 +170,17 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
+	err = env.UpsertSearchAttributes(map[string]interface{}{
+		CadenceChangeVersion: []string{"change2-1", "change1-1"}},
+	)
+	require.NoError(t, err)
+	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
+	require.True(t, ok)
+	require.Equal(t, int32(0), env.counterID)
+
 	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
 	require.NoError(t, err)
+	require.Equal(t, int32(1), env.counterID)
 }
 
 func Test_MergeSearchAttributes(t *testing.T) {
@@ -223,4 +232,72 @@ func Test_MergeSearchAttributes(t *testing.T) {
 			require.Equal(t, test.expected, result)
 		})
 	}
+}
+
+func Test_GetChangeVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		changeID string
+		version  Version
+		expected string
+	}{
+		{
+			name:     "default",
+			changeID: "cid",
+			version:  DefaultVersion,
+			expected: "cid--1",
+		},
+		{
+			name:     "normal_case",
+			changeID: "cid",
+			version:  1,
+			expected: "cid-1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := getChangeVersion(test.changeID, test.version)
+			require.Equal(t, test.expected, result)
+		})
+	}
+}
+
+func Test_GetChangeVersions(t *testing.T) {
+	tests := []struct {
+		name                   string
+		changeID               string
+		version                Version
+		existingChangeVersions map[string]Version
+		expected               []string
+	}{
+		{
+			name:                   "single_change_id",
+			changeID:               "cid",
+			version:                1,
+			existingChangeVersions: map[string]Version{},
+			expected:               []string{"cid-1"},
+		},
+		{
+			name:     "multi_change_ids",
+			changeID: "cid2",
+			version:  1,
+			existingChangeVersions: map[string]Version{
+				"cid": 1,
+			},
+			expected: []string{"cid2-1", "cid-1"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := getChangeVersions(test.changeID, test.version, test.existingChangeVersions)
+			require.Equal(t, test.expected, result)
+		})
+	}
+}
+
+func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
+	result := createSearchAttributesForChangeVersion("cid", 1, map[string]Version{})
+	val, ok := result["CadenceChangeVersion"]
+	require.True(t, ok, "Remember to update related key on server side")
+	require.Equal(t, []string{"cid-1"}, val)
 }

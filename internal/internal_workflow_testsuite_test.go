@@ -22,6 +22,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -1144,6 +1145,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 			f = ExecuteActivity(ctx, newActivity, "new_msg")
 		}
 		err := f.Get(ctx, nil) // wait for result
+
+		// test searchable change version
+		wfInfo := GetWorkflowInfo(ctx)
+		s.NotNil(wfInfo.SearchAttributes)
+		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[CadenceChangeVersion]
+		s.True(ok)
+		var changeVersions []string
+		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
+		s.NoError(err)
+		s.Equal(1, len(changeVersions))
+		s.Equal("test_change_id-2", changeVersions[0])
+
 		return err
 	}
 
@@ -1187,6 +1200,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		var ret2 string
 		err = f.Get(ctx, &ret2) // wait for result
 
+		// test searchable change version
+		wfInfo := GetWorkflowInfo(ctx)
+		s.NotNil(wfInfo.SearchAttributes)
+		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[CadenceChangeVersion]
+		s.True(ok)
+		var changeVersions []string
+		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
+		s.NoError(err)
+		s.Equal(2, len(changeVersions))
+		s.Equal("change_2-2", changeVersions[0])
+		s.Equal("change_1--1", changeVersions[1])
+
 		return ret1 + ret2, err
 	}
 
@@ -1206,6 +1231,27 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 	var ret string
 	s.NoError(env.GetWorkflowResult(&ret))
 	s.Equal("hello_old1hello_new2", ret)
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
+	workflowFn := func(ctx Context) error {
+		attr := map[string]interface{}{
+			CadenceChangeVersion: "some change version",
+		}
+		err := UpsertSearchAttributes(ctx, attr)
+		s.Error(err)
+
+		wfInfo := GetWorkflowInfo(ctx)
+		s.Nil(wfInfo.SearchAttributes)
+		return nil
+	}
+	RegisterWorkflow(workflowFn)
+	env := s.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
 	env.AssertExpectations(s.T())
 }
 
