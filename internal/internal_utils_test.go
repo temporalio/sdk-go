@@ -127,3 +127,28 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeHeartbeat), reason)
 	require.Equal(t, val2, data)
 }
+
+func TestConstructError_TimeoutError(t *testing.T) {
+	dc := getDefaultDataConverter()
+	details, err := dc.ToData(testErrorDetails1)
+	require.NoError(t, err)
+
+	reason := fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeHeartbeat)
+	constructedErr := constructError(reason, details, dc)
+	timeoutErr, ok := constructedErr.(*TimeoutError)
+	require.True(t, ok)
+	require.True(t, timeoutErr.HasDetails())
+	var detailValue string
+	err = timeoutErr.Details(&detailValue)
+	require.NoError(t, err)
+	require.Equal(t, testErrorDetails1, detailValue)
+
+	// Backward compatibility test
+	reason = errReasonTimeout
+	details, err = dc.ToData(s.TimeoutTypeHeartbeat)
+	constructedErr = constructError(reason, details, dc)
+	timeoutErr, ok = constructedErr.(*TimeoutError)
+	require.True(t, ok)
+	require.Equal(t, s.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
+	require.False(t, timeoutErr.HasDetails())
+}
