@@ -18,6 +18,9 @@ steps:
     command: "make integ_test_sticky_off"
     artifact_paths:
       - ".build/coverage/*.out"
+    retry:
+      automatic:
+        limit: 1
     plugins:
       - docker-compose#v3.0.0:
           run: integ-test
@@ -30,6 +33,9 @@ steps:
     command: "make integ_test_sticky_on"
     artifact_paths:
       - ".build/coverage/*.out"
+    retry:
+      automatic:
+        limit: 1
     plugins:
       - docker-compose#v3.0.0:
           run: integ-test
