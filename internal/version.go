@@ -35,11 +35,11 @@ package internal
 // that are writing workflows. So every time we change API
 // that can affect them we have to change this number.
 // Format: MAJOR.MINOR.PATCH
-const LibraryVersion = "0.8.3"
+const LibraryVersion = "0.9.3"
 
 // FeatureVersion is a semver that represents the
 // feature set of this cadence client library support.
 // This can be used for client capability check, on
 // Cadence server, for backward compatibility
 // Format: MAJOR.MINOR.PATCH
-const FeatureVersion = "1.2.0"
+const FeatureVersion = "1.3.0"
