@@ -3,6 +3,8 @@
 *.xml
 *.swp
 .idea/
+.vscode/
+*.code-workspace
 *.iml
 *.cov
 *.html
