@@ -285,7 +285,7 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger.With(
+	logger = logger.With(
 		zapcore.Field{Key: tagActivityID, Type: zapcore.StringType, String: *task.ActivityId},
 		zapcore.Field{Key: tagActivityType, Type: zapcore.StringType, String: *task.ActivityType.Name},
 		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: *task.WorkflowType.Name},
