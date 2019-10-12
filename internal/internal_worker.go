@@ -721,7 +721,7 @@ func (th *hostEnvImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinitio
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
 	wd := &workflowExecutor{name: lookup, fn: wf}
-	return newWorkflowDefinition(wd), nil
+	return newSyncWorkflowDefinition(wd), nil
 }
 
 // Validate function parameters.

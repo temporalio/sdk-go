@@ -470,7 +470,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
 		env:              env,
 	}
-	return newWorkflowDefinition(wd), nil
+	return newSyncWorkflowDefinition(wd), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivity(
