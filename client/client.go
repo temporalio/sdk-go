@@ -218,6 +218,7 @@ type (
 		CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
+		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
 		//	- EntityNotExistsError

@@ -387,7 +387,7 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
 	}
-	// For now resourceID is hiden from user so we will always create a unique one for each worker.
+	// For now resourceID is hidden from user so we will always create a unique one for each worker.
 	if params.SessionResourceID == "" {
 		params.SessionResourceID = uuid.New()
 	}
