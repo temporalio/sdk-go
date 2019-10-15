@@ -98,6 +98,10 @@ type (
 		//  if err := f.Get(ctx, &v); err != nil {
 		//      return err
 		//  }
+		//
+		// The valuePtr parameter can be nil when the encoded result value is not needed.
+		// Example:
+		//  err = f.Get(ctx, nil) 
 		Get(ctx Context, valuePtr interface{}) error
 
 		// When true Get is guaranteed to not block
