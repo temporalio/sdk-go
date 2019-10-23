@@ -21450,34 +21450,39 @@ func (v *PollForDecisionTaskRequest) GetBinaryChecksum() (o string) {
 }
 
 type PollForDecisionTaskResponse struct {
-	TaskToken                 []byte             `json:"taskToken,omitempty"`
-	WorkflowExecution         *WorkflowExecution `json:"workflowExecution,omitempty"`
-	WorkflowType              *WorkflowType      `json:"workflowType,omitempty"`
-	PreviousStartedEventId    *int64             `json:"previousStartedEventId,omitempty"`
-	StartedEventId            *int64             `json:"startedEventId,omitempty"`
-	Attempt                   *int64             `json:"attempt,omitempty"`
-	BacklogCountHint          *int64             `json:"backlogCountHint,omitempty"`
-	History                   *History           `json:"history,omitempty"`
-	NextPageToken             []byte             `json:"nextPageToken,omitempty"`
-	Query                     *WorkflowQuery     `json:"query,omitempty"`
-	WorkflowExecutionTaskList *TaskList          `json:"WorkflowExecutionTaskList,omitempty"`
-	ScheduledTimestamp        *int64             `json:"scheduledTimestamp,omitempty"`
-	StartedTimestamp          *int64             `json:"startedTimestamp,omitempty"`
-	Queries                   []*WorkflowQuery   `json:"queries,omitempty"`
+	TaskToken                 []byte                    `json:"taskToken,omitempty"`
+	WorkflowExecution         *WorkflowExecution        `json:"workflowExecution,omitempty"`
+	WorkflowType              *WorkflowType             `json:"workflowType,omitempty"`
+	PreviousStartedEventId    *int64                    `json:"previousStartedEventId,omitempty"`
+	StartedEventId            *int64                    `json:"startedEventId,omitempty"`
+	Attempt                   *int64                    `json:"attempt,omitempty"`
+	BacklogCountHint          *int64                    `json:"backlogCountHint,omitempty"`
+	History                   *History                  `json:"history,omitempty"`
+	NextPageToken             []byte                    `json:"nextPageToken,omitempty"`
+	Query                     *WorkflowQuery            `json:"query,omitempty"`
+	WorkflowExecutionTaskList *TaskList                 `json:"WorkflowExecutionTaskList,omitempty"`
+	ScheduledTimestamp        *int64                    `json:"scheduledTimestamp,omitempty"`
+	StartedTimestamp          *int64                    `json:"startedTimestamp,omitempty"`
+	Queries                   map[string]*WorkflowQuery `json:"queries,omitempty"`
 }
 
-type _List_WorkflowQuery_ValueList []*WorkflowQuery
+type _Map_String_WorkflowQuery_MapItemList map[string]*WorkflowQuery
 
-func (v _List_WorkflowQuery_ValueList) ForEach(f func(wire.Value) error) error {
-	for i, x := range v {
-		if x == nil {
-			return fmt.Errorf("invalid [%v]: value is nil", i)
+func (m _Map_String_WorkflowQuery_MapItemList) ForEach(f func(wire.MapItem) error) error {
+	for k, v := range m {
+		if v == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", k)
 		}
-		w, err := x.ToWire()
+		kw, err := wire.NewValueString(k), error(nil)
 		if err != nil {
 			return err
 		}
-		err = f(w)
+
+		vw, err := v.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(wire.MapItem{Key: kw, Value: vw})
 		if err != nil {
 			return err
 		}
@@ -21485,15 +21490,19 @@ func (v _List_WorkflowQuery_ValueList) ForEach(f func(wire.Value) error) error {
 	return nil
 }
 
-func (v _List_WorkflowQuery_ValueList) Size() int {
-	return len(v)
+func (m _Map_String_WorkflowQuery_MapItemList) Size() int {
+	return len(m)
 }
 
-func (_List_WorkflowQuery_ValueList) ValueType() wire.Type {
+func (_Map_String_WorkflowQuery_MapItemList) KeyType() wire.Type {
+	return wire.TBinary
+}
+
+func (_Map_String_WorkflowQuery_MapItemList) ValueType() wire.Type {
 	return wire.TStruct
 }
 
-func (_List_WorkflowQuery_ValueList) Close() {}
+func (_Map_String_WorkflowQuery_MapItemList) Close() {}
 
 // ToWire translates a PollForDecisionTaskResponse struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
@@ -21623,7 +21632,7 @@ func (v *PollForDecisionTaskResponse) ToWire() (wire.Value, error) {
 		i++
 	}
 	if v.Queries != nil {
-		w, err = wire.NewValueList(_List_WorkflowQuery_ValueList(v.Queries)), error(nil)
+		w, err = wire.NewValueMap(_Map_String_WorkflowQuery_MapItemList(v.Queries)), error(nil)
 		if err != nil {
 			return w, err
 		}
@@ -21640,21 +21649,31 @@ func _WorkflowQuery_Read(w wire.Value) (*WorkflowQuery, error) {
 	return &v, err
 }
 
-func _List_WorkflowQuery_Read(l wire.ValueList) ([]*WorkflowQuery, error) {
-	if l.ValueType() != wire.TStruct {
+func _Map_String_WorkflowQuery_Read(m wire.MapItemList) (map[string]*WorkflowQuery, error) {
+	if m.KeyType() != wire.TBinary {
 		return nil, nil
 	}
 
-	o := make([]*WorkflowQuery, 0, l.Size())
-	err := l.ForEach(func(x wire.Value) error {
-		i, err := _WorkflowQuery_Read(x)
+	if m.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make(map[string]*WorkflowQuery, m.Size())
+	err := m.ForEach(func(x wire.MapItem) error {
+		k, err := x.Key.GetString(), error(nil)
 		if err != nil {
 			return err
 		}
-		o = append(o, i)
+
+		v, err := _WorkflowQuery_Read(x.Value)
+		if err != nil {
+			return err
+		}
+
+		o[k] = v
 		return nil
 	})
-	l.Close()
+	m.Close()
 	return o, err
 }
 
@@ -21797,8 +21816,8 @@ func (v *PollForDecisionTaskResponse) FromWire(w wire.Value) error {
 
 			}
 		case 120:
-			if field.Value.Type() == wire.TList {
-				v.Queries, err = _List_WorkflowQuery_Read(field.Value.GetList())
+			if field.Value.Type() == wire.TMap {
+				v.Queries, err = _Map_String_WorkflowQuery_Read(field.Value.GetMap())
 				if err != nil {
 					return err
 				}
@@ -21879,18 +21898,20 @@ func (v *PollForDecisionTaskResponse) String() string {
 	return fmt.Sprintf("PollForDecisionTaskResponse{%v}", strings.Join(fields[:i], ", "))
 }
 
-func _List_WorkflowQuery_Equals(lhs, rhs []*WorkflowQuery) bool {
+func _Map_String_WorkflowQuery_Equals(lhs, rhs map[string]*WorkflowQuery) bool {
 	if len(lhs) != len(rhs) {
 		return false
 	}
 
-	for i, lv := range lhs {
-		rv := rhs[i]
+	for lk, lv := range lhs {
+		rv, ok := rhs[lk]
+		if !ok {
+			return false
+		}
 		if !lv.Equals(rv) {
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -21938,7 +21959,7 @@ func (v *PollForDecisionTaskResponse) Equals(rhs *PollForDecisionTaskResponse) b
 	if !_I64_EqualsPtr(v.StartedTimestamp, rhs.StartedTimestamp) {
 		return false
 	}
-	if !((v.Queries == nil && rhs.Queries == nil) || (v.Queries != nil && rhs.Queries != nil && _List_WorkflowQuery_Equals(v.Queries, rhs.Queries))) {
+	if !((v.Queries == nil && rhs.Queries == nil) || (v.Queries != nil && rhs.Queries != nil && _Map_String_WorkflowQuery_Equals(v.Queries, rhs.Queries))) {
 		return false
 	}
 
@@ -22201,6 +22222,141 @@ func (v *PollerInfo) GetRatePerSecond() (o float64) {
 	}
 
 	return
+}
+
+type QueryConsistencyLevel int32
+
+const (
+	QueryConsistencyLevelEventual QueryConsistencyLevel = 0
+	QueryConsistencyLevelStrong   QueryConsistencyLevel = 1
+)
+
+// QueryConsistencyLevel_Values returns all recognized values of QueryConsistencyLevel.
+func QueryConsistencyLevel_Values() []QueryConsistencyLevel {
+	return []QueryConsistencyLevel{
+		QueryConsistencyLevelEventual,
+		QueryConsistencyLevelStrong,
+	}
+}
+
+// UnmarshalText tries to decode QueryConsistencyLevel from a byte slice
+// containing its name.
+//
+//   var v QueryConsistencyLevel
+//   err := v.UnmarshalText([]byte("EVENTUAL"))
+func (v *QueryConsistencyLevel) UnmarshalText(value []byte) error {
+	switch string(value) {
+	case "EVENTUAL":
+		*v = QueryConsistencyLevelEventual
+		return nil
+	case "STRONG":
+		*v = QueryConsistencyLevelStrong
+		return nil
+	default:
+		return fmt.Errorf("unknown enum value %q for %q", value, "QueryConsistencyLevel")
+	}
+}
+
+// Ptr returns a pointer to this enum value.
+func (v QueryConsistencyLevel) Ptr() *QueryConsistencyLevel {
+	return &v
+}
+
+// ToWire translates QueryConsistencyLevel into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// Enums are represented as 32-bit integers over the wire.
+func (v QueryConsistencyLevel) ToWire() (wire.Value, error) {
+	return wire.NewValueI32(int32(v)), nil
+}
+
+// FromWire deserializes QueryConsistencyLevel from its Thrift-level
+// representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TI32)
+//   if err != nil {
+//     return QueryConsistencyLevel(0), err
+//   }
+//
+//   var v QueryConsistencyLevel
+//   if err := v.FromWire(x); err != nil {
+//     return QueryConsistencyLevel(0), err
+//   }
+//   return v, nil
+func (v *QueryConsistencyLevel) FromWire(w wire.Value) error {
+	*v = (QueryConsistencyLevel)(w.GetI32())
+	return nil
+}
+
+// String returns a readable string representation of QueryConsistencyLevel.
+func (v QueryConsistencyLevel) String() string {
+	w := int32(v)
+	switch w {
+	case 0:
+		return "EVENTUAL"
+	case 1:
+		return "STRONG"
+	}
+	return fmt.Sprintf("QueryConsistencyLevel(%d)", w)
+}
+
+// Equals returns true if this QueryConsistencyLevel value matches the provided
+// value.
+func (v QueryConsistencyLevel) Equals(rhs QueryConsistencyLevel) bool {
+	return v == rhs
+}
+
+// MarshalJSON serializes QueryConsistencyLevel into JSON.
+//
+// If the enum value is recognized, its name is returned. Otherwise,
+// its integer value is returned.
+//
+// This implements json.Marshaler.
+func (v QueryConsistencyLevel) MarshalJSON() ([]byte, error) {
+	switch int32(v) {
+	case 0:
+		return ([]byte)("\"EVENTUAL\""), nil
+	case 1:
+		return ([]byte)("\"STRONG\""), nil
+	}
+	return ([]byte)(strconv.FormatInt(int64(v), 10)), nil
+}
+
+// UnmarshalJSON attempts to decode QueryConsistencyLevel from its JSON
+// representation.
+//
+// This implementation supports both, numeric and string inputs. If a
+// string is provided, it must be a known enum name.
+//
+// This implements json.Unmarshaler.
+func (v *QueryConsistencyLevel) UnmarshalJSON(text []byte) error {
+	d := json.NewDecoder(bytes.NewReader(text))
+	d.UseNumber()
+	t, err := d.Token()
+	if err != nil {
+		return err
+	}
+
+	switch w := t.(type) {
+	case json.Number:
+		x, err := w.Int64()
+		if err != nil {
+			return err
+		}
+		if x > math.MaxInt32 {
+			return fmt.Errorf("enum overflow from JSON %q for %q", text, "QueryConsistencyLevel")
+		}
+		if x < math.MinInt32 {
+			return fmt.Errorf("enum underflow from JSON %q for %q", text, "QueryConsistencyLevel")
+		}
+		*v = (QueryConsistencyLevel)(x)
+		return nil
+	case string:
+		return v.UnmarshalText([]byte(w))
+	default:
+		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "QueryConsistencyLevel")
+	}
 }
 
 type QueryFailedError struct {
@@ -22835,10 +22991,11 @@ func (v *QueryTaskCompletedType) UnmarshalJSON(text []byte) error {
 }
 
 type QueryWorkflowRequest struct {
-	Domain               *string               `json:"domain,omitempty"`
-	Execution            *WorkflowExecution    `json:"execution,omitempty"`
-	Query                *WorkflowQuery        `json:"query,omitempty"`
-	QueryRejectCondition *QueryRejectCondition `json:"queryRejectCondition,omitempty"`
+	Domain                *string                `json:"domain,omitempty"`
+	Execution             *WorkflowExecution     `json:"execution,omitempty"`
+	Query                 *WorkflowQuery         `json:"query,omitempty"`
+	QueryRejectCondition  *QueryRejectCondition  `json:"queryRejectCondition,omitempty"`
+	QueryConsistencyLevel *QueryConsistencyLevel `json:"queryConsistencyLevel,omitempty"`
 }
 
 // ToWire translates a QueryWorkflowRequest struct into a Thrift-level intermediate
@@ -22858,7 +23015,7 @@ type QueryWorkflowRequest struct {
 //   }
 func (v *QueryWorkflowRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -22896,12 +23053,26 @@ func (v *QueryWorkflowRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
+	if v.QueryConsistencyLevel != nil {
+		w, err = v.QueryConsistencyLevel.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
 
 func _QueryRejectCondition_Read(w wire.Value) (QueryRejectCondition, error) {
 	var v QueryRejectCondition
+	err := v.FromWire(w)
+	return v, err
+}
+
+func _QueryConsistencyLevel_Read(w wire.Value) (QueryConsistencyLevel, error) {
+	var v QueryConsistencyLevel
 	err := v.FromWire(w)
 	return v, err
 }
@@ -22964,6 +23135,16 @@ func (v *QueryWorkflowRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 50:
+			if field.Value.Type() == wire.TI32 {
+				var x QueryConsistencyLevel
+				x, err = _QueryConsistencyLevel_Read(field.Value)
+				v.QueryConsistencyLevel = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -22977,7 +23158,7 @@ func (v *QueryWorkflowRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [5]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -22995,11 +23176,25 @@ func (v *QueryWorkflowRequest) String() string {
 		fields[i] = fmt.Sprintf("QueryRejectCondition: %v", *(v.QueryRejectCondition))
 		i++
 	}
+	if v.QueryConsistencyLevel != nil {
+		fields[i] = fmt.Sprintf("QueryConsistencyLevel: %v", *(v.QueryConsistencyLevel))
+		i++
+	}
 
 	return fmt.Sprintf("QueryWorkflowRequest{%v}", strings.Join(fields[:i], ", "))
 }
 
 func _QueryRejectCondition_EqualsPtr(lhs, rhs *QueryRejectCondition) bool {
+	if lhs != nil && rhs != nil {
+
+		x := *lhs
+		y := *rhs
+		return x.Equals(y)
+	}
+	return lhs == nil && rhs == nil
+}
+
+func _QueryConsistencyLevel_EqualsPtr(lhs, rhs *QueryConsistencyLevel) bool {
 	if lhs != nil && rhs != nil {
 
 		x := *lhs
@@ -23026,6 +23221,9 @@ func (v *QueryWorkflowRequest) Equals(rhs *QueryWorkflowRequest) bool {
 	if !_QueryRejectCondition_EqualsPtr(v.QueryRejectCondition, rhs.QueryRejectCondition) {
 		return false
 	}
+	if !_QueryConsistencyLevel_EqualsPtr(v.QueryConsistencyLevel, rhs.QueryConsistencyLevel) {
+		return false
+	}
 
 	return true
 }
@@ -23045,6 +23243,16 @@ func (v *QueryWorkflowRequest) GetDomain() (o string) {
 func (v *QueryWorkflowRequest) GetQueryRejectCondition() (o QueryRejectCondition) {
 	if v.QueryRejectCondition != nil {
 		return *v.QueryRejectCondition
+	}
+
+	return
+}
+
+// GetQueryConsistencyLevel returns the value of QueryConsistencyLevel if it is set or its
+// zero value if it is unset.
+func (v *QueryWorkflowRequest) GetQueryConsistencyLevel() (o QueryConsistencyLevel) {
+	if v.QueryConsistencyLevel != nil {
+		return *v.QueryConsistencyLevel
 	}
 
 	return
@@ -28565,15 +28773,15 @@ func (v *RespondActivityTaskFailedRequest) GetIdentity() (o string) {
 }
 
 type RespondDecisionTaskCompletedRequest struct {
-	TaskToken                  []byte                     `json:"taskToken,omitempty"`
-	Decisions                  []*Decision                `json:"decisions,omitempty"`
-	ExecutionContext           []byte                     `json:"executionContext,omitempty"`
-	Identity                   *string                    `json:"identity,omitempty"`
-	StickyAttributes           *StickyExecutionAttributes `json:"stickyAttributes,omitempty"`
-	ReturnNewDecisionTask      *bool                      `json:"returnNewDecisionTask,omitempty"`
-	ForceCreateNewDecisionTask *bool                      `json:"forceCreateNewDecisionTask,omitempty"`
-	BinaryChecksum             *string                    `json:"binaryChecksum,omitempty"`
-	QueryResults               []*WorkflowQueryResult     `json:"queryResults,omitempty"`
+	TaskToken                  []byte                          `json:"taskToken,omitempty"`
+	Decisions                  []*Decision                     `json:"decisions,omitempty"`
+	ExecutionContext           []byte                          `json:"executionContext,omitempty"`
+	Identity                   *string                         `json:"identity,omitempty"`
+	StickyAttributes           *StickyExecutionAttributes      `json:"stickyAttributes,omitempty"`
+	ReturnNewDecisionTask      *bool                           `json:"returnNewDecisionTask,omitempty"`
+	ForceCreateNewDecisionTask *bool                           `json:"forceCreateNewDecisionTask,omitempty"`
+	BinaryChecksum             *string                         `json:"binaryChecksum,omitempty"`
+	QueryResults               map[string]*WorkflowQueryResult `json:"queryResults,omitempty"`
 }
 
 type _List_Decision_ValueList []*Decision
@@ -28605,18 +28813,23 @@ func (_List_Decision_ValueList) ValueType() wire.Type {
 
 func (_List_Decision_ValueList) Close() {}
 
-type _List_WorkflowQueryResult_ValueList []*WorkflowQueryResult
+type _Map_String_WorkflowQueryResult_MapItemList map[string]*WorkflowQueryResult
 
-func (v _List_WorkflowQueryResult_ValueList) ForEach(f func(wire.Value) error) error {
-	for i, x := range v {
-		if x == nil {
-			return fmt.Errorf("invalid [%v]: value is nil", i)
+func (m _Map_String_WorkflowQueryResult_MapItemList) ForEach(f func(wire.MapItem) error) error {
+	for k, v := range m {
+		if v == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", k)
 		}
-		w, err := x.ToWire()
+		kw, err := wire.NewValueString(k), error(nil)
 		if err != nil {
 			return err
 		}
-		err = f(w)
+
+		vw, err := v.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(wire.MapItem{Key: kw, Value: vw})
 		if err != nil {
 			return err
 		}
@@ -28624,15 +28837,19 @@ func (v _List_WorkflowQueryResult_ValueList) ForEach(f func(wire.Value) error) e
 	return nil
 }
 
-func (v _List_WorkflowQueryResult_ValueList) Size() int {
-	return len(v)
+func (m _Map_String_WorkflowQueryResult_MapItemList) Size() int {
+	return len(m)
 }
 
-func (_List_WorkflowQueryResult_ValueList) ValueType() wire.Type {
+func (_Map_String_WorkflowQueryResult_MapItemList) KeyType() wire.Type {
+	return wire.TBinary
+}
+
+func (_Map_String_WorkflowQueryResult_MapItemList) ValueType() wire.Type {
 	return wire.TStruct
 }
 
-func (_List_WorkflowQueryResult_ValueList) Close() {}
+func (_Map_String_WorkflowQueryResult_MapItemList) Close() {}
 
 // ToWire translates a RespondDecisionTaskCompletedRequest struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
@@ -28722,7 +28939,7 @@ func (v *RespondDecisionTaskCompletedRequest) ToWire() (wire.Value, error) {
 		i++
 	}
 	if v.QueryResults != nil {
-		w, err = wire.NewValueList(_List_WorkflowQueryResult_ValueList(v.QueryResults)), error(nil)
+		w, err = wire.NewValueMap(_Map_String_WorkflowQueryResult_MapItemList(v.QueryResults)), error(nil)
 		if err != nil {
 			return w, err
 		}
@@ -28769,21 +28986,31 @@ func _WorkflowQueryResult_Read(w wire.Value) (*WorkflowQueryResult, error) {
 	return &v, err
 }
 
-func _List_WorkflowQueryResult_Read(l wire.ValueList) ([]*WorkflowQueryResult, error) {
-	if l.ValueType() != wire.TStruct {
+func _Map_String_WorkflowQueryResult_Read(m wire.MapItemList) (map[string]*WorkflowQueryResult, error) {
+	if m.KeyType() != wire.TBinary {
 		return nil, nil
 	}
 
-	o := make([]*WorkflowQueryResult, 0, l.Size())
-	err := l.ForEach(func(x wire.Value) error {
-		i, err := _WorkflowQueryResult_Read(x)
+	if m.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make(map[string]*WorkflowQueryResult, m.Size())
+	err := m.ForEach(func(x wire.MapItem) error {
+		k, err := x.Key.GetString(), error(nil)
 		if err != nil {
 			return err
 		}
-		o = append(o, i)
+
+		v, err := _WorkflowQueryResult_Read(x.Value)
+		if err != nil {
+			return err
+		}
+
+		o[k] = v
 		return nil
 	})
-	l.Close()
+	m.Close()
 	return o, err
 }
 
@@ -28882,8 +29109,8 @@ func (v *RespondDecisionTaskCompletedRequest) FromWire(w wire.Value) error {
 
 			}
 		case 90:
-			if field.Value.Type() == wire.TList {
-				v.QueryResults, err = _List_WorkflowQueryResult_Read(field.Value.GetList())
+			if field.Value.Type() == wire.TMap {
+				v.QueryResults, err = _Map_String_WorkflowQueryResult_Read(field.Value.GetMap())
 				if err != nil {
 					return err
 				}
@@ -28959,18 +29186,20 @@ func _List_Decision_Equals(lhs, rhs []*Decision) bool {
 	return true
 }
 
-func _List_WorkflowQueryResult_Equals(lhs, rhs []*WorkflowQueryResult) bool {
+func _Map_String_WorkflowQueryResult_Equals(lhs, rhs map[string]*WorkflowQueryResult) bool {
 	if len(lhs) != len(rhs) {
 		return false
 	}
 
-	for i, lv := range lhs {
-		rv := rhs[i]
+	for lk, lv := range lhs {
+		rv, ok := rhs[lk]
+		if !ok {
+			return false
+		}
 		if !lv.Equals(rv) {
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -29003,7 +29232,7 @@ func (v *RespondDecisionTaskCompletedRequest) Equals(rhs *RespondDecisionTaskCom
 	if !_String_EqualsPtr(v.BinaryChecksum, rhs.BinaryChecksum) {
 		return false
 	}
-	if !((v.QueryResults == nil && rhs.QueryResults == nil) || (v.QueryResults != nil && rhs.QueryResults != nil && _List_WorkflowQueryResult_Equals(v.QueryResults, rhs.QueryResults))) {
+	if !((v.QueryResults == nil && rhs.QueryResults == nil) || (v.QueryResults != nil && rhs.QueryResults != nil && _Map_String_WorkflowQueryResult_Equals(v.QueryResults, rhs.QueryResults))) {
 		return false
 	}
 
