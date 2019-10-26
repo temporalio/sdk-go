@@ -31,19 +31,20 @@ package evictiontest
 import (
 	"testing"
 
+	"strconv"
+	"time"
+
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
+	m "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/worker"
 	"go.uber.org/atomic"
-	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
-	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/worker"
 	"go.uber.org/yarpc"
 	"golang.org/x/net/context"
-	"strconv"
-	"time"
 )
 
 func init() {
@@ -132,7 +133,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		ret := &m.PollForDecisionTaskResponse{
 			TaskToken:              make([]byte, 5),
 			WorkflowExecution:      &m.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
-			WorkflowType:           &m.WorkflowType{Name: common.StringPtr("go.uber.org/cadence/evictiontest.testReplayWorkflow")},
+			WorkflowType:           &m.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/evictiontest.testReplayWorkflow")},
 			History:                &m.History{Events: testEvents},
 			PreviousStartedEventId: common.Int64Ptr(5)}
 		return ret, nil

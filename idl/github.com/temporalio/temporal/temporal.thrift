@@ -20,7 +20,7 @@
 
 include "shared.thrift"
 
-namespace java com.uber.cadence
+namespace java com.temporalio.temporal
 
 /**
 * WorkflowService API is exposed to provide support for long running applications.  Application is expected to call

@@ -20,7 +20,7 @@
 
 package workflow
 
-import "go.uber.org/cadence/internal"
+import "go.temporal.io/temporal/internal"
 
 type (
 	// HeaderReader is an interface to read information from cadence headers

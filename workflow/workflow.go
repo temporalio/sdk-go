@@ -22,8 +22,8 @@ package workflow
 
 import (
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/encoded"
-	"go.uber.org/cadence/internal"
+	"go.temporal.io/temporal/encoded"
+	"go.temporal.io/temporal/internal"
 	"go.uber.org/zap"
 )
 

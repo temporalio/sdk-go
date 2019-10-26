@@ -30,7 +30,7 @@ package internal
 import (
 	"time"
 
-	s "go.uber.org/cadence/.gen/go/shared"
+	s "go.temporal.io/temporal/.gen/go/shared"
 )
 
 type (

@@ -24,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.uber.org/yarpc"
 	"go.uber.org/yarpc/transport/tchannel"
 )

@@ -27,9 +27,9 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common/metrics"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 )
 

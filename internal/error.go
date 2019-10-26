@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/cadence/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/shared"
 )
 
 /*

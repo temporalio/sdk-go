@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	"go.uber.org/cadence/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/shared"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"

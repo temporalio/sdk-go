@@ -5,7 +5,7 @@
     "eventType": "WorkflowExecutionStarted",
     "workflowExecutionStartedEventAttributes": {
       "workflowType": {
-        "name": "go.uber.org/cadence/internal.testReplayWorkflowFromFile"
+        "name": "go.temporal.io/temporal/internal.testReplayWorkflowFromFile"
       },
       "taskList": {
         "name": "taskList1"
@@ -54,7 +54,7 @@
     "activityTaskScheduledEventAttributes": {
       "activityId": "0",
       "activityType": {
-        "name": "go.uber.org/cadence/internal.testActivityMultipleArgs"
+        "name": "go.temporal.io/temporal/internal.testActivityMultipleArgs"
       },
       "taskList": {
         "name": "taskList1"

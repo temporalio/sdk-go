@@ -26,11 +26,11 @@ package client
 import (
 	"context"
 
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/workflow"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/encoded"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/workflow"
 )
 
 const (

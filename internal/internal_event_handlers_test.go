@@ -28,7 +28,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	s "go.uber.org/cadence/.gen/go/shared"
+	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.uber.org/zap"
 )
 

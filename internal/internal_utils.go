@@ -34,9 +34,9 @@ import (
 
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/metrics"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/yarpc"
 )
 

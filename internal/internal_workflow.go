@@ -35,10 +35,10 @@ import (
 	"github.com/robfig/cron"
 	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
-	"go.uber.org/cadence/.gen/go/shared"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/metrics"
+	"go.temporal.io/temporal/.gen/go/shared"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 )
 

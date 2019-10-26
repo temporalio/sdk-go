@@ -21,8 +21,8 @@
 package cadence
 
 import (
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/workflow"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/workflow"
 )
 
 type (

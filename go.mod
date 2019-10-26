@@ -1,6 +1,6 @@
-module go.uber.org/cadence
+module go.temporal.io/temporal
 
-go 1.13
+go 1.12
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239 // indirect
@@ -44,7 +44,7 @@ require (
 	go.uber.org/dig v1.7.0 // indirect
 	go.uber.org/fx v1.9.0 // indirect
 	go.uber.org/goleak v0.10.0
-	go.uber.org/multierr v1.1.0 // indirect
+	go.uber.org/multierr v1.1.0
 	go.uber.org/net/metrics v1.0.1 // indirect
 	go.uber.org/thriftrw v1.11.0
 	go.uber.org/tools v0.0.0-20190430173459-422a61c266e1 // indirect

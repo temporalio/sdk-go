@@ -13,11 +13,11 @@ This doc is intended for contributors to `cadence-client` (hopefully that's you!
 ## Checking out the code
 
 Make sure the repository is cloned to the correct location:
-(Note: the path is `go.uber.org/cadence/` instead of github repo)
+(Note: the path is `go.temporal.io/temporal/` instead of github repo)
 
 ```bash
-go get go.uber.org/cadence/...
-cd $GOPATH/src/go.uber.org/cadence
+go get go.temporal.io/temporal/...
+cd $GOPATH/src/go.temporal.io/temporal
 ```
 
 ## Dependency management

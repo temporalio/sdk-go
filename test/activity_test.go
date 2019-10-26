@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/cadence"
-	"go.uber.org/cadence/activity"
+	"go.temporal.io/temporal"
+	"go.temporal.io/temporal/activity"
 )
 
 type Activities struct {

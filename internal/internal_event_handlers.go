@@ -32,10 +32,10 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/.gen/go/shared"
-	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/metrics"
+	"go.temporal.io/temporal/.gen/go/shared"
+	m "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
