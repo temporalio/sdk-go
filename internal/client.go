@@ -27,8 +27,8 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 )
@@ -178,7 +178,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, cadence.NewCustomError("reason", details)
+		//      CompleteActivity(token, nil, temporal.NewCustomError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
@@ -364,7 +364,7 @@ type (
 		// after the current run is completed/failed/timeout. If a RetryPolicy is also supplied, and the workflow failed
 		// or timeout, the workflow will be retried based on the retry policy. While the workflow is retrying, it won't
 		// schedule its next run. If next schedule is due while workflow is running (or retrying), then it will skip that
-		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning cadence.CanceledError).
+		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning temporal.CanceledError).
 		// The cron spec is as following:
 		// ┌───────────── minute (0 - 59)
 		// │ ┌───────────── hour (0 - 23)
@@ -415,7 +415,7 @@ type (
 		MaximumAttempts int32
 
 		// Non-Retriable errors. This is optional. Cadence server will stop retry if error reason matches this list.
-		// Error reason for custom error is specified when your activity/workflow return cadence.NewCustomError(reason).
+		// Error reason for custom error is specified when your activity/workflow return temporal.NewCustomError(reason).
 		// Error reason for panic error is "cadenceInternal:Panic".
 		// Error reason for any other error is "cadenceInternal:Generic".
 		// Error reason for timeouts is: "cadenceInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be START_TO_CLOSE or HEARTBEAT.

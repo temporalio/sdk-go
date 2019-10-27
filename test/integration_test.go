@@ -31,7 +31,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	cadence "go.temporal.io/temporal"
+	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/worker"
@@ -196,7 +196,7 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.Nil(ts.libClient.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
-	_, ok := err.(*cadence.CanceledError)
+	_, ok := err.(*temporal.CanceledError)
 	ts.True(ok)
 }
 

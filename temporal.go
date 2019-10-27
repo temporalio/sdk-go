@@ -119,7 +119,7 @@ Debuggability - Replay any workflow execution history locally under a debugger. 
 API to allow you to capture a stack trace from any failed workflow execution history.
 
 */
-package cadence
+package temporal
 
 import "go.temporal.io/temporal/internal"
 

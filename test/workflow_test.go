@@ -65,7 +65,7 @@ func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error)
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
 	}
 
-	cerr, ok := err.(*cadence.CustomError)
+	cerr, ok := err.(*temporal.CustomError)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
@@ -253,7 +253,7 @@ func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
 		TaskStartToCloseTimeout:      5 * time.Second,
 		ExecutionStartToCloseTimeout: 9 * time.Second,
-		RetryPolicy: &cadence.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
@@ -270,7 +270,7 @@ func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
 		TaskStartToCloseTimeout:      time.Second,
 		ExecutionStartToCloseTimeout: time.Second,
-		RetryPolicy: &cadence.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
@@ -458,7 +458,7 @@ func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
 		ScheduleToStartTimeout: 5 * time.Second,
 		ScheduleToCloseTimeout: 5 * time.Second,
 		StartToCloseTimeout:    9 * time.Second,
-		RetryPolicy: &cadence.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
