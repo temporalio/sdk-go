@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/cadence/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/shared"
 )
 
 func TestHeaderWriter(t *testing.T) {

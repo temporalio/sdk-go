@@ -677,7 +677,7 @@ func TestPanic(t *testing.T) {
 	require.EqualValues(t, "simulated failure", value)
 	require.EqualValues(t, "simulated failure", err.Error())
 
-	require.Contains(t, err.StackTrace(), "cadence/internal.TestPanic")
+	require.Contains(t, err.StackTrace(), "temporal/internal.TestPanic")
 }
 
 func TestFutureSetValue(t *testing.T) {

@@ -24,10 +24,10 @@ package worker
 import (
 	"context"
 
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/workflow"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/workflow"
 	"go.uber.org/zap"
 )
 

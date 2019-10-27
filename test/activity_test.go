@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/cadence"
-	"go.uber.org/cadence/activity"
+	"go.temporal.io/temporal"
+	"go.temporal.io/temporal/activity"
 )
 
 type Activities struct {
@@ -35,7 +35,7 @@ type Activities struct {
 	invocations []string
 }
 
-var errFailOnPurpose = cadence.NewCustomError("failing-on-purpose")
+var errFailOnPurpose = temporal.NewCustomError("failing-on-purpose")
 
 func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	a.append("sleep")

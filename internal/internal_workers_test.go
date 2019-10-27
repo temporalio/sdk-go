@@ -29,9 +29,9 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
-	m "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
+	m "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )

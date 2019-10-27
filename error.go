@@ -18,11 +18,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+package temporal
 
 import (
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/workflow"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/workflow"
 )
 
 type (

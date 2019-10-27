@@ -51,7 +51,7 @@ services:
     depends_on:
       - cadence
     volumes:
-      - ../../:/go/src/go.uber.org/cadence
+      - ../../:/go/src/go.temporal.io/temporal
     networks:
       services-network:
         aliases:
@@ -64,7 +64,7 @@ services:
     environment:
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.uber.org/cadence
+      - ../../:/go/src/go.temporal.io/temporal
     networks:
       services-network:
         aliases:
@@ -95,7 +95,7 @@ services:
       - COVERALLS_TOKEN
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.uber.org/cadence
+      - ../../:/go/src/go.temporal.io/temporal
       - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
 
 networks:

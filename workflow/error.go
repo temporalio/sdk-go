@@ -21,8 +21,8 @@
 package workflow
 
 import (
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal"
 )
 
 /*
