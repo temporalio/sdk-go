@@ -85,3 +85,8 @@ func QueryTaskCompletedTypePtr(t s.QueryTaskCompletedType) *s.QueryTaskCompleted
 func TaskListKindPtr(t s.TaskListKind) *s.TaskListKind {
 	return &t
 }
+
+// QueryResultTypePtr makes a copy and returns the pointer to a QueryResultType.
+func QueryResultTypePtr(t s.QueryResultType) *s.QueryResultType {
+	return &t
+}

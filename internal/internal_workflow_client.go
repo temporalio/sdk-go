@@ -811,6 +811,11 @@ type QueryWorkflowWithOptionsRequest struct {
 	// QueryRejectConditionNotOpen will reject queries to workflows which are not open
 	// QueryRejectConditionNotCompletedCleanly will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...)
 	QueryRejectCondition *s.QueryRejectCondition
+
+	// QueryConsistencyLevel is an optional field used to control the consistency level.
+	// QueryConsistencyLevelEventual means that query will eventually reflect up to date state of a workflow.
+	// QueryConsistencyLevelStrong means that query will reflect a workflow state of having applied all events which came before the query.
+	QueryConsistencyLevel *s.QueryConsistencyLevel
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -848,7 +853,8 @@ func (wc *workflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 			QueryType: common.StringPtr(request.QueryType),
 			QueryArgs: input,
 		},
-		QueryRejectCondition: request.QueryRejectCondition,
+		QueryRejectCondition:  request.QueryRejectCondition,
+		QueryConsistencyLevel: request.QueryConsistencyLevel,
 	}
 
 	var resp *s.QueryWorkflowResponse
