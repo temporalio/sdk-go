@@ -74,6 +74,10 @@ func init() {
 		getWorkflowInfoWorkflowFunc,
 		RegisterWorkflowOptions{Name: "GetWorkflowInfoWorkflow"},
 	)
+	RegisterWorkflowWithOptions(
+		querySignalWorkflowFunc,
+		RegisterWorkflowOptions{Name: "QuerySignalWorkflow"},
+	)
 	RegisterActivityWithOptions(
 		greeterActivityFunc,
 		RegisterActivityOptions{Name: "Greeter_Activity"},
@@ -175,11 +179,16 @@ func createTestEventDecisionTaskStarted(eventID int64) *s.HistoryEvent {
 }
 
 func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *s.HistoryEvent {
+	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
+}
+
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload []byte) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
 		EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionSignaled),
 		WorkflowExecutionSignaledEventAttributes: &s.WorkflowExecutionSignaledEventAttributes{
 			SignalName: common.StringPtr(signalName),
+			Input:      payload,
 			Identity:   common.StringPtr("test-identity"),
 		},
 	}
@@ -205,6 +214,15 @@ func createWorkflowTask(
 	previousStartEventID int64,
 	workflowName string,
 ) *s.PollForDecisionTaskResponse {
+	return createWorkflowTaskWithQueries(events, previousStartEventID, workflowName, nil)
+}
+
+func createWorkflowTaskWithQueries(
+	events []*s.HistoryEvent,
+	previousStartEventID int64,
+	workflowName string,
+	queries map[string]*s.WorkflowQuery,
+) *s.PollForDecisionTaskResponse {
 	eventsCopy := make([]*s.HistoryEvent, len(events))
 	copy(eventsCopy, events)
 	return &s.PollForDecisionTaskResponse{
@@ -215,6 +233,7 @@ func createWorkflowTask(
 			WorkflowId: common.StringPtr("fake-workflow-id"),
 			RunId:      common.StringPtr(uuid.New()),
 		},
+		Queries: queries,
 	}
 }
 
@@ -420,7 +439,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	t.NotNil(response.Decisions[0].ScheduleActivityTaskDecisionAttributes)
 
 	// then check the current state using query task
-	task = createQueryTask([]*s.HistoryEvent{}, 6, "HelloWorld_Workflow", "test-query")
+	task = createQueryTask([]*s.HistoryEvent{}, 6, "HelloWorld_Workflow", queryType)
 	task.WorkflowExecution = execution
 	queryResp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.NoError(err)
@@ -452,25 +471,25 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	}
 
 	// query after first decision task (notice the previousStartEventID is always the last eventID for query task)
-	task := createQueryTask(testEvents[0:3], 3, "HelloWorld_Workflow", "test-query")
+	task := createQueryTask(testEvents[0:3], 3, "HelloWorld_Workflow", queryType)
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	response, _ := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.verifyQueryResult(response, "waiting-activity-result")
 
 	// query after activity task complete but before second decision task started
-	task = createQueryTask(testEvents[0:7], 7, "HelloWorld_Workflow", "test-query")
+	task = createQueryTask(testEvents[0:7], 7, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	response, _ = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.verifyQueryResult(response, "waiting-activity-result")
 
 	// query after second decision task
-	task = createQueryTask(testEvents[0:8], 8, "HelloWorld_Workflow", "test-query")
+	task = createQueryTask(testEvents[0:8], 8, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	response, _ = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.verifyQueryResult(response, "done")
 
 	// query after second decision task with extra events
-	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", "test-query")
+	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", queryType)
 	taskHandler = newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	response, _ = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.verifyQueryResult(response, "done")
@@ -596,7 +615,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	t.Equal(expectedValue, value)
 
 	// There should be nothing in the cache.
-	t.EqualValues(getWorkflowCache().Size(), 0)
+	t.EqualValues(0, getWorkflowCache().Size())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
@@ -784,6 +803,113 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(taskTimeout, result.TaskStartToCloseTimeoutSeconds)
 	t.EqualValues(workflowType, result.WorkflowType.Name)
 	t.EqualValues(testDomain, result.Domain)
+}
+
+func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
+	taskList := "taskList"
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
+	task := createWorkflowTask(nil, 3, "HelloWorld_Workflow")
+	task.Query = &s.WorkflowQuery{}
+	task.Queries = map[string]*s.WorkflowQuery{"query_id": {}}
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, make(chan struct{}))
+	// query and queries are both specified so this is an invalid task
+	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+
+	t.Error(err)
+	t.Nil(request)
+	t.Contains(err.Error(), "invalid query decision task")
+
+	// There should be nothing in the cache.
+	t.EqualValues(getWorkflowCache().Size(), 0)
+}
+
+func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
+	taskList := "tl1"
+	checksum1 := "chck1"
+	numberOfSignalsToComplete, err := getDefaultDataConverter().ToData(2)
+	t.NoError(err)
+	signal, err := getDefaultDataConverter().ToData("signal data")
+	t.NoError(err)
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
+			TaskList: &s.TaskList{Name: &taskList},
+			Input:    numberOfSignalsToComplete,
+		}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: common.Int64Ptr(2), BinaryChecksum: common.StringPtr(checksum1)}),
+		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
+		createTestEventDecisionTaskScheduled(6, &s.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(7),
+	}
+
+	queries := map[string]*s.WorkflowQuery{
+		"id1": {QueryType: common.StringPtr(queryType)},
+		"id2": {QueryType: common.StringPtr(errQueryType)},
+	}
+	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries)
+
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "test-id-1",
+		Logger:   t.logger,
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
+	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	response := request.(*s.RespondDecisionTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+	t.Len(response.Decisions, 0)
+	expectedQueryResults := map[string]*s.WorkflowQueryResult{
+		"id1": {
+			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+			Answer:     []byte(fmt.Sprintf("\"%v\"\n", startingQueryValue)),
+		},
+		"id2": {
+			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
+			ErrorMessage: common.StringPtr(queryErr),
+		},
+	}
+	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
+
+	secondTask := createWorkflowTaskWithQueries(testEvents, 3, "QuerySignalWorkflow", queries)
+	secondTask.WorkflowExecution.RunId = task.WorkflowExecution.RunId
+	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: secondTask}, nil)
+	response = request.(*s.RespondDecisionTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+	t.Len(response.Decisions, 1)
+	expectedQueryResults = map[string]*s.WorkflowQueryResult{
+		"id1": {
+			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+			Answer:     []byte(fmt.Sprintf("\"%v\"\n", "signal data")),
+		},
+		"id2": {
+			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
+			ErrorMessage: common.StringPtr(queryErr),
+		},
+	}
+	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
+
+	// clean up workflow left in cache
+	getWorkflowCache().Delete(*task.WorkflowExecution.RunId)
+}
+
+func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*s.WorkflowQueryResult, actual map[string]*s.WorkflowQueryResult) {
+	t.Equal(len(expected), len(actual))
+	for expectedID, expectedResult := range expected {
+		t.Contains(actual, expectedID)
+		t.True(expectedResult.Equals(actual[expectedID]))
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
