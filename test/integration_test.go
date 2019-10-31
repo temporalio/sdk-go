@@ -60,8 +60,7 @@ const (
 )
 
 func TestIntegrationSuite(t *testing.T) {
-	// TODO: Re-enable integration suite after server renaming is done
-	//suite.Run(t, new(IntegrationTestSuite))
+	suite.Run(t, new(IntegrationTestSuite))
 }
 
 // waitForTCP waits until target tcp address is available.
