@@ -121,6 +121,7 @@ type (
 )
 
 // RegisterActivity - register an activity function or a pointer to a structure with the framework.
+// The public form is: activity.Register(...)
 // An activity function takes a context and input and returns a (result, error) or just error.
 //
 // And activity struct is a structure with all its exported methods treated as activities. The default
@@ -151,7 +152,8 @@ func RegisterActivity(activityFunc interface{}) {
 	RegisterActivityWithOptions(activityFunc, RegisterActivityOptions{})
 }
 
-// RegisterActivityWithOptions registers the activity function or struct pointer with options
+// RegisterActivityWithOptions registers the activity function or struct pointer with options.
+// The public form is: activity.RegisterWithOptions(...)
 // The user can use options to provide an external name for the activity or leave it empty if no
 // external name is required. This can be used as
 //  activity.RegisterWithOptions(barActivity, RegisterActivityOptions{})

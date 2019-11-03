@@ -914,6 +914,7 @@ func newRegistry(next *registry) *registry {
 		workflowAliasMap: make(map[string]string),
 		activityFuncMap:  make(map[string]activity),
 		activityAliasMap: make(map[string]string),
+		next:             next,
 	}
 }
 
@@ -1046,6 +1047,22 @@ type aggregatedWorker struct {
 	sessionWorker  *sessionWorker
 	logger         *zap.Logger
 	registry       *registry
+}
+
+func (aw *aggregatedWorker) RegisterWorkflow(w interface{}) error {
+	return aw.registry.RegisterWorkflow(w)
+}
+
+func (aw *aggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) error {
+	return aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+func (aw *aggregatedWorker) RegisterActivity(a interface{}) error {
+	return aw.registry.RegisterActivity(a)
+}
+
+func (aw *aggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) error {
+	return aw.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (aw *aggregatedWorker) Start() error {
@@ -1212,7 +1229,8 @@ func newAggregatedWorker(
 
 	processTestTags(&wOptions, &workerParams)
 
-	registry := getGlobalRegistry()
+	// worker specific registry
+	registry := newRegistry(getGlobalRegistry())
 	// workflow factory.
 	var workflowWorker *workflowWorker
 	if !wOptions.DisableWorkflowWorker {

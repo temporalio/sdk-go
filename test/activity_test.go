@@ -28,6 +28,7 @@ import (
 
 	"go.uber.org/cadence"
 	"go.uber.org/cadence/activity"
+	"go.uber.org/cadence/worker"
 )
 
 type Activities struct {
@@ -112,11 +113,10 @@ func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr 
 	return memo + ", " + searchAttr, nil
 }
 
-func (w *Activities) register() {
-	activity.Register(w)
+func (a *Activities) register(worker worker.Worker) {
+	worker.RegisterActivity(a)
 	// Check reregistration
-	activity.RegisterWithOptions(w.Sleep, activity.RegisterOptions{Name:"Fail"})
-	activity.RegisterWithOptions(w.fail, activity.RegisterOptions{Name:"Fail", DisableAlreadyRegisteredCheck:true})
+	activity.RegisterWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
 	// Check prefix
-	activity.RegisterWithOptions(w.activities2, activity.RegisterOptions{Name:"Prefix_"})
+	activity.RegisterWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 }
