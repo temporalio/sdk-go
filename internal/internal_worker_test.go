@@ -418,11 +418,10 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	t := s.T()
 	w := createWorker(s.service)
-	aw := w.(*aggregatedWorker)
-	aw.registry = newRegistry()
-	assert.Empty(t, aw.registry.getRegisteredActivities())
-	assert.Empty(t, aw.registry.getRegisteredWorkflowTypes())
-	assert.NoError(t, aw.Start())
+	w.registry = newRegistry(nil)
+	assert.Empty(t, w.registry.getRegisteredActivities())
+	assert.Empty(t, w.registry.getRegisteredWorkflowTypes())
+	assert.NoError(t, w.Start())
 }
 
 func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
@@ -486,13 +485,13 @@ func (m *mockPollForActivityTaskRequest) String() string {
 	return "PollForActivityTaskRequest"
 }
 
-func createWorker(service *workflowservicetest.MockClient) Worker {
+func createWorker(service *workflowservicetest.MockClient) *aggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), nil)
 }
 
 func createWorkerWithThrottle(
 	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc DataConverter,
-) Worker {
+) *aggregatedWorker {
 	domain := "testDomain"
 	domainStatus := shared.DomainStatusRegistered
 	domainDesc := &shared.DescribeDomainResponse{
@@ -539,7 +538,7 @@ func createWorkerWithThrottle(
 	return worker
 }
 
-func createWorkerWithDataConverter(service *workflowservicetest.MockClient) Worker {
+func createWorkerWithDataConverter(service *workflowservicetest.MockClient) *aggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), newTestDataConverter())
 }
 

@@ -62,7 +62,7 @@ func newWorkflowWorkerWithPressurePoints(
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string,
 	registry *registry,
-) (worker Worker) {
+) (worker *workflowWorker) {
 	return newWorkflowWorker(
 		service,
 		domain,

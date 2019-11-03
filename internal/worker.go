@@ -42,17 +42,6 @@ import (
 )
 
 type (
-	// Worker represents objects that can be started and stopped.
-	Worker interface {
-		// Start starts the worker in a non-blocking fashion
-		Start() error
-		// Run is a blocking start and cleans up resources when killed
-		// returns error only if it fails to start the worker
-		Run() error
-		// Stop cleans up any resources opened by worker
-		Stop()
-	}
-
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -255,7 +244,7 @@ func NewWorker(
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) Worker {
+) *aggregatedWorker {
 	return newAggregatedWorker(service, domain, taskList, options)
 }
 

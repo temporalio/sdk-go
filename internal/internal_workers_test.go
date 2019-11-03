@@ -183,10 +183,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
 
-	activityWorker, ok := worker.(*activityWorker)
-	s.Equal(true, ok)
-
-	<-activityWorker.worker.shutdownCh
+	<-worker.worker.shutdownCh
 	err := ctx.Err()
 	s.NoError(err)
 

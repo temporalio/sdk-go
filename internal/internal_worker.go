@@ -75,9 +75,6 @@ const (
 	testTagsContextKey = "cadence-testTags"
 )
 
-// Assert that structs do indeed implement the interfaces
-var _ Worker = (*aggregatedWorker)(nil)
-
 type (
 	// WorkflowWorker wraps the code for hosting workflow types.
 	// And worker is mapped 1:1 with task list. If the user want's to poll multiple
@@ -109,8 +106,8 @@ type (
 	// activities within a session. The creationWorker polls from a global tasklist,
 	// while the activityWorker polls from a resource specific tasklist.
 	sessionWorker struct {
-		creationWorker Worker
-		activityWorker Worker
+		creationWorker *activityWorker
+		activityWorker *activityWorker
 	}
 
 	// Worker overrides.
@@ -198,7 +195,7 @@ func newWorkflowWorker(
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
 	registry *registry,
-) Worker {
+) *workflowWorker {
 	return newWorkflowWorkerInternal(service, domain, params, ppMgr, nil, registry)
 }
 
@@ -265,7 +262,7 @@ func newWorkflowWorkerInternal(
 	ppMgr pressurePointMgr,
 	overrides *workerOverrides,
 	registry *registry,
-) Worker {
+) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -285,7 +282,7 @@ func newWorkflowTaskWorkerInternal(
 	domain string,
 	params workerExecutionParameters,
 	stopC chan struct{},
-) Worker {
+) *workflowWorker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(
 		taskHandler,
@@ -383,7 +380,7 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	overrides *workerOverrides,
 	env *registry,
 	maxConcurrentSessionExecutionSize int,
-) Worker {
+) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
 	}
@@ -442,7 +439,7 @@ func newActivityWorker(
 	overrides *workerOverrides,
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
-) Worker {
+) *activityWorker {
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -464,7 +461,7 @@ func newActivityTaskWorker(
 	workerParams workerExecutionParameters,
 	sessionTokenBucket *sessionTokenBucket,
 	stopC chan struct{},
-) (worker Worker) {
+) (worker *activityWorker) {
 	ensureRequiredParams(&workerParams)
 
 	poller := newActivityTaskPoller(
@@ -911,7 +908,7 @@ var once sync.Once
 // Singleton to hold the host registration details.
 var thImpl *registry
 
-func newRegistry() *registry {
+func newRegistry(next *registry) *registry {
 	return &registry{
 		workflowFuncMap:  make(map[string]interface{}),
 		workflowAliasMap: make(map[string]string),
@@ -922,7 +919,7 @@ func newRegistry() *registry {
 
 func getGlobalRegistry() *registry {
 	once.Do(func() {
-		thImpl = newRegistry()
+		thImpl = newRegistry(nil)
 	})
 	return thImpl
 }
@@ -1044,9 +1041,9 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 
 // aggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type aggregatedWorker struct {
-	workflowWorker Worker
-	activityWorker Worker
-	sessionWorker  Worker
+	workflowWorker *workflowWorker
+	activityWorker *activityWorker
+	sessionWorker  *sessionWorker
 	logger         *zap.Logger
 	registry       *registry
 }
@@ -1170,7 +1167,7 @@ func newAggregatedWorker(
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) (worker Worker) {
+) (worker *aggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1217,7 +1214,7 @@ func newAggregatedWorker(
 
 	registry := getGlobalRegistry()
 	// workflow factory.
-	var workflowWorker Worker
+	var workflowWorker *workflowWorker
 	if !wOptions.DisableWorkflowWorker {
 		testTags := getTestTags(wOptions.BackgroundActivityContext)
 		if testTags != nil && len(testTags) > 0 {
@@ -1240,7 +1237,7 @@ func newAggregatedWorker(
 	}
 
 	// activity types.
-	var activityWorker Worker
+	var activityWorker *activityWorker
 
 	if !wOptions.DisableActivityWorker {
 		activityWorker = newActivityWorker(
@@ -1253,7 +1250,7 @@ func newAggregatedWorker(
 		)
 	}
 
-	var sessionWorker Worker
+	var sessionWorker *sessionWorker
 	if wOptions.EnableSessionWorker {
 		sessionWorker = newSessionWorker(
 			service,
