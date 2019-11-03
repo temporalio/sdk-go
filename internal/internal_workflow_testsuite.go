@@ -114,6 +114,7 @@ type (
 		locker    sync.Mutex
 		testSuite *WorkflowTestSuite
 
+		registry                   *registry
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock         *mock.Mock
@@ -193,6 +194,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
 			testSuite:                  s,
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
+			registry:                   newRegistry(getGlobalRegistry()),
 
 			logger:           s.logger,
 			metricsScope:     metrics.NewTaggedScope(s.scope),
@@ -407,7 +409,7 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, act
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, args ...interface{}) {
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter())
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter(), env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
@@ -418,7 +420,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	env.locker.Lock()
 	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
-		// Created task to support testing multiple workflows with one env instancehttps://github.com/uber-go/cadence-client/issues/616
+		// Created task to support testing multiple workflows with one env instance
+		// https://github.com/uber-go/cadence-client/issues/616
 		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", env.workflowInfo.WorkflowType.Name, workflowType))
 	}
 	env.workflowInfo.WorkflowType.Name = workflowType
@@ -477,7 +480,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (Value, error) {
-	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter())
+	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter(), env.registry)
 	if err != nil {
 		panic(err)
 	}
@@ -1027,7 +1030,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	activityID := getStringID(env.nextID())
 	wOptions := augmentWorkerOptions(env.workerOptions)
 	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
-	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter); at != nil {
+	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
@@ -1904,6 +1907,10 @@ func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{})
 		panic(err)
 	}
 	env.heartbeatDetails = data
+}
+
+func (wc *testWorkflowEnvironmentImpl) GetRegistry() *registry {
+	return wc.registry
 }
 
 func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentImpl,

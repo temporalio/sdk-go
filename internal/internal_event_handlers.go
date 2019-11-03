@@ -728,6 +728,10 @@ func (wc *workflowEnvironmentImpl) getOpenSessions() []*SessionInfo {
 	return openSessions
 }
 
+func (wc *workflowEnvironmentImpl) GetRegistry() *registry {
+	return wc.registry
+}
+
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	event *m.HistoryEvent,
 	isReplay bool,
