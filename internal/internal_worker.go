@@ -555,9 +555,10 @@ func (th *hostEnvImpl) RegisterWorkflowWithOptions(
 	if len(alias) > 0 {
 		registerName = alias
 	}
-	// Check if already registered
-	if _, ok := th.getWorkflowFn(registerName); ok {
-		return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
+	if !options.DisableAlreadyRegisteredCheck {
+		if _, ok := th.getWorkflowFn(registerName); ok {
+			return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
+		}
 	}
 	th.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
@@ -576,6 +577,9 @@ func (th *hostEnvImpl) RegisterActivityWithOptions(
 ) error {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
+	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
+		return th.registerActivityStructWithOptions(af, options)
+	}
 	if err := validateFnFormat(fnType, false); err != nil {
 		return err
 	}
@@ -585,13 +589,48 @@ func (th *hostEnvImpl) RegisterActivityWithOptions(
 	if len(alias) > 0 {
 		registerName = alias
 	}
-	// Check if already registered
-	if _, ok := th.getActivityFn(registerName); ok {
-		return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+	if !options.DisableAlreadyRegisteredCheck {
+		if _, ok := th.getActivityFn(registerName); ok {
+			return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+		}
 	}
 	th.addActivityFn(registerName, af)
 	if len(alias) > 0 {
 		th.addActivityAlias(fnName, alias)
+	}
+	return nil
+}
+
+func (th *hostEnvImpl) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+	structValue := reflect.ValueOf(aStruct)
+	structType := structValue.Type()
+	count := 0
+	for i := 0; i < structValue.NumMethod(); i++ {
+		methodValue := structValue.Method(i)
+		method := structType.Method(i)
+		// skip private method
+		if method.PkgPath != "" {
+			continue
+		}
+		name := method.Name
+		if err := validateFnFormat(method.Type, false); err != nil {
+			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
+		}
+		prefix := options.Name
+		registerName := name
+		if len(prefix) > 0 {
+			registerName = prefix + name
+		}
+		if !options.DisableAlreadyRegisteredCheck {
+			if _, ok := th.getActivityFn(registerName); ok {
+				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+			}
+		}
+		th.addActivityFn(registerName, methodValue.Interface())
+		count++
+	}
+	if count == 0 {
+		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
 }

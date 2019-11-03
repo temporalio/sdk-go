@@ -220,6 +220,7 @@ type (
 // RegisterWorkflowOptions consists of options for registering a workflow
 type RegisterWorkflowOptions struct {
 	Name string
+	DisableAlreadyRegisteredCheck bool
 }
 
 // RegisterWorkflow - registers a workflow function with the framework.

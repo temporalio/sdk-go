@@ -31,7 +31,7 @@ import (
 )
 
 type Activities struct {
-	sync.Mutex
+	mu          sync.Mutex
 	invocations []string
 }
 
@@ -73,20 +73,20 @@ func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr 
 	return memo + ", " + searchAttr, nil
 }
 
-func (a *Activities) Fail(ctx context.Context) error {
+func (a *Activities) fail(ctx context.Context) error {
 	a.append("fail")
 	return errFailOnPurpose
 }
 
 func (a *Activities) append(name string) {
-	a.Lock()
-	defer a.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.invocations = append(a.invocations, name)
 }
 
 func (a *Activities) invoked() []string {
-	a.Lock()
-	defer a.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	result := make([]string, len(a.invocations))
 	for i := range a.invocations {
 		result[i] = a.invocations[i]
@@ -95,16 +95,14 @@ func (a *Activities) invoked() []string {
 }
 
 func (a *Activities) clearInvoked() {
-	a.Lock()
-	defer a.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.invocations = []string{}
 }
 
-func (a *Activities) register() {
-	activity.RegisterWithOptions(a.Fail, activity.RegisterOptions{Name: "fail"})
-	activity.RegisterWithOptions(a.Sleep, activity.RegisterOptions{Name: "sleep"})
-	activity.RegisterWithOptions(a.ToUpper, activity.RegisterOptions{Name: "toUpper"})
-	activity.RegisterWithOptions(a.ToUpperWithDelay, activity.RegisterOptions{Name: "toUpperWithDelay"})
-	activity.RegisterWithOptions(a.HeartbeatAndSleep, activity.RegisterOptions{Name: "heartbeatAndSleep"})
-	activity.RegisterWithOptions(a.GetMemoAndSearchAttr, activity.RegisterOptions{Name: "getMemoAndSearchAttr"})
+func (w *Activities) register() {
+	activity.Register(w)
+	// Check reregistration
+	activity.RegisterWithOptions(w.ToUpper, activity.RegisterOptions{Name:"Fail"})
+	activity.RegisterWithOptions(w.fail, activity.RegisterOptions{Name:"Fail", DisableAlreadyRegisteredCheck:true})
 }
