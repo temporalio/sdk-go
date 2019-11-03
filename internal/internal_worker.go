@@ -536,11 +536,11 @@ type registry struct {
 	next             *registry // Allows to chain registries
 }
 
-func (th *registry) RegisterWorkflow(af interface{}) error {
-	return th.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
+func (r *registry) RegisterWorkflow(af interface{}) error {
+	return r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
-func (th *registry) RegisterWorkflowWithOptions(
+func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
 ) error {
@@ -556,29 +556,29 @@ func (th *registry) RegisterWorkflowWithOptions(
 		registerName = alias
 	}
 	if !options.DisableAlreadyRegisteredCheck {
-		if _, ok := th.getWorkflowFn(registerName); ok {
+		if _, ok := r.getWorkflowFn(registerName); ok {
 			return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
 		}
 	}
-	th.addWorkflowFn(registerName, af)
+	r.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
-		th.addWorkflowAlias(fnName, alias)
+		r.addWorkflowAlias(fnName, alias)
 	}
 	return nil
 }
 
-func (th *registry) RegisterActivity(af interface{}) error {
-	return th.RegisterActivityWithOptions(af, RegisterActivityOptions{})
+func (r *registry) RegisterActivity(af interface{}) error {
+	return r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
-func (th *registry) RegisterActivityWithOptions(
+func (r *registry) RegisterActivityWithOptions(
 	af interface{},
 	options RegisterActivityOptions,
 ) error {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		return th.registerActivityStructWithOptions(af, options)
+		return r.registerActivityStructWithOptions(af, options)
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
 		return err
@@ -590,18 +590,18 @@ func (th *registry) RegisterActivityWithOptions(
 		registerName = alias
 	}
 	if !options.DisableAlreadyRegisteredCheck {
-		if _, ok := th.getActivityFn(registerName); ok {
+		if _, ok := r.getActivityFn(registerName); ok {
 			return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 		}
 	}
-	th.addActivityFn(registerName, af)
+	r.addActivityFn(registerName, af)
 	if len(alias) > 0 {
-		th.addActivityAlias(fnName, alias)
+		r.addActivityAlias(fnName, alias)
 	}
 	return nil
 }
 
-func (th *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
 	structValue := reflect.ValueOf(aStruct)
 	structType := structValue.Type()
 	count := 0
@@ -622,11 +622,11 @@ func (th *registry) registerActivityStructWithOptions(aStruct interface{}, optio
 			registerName = prefix + name
 		}
 		if !options.DisableAlreadyRegisteredCheck {
-			if _, ok := th.getActivityFn(registerName); ok {
+			if _, ok := r.getActivityFn(registerName); ok {
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 			}
 		}
-		th.addActivityFn(registerName, methodValue.Interface())
+		r.addActivityFn(registerName, methodValue.Interface())
 		count++
 	}
 	if count == 0 {
@@ -635,108 +635,108 @@ func (th *registry) registerActivityStructWithOptions(aStruct interface{}, optio
 	return nil
 }
 
-func (th *registry) addWorkflowAlias(fnName string, alias string) {
-	th.Lock()
-	defer th.Unlock()
-	th.workflowAliasMap[fnName] = alias
+func (r *registry) addWorkflowAlias(fnName string, alias string) {
+	r.Lock()
+	defer r.Unlock()
+	r.workflowAliasMap[fnName] = alias
 }
 
-func (th *registry) getWorkflowAlias(fnName string) (string, bool) {
-	th.Lock() // do not defer for Unlock to call next.getWorkflowAlias without lock
-	alias, ok := th.workflowAliasMap[fnName]
-	if !ok && th.next != nil {
-		th.Unlock()
-		return th.next.getWorkflowAlias(fnName)
+func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
+	r.Lock() // do not defer for Unlock to call next.getWorkflowAlias without lock
+	alias, ok := r.workflowAliasMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getWorkflowAlias(fnName)
 	}
-	th.Unlock()
+	r.Unlock()
 	return alias, ok
 }
 
-func (th *registry) addWorkflowFn(fnName string, wf interface{}) {
-	th.Lock()
-	defer th.Unlock()
-	th.workflowFuncMap[fnName] = wf
+func (r *registry) addWorkflowFn(fnName string, wf interface{}) {
+	r.Lock()
+	defer r.Unlock()
+	r.workflowFuncMap[fnName] = wf
 }
 
-func (th *registry) getWorkflowFn(fnName string) (interface{}, bool) {
-	th.Lock() // do not defer for Unlock to call next.getWorkflowFn without lock
-	fn, ok := th.workflowFuncMap[fnName]
-	if !ok && th.next != nil {
-		th.Unlock()
-		return th.next.getWorkflowFn(fnName)
+func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
+	r.Lock() // do not defer for Unlock to call next.getWorkflowFn without lock
+	fn, ok := r.workflowFuncMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getWorkflowFn(fnName)
 	}
-	th.Unlock()
+	r.Unlock()
 	return fn, ok
 }
 
-func (th *registry) getRegisteredWorkflowTypes() []string {
-	th.Lock() // do not defer for Unlock to call next.getRegisteredWorkflowTypes without lock
-	var r []string
-	for t := range th.workflowFuncMap {
-		r = append(r, t)
+func (r *registry) getRegisteredWorkflowTypes() []string {
+	r.Lock() // do not defer for Unlock to call next.getRegisteredWorkflowTypes without lock
+	var result []string
+	for t := range r.workflowFuncMap {
+		result = append(result, t)
 	}
-	th.Unlock()
-	if th.next != nil {
-		nextTypes := th.next.getRegisteredWorkflowTypes()
-		r = append(r, nextTypes...)
+	r.Unlock()
+	if r.next != nil {
+		nextTypes := r.next.getRegisteredWorkflowTypes()
+		result = append(result, nextTypes...)
 	}
-	return r
+	return result
 }
 
-func (th *registry) addActivityAlias(fnName string, alias string) {
-	th.Lock()
-	defer th.Unlock()
-	th.activityAliasMap[fnName] = alias
+func (r *registry) addActivityAlias(fnName string, alias string) {
+	r.Lock()
+	defer r.Unlock()
+	r.activityAliasMap[fnName] = alias
 }
 
-func (th *registry) getActivityAlias(fnName string) (string, bool) {
-	th.Lock() // do not defer for Unlock to call next.getActivityAlias without lock
-	alias, ok := th.activityAliasMap[fnName]
-	if !ok && th.next != nil {
-		th.Unlock()
-		return th.next.getActivityAlias(fnName)
+func (r *registry) getActivityAlias(fnName string) (string, bool) {
+	r.Lock() // do not defer for Unlock to call next.getActivityAlias without lock
+	alias, ok := r.activityAliasMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getActivityAlias(fnName)
 	}
-	th.Unlock()
+	r.Unlock()
 	return alias, ok
 }
 
-func (th *registry) addActivity(fnName string, a activity) {
-	th.Lock()
-	defer th.Unlock()
-	th.activityFuncMap[fnName] = a
+func (r *registry) addActivity(fnName string, a activity) {
+	r.Lock()
+	defer r.Unlock()
+	r.activityFuncMap[fnName] = a
 }
 
-func (th *registry) addActivityFn(fnName string, af interface{}) {
-	th.addActivity(fnName, &activityExecutor{fnName, af})
+func (r *registry) addActivityFn(fnName string, af interface{}) {
+	r.addActivity(fnName, &activityExecutor{fnName, af})
 }
 
-func (th *registry) getActivity(fnName string) (activity, bool) {
-	th.Lock() // do not defer for Unlock to call next.getActivity without lock
-	a, ok := th.activityFuncMap[fnName]
-	if !ok && th.next != nil {
-		th.Unlock()
-		return th.next.getActivity(fnName)
+func (r *registry) getActivity(fnName string) (activity, bool) {
+	r.Lock() // do not defer for Unlock to call next.getActivity without lock
+	a, ok := r.activityFuncMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getActivity(fnName)
 	}
-	th.Unlock()
+	r.Unlock()
 	return a, ok
 }
 
-func (th *registry) getActivityFn(fnName string) (interface{}, bool) {
-	if a, ok := th.getActivity(fnName); ok {
+func (r *registry) getActivityFn(fnName string) (interface{}, bool) {
+	if a, ok := r.getActivity(fnName); ok {
 		return a.GetFunction(), ok
 	}
 	return nil, false
 }
 
-func (th *registry) getRegisteredActivities() []activity {
-	th.Lock() // do not defer for Unlock to call next.getRegisteredActivities without lock
-	activities := make([]activity, 0, len(th.activityFuncMap))
-	for _, a := range th.activityFuncMap {
+func (r *registry) getRegisteredActivities() []activity {
+	r.Lock() // do not defer for Unlock to call next.getRegisteredActivities without lock
+	activities := make([]activity, 0, len(r.activityFuncMap))
+	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
 	}
-	th.Unlock()
-	if th.next != nil {
-		nextActivities := th.next.getRegisteredActivities()
+	r.Unlock()
+	if r.next != nil {
+		nextActivities := r.next.getRegisteredActivities()
 		activities = append(activities, nextActivities...)
 	}
 	return activities
@@ -775,14 +775,14 @@ func isUseThriftDecoding(objs []interface{}) bool {
 	return true
 }
 
-func (th *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
 	lookup := wt.Name
-	if alias, ok := th.getWorkflowAlias(lookup); ok {
+	if alias, ok := r.getWorkflowAlias(lookup); ok {
 		lookup = alias
 	}
-	wf, ok := th.getWorkflowFn(lookup)
+	wf, ok := r.getWorkflowFn(lookup)
 	if !ok {
-		supported := strings.Join(th.getRegisteredWorkflowTypes(), ", ")
+		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
 	wd := &workflowExecutor{name: lookup, fn: wf}
