@@ -33,9 +33,21 @@ import (
 type Activities struct {
 	mu          sync.Mutex
 	invocations []string
+	activities2 *Activities2
+}
+
+type Activities2 struct {
+	impl *Activities
 }
 
 var errFailOnPurpose = cadence.NewCustomError("failing-on-purpose")
+
+func newActivities() *Activities {
+	activities2 := &Activities2{}
+	result := &Activities{activities2: activities2}
+	activities2.impl = result
+	return result
+}
 
 func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	a.append("sleep")
@@ -55,22 +67,6 @@ func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.
 	activity.RecordHeartbeat(ctx, seq)
 	time.Sleep(delay)
 	return seq, nil
-}
-
-func (a *Activities) ToUpper(ctx context.Context, arg string) (string, error) {
-	a.append("toUpper")
-	return strings.ToUpper(arg), nil
-}
-
-func (a *Activities) ToUpperWithDelay(ctx context.Context, arg string, delay time.Duration) (string, error) {
-	a.append("toUpperWithDelay")
-	time.Sleep(delay)
-	return strings.ToUpper(arg), nil
-}
-
-func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr string) (string, error) {
-	a.append("getMemoAndSearchAttr")
-	return memo + ", " + searchAttr, nil
 }
 
 func (a *Activities) fail(ctx context.Context) error {
@@ -100,9 +96,27 @@ func (a *Activities) clearInvoked() {
 	a.invocations = []string{}
 }
 
+func (a *Activities2) ToUpper(ctx context.Context, arg string) (string, error) {
+	a.impl.append("toUpper")
+	return strings.ToUpper(arg), nil
+}
+
+func (a *Activities2) ToUpperWithDelay(ctx context.Context, arg string, delay time.Duration) (string, error) {
+	a.impl.append("toUpperWithDelay")
+	time.Sleep(delay)
+	return strings.ToUpper(arg), nil
+}
+
+func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr string) (string, error) {
+	a.append("getMemoAndSearchAttr")
+	return memo + ", " + searchAttr, nil
+}
+
 func (w *Activities) register() {
 	activity.Register(w)
 	// Check reregistration
-	activity.RegisterWithOptions(w.ToUpper, activity.RegisterOptions{Name:"Fail"})
+	activity.RegisterWithOptions(w.Sleep, activity.RegisterOptions{Name:"Fail"})
 	activity.RegisterWithOptions(w.fail, activity.RegisterOptions{Name:"Fail", DisableAlreadyRegisteredCheck:true})
+	// Check prefix
+	activity.RegisterWithOptions(w.activities2, activity.RegisterOptions{Name:"Prefix_"})
 }

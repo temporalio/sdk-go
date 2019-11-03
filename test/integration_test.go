@@ -87,7 +87,7 @@ func waitForTCP(timeout time.Duration, addr string) error {
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = newConfig()
-	ts.activities = &Activities{}
+	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.registerWorkflowsAndActivities()
 	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))

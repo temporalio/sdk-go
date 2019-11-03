@@ -38,12 +38,12 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var ans1 string
 	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
-	err := workflow.ExecuteActivity(ctx, "ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
 	if err != nil {
 		return nil, err
 	}
 	var ans2 string
-	if err := workflow.ExecuteActivity(ctx, "ToUpper", ans1).Get(ctx, &ans2); err != nil {
+	if err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", ans1).Get(ctx, &ans2); err != nil {
 		return nil, err
 	}
 	if ans2 != "HELLO" {
@@ -338,7 +338,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			StartToCloseTimeout:    9 * time.Second,
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "ToUpperWithDelay", "hello", 1*time.Second)
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpperWithDelay", "hello", 1*time.Second)
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -359,7 +359,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			TaskList:               "bad_tl",
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "ToUpper", "hello")
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -376,7 +376,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			TaskList:               "bad_tl",
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "ToUpper", "hello")
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -397,7 +397,7 @@ func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
 func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (string, error) {
 	var result string
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	err := workflow.ExecuteActivity(ctx, "ToUpper", arg).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", arg).Get(ctx, &result)
 	if mustFail {
 		return "", fmt.Errorf("failing-on-purpose")
 	}
