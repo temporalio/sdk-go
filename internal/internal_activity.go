@@ -294,7 +294,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, dataConvert
 			return nil, nil, err
 		}
 		fnName = getFunctionName(f)
-		if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
+		if alias, ok := getGlobalRegistry().getActivityAlias(fnName); ok {
 			fnName = alias
 		}
 
@@ -394,7 +394,7 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dat
 	case reflect.String:
 		// If we know about this function through registration then we will try to return corresponding result type.
 		fnName := reflect.ValueOf(f).String()
-		if fnRegistered, ok := getHostEnvironment().getActivityFn(fnName); ok {
+		if fnRegistered, ok := getGlobalRegistry().getActivityFn(fnName); ok {
 			return deSerializeFnResultFromFnType(reflect.TypeOf(fnRegistered), result, to, dataConverter)
 		}
 	}

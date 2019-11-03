@@ -102,7 +102,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, getHostEnvironment(),
+		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	workflowWorker.Start()
 	workflowWorker.Stop()
@@ -125,10 +125,10 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
-	hostEnv := getHostEnvironment()
-	hostEnv.addActivity(a.ActivityType().Name, a)
+	registry := getGlobalRegistry()
+	registry.addActivity(a.ActivityType().Name, a)
 	activityWorker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, hostEnv, nil,
+		s.service, domain, executionParameters, overrides, registry, nil,
 	)
 	activityWorker.Start()
 	activityWorker.Stop()
@@ -174,10 +174,10 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	activityTaskHandler := newNoResponseActivityTaskHandler()
 	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
 	a := &greeterActivity{}
-	hostEnv := getHostEnvironment()
-	hostEnv.addActivity(a.ActivityType().Name, a)
+	registry := getGlobalRegistry()
+	registry.addActivity(a.ActivityType().Name, a)
 	worker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, hostEnv, nil,
+		s.service, domain, executionParameters, overrides, registry, nil,
 	)
 	worker.Start()
 	activityTaskHandler.BlockedOnExecuteCalled()
@@ -208,7 +208,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, getHostEnvironment(),
+		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	workflowWorker.Start()
 	workflowWorker.Stop()

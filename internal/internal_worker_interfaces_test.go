@@ -157,7 +157,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
-	env := getHostEnvironment()
+	env := getGlobalRegistry()
 	// Launch worker.
 	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, env)
 	defer workflowWorker.Stop()

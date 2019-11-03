@@ -460,10 +460,10 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 }
 
 func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
-	hostEnv := getHostEnvironment()
-	wf, ok := hostEnv.getWorkflowFn(wt.Name)
+	registry := getGlobalRegistry()
+	wf, ok := registry.getWorkflowFn(wt.Name)
 	if !ok {
-		supported := strings.Join(hostEnv.getRegisteredWorkflowTypes(), ", ")
+		supported := strings.Join(registry.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
@@ -1472,7 +1472,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
 
-	if len(getHostEnvironment().getRegisteredActivities()) == 0 {
+	if len(getGlobalRegistry().getRegisteredActivities()) == 0 {
 		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
 	}
 
@@ -1486,7 +1486,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 			}
 		}
 
-		activity, ok := getHostEnvironment().getActivity(name)
+		activity, ok := getGlobalRegistry().getActivity(name)
 		if !ok {
 			return nil
 		}
@@ -1504,7 +1504,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, getHostEnvironment(), getActivity)
+	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, getGlobalRegistry(), getActivity)
 	return taskHandler
 }
 

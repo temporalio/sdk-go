@@ -250,7 +250,7 @@ func RegisterWorkflow(workflowFunc interface{}) {
 // Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 // This method calls panic if workflowFunc doesn't comply with the expected format.
 func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflowOptions) {
-	thImpl := getHostEnvironment()
+	thImpl := getGlobalRegistry()
 	err := thImpl.RegisterWorkflowWithOptions(workflowFunc, opts)
 	if err != nil {
 		panic(err)

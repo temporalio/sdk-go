@@ -168,7 +168,7 @@ func RegisterActivity(activityFunc interface{}) {
 // which might be useful for integration tests.
 // activity.RegisterWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivityOptions) {
-	thImpl := getHostEnvironment()
+	thImpl := getGlobalRegistry()
 	err := thImpl.RegisterActivityWithOptions(activityFunc, opts)
 	if err != nil {
 		panic(err)

@@ -380,7 +380,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 		Identity: "replayID",
 		Logger:   logger,
 	}
-	taskHandler := newWorkflowTaskHandler(domain, params, nil, getHostEnvironment())
+	taskHandler := newWorkflowTaskHandler(domain, params, nil, getGlobalRegistry())
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
 	if err != nil {
 		return err

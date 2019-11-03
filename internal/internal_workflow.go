@@ -1093,7 +1093,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 			return nil, nil, err
 		}
 		fnName = getFunctionName(workflowFunc)
-		if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
+		if alias, ok := getGlobalRegistry().getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
 

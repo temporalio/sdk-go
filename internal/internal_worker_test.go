@@ -339,7 +339,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 		PreviousStartedEventId: common.Int64Ptr(0),
 	}
 
-	r := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	r := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	_, err := r.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	s.NoError(err)
 }
@@ -419,9 +419,9 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	t := s.T()
 	w := createWorker(s.service)
 	aw := w.(*aggregatedWorker)
-	aw.hostEnv = newHostEnvironment()
-	assert.Empty(t, aw.hostEnv.getRegisteredActivities())
-	assert.Empty(t, aw.hostEnv.getRegisteredWorkflowTypes())
+	aw.registry = newRegistry()
+	assert.Empty(t, aw.registry.getRegisteredActivities())
+	assert.Empty(t, aw.registry.getRegisteredWorkflowTypes())
 	assert.NoError(t, aw.Start())
 }
 
