@@ -1692,7 +1692,7 @@ func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
 }
 
 func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames []string) {
-	for _, a := range ath.registry.activityFuncMap {
+	for _, a := range ath.registry.getRegisteredActivities() {
 		activityNames = append(activityNames, a.ActivityType().Name)
 	}
 	return

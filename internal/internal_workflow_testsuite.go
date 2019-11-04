@@ -114,7 +114,6 @@ type (
 		locker    sync.Mutex
 		testSuite *WorkflowTestSuite
 
-		registry                   *registry
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock         *mock.Mock
@@ -159,6 +158,7 @@ type (
 	testWorkflowEnvironmentImpl struct {
 		*testWorkflowEnvironmentShared
 		parentEnv *testWorkflowEnvironmentImpl
+		registry  *registry
 
 		workflowInfo   *WorkflowInfo
 		workflowDef    workflowDefinition
@@ -194,7 +194,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
 			testSuite:                  s,
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
-			registry:                   newRegistry(getGlobalRegistry()),
 
 			logger:           s.logger,
 			metricsScope:     metrics.NewTaggedScope(s.scope),
@@ -222,6 +221,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			ExecutionStartToCloseTimeoutSeconds: 1,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
+		registry: newRegistry(getGlobalRegistry()),
 
 		changeVersions: make(map[string]Version),
 		openSessions:   make(map[string]*SessionInfo),
@@ -322,6 +322,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
 	childEnv.workerOptions.DataConverter = params.dataConverter
+	childEnv.registry = env.registry
 
 	if params.workflowID == "" {
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
@@ -463,10 +464,9 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 }
 
 func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
-	registry := getGlobalRegistry()
-	wf, ok := registry.getWorkflowFn(wt.Name)
+	wf, ok := env.registry.getWorkflowFn(wt.Name)
 	if !ok {
-		supported := strings.Join(registry.getRegisteredWorkflowTypes(), ", ")
+		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
@@ -1474,8 +1474,8 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, wOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
-
-	if len(getGlobalRegistry().getRegisteredActivities()) == 0 {
+	registry := env.registry
+	if len(registry.getRegisteredActivities()) == 0 {
 		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
 	}
 
@@ -1489,7 +1489,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 			}
 		}
 
-		activity, ok := getGlobalRegistry().getActivity(name)
+		activity, ok := registry.getActivity(name)
 		if !ok {
 			return nil
 		}
@@ -1507,7 +1507,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, getGlobalRegistry(), getActivity)
+	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, registry, getActivity)
 	return taskHandler
 }
 

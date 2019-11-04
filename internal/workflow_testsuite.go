@@ -219,7 +219,7 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 			panic(err)
 		}
 		fnName := getFunctionName(activity)
-		if alias, ok := getGlobalRegistry().getActivityAlias(fnName); ok {
+		if alias, ok := t.impl.registry.getActivityAlias(fnName); ok {
 			fnName = alias
 		}
 		call = t.Mock.On(fnName, args...)
@@ -262,7 +262,7 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 			panic(err)
 		}
 		fnName := getFunctionName(workflow)
-		if alias, ok := getGlobalRegistry().getWorkflowAlias(fnName); ok {
+		if alias, ok := t.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
 		call = t.Mock.On(fnName, args...)

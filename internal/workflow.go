@@ -253,8 +253,8 @@ func RegisterWorkflow(workflowFunc interface{}) {
 // This method calls panic if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 // type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflowOptions) {
-	thImpl := getGlobalRegistry()
-	err := thImpl.RegisterWorkflowWithOptions(workflowFunc, opts)
+	registry := getGlobalRegistry()
+	err := registry.RegisterWorkflowWithOptions(workflowFunc, opts)
 	if err != nil {
 		panic(err)
 	}

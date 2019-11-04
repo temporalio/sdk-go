@@ -157,9 +157,9 @@ func (s *InterfacesTestSuite) TestInterface() {
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
-	env := getGlobalRegistry()
+	registry := getGlobalRegistry()
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, env)
+	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
 	workflowWorker.Start()
 
@@ -172,7 +172,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, env, nil)
+	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
 	activityWorker.Start()
 
