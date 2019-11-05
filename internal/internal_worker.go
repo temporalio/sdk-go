@@ -615,9 +615,10 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		}
 		prefix := options.Name
 		registerName := name
-		if len(prefix) > 0 {
-			registerName = prefix + name
+		if len(prefix) == 0 {
+			prefix = structType.Name() + "_"
 		}
+		registerName = prefix + name
 		if !options.DisableAlreadyRegisteredCheck {
 			if _, ok := r.getActivityFn(registerName); ok {
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)

@@ -21,8 +21,11 @@
 package internal
 
 import (
-	"github.com/stretchr/testify/require"
+	"context"
 	"testing"
+	"time"
+	
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetMemoOnStart(t *testing.T) {
@@ -60,4 +63,29 @@ func TestSetSearchAttributesOnStart(t *testing.T) {
 	err = env.SetSearchAttributesOnStart(searchAttr)
 	require.NoError(t, err)
 	require.NotNil(t, env.impl.workflowInfo.SearchAttributes)
+}
+
+func TestNoExplicitRegistrationRequired(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	activity := func(ctx context.Context, arg string) string { return arg + " World!" }
+	env.RegisterActivity(activity)
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+			ScheduleToStartTimeout: time.Hour,
+		})
+		var result string
+		err := ExecuteActivity(ctx, activity, arg1).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}, "Hello")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "Hello World!", result)
 }
