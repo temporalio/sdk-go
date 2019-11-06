@@ -40,7 +40,6 @@ require (
 	github.com/uber/jaeger-lib v1.5.0 // indirect
 	github.com/uber/tchannel-go v1.14.0
 	go.uber.org/atomic v1.3.2
-	go.uber.org/cadence v0.9.3
 	go.uber.org/dig v1.7.0 // indirect
 	go.uber.org/fx v1.9.0 // indirect
 	go.uber.org/goleak v0.10.0
