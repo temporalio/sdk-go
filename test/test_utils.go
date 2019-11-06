@@ -24,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.uber.org/yarpc"
 	"go.uber.org/yarpc/transport/tchannel"
 )
@@ -39,7 +39,7 @@ type Config struct {
 
 func newConfig() Config {
 	cfg := Config{
-		ServiceName: "cadence-frontend",
+		ServiceName: "temporal-frontend",
 		ServiceAddr: "127.0.0.1:7933",
 		IsStickyOff: true,
 	}

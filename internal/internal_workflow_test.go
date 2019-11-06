@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/cadence/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 )
 
@@ -223,7 +223,7 @@ func TestWorkflowPanic(t *testing.T) {
 	require.NotNil(t, env.GetWorkflowError())
 	resultErr := env.GetWorkflowError().(*PanicError)
 	require.EqualValues(t, "simulated", resultErr.Error())
-	require.Contains(t, resultErr.StackTrace(), "cadence/internal.splitJoinActivityWorkflow")
+	require.Contains(t, resultErr.StackTrace(), "temporal/internal.splitJoinActivityWorkflow")
 }
 
 func TestWorkflowReturnsPanic(t *testing.T) {
@@ -1128,7 +1128,7 @@ func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 
 	resultErr := env.GetWorkflowError().(*PanicError)
 	s.EqualValues("negative WaitGroup counter", resultErr.Error())
-	s.Contains(resultErr.StackTrace(), "cadence/internal.waitGroupNegativeCounterPanicsWorkflowTest")
+	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupNegativeCounterPanicsWorkflowTest")
 }
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTest() {
@@ -1139,7 +1139,7 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTe
 
 	resultErr := env.GetWorkflowError().(*PanicError)
 	s.EqualValues("WaitGroup is reused before previous Wait has returned", resultErr.Error())
-	s.Contains(resultErr.StackTrace(), "cadence/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
+	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
 }
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {

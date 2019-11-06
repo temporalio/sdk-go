@@ -31,11 +31,11 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/cadence"
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/client"
-	"go.uber.org/cadence/worker"
-	"go.uber.org/cadence/workflow"
+	"go.temporal.io/temporal"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/worker"
+	"go.temporal.io/temporal/workflow"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 )
@@ -103,7 +103,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 	// then assert that there are no lingering go routines
 	time.Sleep(1 * time.Minute)
 	// https://github.com/uber-go/cadence-client/issues/739
-	goleak.VerifyNoLeaks(ts.T(), goleak.IgnoreTopFunction("go.uber.org/cadence/internal.(*coroutineState).initialYield"))
+	goleak.VerifyNoLeaks(ts.T(), goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
@@ -195,7 +195,7 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.Nil(ts.libClient.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
-	_, ok := err.(*cadence.CanceledError)
+	_, ok := err.(*temporal.CanceledError)
 	ts.True(ok)
 }
 
@@ -210,7 +210,7 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.NotNil(value)
 	var trace string
 	ts.Nil(value.Get(&trace))
-	ts.True(strings.Contains(trace, "go.uber.org/cadence/test.(*Workflows).Basic"))
+	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test.(*Workflows).Basic"))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
@@ -345,7 +345,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		}
 	}
 	ts.NoError(err)
-	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on cadence-server
+	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on temporal-server
 	// bellow is used to guarantee domain is ready
 	var dummyReturn string
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)

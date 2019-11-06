@@ -7,7 +7,7 @@ directories:
 go:
   - 1.11.x
 
-go_import_path: go.uber.org/cadence
+go_import_path: go.temporal.io/temporal
 addons:
   apt:
     packages:

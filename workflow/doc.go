@@ -42,7 +42,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 	import (
 		"time"
 
-		"go.uber.org/cadence/workflow"
+		"go.temporal.io/temporal/workflow"
 	)
 
 	func init() {
@@ -348,7 +348,7 @@ workflow also has the option to stop execution by blocking on a signal channel.
 In the example above, the workflow code uses workflow.GetSignalChannel to open a workflow.Channel for the named signal.
 We then use a workflow.Selector to wait on this channel and process the payload received with the signal.
 
-“ContinueAsNew” Workflow Completion
+ContinueAsNew Workflow Completion
 
 Workflows that need to rerun periodically could naively be implemented as a big for loop with a sleep where the entire
 logic of the workflow is inside the body of the for loop. The problem with this approach is that the history for that
@@ -366,7 +366,7 @@ workflow function should terminate by returning the special ContinueAsNewError e
 
 For a complete example implementing this pattern please refer to the Cron example.
 
-"SideEffect" API
+SideEffect API
 
 workflow.SideEffect executes the provided function once, records its result into the workflow history, and doesn't
 re-execute upon replay. Instead, it returns the recorded result. Use it only for short, nondeterministic code snippets,
@@ -391,7 +391,7 @@ SideEffect function any other way than through its recorded return value.
 		....
 	}
 
-"Query" API
+Query API
 
 A workflow execution could be stuck at some state for longer than expected period. Cadence provide facilities to query
 the current call stack of a workflow execution. You can use cadence-cli to do the query, for example:
@@ -466,7 +466,7 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 		"github.com/stretchr/testify/mock"
 		"github.com/stretchr/testify/suite"
 
-		"go.uber.org/cadence/testsuite"
+		"go.temporal.io/temporal/testsuite"
 	)
 
 	type UnitTestSuite struct {

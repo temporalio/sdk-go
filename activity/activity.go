@@ -24,7 +24,7 @@ import (
 	"context"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/internal"
+	"go.temporal.io/temporal/internal"
 	"go.uber.org/zap"
 )
 
@@ -92,7 +92,7 @@ func GetMetricsScope(ctx context.Context) tally.Scope {
 // the context with error context.Canceled.
 //
 // details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
-// can check error TimeOutType()/Details().
+// can check error with TimeoutType()/Details().
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }

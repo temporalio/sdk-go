@@ -119,9 +119,9 @@ Debuggability - Replay any workflow execution history locally under a debugger. 
 API to allow you to capture a stack trace from any failed workflow execution history.
 
 */
-package cadence
+package temporal
 
-import "go.uber.org/cadence/internal"
+import "go.temporal.io/temporal/internal"
 
 // RetryPolicy defines the retry policy for activity/workflow.
 type RetryPolicy = internal.RetryPolicy

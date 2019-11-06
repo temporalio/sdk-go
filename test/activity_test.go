@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/cadence"
-	"go.uber.org/cadence/activity"
-	"go.uber.org/cadence/worker"
+	"go.temporal.io/temporal"
+	"go.temporal.io/temporal/activity"
+	"go.temporal.io/temporal/worker"
 )
 
 type Activities struct {
@@ -41,7 +41,7 @@ type Activities2 struct {
 	impl *Activities
 }
 
-var errFailOnPurpose = cadence.NewCustomError("failing-on-purpose")
+var errFailOnPurpose = temporal.NewCustomError("failing-on-purpose")
 
 func newActivities() *Activities {
 	activities2 := &Activities2{}

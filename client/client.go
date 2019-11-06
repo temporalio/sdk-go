@@ -26,11 +26,11 @@ package client
 import (
 	"context"
 
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/encoded"
-	"go.uber.org/cadence/internal"
-	"go.uber.org/cadence/workflow"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/encoded"
+	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/workflow"
 )
 
 const (
@@ -198,7 +198,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, cadence.NewCustomError("reason", details)
+		//      CompleteActivity(token, nil, temporal.NewCustomError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
@@ -218,6 +218,7 @@ type (
 		CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
+		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
 		//	- EntityNotExistsError

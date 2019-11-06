@@ -22,13 +22,13 @@
 package main
 
 import (
-	_ "go.uber.org/cadence"
-	_ "go.uber.org/cadence/activity"
-	_ "go.uber.org/cadence/client"
-	_ "go.uber.org/cadence/encoded"
-	_ "go.uber.org/cadence/testsuite"
-	_ "go.uber.org/cadence/worker"
-	_ "go.uber.org/cadence/workflow"
+	_ "go.temporal.io/temporal"
+	_ "go.temporal.io/temporal/activity"
+	_ "go.temporal.io/temporal/client"
+	_ "go.temporal.io/temporal/encoded"
+	_ "go.temporal.io/temporal/testsuite"
+	_ "go.temporal.io/temporal/worker"
+	_ "go.temporal.io/temporal/workflow"
 )
 
 func main() {

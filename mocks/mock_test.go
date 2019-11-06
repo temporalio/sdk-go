@@ -22,13 +22,13 @@ package mocks
 
 import (
 	"context"
-	"go.uber.org/cadence/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/shared"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/cadence/client"
-	"go.uber.org/cadence/workflow"
+	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/workflow"
 )
 
 func Test_MockClient(t *testing.T) {

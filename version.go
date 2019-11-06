@@ -18,12 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package cadence
+package temporal
 
-import "go.uber.org/cadence/internal"
+import "go.temporal.io/temporal/internal"
 
 // LibraryVersion is a semver string that represents
-// the version of this cadence client library
+// the version of this temporal client library
 // it will be embedded as a "version" header in every
 // rpc call made by this client to cadence server.
 // In addition, the version string will be used by

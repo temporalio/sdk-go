@@ -28,12 +28,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	s "go.uber.org/cadence/.gen/go/shared"
+	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.uber.org/zap"
 )
 
 func TestReplayAwareLogger(t *testing.T) {
-	temp, err := ioutil.TempFile("", "cadence-client-test")
+	temp, err := ioutil.TempFile("", "temporal-client-test")
 	require.NoError(t, err, "Failed to create temp file.")
 	defer os.Remove(temp.Name())
 	config := zap.NewProductionConfig()

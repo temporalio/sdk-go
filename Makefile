@@ -3,11 +3,14 @@
 # default target
 default: test
 
-IMPORT_ROOT := go.uber.org/cadence
+IMPORT_ROOT := go.temporal.io/temporal
 THRIFT_GENDIR := .gen/go
-THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
+THRIFTRW_SRC := \
+  idl/github.com/temporalio/temporal/temporal.thrift \
+  idl/github.com/temporalio/temporal/shared.thrift \
+
 # one or more thriftrw-generated file(s), to create / depend on generated code
-THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
+THRIFTRW_OUT := $(THRIFT_GENDIR)/temporal/idl.go
 TEST_ARG ?= -v -race
 
 # general build-product folder, cleaned as part of `make clean`

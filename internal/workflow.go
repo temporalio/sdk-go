@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	s "go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
+	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -98,6 +98,10 @@ type (
 		//  if err := f.Get(ctx, &v); err != nil {
 		//      return err
 		//  }
+		//
+		// The valuePtr parameter can be nil when the encoded result value is not needed.
+		// Example:
+		//  err = f.Get(ctx, nil)
 		Get(ctx Context, valuePtr interface{}) error
 
 		// When true Get is guaranteed to not block
@@ -191,7 +195,7 @@ type (
 		// after the current run is completed/failed/timeout. If a RetryPolicy is also supplied, and the workflow failed
 		// or timeout, the workflow will be retried based on the retry policy. While the workflow is retrying, it won't
 		// schedule its next run. If next schedule is due while workflow is running (or retrying), then it will skip that
-		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning cadence.CanceledError).
+		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning temporal.CanceledError).
 		// The cron spec is as following:
 		// ┌───────────── minute (0 - 59)
 		// │ ┌───────────── hour (0 - 23)
@@ -831,13 +835,13 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 //		   "CustomIntField": 1,
 //		   "CustomBoolField": true,
 //	   }
-//	   worklfow.UpsertSearchAttributes(ctx, attr1)
+//	   workflow.UpsertSearchAttributes(ctx, attr1)
 //
 //	   attr2 := map[string]interface{}{
 //		   "CustomIntField": 2,
 //		   "CustomKeywordField": "seattle",
 //	   }
-//	   worklfow.UpsertSearchAttributes(ctx, attr2)
+//	   workflow.UpsertSearchAttributes(ctx, attr2)
 //   }
 // will eventually have search attributes:
 //   map[string]interface{}{

@@ -26,9 +26,9 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/backoff"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -125,7 +125,8 @@ type (
 // An activity function takes a context and input and returns a (result, error) or just error.
 //
 // And activity struct is a structure with all its exported methods treated as activities. The default
-// name of each activity is the method name.
+// name of each activity is the <structure name>_<>method name>. Use RegisterActivityWithOptions to override the
+// "<structure name>_" prefix.
 //
 // Examples:
 //	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
@@ -241,7 +242,7 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 //  context doesn't support overriding value of ctx.Error.
 //  TODO: Implement automatic heartbeating with cancellation through ctx.
 // details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
-// can check error TimeOutType()/Details().
+// can check error TimeoutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	env := getActivityEnv(ctx)
 	if env.isLocalActivity {

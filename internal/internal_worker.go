@@ -43,11 +43,11 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
-	"go.uber.org/cadence/internal/common/backoff"
-	"go.uber.org/cadence/internal/common/metrics"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -384,7 +384,7 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
 	}
-	// For now resourceID is hiden from user so we will always create a unique one for each worker.
+	// For now resourceID is hidden from user so we will always create a unique one for each worker.
 	if params.SessionResourceID == "" {
 		params.SessionResourceID = uuid.New()
 	}

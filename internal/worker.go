@@ -34,10 +34,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
-	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
-	"go.uber.org/cadence/.gen/go/shared"
-	"go.uber.org/cadence/internal/common"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
+	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )
 
