@@ -45,17 +45,17 @@ type (
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// For global registration consider workflow.Register
-		// This method returns error if workflowFunc doesn't comply with the expected format or tries to register the same workflow
-		RegisterWorkflow(w interface{}) error
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		RegisterWorkflow(w interface{})
 
 		// RegisterWorkflowWithOptions registers the workflow function with options.
 		// The user can use options to provide an external name for the workflow or leave it empty if no
 		// external name is required. This can be used as
 		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{})
 		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
-		// This method returns error if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
-		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions) error
+		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
 
 		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
 		// An activity function takes a context and input and returns a (result, error) or just error.
@@ -83,10 +83,10 @@ type (
 		//  }
 		//
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-		// This method returns an error if activityFunc doesn't comply with the expected format or an activity with the same
+		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
 		// For global registration consider activity.Register
-		RegisterActivity(a interface{}) error
+		RegisterActivity(a interface{})
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
 		// The user can use options to provide an external name for the activity or leave it empty if no
@@ -104,7 +104,7 @@ type (
 		// The other use of options is to disable duplicated activity registration check
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
-		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) error
+		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
 
 		// Start starts the worker in a non-blocking fashion
 		Start() error

@@ -254,10 +254,7 @@ func RegisterWorkflow(workflowFunc interface{}) {
 // type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflowOptions) {
 	registry := getGlobalRegistry()
-	err := registry.RegisterWorkflowWithOptions(workflowFunc, opts)
-	if err != nil {
-		panic(err)
-	}
+	registry.RegisterWorkflowWithOptions(workflowFunc, opts)
 }
 
 // NewChannel create new Channel instance

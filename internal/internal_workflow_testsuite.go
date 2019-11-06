@@ -412,7 +412,7 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, act
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, args ...interface{}) {
 	fType := reflect.TypeOf(workflowFn)
 	if getKind(fType) == reflect.Func {
-		env.RegisterWorkflow(workflowFn)
+		env.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 	}
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter(), env.GetRegistry())
 	if err != nil {
@@ -1578,20 +1578,20 @@ func (env *testWorkflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return env.workflowInfo
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w interface{}) error {
-	return env.registry.RegisterWorkflow(w)
+func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w interface{}) {
+	env.registry.RegisterWorkflow(w)
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) error {
-	return env.registry.RegisterWorkflowWithOptions(w, options)
+func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	env.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) error {
-	return env.registry.RegisterActivity(a)
+func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
+	env.registry.RegisterActivity(a)
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) error {
-	return env.registry.RegisterActivityWithOptions(a, options)
+func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	env.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {

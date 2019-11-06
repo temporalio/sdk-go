@@ -24,7 +24,7 @@ import (
 	"context"
 	"testing"
 	"time"
-	
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,7 +68,7 @@ func TestSetSearchAttributesOnStart(t *testing.T) {
 func TestNoExplicitRegistrationRequired(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
-	activity := func(ctx context.Context, arg string) string { return arg + " World!" }
+	activity := func(ctx context.Context, arg string) (string, error) { return arg + " World!", nil }
 	env.RegisterActivity(activity)
 	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
 		ctx = WithActivityOptions(ctx, ActivityOptions{

@@ -171,10 +171,7 @@ func RegisterActivity(activityFunc interface{}) {
 // activity.RegisterWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivityOptions) {
 	registry := getGlobalRegistry()
-	err := registry.RegisterActivityWithOptions(activityFunc, opts)
-	if err != nil {
-		panic(err)
-	}
+	registry.RegisterActivityWithOptions(activityFunc, opts)
 }
 
 // GetActivityInfo returns information about currently executing activity.

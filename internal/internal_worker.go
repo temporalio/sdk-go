@@ -533,18 +533,18 @@ type registry struct {
 	next             *registry // Allows to chain registries
 }
 
-func (r *registry) RegisterWorkflow(af interface{}) error {
-	return r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
+func (r *registry) RegisterWorkflow(af interface{}) {
+	 r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
 func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
-) error {
+)  {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if err := validateFnFormat(fnType, true); err != nil {
-		return err
+		panic(err)
 	}
 	fnName := getFunctionName(af)
 	alias := options.Name
@@ -553,32 +553,32 @@ func (r *registry) RegisterWorkflowWithOptions(
 		registerName = alias
 	}
 	if !options.DisableAlreadyRegisteredCheck {
-		if _, ok := r.getWorkflowFn(registerName); ok {
-			return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
+		if _, ok := r.workflowFuncMap[registerName]; ok {
+			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
 		}
 	}
 	r.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
 		r.addWorkflowAlias(fnName, alias)
 	}
-	return nil
 }
 
-func (r *registry) RegisterActivity(af interface{}) error {
-	return r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
+func (r *registry) RegisterActivity(af interface{})  {
+	 r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
 func (r *registry) RegisterActivityWithOptions(
 	af interface{},
 	options RegisterActivityOptions,
-) error {
+)  {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		return r.registerActivityStructWithOptions(af, options)
+		 r.registerActivityStructWithOptions(af, options)
+		 return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
-		return err
+		panic(err)
 	}
 	fnName := getFunctionName(af)
 	alias := options.Name
@@ -587,15 +587,14 @@ func (r *registry) RegisterActivityWithOptions(
 		registerName = alias
 	}
 	if !options.DisableAlreadyRegisteredCheck {
-		if _, ok := r.getActivityFn(registerName); ok {
-			return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+		if _, ok := r.activityFuncMap[registerName]; ok {
+			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
 		}
 	}
 	r.addActivityFn(registerName, af)
 	if len(alias) > 0 {
 		r.addActivityAlias(fnName, alias)
 	}
-	return nil
 }
 
 func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
@@ -616,7 +615,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		prefix := options.Name
 		registerName := name
 		if len(prefix) == 0 {
-			prefix = structType.Name() + "_"
+			prefix = structType.Elem().Name() + "_"
 		}
 		registerName = prefix + name
 		if !options.DisableAlreadyRegisteredCheck {
@@ -1050,20 +1049,20 @@ type aggregatedWorker struct {
 	registry       *registry
 }
 
-func (aw *aggregatedWorker) RegisterWorkflow(w interface{}) error {
-	return aw.registry.RegisterWorkflow(w)
+func (aw *aggregatedWorker) RegisterWorkflow(w interface{}) {
+	aw.registry.RegisterWorkflow(w)
 }
 
-func (aw *aggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) error {
-	return aw.registry.RegisterWorkflowWithOptions(w, options)
+func (aw *aggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-func (aw *aggregatedWorker) RegisterActivity(a interface{}) error {
-	return aw.registry.RegisterActivity(a)
+func (aw *aggregatedWorker) RegisterActivity(a interface{}) {
+	aw.registry.RegisterActivity(a)
 }
 
-func (aw *aggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) error {
-	return aw.registry.RegisterActivityWithOptions(a, options)
+func (aw *aggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (aw *aggregatedWorker) Start() error {

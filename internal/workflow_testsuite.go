@@ -190,20 +190,20 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 	t.impl.setWorkerStopChannel(c)
 }
 
-func (t *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) error {
-	return t.impl.RegisterWorkflow(w)
+func (t *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
+	t.impl.RegisterWorkflow(w)
 }
 
-func (t *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) error {
-	return t.impl.RegisterWorkflowWithOptions(w, options)
+func (t *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	t.impl.RegisterWorkflowWithOptions(w, options)
 }
 
-func (t *TestWorkflowEnvironment) RegisterActivity(a interface{}) error {
-	return t.impl.RegisterActivity(a)
+func (t *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
+	t.impl.RegisterActivity(a)
 }
 
-func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) error {
-	return t.impl.RegisterActivityWithOptions(a, options)
+func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	t.impl.RegisterActivityWithOptions(a, options)
 }
 
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
