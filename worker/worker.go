@@ -37,7 +37,7 @@ type (
 	// Use worker.New(...) to create an instance.
 	Worker interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
-		// A workflow takes a cadence context and input and returns a (result, error) or just error.
+		// A workflow takes a workflow.Context and input and returns a (result, error) or just error.
 		// Examples:
 		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
@@ -139,8 +139,8 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    service  - thrift connection to the cadence server
-//    domain   - the name of the cadence domain
+//    service  - thrift connection to the temporal server
+//    domain   - the name of the temporal domain
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process
@@ -169,8 +169,8 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
-// To download the history file: cadence workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/uber/cadence/blob/master/tools/cli/README.md for full documentation
+// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
@@ -179,8 +179,8 @@ func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) 
 
 // ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
 //// lastEventID(inclusive), downloaded from the cli.
-// To download the history file: cadence workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/uber/cadence/blob/master/tools/cli/README.md for full documentation
+// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {

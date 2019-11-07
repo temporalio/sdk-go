@@ -39,7 +39,7 @@ type Config struct {
 
 func newConfig() Config {
 	cfg := Config{
-		ServiceName: "temporal-frontend",
+		ServiceName: "cadence-frontend",
 		ServiceAddr: "127.0.0.1:7933",
 		IsStickyOff: true,
 	}
@@ -84,7 +84,7 @@ func (c *rpcClient) Close() {
 }
 
 // newRPCClient builds and returns a new rpc client that is able to
-// make calls to the localhost cadence-server container
+// make calls to the localhost temporal-server container
 func newRPCClient(
 	serviceName string, serviceAddr string) (*rpcClient, error) {
 	transport, err := tchannel.NewTransport(tchannel.ServiceName("integration-test"))
