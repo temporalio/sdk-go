@@ -75,9 +75,6 @@ const (
 	testTagsContextKey = "cadence-testTags"
 )
 
-// Assert that structs do indeed implement the interfaces
-var _ Worker = (*aggregatedWorker)(nil)
-
 type (
 	// WorkflowWorker wraps the code for hosting workflow types.
 	// And worker is mapped 1:1 with task list. If the user want's to poll multiple
@@ -109,8 +106,8 @@ type (
 	// activities within a session. The creationWorker polls from a global tasklist,
 	// while the activityWorker polls from a resource specific tasklist.
 	sessionWorker struct {
-		creationWorker Worker
-		activityWorker Worker
+		creationWorker *activityWorker
+		activityWorker *activityWorker
 	}
 
 	// Worker overrides.
@@ -197,9 +194,9 @@ func newWorkflowWorker(
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
-	hostEnv *hostEnvImpl,
-) Worker {
-	return newWorkflowWorkerInternal(service, domain, params, ppMgr, nil, hostEnv)
+	registry *registry,
+) *workflowWorker {
+	return newWorkflowWorkerInternal(service, domain, params, ppMgr, nil, registry)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -264,8 +261,8 @@ func newWorkflowWorkerInternal(
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
 	overrides *workerOverrides,
-	hostEnv *hostEnvImpl,
-) Worker {
+	registry *registry,
+) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -274,7 +271,7 @@ func newWorkflowWorkerInternal(
 	if overrides != nil && overrides.workflowTaskHandler != nil {
 		taskHandler = overrides.workflowTaskHandler
 	} else {
-		taskHandler = newWorkflowTaskHandler(domain, params, ppMgr, hostEnv)
+		taskHandler = newWorkflowTaskHandler(domain, params, ppMgr, registry)
 	}
 	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, params, workerStopChannel)
 }
@@ -285,7 +282,7 @@ func newWorkflowTaskWorkerInternal(
 	domain string,
 	params workerExecutionParameters,
 	stopC chan struct{},
-) Worker {
+) *workflowWorker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(
 		taskHandler,
@@ -381,9 +378,9 @@ func newSessionWorker(service workflowserviceclient.Interface,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
-	env *hostEnvImpl,
+	env *registry,
 	maxConcurrentSessionExecutionSize int,
-) Worker {
+) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
 	}
@@ -440,9 +437,9 @@ func newActivityWorker(
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
-	env *hostEnvImpl,
+	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
-) Worker {
+) *activityWorker {
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -464,7 +461,7 @@ func newActivityTaskWorker(
 	workerParams workerExecutionParameters,
 	sessionTokenBucket *sessionTokenBucket,
 	stopC chan struct{},
-) (worker Worker) {
+) (worker *activityWorker) {
 	ensureRequiredParams(&workerParams)
 
 	poller := newActivityTaskPoller(
@@ -527,27 +524,27 @@ func (aw *activityWorker) Stop() {
 	aw.worker.Stop()
 }
 
-// hostEnvImpl is the implementation of hostEnv
-type hostEnvImpl struct {
+type registry struct {
 	sync.Mutex
 	workflowFuncMap  map[string]interface{}
 	workflowAliasMap map[string]string
 	activityFuncMap  map[string]activity
 	activityAliasMap map[string]string
+	next             *registry // Allows to chain registries
 }
 
-func (th *hostEnvImpl) RegisterWorkflow(af interface{}) error {
-	return th.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
+func (r *registry) RegisterWorkflow(af interface{}) {
+	 r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
-func (th *hostEnvImpl) RegisterWorkflowWithOptions(
+func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
-) error {
+)  {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if err := validateFnFormat(fnType, true); err != nil {
-		return err
+		panic(err)
 	}
 	fnName := getFunctionName(af)
 	alias := options.Name
@@ -555,29 +552,33 @@ func (th *hostEnvImpl) RegisterWorkflowWithOptions(
 	if len(alias) > 0 {
 		registerName = alias
 	}
-	// Check if already registered
-	if _, ok := th.getWorkflowFn(registerName); ok {
-		return fmt.Errorf("workflow name \"%v\" is already registered", registerName)
+	if !options.DisableAlreadyRegisteredCheck {
+		if _, ok := r.workflowFuncMap[registerName]; ok {
+			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
+		}
 	}
-	th.addWorkflowFn(registerName, af)
+	r.addWorkflowFn(registerName, af)
 	if len(alias) > 0 {
-		th.addWorkflowAlias(fnName, alias)
+		r.addWorkflowAlias(fnName, alias)
 	}
-	return nil
 }
 
-func (th *hostEnvImpl) RegisterActivity(af interface{}) error {
-	return th.RegisterActivityWithOptions(af, RegisterActivityOptions{})
+func (r *registry) RegisterActivity(af interface{})  {
+	 r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
-func (th *hostEnvImpl) RegisterActivityWithOptions(
+func (r *registry) RegisterActivityWithOptions(
 	af interface{},
 	options RegisterActivityOptions,
-) error {
+)  {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
+	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
+		 r.registerActivityStructWithOptions(af, options)
+		 return
+	}
 	if err := validateFnFormat(fnType, false); err != nil {
-		return err
+		panic(err)
 	}
 	fnName := getFunctionName(af)
 	alias := options.Name
@@ -585,94 +586,155 @@ func (th *hostEnvImpl) RegisterActivityWithOptions(
 	if len(alias) > 0 {
 		registerName = alias
 	}
-	// Check if already registered
-	if _, ok := th.getActivityFn(registerName); ok {
-		return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+	if !options.DisableAlreadyRegisteredCheck {
+		if _, ok := r.activityFuncMap[registerName]; ok {
+			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
+		}
 	}
-	th.addActivityFn(registerName, af)
+	r.addActivityFn(registerName, af)
 	if len(alias) > 0 {
-		th.addActivityAlias(fnName, alias)
+		r.addActivityAlias(fnName, alias)
+	}
+}
+
+func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+	structValue := reflect.ValueOf(aStruct)
+	structType := structValue.Type()
+	count := 0
+	for i := 0; i < structValue.NumMethod(); i++ {
+		methodValue := structValue.Method(i)
+		method := structType.Method(i)
+		// skip private method
+		if method.PkgPath != "" {
+			continue
+		}
+		name := method.Name
+		if err := validateFnFormat(method.Type, false); err != nil {
+			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
+		}
+		prefix := options.Name
+		registerName := name
+		if len(prefix) == 0 {
+			prefix = structType.Elem().Name() + "_"
+		}
+		registerName = prefix + name
+		if !options.DisableAlreadyRegisteredCheck {
+			if _, ok := r.getActivityFn(registerName); ok {
+				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
+			}
+		}
+		r.addActivityFn(registerName, methodValue.Interface())
+		count++
+	}
+	if count == 0 {
+		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
 }
 
-func (th *hostEnvImpl) addWorkflowAlias(fnName string, alias string) {
-	th.Lock()
-	defer th.Unlock()
-	th.workflowAliasMap[fnName] = alias
+func (r *registry) addWorkflowAlias(fnName string, alias string) {
+	r.Lock()
+	defer r.Unlock()
+	r.workflowAliasMap[fnName] = alias
 }
 
-func (th *hostEnvImpl) getWorkflowAlias(fnName string) (string, bool) {
-	th.Lock()
-	defer th.Unlock()
-	alias, ok := th.workflowAliasMap[fnName]
+func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
+	r.Lock() // do not defer for Unlock to call next.getWorkflowAlias without lock
+	alias, ok := r.workflowAliasMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getWorkflowAlias(fnName)
+	}
+	r.Unlock()
 	return alias, ok
 }
 
-func (th *hostEnvImpl) addWorkflowFn(fnName string, wf interface{}) {
-	th.Lock()
-	defer th.Unlock()
-	th.workflowFuncMap[fnName] = wf
+func (r *registry) addWorkflowFn(fnName string, wf interface{}) {
+	r.Lock()
+	defer r.Unlock()
+	r.workflowFuncMap[fnName] = wf
 }
 
-func (th *hostEnvImpl) getWorkflowFn(fnName string) (interface{}, bool) {
-	th.Lock()
-	defer th.Unlock()
-	fn, ok := th.workflowFuncMap[fnName]
+func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
+	r.Lock() // do not defer for Unlock to call next.getWorkflowFn without lock
+	fn, ok := r.workflowFuncMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getWorkflowFn(fnName)
+	}
+	r.Unlock()
 	return fn, ok
 }
 
-func (th *hostEnvImpl) getRegisteredWorkflowTypes() []string {
-	th.Lock()
-	defer th.Unlock()
-	var r []string
-	for t := range th.workflowFuncMap {
-		r = append(r, t)
+func (r *registry) getRegisteredWorkflowTypes() []string {
+	r.Lock() // do not defer for Unlock to call next.getRegisteredWorkflowTypes without lock
+	var result []string
+	for t := range r.workflowFuncMap {
+		result = append(result, t)
 	}
-	return r
+	r.Unlock()
+	if r.next != nil {
+		nextTypes := r.next.getRegisteredWorkflowTypes()
+		result = append(result, nextTypes...)
+	}
+	return result
 }
 
-func (th *hostEnvImpl) addActivityAlias(fnName string, alias string) {
-	th.Lock()
-	defer th.Unlock()
-	th.activityAliasMap[fnName] = alias
+func (r *registry) addActivityAlias(fnName string, alias string) {
+	r.Lock()
+	defer r.Unlock()
+	r.activityAliasMap[fnName] = alias
 }
 
-func (th *hostEnvImpl) getActivityAlias(fnName string) (string, bool) {
-	th.Lock()
-	defer th.Unlock()
-	alias, ok := th.activityAliasMap[fnName]
+func (r *registry) getActivityAlias(fnName string) (string, bool) {
+	r.Lock() // do not defer for Unlock to call next.getActivityAlias without lock
+	alias, ok := r.activityAliasMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getActivityAlias(fnName)
+	}
+	r.Unlock()
 	return alias, ok
 }
 
-func (th *hostEnvImpl) addActivity(fnName string, a activity) {
-	th.Lock()
-	defer th.Unlock()
-	th.activityFuncMap[fnName] = a
+func (r *registry) addActivity(fnName string, a activity) {
+	r.Lock()
+	defer r.Unlock()
+	r.activityFuncMap[fnName] = a
 }
 
-func (th *hostEnvImpl) addActivityFn(fnName string, af interface{}) {
-	th.addActivity(fnName, &activityExecutor{fnName, af})
+func (r *registry) addActivityFn(fnName string, af interface{}) {
+	r.addActivity(fnName, &activityExecutor{fnName, af})
 }
 
-func (th *hostEnvImpl) getActivity(fnName string) (activity, bool) {
-	th.Lock()
-	defer th.Unlock()
-	a, ok := th.activityFuncMap[fnName]
+func (r *registry) getActivity(fnName string) (activity, bool) {
+	r.Lock() // do not defer for Unlock to call next.getActivity without lock
+	a, ok := r.activityFuncMap[fnName]
+	if !ok && r.next != nil {
+		r.Unlock()
+		return r.next.getActivity(fnName)
+	}
+	r.Unlock()
 	return a, ok
 }
 
-func (th *hostEnvImpl) getActivityFn(fnName string) (interface{}, bool) {
-	if a, ok := th.getActivity(fnName); ok {
+func (r *registry) getActivityFn(fnName string) (interface{}, bool) {
+	if a, ok := r.getActivity(fnName); ok {
 		return a.GetFunction(), ok
 	}
 	return nil, false
 }
 
-func (th *hostEnvImpl) getRegisteredActivities() []activity {
-	activities := make([]activity, 0, len(th.activityFuncMap))
-	for _, a := range th.activityFuncMap {
+func (r *registry) getRegisteredActivities() []activity {
+	r.Lock() // do not defer for Unlock to call next.getRegisteredActivities without lock
+	activities := make([]activity, 0, len(r.activityFuncMap))
+	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
+	}
+	r.Unlock()
+	if r.next != nil {
+		nextActivities := r.next.getRegisteredActivities()
+		activities = append(activities, nextActivities...)
 	}
 	return activities
 }
@@ -710,18 +772,18 @@ func isUseThriftDecoding(objs []interface{}) bool {
 	return true
 }
 
-func (th *hostEnvImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
 	lookup := wt.Name
-	if alias, ok := th.getWorkflowAlias(lookup); ok {
+	if alias, ok := r.getWorkflowAlias(lookup); ok {
 		lookup = alias
 	}
-	wf, ok := th.getWorkflowFn(lookup)
+	wf, ok := r.getWorkflowFn(lookup)
 	if !ok {
-		supported := strings.Join(th.getRegisteredWorkflowTypes(), ", ")
+		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
 	wd := &workflowExecutor{name: lookup, fn: wf}
-	return newWorkflowDefinition(wd), nil
+	return newSyncWorkflowDefinition(wd), nil
 }
 
 // Validate function parameters.
@@ -844,20 +906,21 @@ func isTypeByteSlice(inType reflect.Type) bool {
 var once sync.Once
 
 // Singleton to hold the host registration details.
-var thImpl *hostEnvImpl
+var thImpl *registry
 
-func newHostEnvironment() *hostEnvImpl {
-	return &hostEnvImpl{
+func newRegistry(next *registry) *registry {
+	return &registry{
 		workflowFuncMap:  make(map[string]interface{}),
 		workflowAliasMap: make(map[string]string),
 		activityFuncMap:  make(map[string]activity),
 		activityAliasMap: make(map[string]string),
+		next:             next,
 	}
 }
 
-func getHostEnvironment() *hostEnvImpl {
+func getGlobalRegistry() *registry {
 	once.Do(func() {
-		thImpl = newHostEnvironment()
+		thImpl = newRegistry(nil)
 	})
 	return thImpl
 }
@@ -979,11 +1042,27 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 
 // aggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type aggregatedWorker struct {
-	workflowWorker Worker
-	activityWorker Worker
-	sessionWorker  Worker
+	workflowWorker *workflowWorker
+	activityWorker *activityWorker
+	sessionWorker  *sessionWorker
 	logger         *zap.Logger
-	hostEnv        *hostEnvImpl
+	registry       *registry
+}
+
+func (aw *aggregatedWorker) RegisterWorkflow(w interface{}) {
+	aw.registry.RegisterWorkflow(w)
+}
+
+func (aw *aggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+func (aw *aggregatedWorker) RegisterActivity(a interface{}) {
+	aw.registry.RegisterActivity(a)
+}
+
+func (aw *aggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (aw *aggregatedWorker) Start() error {
@@ -992,7 +1071,7 @@ func (aw *aggregatedWorker) Start() error {
 	}
 
 	if !isInterfaceNil(aw.workflowWorker) {
-		if len(aw.hostEnv.getRegisteredWorkflowTypes()) == 0 {
+		if len(aw.registry.getRegisteredWorkflowTypes()) == 0 {
 			aw.logger.Warn(
 				"Starting worker without any workflows. Workflows must be registered before start.",
 			)
@@ -1002,7 +1081,7 @@ func (aw *aggregatedWorker) Start() error {
 		}
 	}
 	if !isInterfaceNil(aw.activityWorker) {
-		if len(aw.hostEnv.getRegisteredActivities()) == 0 {
+		if len(aw.registry.getRegisteredActivities()) == 0 {
 			aw.logger.Warn(
 				"Starting worker without any activities. Activities must be registered before start.",
 			)
@@ -1105,7 +1184,7 @@ func newAggregatedWorker(
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) (worker Worker) {
+) (worker *aggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1150,9 +1229,10 @@ func newAggregatedWorker(
 
 	processTestTags(&wOptions, &workerParams)
 
-	hostEnv := getHostEnvironment()
+	// worker specific registry
+	registry := newRegistry(getGlobalRegistry())
 	// workflow factory.
-	var workflowWorker Worker
+	var workflowWorker *workflowWorker
 	if !wOptions.DisableWorkflowWorker {
 		testTags := getTestTags(wOptions.BackgroundActivityContext)
 		if testTags != nil && len(testTags) > 0 {
@@ -1161,7 +1241,7 @@ func newAggregatedWorker(
 				domain,
 				workerParams,
 				testTags,
-				hostEnv,
+				registry,
 			)
 		} else {
 			workflowWorker = newWorkflowWorker(
@@ -1169,13 +1249,13 @@ func newAggregatedWorker(
 				domain,
 				workerParams,
 				nil,
-				hostEnv,
+				registry,
 			)
 		}
 	}
 
 	// activity types.
-	var activityWorker Worker
+	var activityWorker *activityWorker
 
 	if !wOptions.DisableActivityWorker {
 		activityWorker = newActivityWorker(
@@ -1183,19 +1263,19 @@ func newAggregatedWorker(
 			domain,
 			workerParams,
 			nil,
-			hostEnv,
+			registry,
 			nil,
 		)
 	}
 
-	var sessionWorker Worker
+	var sessionWorker *sessionWorker
 	if wOptions.EnableSessionWorker {
 		sessionWorker = newSessionWorker(
 			service,
 			domain,
 			workerParams,
 			nil,
-			hostEnv,
+			registry,
 			wOptions.MaxConcurrentSessionExecutionSize,
 		)
 	}
@@ -1205,7 +1285,7 @@ func newAggregatedWorker(
 		activityWorker: activityWorker,
 		sessionWorker:  sessionWorker,
 		logger:         logger,
-		hostEnv:        hostEnv,
+		registry:       registry,
 	}
 }
 

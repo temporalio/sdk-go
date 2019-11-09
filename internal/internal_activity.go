@@ -282,7 +282,7 @@ func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) er
 	return nil
 }
 
-func getValidatedActivityFunction(f interface{}, args []interface{}, dataConverter DataConverter) (*ActivityType, []byte, error) {
+func getValidatedActivityFunction(f interface{}, args []interface{}, dataConverter DataConverter, registry *registry) (*ActivityType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(f)
 	switch getKind(fType) {
@@ -294,7 +294,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, dataConvert
 			return nil, nil, err
 		}
 		fnName = getFunctionName(f)
-		if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
+		if alias, ok := registry.getActivityAlias(fnName); ok {
 			fnName = alias
 		}
 
@@ -380,7 +380,7 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interf
 	return nil
 }
 
-func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter DataConverter) error {
+func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter DataConverter, registry *registry) error {
 	fType := reflect.TypeOf(f)
 	if dataConverter == nil {
 		dataConverter = getDefaultDataConverter()
@@ -394,7 +394,7 @@ func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dat
 	case reflect.String:
 		// If we know about this function through registration then we will try to return corresponding result type.
 		fnName := reflect.ValueOf(f).String()
-		if fnRegistered, ok := getHostEnvironment().getActivityFn(fnName); ok {
+		if fnRegistered, ok := registry.getActivityFn(fnName); ok {
 			return deSerializeFnResultFromFnType(reflect.TypeOf(fnRegistered), result, to, dataConverter)
 		}
 	}

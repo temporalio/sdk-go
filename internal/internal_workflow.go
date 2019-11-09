@@ -33,7 +33,6 @@ import (
 	"unicode"
 
 	"github.com/robfig/cron"
-	"github.com/uber-go/tally"
 	"go.uber.org/atomic"
 	"go.temporal.io/temporal/.gen/go/shared"
 	s "go.temporal.io/temporal/.gen/go/shared"
@@ -116,8 +115,7 @@ type (
 		closed          bool               // true if channel is closed.
 		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 		dataConverter   DataConverter      // for decode data
-		scope           tally.Scope        // Used to send metrics
-		logger          *zap.Logger
+		env             workflowEnvironment
 	}
 
 	// Single case statement of the Select
@@ -728,8 +726,8 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	err := decodeAndAssignValue(c.dataConverter, from, to)
 	//add to metrics
 	if err != nil {
-		c.logger.Error(fmt.Sprintf("Corrupt signal received on channel %s. Error deserializing", c.name), zap.Error(err))
-		c.scope.Counter(metrics.CorruptedSignalsCounter).Inc(1)
+		c.env.GetLogger().Error(fmt.Sprintf("Corrupt signal received on channel %s. Error deserializing", c.name), zap.Error(err))
+		c.env.GetMetricsScope().Counter(metrics.CorruptedSignalsCounter).Inc(1)
 	}
 	return err
 }
@@ -1077,11 +1075,11 @@ func (s *selectorImpl) Select(ctx Context) {
 }
 
 // NewWorkflowDefinition creates a WorkflowDefinition from a Workflow
-func newWorkflowDefinition(workflow workflow) workflowDefinition {
+func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter) (*WorkflowType, []byte, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, registry *registry) (*WorkflowType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1093,7 +1091,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 			return nil, nil, err
 		}
 		fnName = getFunctionName(workflowFunc)
-		if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
+		if alias, ok := registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
 
@@ -1187,6 +1185,11 @@ func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
 	return options.dataConverter
 }
 
+func getRegistryFromWorkflowContext(ctx Context) *registry {
+	env := getWorkflowEnvironment(ctx)
+	return env.GetRegistry()
+}
+
 func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 	options := getWorkflowEnvOptions(ctx)
 	return options.contextPropagators
@@ -1243,7 +1246,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 
-	err := deSerializeFunctionResult(d.fn, d.futureImpl.value.([]byte), value, getDataConverterFromWorkflowContext(ctx))
+	err := deSerializeFunctionResult(d.fn, d.futureImpl.value.([]byte), value, getDataConverterFromWorkflowContext(ctx), d.channel.env.GetRegistry())
 	if err != nil {
 		return err
 	}

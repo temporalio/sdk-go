@@ -46,8 +46,8 @@ Below are the possible cases that activity could fail:
 	If activity was timed out (several timeout types), workflow code will receive instance of *TimeoutError. The err contains
 	details about what type of timeout it was.
 5) *PanicError:
-	If activity code panic while executing, cadence activity worker will report it as activity failure to cadence server.
-	The cadence client library will present that failure as *PanicError to workflow code. The err contains a string
+	If activity code panic while executing, temporal activity worker will report it as activity failure to cadence server.
+	The temporal client library will present that failure as *PanicError to workflow code. The err contains a string
 	representation of the panic message and the call stack when panic was happen.
 
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
@@ -79,7 +79,7 @@ if err != nil {
 }
 
 Errors from child workflow should be handled in a similar way, except that there should be no *PanicError from child workflow.
-When panic happen in workflow implementation code, cadence client library catches that panic and causing the decision timeout.
+When panic happen in workflow implementation code, temporal client library catches that panic and causing the decision timeout.
 That decision task will be retried at a later time (with exponential backoff retry intervals).
 */
 
@@ -213,7 +213,8 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 	if options == nil {
 		panic("context is missing required options for continue as new")
 	}
-	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.dataConverter)
+	env := getWorkflowEnvironment(ctx)
+	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.dataConverter, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}

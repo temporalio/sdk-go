@@ -28,14 +28,27 @@ import (
 
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/activity"
+	"go.temporal.io/temporal/worker"
 )
 
 type Activities struct {
-	sync.Mutex
+	mu          sync.Mutex
 	invocations []string
+	activities2 *Activities2
+}
+
+type Activities2 struct {
+	impl *Activities
 }
 
 var errFailOnPurpose = temporal.NewCustomError("failing-on-purpose")
+
+func newActivities() *Activities {
+	activities2 := &Activities2{}
+	result := &Activities{activities2: activities2}
+	activities2.impl = result
+	return result
+}
 
 func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	a.append("sleep")
@@ -57,13 +70,40 @@ func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.
 	return seq, nil
 }
 
-func (a *Activities) ToUpper(ctx context.Context, arg string) (string, error) {
-	a.append("toUpper")
+func (a *Activities) fail(ctx context.Context) error {
+	a.append("fail")
+	return errFailOnPurpose
+}
+
+func (a *Activities) append(name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.invocations = append(a.invocations, name)
+}
+
+func (a *Activities) invoked() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	result := make([]string, len(a.invocations))
+	for i := range a.invocations {
+		result[i] = a.invocations[i]
+	}
+	return result
+}
+
+func (a *Activities) clearInvoked() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.invocations = []string{}
+}
+
+func (a *Activities2) ToUpper(ctx context.Context, arg string) (string, error) {
+	a.impl.append("toUpper")
 	return strings.ToUpper(arg), nil
 }
 
-func (a *Activities) ToUpperWithDelay(ctx context.Context, arg string, delay time.Duration) (string, error) {
-	a.append("toUpperWithDelay")
+func (a *Activities2) ToUpperWithDelay(ctx context.Context, arg string, delay time.Duration) (string, error) {
+	a.impl.append("toUpperWithDelay")
 	time.Sleep(delay)
 	return strings.ToUpper(arg), nil
 }
@@ -73,38 +113,10 @@ func (a *Activities) GetMemoAndSearchAttr(ctx context.Context, memo, searchAttr 
 	return memo + ", " + searchAttr, nil
 }
 
-func (a *Activities) Fail(ctx context.Context) error {
-	a.append("fail")
-	return errFailOnPurpose
-}
-
-func (a *Activities) append(name string) {
-	a.Lock()
-	defer a.Unlock()
-	a.invocations = append(a.invocations, name)
-}
-
-func (a *Activities) invoked() []string {
-	a.Lock()
-	defer a.Unlock()
-	result := make([]string, len(a.invocations))
-	for i := range a.invocations {
-		result[i] = a.invocations[i]
-	}
-	return result
-}
-
-func (a *Activities) clearInvoked() {
-	a.Lock()
-	defer a.Unlock()
-	a.invocations = []string{}
-}
-
-func (a *Activities) register() {
-	activity.RegisterWithOptions(a.Fail, activity.RegisterOptions{Name: "fail"})
-	activity.RegisterWithOptions(a.Sleep, activity.RegisterOptions{Name: "sleep"})
-	activity.RegisterWithOptions(a.ToUpper, activity.RegisterOptions{Name: "toUpper"})
-	activity.RegisterWithOptions(a.ToUpperWithDelay, activity.RegisterOptions{Name: "toUpperWithDelay"})
-	activity.RegisterWithOptions(a.HeartbeatAndSleep, activity.RegisterOptions{Name: "heartbeatAndSleep"})
-	activity.RegisterWithOptions(a.GetMemoAndSearchAttr, activity.RegisterOptions{Name: "getMemoAndSearchAttr"})
+func (a *Activities) register(worker worker.Worker) {
+	worker.RegisterActivity(a)
+	// Check reregistration
+	activity.RegisterWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
+	// Check prefix
+	activity.RegisterWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 }

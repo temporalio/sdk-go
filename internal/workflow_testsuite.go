@@ -190,6 +190,22 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 	t.impl.setWorkerStopChannel(c)
 }
 
+func (t *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
+	t.impl.RegisterWorkflow(w)
+}
+
+func (t *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	t.impl.RegisterWorkflowWithOptions(w, options)
+}
+
+func (t *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
+	t.impl.RegisterActivity(a)
+}
+
+func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	t.impl.RegisterActivityWithOptions(a, options)
+}
+
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (t *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
@@ -219,7 +235,7 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 			panic(err)
 		}
 		fnName := getFunctionName(activity)
-		if alias, ok := getHostEnvironment().getActivityAlias(fnName); ok {
+		if alias, ok := t.impl.registry.getActivityAlias(fnName); ok {
 			fnName = alias
 		}
 		call = t.Mock.On(fnName, args...)
@@ -262,7 +278,7 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 			panic(err)
 		}
 		fnName := getFunctionName(workflow)
-		if alias, ok := getHostEnvironment().getWorkflowAlias(fnName); ok {
+		if alias, ok := t.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
 		call = t.Mock.On(fnName, args...)

@@ -33,7 +33,7 @@ import (
 )
 
 func TestReplayAwareLogger(t *testing.T) {
-	temp, err := ioutil.TempFile("", "cadence-client-test")
+	temp, err := ioutil.TempFile("", "temporal-client-test")
 	require.NoError(t, err, "Failed to create temp file.")
 	defer os.Remove(temp.Name())
 	config := zap.NewProductionConfig()

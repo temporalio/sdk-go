@@ -183,7 +183,7 @@ type (
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
 		// CompleteActivityById reports activity completed.
-		// Similar to CompleteActivity, but may save cadence user from keeping taskToken info.
+		// Similar to CompleteActivity, but may save user from keeping taskToken info.
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
@@ -267,7 +267,7 @@ type (
 		CountWorkflow(ctx context.Context, request *s.CountWorkflowExecutionsRequest) (*s.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
-		// The search attributes can be used in query of List/Scan/Count APIs. Adding new search attributes requires cadence server
+		// The search attributes can be used in query of List/Scan/Count APIs. Adding new search attributes requires temporal server
 		// to update dynamic config ValidSearchAttributes.
 		GetSearchAttributes(ctx context.Context) (*s.GetSearchAttributesResponse, error)
 
@@ -275,7 +275,7 @@ type (
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
 		// target workflow execution that this query will be send to. If runID is not specified (empty string), server will
 		// use the currently running execution of that workflowID. The queryType specifies the type of query you want to
-		// run. By default, cadence supports "__stack_trace" as a standard query type, which will return string value
+		// run. By default, temporal supports "__stack_trace" as a standard query type, which will return string value
 		// representing the call stack of the target workflow. The target workflow could also setup different query handler
 		// to handle custom query types.
 		// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details
@@ -390,7 +390,7 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     cadence --do <domain> wf desc -w <wf-id>
+	//     temporal --do <domain> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If coefficient is 1.0 then it is used for all retries.
 		// Required, no default value.
@@ -426,7 +426,7 @@ type (
 	// DomainClient is the client for managing operations on the domain.
 	// CLI, tools, ... can use this layer to manager operations on domain.
 	DomainClient interface {
-		// Register a domain with cadence server
+		// Register a domain with temporal server
 		// The errors it can throw:
 		//	- DomainAlreadyExistsError
 		//	- BadRequestError
@@ -514,6 +514,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	return &workflowClient{
 		workflowService:    metrics.NewWorkflowServiceWrapper(service, metricScope),
 		domain:             domain,
+		registry:           newRegistry(getGlobalRegistry()),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
 		identity:           identity,
 		dataConverter:      dataConverter,

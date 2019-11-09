@@ -29,6 +29,7 @@ import (
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
 )
 
@@ -38,12 +39,12 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var ans1 string
 	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
-	err := workflow.ExecuteActivity(ctx, "toUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
 	if err != nil {
 		return nil, err
 	}
 	var ans2 string
-	if err := workflow.ExecuteActivity(ctx, "toUpper", ans1).Get(ctx, &ans2); err != nil {
+	if err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", ans1).Get(ctx, &ans2); err != nil {
 		return nil, err
 	}
 	if ans2 != "HELLO" {
@@ -55,7 +56,7 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
 	startTime := workflow.Now(ctx)
-	err := workflow.ExecuteActivity(ctx, "fail").Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "Fail").Get(ctx, nil)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
@@ -83,7 +84,7 @@ func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, 
 		opts.RetryPolicy.MaximumAttempts = 3
 	}
 	ctx = workflow.WithActivityOptions(ctx, opts)
-	err := workflow.ExecuteActivity(ctx, "fail").Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "Fail").Get(ctx, nil)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
@@ -102,7 +103,7 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType sha
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	startTime := workflow.Now(ctx)
-	err := workflow.ExecuteActivity(ctx, "sleep", 2*time.Second).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "Activities_Sleep", 2*time.Second).Get(ctx, nil)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
@@ -131,7 +132,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 
 	var result int
 	startTime := workflow.Now(ctx)
-	err := workflow.ExecuteActivity(ctx, "heartbeatAndSleep", 0, 2*time.Second).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, "Activities_HeartbeatAndSleep", 0, 2*time.Second).Get(ctx, &result)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
@@ -338,7 +339,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			StartToCloseTimeout:    9 * time.Second,
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "toUpperWithDelay", "hello", 1*time.Second)
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpperWithDelay", "hello", 1*time.Second)
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -359,7 +360,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			TaskList:               "bad_tl",
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "toUpper", "hello")
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -376,7 +377,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			TaskList:               "bad_tl",
 		})
 
-		activityF := workflow.ExecuteActivity(activityCtx, "toUpper", "hello")
+		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
@@ -397,7 +398,7 @@ func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
 func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (string, error) {
 	var result string
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	err := workflow.ExecuteActivity(ctx, "toUpper", arg).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", arg).Get(ctx, &result)
 	if mustFail {
 		return "", fmt.Errorf("failing-on-purpose")
 	}
@@ -416,34 +417,34 @@ func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result stri
 		return
 	}
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	err = workflow.ExecuteActivity(ctx, "getMemoAndSearchAttr", memo, searchAttr).Get(ctx, &result)
+	err = workflow.ExecuteActivity(ctx, "Activities_GetMemoAndSearchAttr", memo, searchAttr).Get(ctx, &result)
 	return
 }
 
 func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "sleep", d).Get(ctx, nil)
+	return workflow.ExecuteActivity(ctx, "Activities_Sleep", d).Get(ctx, nil)
 }
 
-func (w *Workflows) register() {
-	workflow.Register(w.Basic)
-	workflow.Register(w.ActivityRetryOnError)
-	workflow.Register(w.ActivityRetryOnHBTimeout)
-	workflow.Register(w.ActivityRetryOnTimeout)
-	workflow.Register(w.ActivityRetryOptionsChange)
-	workflow.Register(w.ContinueAsNew)
-	workflow.Register(w.ContinueAsNewWithOptions)
-	workflow.Register(w.IDReusePolicy)
-	workflow.Register(w.ChildWorkflowRetryOnError)
-	workflow.Register(w.ChildWorkflowRetryOnTimeout)
-	workflow.Register(w.ChildWorkflowSuccess)
-	workflow.Register(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
-	workflow.Register(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
-	workflow.Register(w.sleep)
-	workflow.Register(w.child)
-	workflow.Register(w.childForMemoAndSearchAttr)
-	workflow.Register(w.ActivityCancelRepro)
-	workflow.Register(w.SimplestWorkflow)
+func (w *Workflows) register(worker worker.Worker) {
+	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.ActivityRetryOnError)
+	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
+	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
+	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
+	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.IDReusePolicy)
+	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
+	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.sleep)
+	worker.RegisterWorkflow(w.child)
+	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
+	worker.RegisterWorkflow(w.ActivityCancelRepro)
+	worker.RegisterWorkflow(w.SimplestWorkflow)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

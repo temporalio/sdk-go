@@ -158,6 +158,7 @@ type (
 	testWorkflowEnvironmentImpl struct {
 		*testWorkflowEnvironmentShared
 		parentEnv *testWorkflowEnvironmentImpl
+		registry  *registry
 
 		workflowInfo   *WorkflowInfo
 		workflowDef    workflowDefinition
@@ -220,6 +221,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			ExecutionStartToCloseTimeoutSeconds: 1,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
+		registry: newRegistry(getGlobalRegistry()),
 
 		changeVersions: make(map[string]Version),
 		openSessions:   make(map[string]*SessionInfo),
@@ -320,6 +322,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
 	childEnv.workerOptions.DataConverter = params.dataConverter
+	childEnv.registry = env.registry
 
 	if params.workflowID == "" {
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
@@ -407,7 +410,11 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, act
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, args ...interface{}) {
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter())
+	fType := reflect.TypeOf(workflowFn)
+	if getKind(fType) == reflect.Func {
+		env.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
+	}
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter(), env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
@@ -418,7 +425,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	env.locker.Lock()
 	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
-		// Created task to support testing multiple workflows with one env instancehttps://github.com/uber-go/cadence-client/issues/616
+		// Created task to support testing multiple workflows with one env instance
+		// https://github.com/uber-go/cadence-client/issues/616
 		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", env.workflowInfo.WorkflowType.Name, workflowType))
 	}
 	env.workflowInfo.WorkflowType.Name = workflowType
@@ -460,24 +468,23 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 }
 
 func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
-	hostEnv := getHostEnvironment()
-	wf, ok := hostEnv.getWorkflowFn(wt.Name)
+	wf, ok := env.registry.getWorkflowFn(wt.Name)
 	if !ok {
-		supported := strings.Join(hostEnv.getRegisteredWorkflowTypes(), ", ")
+		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
 		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
 		env:              env,
 	}
-	return newWorkflowDefinition(wd), nil
+	return newSyncWorkflowDefinition(wd), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (Value, error) {
-	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter())
+	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter(), env.registry)
 	if err != nil {
 		panic(err)
 	}
@@ -1027,7 +1034,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	activityID := getStringID(env.nextID())
 	wOptions := augmentWorkerOptions(env.workerOptions)
 	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
-	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter); at != nil {
+	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
@@ -1471,8 +1478,8 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, wOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
-
-	if len(getHostEnvironment().getRegisteredActivities()) == 0 {
+	registry := env.registry
+	if len(registry.getRegisteredActivities()) == 0 {
 		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
 	}
 
@@ -1486,7 +1493,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 			}
 		}
 
-		activity, ok := getHostEnvironment().getActivity(name)
+		activity, ok := registry.getActivity(name)
 		if !ok {
 			return nil
 		}
@@ -1504,7 +1511,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, getHostEnvironment(), getActivity)
+	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, registry, getActivity)
 	return taskHandler
 }
 
@@ -1569,6 +1576,22 @@ func (env *testWorkflowEnvironmentImpl) Now() time.Time {
 
 func (env *testWorkflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return env.workflowInfo
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w interface{}) {
+	env.registry.RegisterWorkflow(w)
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	env.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
+	env.registry.RegisterActivity(a)
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	env.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -1904,6 +1927,10 @@ func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{})
 		panic(err)
 	}
 	env.heartbeatDetails = data
+}
+
+func (wc *testWorkflowEnvironmentImpl) GetRegistry() *registry {
+	return wc.registry
 }
 
 func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentImpl,

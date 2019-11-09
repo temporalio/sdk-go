@@ -61,14 +61,14 @@ func newWorkflowWorkerWithPressurePoints(
 	domain string,
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string,
-	hostEnv *hostEnvImpl,
-) (worker Worker) {
+	registry *registry,
+) (worker *workflowWorker) {
 	return newWorkflowWorker(
 		service,
 		domain,
 		params,
 		&pressurePointMgrImpl{config: pressurePoints, logger: params.Logger},
-		hostEnv,
+		registry,
 	)
 }
 

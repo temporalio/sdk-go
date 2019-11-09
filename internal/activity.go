@@ -58,6 +58,7 @@ type (
 	// RegisterActivityOptions consists of options for registering an activity
 	RegisterActivityOptions struct {
 		Name string
+		DisableAlreadyRegisteredCheck bool
 	}
 
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
@@ -119,8 +120,14 @@ type (
 	}
 )
 
-// RegisterActivity - register a activity function with the framework.
-// A activity takes a context and input and returns a (result, error) or just error.
+// RegisterActivity - register an activity function or a pointer to a structure with the framework.
+// The public form is: activity.Register(...)
+// An activity function takes a context and input and returns a (result, error) or just error.
+//
+// And activity struct is a structure with all its exported methods treated as activities. The default
+// name of each activity is the <structure name>_<>method name>. Use RegisterActivityWithOptions to override the
+// "<structure name>_" prefix.
+//
 // Examples:
 //	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
 //	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
@@ -128,33 +135,44 @@ type (
 //	func sampleActivity() (result string, err error)
 //	func sampleActivity(arg1 bool) (result int, err error)
 //	func sampleActivity(arg1 bool) (err error)
+//
+//  type Activities struct {
+//     // fields
+//  }
+//  func (a *Activities) SampleActivity1(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error) {
+//    ...
+//  }
+//
+//  func (a *Activities) SampleActivity2(ctx context.Context, arg1 int, arg2 *customerStruct) (result string, err error) {
+//    ...
+//  }
+//
 // Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 // This method calls panic if activityFunc doesn't comply with the expected format.
 func RegisterActivity(activityFunc interface{}) {
 	RegisterActivityWithOptions(activityFunc, RegisterActivityOptions{})
 }
 
-// RegisterActivityWithOptions registers the activity function with options
+// RegisterActivityWithOptions registers the activity function or struct pointer with options.
+// The public form is: activity.RegisterWithOptions(...)
 // The user can use options to provide an external name for the activity or leave it empty if no
 // external name is required. This can be used as
-//  client.RegisterActivity(barActivity, RegisterActivityOptions{})
-//  client.RegisterActivity(barActivity, RegisterActivityOptions{Name: "barExternal"})
-// An activity takes a context and input and returns a (result, error) or just error.
-// Examples:
-//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
-//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
-//	func sampleActivity(ctx context.Context) (err error)
-//	func sampleActivity() (result string, err error)
-//	func sampleActivity(arg1 bool) (result int, err error)
-//	func sampleActivity(arg1 bool) (err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if activityFunc doesn't comply with the expected format.
+//  activity.RegisterWithOptions(barActivity, RegisterActivityOptions{})
+//  activity.RegisterWithOptions(barActivity, RegisterActivityOptions{Name: "barExternal"})
+// When registering the structure that implements activities the name is used as a prefix that is
+// prepended to the activity method name.
+//  activity.RegisterWithOptions(&Activities{ ... }, RegisterActivityOptions{Name: "MyActivities_"})
+// To override each name of activities defined through a structure register the methods one by one:
+// activities := &Activities{ ... }
+// activity.RegisterWithOptions(activities.SampleActivity1, RegisterActivityOptions{Name: "Sample1"})
+// activity.RegisterWithOptions(activities.SampleActivity2, RegisterActivityOptions{Name: "Sample2"})
+// See RegisterActivity function for more info.
+// The othe use of options is to disable duplicated activity registration check
+// which might be useful for integration tests.
+// activity.RegisterWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivityOptions) {
-	thImpl := getHostEnvironment()
-	err := thImpl.RegisterActivityWithOptions(activityFunc, opts)
-	if err != nil {
-		panic(err)
-	}
+	registry := getGlobalRegistry()
+	registry.RegisterActivityWithOptions(activityFunc, opts)
 }
 
 // GetActivityInfo returns information about currently executing activity.

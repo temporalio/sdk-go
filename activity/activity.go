@@ -43,7 +43,7 @@ type (
 // activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
 // activity require human interaction (like approve an expense report), the activity could return ErrResultPending
 // which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
-// that could report the activity completed event to cadence server via Client.CompleteActivity() API.
+// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
 
 // Register - calls RegisterWithOptions with default registration options.

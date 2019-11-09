@@ -24,16 +24,96 @@ package worker
 import (
 	"context"
 
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.temporal.io/temporal/activity"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/workflow"
 	"go.uber.org/zap"
 )
 
 type (
-	// Worker represents objects that can be started and stopped.
-	Worker = internal.Worker
+	// Worker hosts workflow and activity implementations.
+	// Use worker.New(...) to create an instance.
+	Worker interface {
+		// RegisterWorkflow - registers a workflow function with the worker.
+		// A workflow takes a workflow.Context and input and returns a (result, error) or just error.
+		// Examples:
+		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
+		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
+		//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
+		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
+		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+		// For global registration consider workflow.Register
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		RegisterWorkflow(w interface{})
+
+		// RegisterWorkflowWithOptions registers the workflow function with options.
+		// The user can use options to provide an external name for the workflow or leave it empty if no
+		// external name is required. This can be used as
+		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{})
+		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
+		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+
+		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
+		// An activity function takes a context and input and returns a (result, error) or just error.
+		//
+		// And activity struct is a structure with all its exported methods treated as activities. The default
+		// name of each activity is the method name.
+		//
+		// Examples:
+		//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
+		//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
+		//	func sampleActivity(ctx context.Context) (err error)
+		//	func sampleActivity() (result string, err error)
+		//	func sampleActivity(arg1 bool) (result int, err error)
+		//	func sampleActivity(arg1 bool) (err error)
+		//
+		//  type Activities struct {
+		//     // fields
+		//  }
+		//  func (a *Activities) SampleActivity1(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error) {
+		//    ...
+		//  }
+		//
+		//  func (a *Activities) SampleActivity2(ctx context.Context, arg1 int, arg2 *customerStruct) (result string, err error) {
+		//    ...
+		//  }
+		//
+		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
+		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
+		// type name is registered more than once.
+		// For global registration consider activity.Register
+		RegisterActivity(a interface{})
+
+		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
+		// The user can use options to provide an external name for the activity or leave it empty if no
+		// external name is required. This can be used as
+		//  worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{})
+		//  worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{Name: "barExternal"})
+		// When registering the structure that implements activities the name is used as a prefix that is
+		// prepended to the activity method name.
+		//  worker.RegisterActivityWithOptions(&Activities{ ... }, RegisterActivityOptions{Name: "MyActivities_"})
+		// To override each name of activities defined through a structure register the methods one by one:
+		// activities := &Activities{ ... }
+		// worker.RegisterActivityWithOptions(activities.SampleActivity1, RegisterActivityOptions{Name: "Sample1"})
+		// worker.RegisterActivityWithOptions(activities.SampleActivity2, RegisterActivityOptions{Name: "Sample2"})
+		// See RegisterActivity function for more info.
+		// The other use of options is to disable duplicated activity registration check
+		// which might be useful for integration tests.
+		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
+		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+
+		// Start starts the worker in a non-blocking fashion
+		Start() error
+		// Run is a blocking start and cleans up resources when killed
+		// returns error only if it fails to start the worker
+		Run() error
+		// Stop cleans up any resources opened by worker
+		Stop()
+	}
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
@@ -59,8 +139,8 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    service  - thrift connection to the cadence server
-//    domain   - the name of the cadence domain
+//    service  - thrift connection to the temporal server
+//    domain   - the name of the temporal domain
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process
@@ -89,8 +169,8 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
-// To download the history file: cadence workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/uber/cadence/blob/master/tools/cli/README.md for full documentation
+// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
@@ -99,8 +179,8 @@ func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) 
 
 // ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
 //// lastEventID(inclusive), downloaded from the cli.
-// To download the history file: cadence workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/uber/cadence/blob/master/tools/cli/README.md for full documentation
+// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {

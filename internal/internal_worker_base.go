@@ -87,6 +87,7 @@ type (
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
+		GetRegistry() *registry
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

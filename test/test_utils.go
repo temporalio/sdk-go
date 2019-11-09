@@ -84,7 +84,7 @@ func (c *rpcClient) Close() {
 }
 
 // newRPCClient builds and returns a new rpc client that is able to
-// make calls to the localhost cadence-server container
+// make calls to the localhost temporal-server container
 func newRPCClient(
 	serviceName string, serviceAddr string) (*rpcClient, error) {
 	transport, err := tchannel.NewTransport(tchannel.ServiceName("integration-test"))
