@@ -34,9 +34,9 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )
@@ -244,7 +244,7 @@ func NewWorker(
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) *aggregatedWorker {
+) *AggregatedWorker {
 	return newAggregatedWorker(service, domain, taskList, options)
 }
 

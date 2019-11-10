@@ -57,7 +57,7 @@ type (
 
 	// RegisterActivityOptions consists of options for registering an activity
 	RegisterActivityOptions struct {
-		Name string
+		Name                          string
 		DisableAlreadyRegisteredCheck bool
 	}
 

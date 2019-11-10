@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.uber.org/yarpc"
 )
 

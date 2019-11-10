@@ -34,8 +34,8 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/cache"

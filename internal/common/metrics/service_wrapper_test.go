@@ -32,9 +32,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
+	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.uber.org/yarpc"
 )
 

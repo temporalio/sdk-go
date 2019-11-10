@@ -26,8 +26,8 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber/tchannel-go/thrift"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	m "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal/common"
 	"golang.org/x/net/context"
 )

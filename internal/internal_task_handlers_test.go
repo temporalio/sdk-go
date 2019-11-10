@@ -35,8 +35,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	s "go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )

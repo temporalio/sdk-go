@@ -34,8 +34,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
@@ -485,13 +485,13 @@ func (m *mockPollForActivityTaskRequest) String() string {
 	return "PollForActivityTaskRequest"
 }
 
-func createWorker(service *workflowservicetest.MockClient) *aggregatedWorker {
+func createWorker(service *workflowservicetest.MockClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), nil)
 }
 
 func createWorkerWithThrottle(
 	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc DataConverter,
-) *aggregatedWorker {
+) *AggregatedWorker {
 	domain := "testDomain"
 	domainStatus := shared.DomainStatusRegistered
 	domainDesc := &shared.DescribeDomainResponse{
@@ -538,7 +538,7 @@ func createWorkerWithThrottle(
 	return worker
 }
 
-func createWorkerWithDataConverter(service *workflowservicetest.MockClient) *aggregatedWorker {
+func createWorkerWithDataConverter(service *workflowservicetest.MockClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), newTestDataConverter())
 }
 

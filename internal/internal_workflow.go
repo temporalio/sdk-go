@@ -33,11 +33,11 @@ import (
 	"unicode"
 
 	"github.com/robfig/cron"
-	"go.uber.org/atomic"
 	"go.temporal.io/temporal/.gen/go/shared"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
