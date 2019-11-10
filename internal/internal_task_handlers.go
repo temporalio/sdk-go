@@ -664,6 +664,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		return nil, errors.New("nil or empty history")
 	}
 
+	if task.Query != nil && len(task.Queries) != 0 {
+		return nil, errors.New("invalid query decision task")
+	}
+
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
 	traceLog(func() {
@@ -1403,6 +1407,25 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		forceNewDecision = false
 	}
 
+	var queryResults map[string]*s.WorkflowQueryResult
+	if len(task.Queries) != 0 {
+		queryResults = make(map[string]*s.WorkflowQueryResult)
+		for queryID, query := range task.Queries {
+			result, err := eventHandler.ProcessQuery(query.GetQueryType(), query.QueryArgs)
+			if err != nil {
+				queryResults[queryID] = &s.WorkflowQueryResult{
+					ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
+					ErrorMessage: common.StringPtr(err.Error()),
+				}
+			} else {
+				queryResults[queryID] = &s.WorkflowQueryResult{
+					ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+					Answer:     result,
+				}
+			}
+		}
+	}
+
 	return &s.RespondDecisionTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Decisions:                  decisions,
@@ -1410,6 +1433,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		ReturnNewDecisionTask:      common.BoolPtr(true),
 		ForceCreateNewDecisionTask: common.BoolPtr(forceNewDecision),
 		BinaryChecksum:             common.StringPtr(getBinaryChecksum()),
+		QueryResults:               queryResults,
 	}
 }
 
