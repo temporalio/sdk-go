@@ -22,6 +22,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -31,6 +32,16 @@ import (
 	m "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.uber.org/zap"
+)
+
+const (
+	queryType    = "test-query"
+	errQueryType = "test-err-query"
+	signalCh     = "signal-chan"
+
+	startingQueryValue = ""
+	finishedQueryValue = "done"
+	queryErr           = "error handling query"
 )
 
 type (
@@ -46,8 +57,8 @@ type (
 )
 
 func helloWorldWorkflowFunc(ctx Context, input []byte) error {
-	var queryResult string
-	SetQueryHandler(ctx, "test-query", func() (string, error) {
+	queryResult := startingQueryValue
+	SetQueryHandler(ctx, queryType, func() (string, error) {
 		return queryResult, nil
 	})
 
@@ -64,12 +75,40 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 	queryResult = "waiting-activity-result"
 	err := ExecuteActivity(ctx, activityName).Get(ctx, &result)
 	if err == nil {
-		queryResult = "done"
+		queryResult = finishedQueryValue
 		return nil
 	}
 
 	queryResult = "error:" + err.Error()
 	return err
+}
+
+func querySignalWorkflowFunc(ctx Context, numSignals int) error {
+	queryResult := startingQueryValue
+	SetQueryHandler(ctx, queryType, func() (string, error) {
+		return queryResult, nil
+	})
+
+	SetQueryHandler(ctx, errQueryType, func() (string, error) {
+		return "", errors.New(queryErr)
+	})
+
+	ch := GetSignalChannel(ctx, signalCh)
+	for i := 0; i < numSignals; i++ {
+		// update queryResult when signal is received
+		ch.Receive(ctx, &queryResult)
+
+		// schedule activity to verify decisions are produced
+		ao := ActivityOptions{
+			TaskList:               "taskList",
+			ActivityID:             "0",
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       20 * time.Second,
+		}
+		ExecuteActivity(WithActivityOptions(ctx, ao), "Greeter_Activity")
+	}
+	return nil
 }
 
 func binaryChecksumWorkflowFunc(ctx Context) ([]*string, error) {
