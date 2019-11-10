@@ -190,18 +190,22 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 	t.impl.setWorkerStopChannel(c)
 }
 
+// RegisterWorkflow registers workflow implementation with the TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
 	t.impl.RegisterWorkflow(w)
 }
 
+// RegisterWorkflowWithOptions registers workflow implementation with the TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	t.impl.RegisterWorkflowWithOptions(w, options)
 }
 
+// RegisterActivity registers activity implementation with TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
 	t.impl.RegisterActivity(a)
 }
 
+// RegisterActivityWithOptions registers activity implementation with TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	t.impl.RegisterActivityWithOptions(a, options)
 }

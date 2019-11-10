@@ -43,8 +43,8 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/shared"
+	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -534,13 +534,13 @@ type registry struct {
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
-	 r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
+	r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
 func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
-)  {
+) {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if err := validateFnFormat(fnType, true); err != nil {
@@ -563,19 +563,19 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 }
 
-func (r *registry) RegisterActivity(af interface{})  {
-	 r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
+func (r *registry) RegisterActivity(af interface{}) {
+	r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
 func (r *registry) RegisterActivityWithOptions(
 	af interface{},
 	options RegisterActivityOptions,
-)  {
+) {
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		 r.registerActivityStructWithOptions(af, options)
-		 return
+		r.registerActivityStructWithOptions(af, options)
+		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
 		panic(err)
@@ -1040,8 +1040,8 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 	return info.dataConverter
 }
 
-// aggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
-type aggregatedWorker struct {
+// AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
+type AggregatedWorker struct {
 	workflowWorker *workflowWorker
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
@@ -1049,23 +1049,28 @@ type aggregatedWorker struct {
 	registry       *registry
 }
 
-func (aw *aggregatedWorker) RegisterWorkflow(w interface{}) {
+// RegisterWorkflow registers workflow implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 	aw.registry.RegisterWorkflow(w)
 }
 
-func (aw *aggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+// RegisterWorkflowWithOptions registers workflow implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-func (aw *aggregatedWorker) RegisterActivity(a interface{}) {
+// RegisterActivity registers activity implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 	aw.registry.RegisterActivity(a)
 }
 
-func (aw *aggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+// RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
-func (aw *aggregatedWorker) Start() error {
+// Start starts the worker in a non-blocking fashion
+func (aw *AggregatedWorker) Start() error {
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	}
@@ -1153,7 +1158,9 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
-func (aw *aggregatedWorker) Run() error {
+// Run is a blocking start and cleans up resources when killed
+// returns error only if it fails to start the worker
+func (aw *AggregatedWorker) Run() error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
@@ -1163,7 +1170,8 @@ func (aw *aggregatedWorker) Run() error {
 	return nil
 }
 
-func (aw *aggregatedWorker) Stop() {
+// Stop cleans up any resources opened by worker
+func (aw *AggregatedWorker) Stop() {
 	if !isInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()
 	}
@@ -1176,7 +1184,7 @@ func (aw *aggregatedWorker) Stop() {
 	aw.logger.Info("Stopped Worker")
 }
 
-// aggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
+// AggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func newAggregatedWorker(
@@ -1184,7 +1192,7 @@ func newAggregatedWorker(
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) (worker *aggregatedWorker) {
+) (worker *AggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1280,7 +1288,7 @@ func newAggregatedWorker(
 		)
 	}
 
-	return &aggregatedWorker{
+	return &AggregatedWorker{
 		workflowWorker: workflowWorker,
 		activityWorker: activityWorker,
 		sessionWorker:  sessionWorker,

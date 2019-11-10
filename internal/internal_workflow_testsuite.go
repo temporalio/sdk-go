@@ -35,9 +35,9 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
+	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/yarpc"
@@ -1929,8 +1929,8 @@ func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{})
 	env.heartbeatDetails = data
 }
 
-func (wc *testWorkflowEnvironmentImpl) GetRegistry() *registry {
-	return wc.registry
+func (env *testWorkflowEnvironmentImpl) GetRegistry() *registry {
+	return env.registry
 }
 
 func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentImpl,
