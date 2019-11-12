@@ -37,6 +37,11 @@ type Activities struct {
 
 var errFailOnPurpose = cadence.NewCustomError("failing-on-purpose")
 
+func (a *Activities) RetryTimeoutStableErrorActivity(ctx context.Context) error {
+	time.Sleep(time.Second * 3)
+	return errFailOnPurpose
+}
+
 func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	a.append("sleep")
 	time.Sleep(delay)
@@ -107,4 +112,5 @@ func (a *Activities) register() {
 	activity.RegisterWithOptions(a.ToUpperWithDelay, activity.RegisterOptions{Name: "toUpperWithDelay"})
 	activity.RegisterWithOptions(a.HeartbeatAndSleep, activity.RegisterOptions{Name: "heartbeatAndSleep"})
 	activity.RegisterWithOptions(a.GetMemoAndSearchAttr, activity.RegisterOptions{Name: "getMemoAndSearchAttr"})
+	activity.RegisterWithOptions(a.RetryTimeoutStableErrorActivity, activity.RegisterOptions{Name: "retryTimeoutStableErrorActivity"})
 }

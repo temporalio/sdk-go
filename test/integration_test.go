@@ -138,6 +138,12 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
+	var expected []string
+	err := ts.executeWorkflow("test-activity-retry-on-timeout-stable-error", ts.workflows.RetryTimeoutStableErrorWorkflow, &expected)
+	ts.Nil(err)
+}
+
 func (ts *IntegrationTestSuite) TestActivityRetryOptionsChange() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-options-change", ts.workflows.ActivityRetryOptionsChange, &expected)
@@ -393,7 +399,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 	return client.StartWorkflowOptions{
 		ID:                              wfID,
 		TaskList:                        ts.taskListName,
-		ExecutionStartToCloseTimeout:    10 * time.Second,
+		ExecutionStartToCloseTimeout:    15 * time.Second,
 		DecisionTaskStartToCloseTimeout: time.Second,
 		WorkflowIDReusePolicy:           client.WorkflowIDReusePolicyAllowDuplicate,
 	}
