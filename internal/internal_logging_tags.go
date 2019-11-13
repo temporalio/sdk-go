@@ -36,4 +36,5 @@ const (
 	tagSideEffectID      = "SideEffectID"
 	tagChildWorkflowID   = "ChildWorkflowID"
 	tagLocalActivityType = "LocalActivityType"
+	tagQueryType         = "QueryType"
 )

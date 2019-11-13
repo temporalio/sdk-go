@@ -48,7 +48,7 @@ type (
 	WaitGroup = internal.WaitGroup
 )
 
-// Blocks the calling thread until condition() returns true
+// Await blocks the calling thread until condition() returns true
 // Returns CanceledError if the ctx is canceled.
 // The following code is going to block until the captured count
 // variable is set to 5.
