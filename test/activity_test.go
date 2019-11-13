@@ -50,6 +50,11 @@ func newActivities() *Activities {
 	return result
 }
 
+func (a *Activities) RetryTimeoutStableErrorActivity(ctx context.Context) error {
+	time.Sleep(time.Second * 3)
+	return errFailOnPurpose
+}
+
 func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	a.append("sleep")
 	time.Sleep(delay)
