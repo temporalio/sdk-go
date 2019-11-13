@@ -48,6 +48,10 @@ const (
 	defaultGetHistoryTimeoutInSecs   = 25
 )
 
+var (
+	maxListArchivedWorkflowTimeout = time.Minute * 3
+)
+
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
@@ -667,7 +671,19 @@ func (wc *workflowClient) ListArchivedWorkflow(ctx context.Context, request *s.L
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			tchCtx, cancel, opt := newChannelContext(ctx)
+			timeout := maxListArchivedWorkflowTimeout
+			now := time.Now()
+			if ctx != nil {
+				if expiration, ok := ctx.Deadline(); ok && expiration.After(now) {
+					timeout = expiration.Sub(now)
+					if timeout > maxListArchivedWorkflowTimeout {
+						timeout = maxListArchivedWorkflowTimeout
+					} else if timeout < minRPCTimeout {
+						timeout = minRPCTimeout
+					}
+				}
+			}
+			tchCtx, cancel, opt := newChannelContext(ctx, chanTimeout(timeout))
 			defer cancel()
 			response, err1 = wc.workflowService.ListArchivedWorkflowExecutions(tchCtx, request, opt...)
 			return err1
