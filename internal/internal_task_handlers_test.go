@@ -77,7 +77,7 @@ func init() {
 	RegisterWorkflowWithOptions(
 		querySignalWorkflowFunc,
 		RegisterWorkflowOptions{Name: "QuerySignalWorkflow"},
-		)
+	)
 	RegisterActivityWithOptions(
 		greeterActivityFunc,
 		RegisterActivityOptions{Name: "Greeter_Activity"},
@@ -188,7 +188,7 @@ func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalNa
 		EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionSignaled),
 		WorkflowExecutionSignaledEventAttributes: &s.WorkflowExecutionSignaledEventAttributes{
 			SignalName: common.StringPtr(signalName),
-			Input: payload,
+			Input:      payload,
 			Identity:   common.StringPtr("test-identity"),
 		},
 	}
@@ -214,7 +214,7 @@ func createWorkflowTask(
 	previousStartEventID int64,
 	workflowName string,
 ) *s.PollForDecisionTaskResponse {
-	return createWorkflowTaskWithQueries(events,previousStartEventID, workflowName, nil)
+	return createWorkflowTaskWithQueries(events, previousStartEventID, workflowName, nil)
 }
 
 func createWorkflowTaskWithQueries(
@@ -840,7 +840,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	testEvents := []*s.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
 			TaskList: &s.TaskList{Name: &taskList},
-			Input: numberOfSignalsToComplete,
+			Input:    numberOfSignalsToComplete,
 		}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -872,10 +872,10 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	expectedQueryResults := map[string]*s.WorkflowQueryResult{
 		"id1": {
 			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
-			Answer: []byte(fmt.Sprintf("\"%v\"\n", startingQueryValue)),
+			Answer:     []byte(fmt.Sprintf("\"%v\"\n", startingQueryValue)),
 		},
 		"id2": {
-			ResultType: common.QueryResultTypePtr(s.QueryResultTypeFailed),
+			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
 			ErrorMessage: common.StringPtr(queryErr),
 		},
 	}
@@ -891,10 +891,10 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	expectedQueryResults = map[string]*s.WorkflowQueryResult{
 		"id1": {
 			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
-			Answer: []byte(fmt.Sprintf("\"%v\"\n", "signal data")),
+			Answer:     []byte(fmt.Sprintf("\"%v\"\n", "signal data")),
 		},
 		"id2": {
-			ResultType: common.QueryResultTypePtr(s.QueryResultTypeFailed),
+			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
 			ErrorMessage: common.StringPtr(queryErr),
 		},
 	}

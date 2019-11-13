@@ -389,11 +389,11 @@ const (
 )
 
 const (
-	// Terminate means terminating the child workflow
+	// ParentClosePolicyTerminate means terminating the child workflow
 	ParentClosePolicyTerminate = internal.ParentClosePolicyTerminate
-	// RequestCancel means requesting cancellation on the child workflow
+	// ParentClosePolicyRequestCancel means requesting cancellation on the child workflow
 	ParentClosePolicyRequestCancel = internal.ParentClosePolicyRequestCancel
-	// Abandon means not doing anything on the child workflow
+	// ParentClosePolicyAbandon means not doing anything on the child workflow
 	ParentClosePolicyAbandon = internal.ParentClosePolicyAbandon
 )
 

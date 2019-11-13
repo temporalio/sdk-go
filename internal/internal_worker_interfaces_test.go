@@ -35,13 +35,13 @@ import (
 )
 
 const (
-	queryType = "test-query"
+	queryType    = "test-query"
 	errQueryType = "test-err-query"
-	signalCh = "signal-chan"
+	signalCh     = "signal-chan"
 
 	startingQueryValue = ""
 	finishedQueryValue = "done"
-	queryErr = "error handling query"
+	queryErr           = "error handling query"
 )
 
 type (
