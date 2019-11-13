@@ -1067,7 +1067,9 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 		Do(func(_ interface{}, req *shared.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal(domain, request.GetDomain())
 		})
-	resp, err := s.client.ListArchivedWorkflow(context.Background(), request)
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	resp, err := s.client.ListArchivedWorkflow(ctxWithTimeout, request)
 	s.Nil(err)
 	s.Equal(response, resp)
 
@@ -1077,7 +1079,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 		Do(func(_ interface{}, req *shared.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
-	resp, err = s.client.ListArchivedWorkflow(context.Background(), request)
+	resp, err = s.client.ListArchivedWorkflow(ctxWithTimeout, request)
 	s.Equal(responseErr, err)
 }
 
