@@ -261,6 +261,23 @@ func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflow
 	registry.RegisterWorkflowWithOptions(workflowFunc, opts)
 }
 
+func Await(ctx Context, condition func() bool) error {
+	state := getState(ctx)
+	defer state.unblocked()
+
+	for !condition() {
+		doneCh := ctx.Done()
+		// TODO: Consider always returning a channel
+		if doneCh != nil {
+			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
+				return NewCanceledError("Await context cancelled")
+			}
+		}
+		state.yield("Await")
+	}
+	return nil
+}
+
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
 	state := getState(ctx)
