@@ -334,6 +334,21 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.libClient.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
+	ts.Nil(err)
+	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+	ts.Error(err)
+
+	queryErr, ok := err.(*shared.QueryFailedError)
+	ts.True(ok)
+	ts.Equal("query result size (20000000) exceeds limit (10000000)", queryErr.Message)
+	ts.Nil(value)
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)

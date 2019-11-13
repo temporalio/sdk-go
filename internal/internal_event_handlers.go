@@ -40,6 +40,10 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const (
+	queryResultSizeLimit = 10000000 // 10M
+)
+
 // Assert that structs do indeed implement the interfaces
 var _ workflowEnvironment = (*workflowEnvironmentImpl)(nil)
 var _ workflowExecutionEventHandler = (*workflowExecutionEventHandlerImpl)(nil)
@@ -908,7 +912,21 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, que
 	case QueryTypeOpenSessions:
 		return weh.encodeArg(weh.getOpenSessions())
 	default:
-		return weh.queryHandler(queryType, queryArgs)
+		result, err := weh.queryHandler(queryType, queryArgs)
+		if err != nil {
+			return nil, err
+		}
+
+		resultSize := len(result)
+		if resultSize > queryResultSizeLimit {
+			weh.logger.Error("Query result size exceeds limit.",
+				zap.String(tagQueryType, queryType),
+				zap.String(tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID),
+				zap.String(tagRunID, weh.workflowInfo.WorkflowExecution.RunID))
+			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", resultSize, queryResultSizeLimit)
+		}
+
+		return result, nil
 	}
 }
 

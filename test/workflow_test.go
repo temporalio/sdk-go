@@ -23,6 +23,7 @@ package test
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"go.uber.org/cadence"
@@ -394,6 +395,20 @@ func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
 	return "hello", nil
 }
 
+func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, error) {
+	err := workflow.SetQueryHandler(ctx, "large_query", func() ([]byte, error) {
+		result := make([]byte, 20000000)
+		rand.Read(result)
+		return result, nil
+	})
+
+	if err != nil {
+		return "", errors.New("failed to register query handler")
+	}
+
+	return "hello", nil
+}
+
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Second * 2,
@@ -469,6 +484,7 @@ func (w *Workflows) register() {
 	workflow.Register(w.childForMemoAndSearchAttr)
 	workflow.Register(w.ActivityCancelRepro)
 	workflow.Register(w.SimplestWorkflow)
+	workflow.Register(w.LargeQueryResultWorkflow)
 	workflow.Register(w.RetryTimeoutStableErrorWorkflow)
 }
 
