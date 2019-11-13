@@ -261,6 +261,8 @@ func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflow
 	registry.RegisterWorkflowWithOptions(workflowFunc, opts)
 }
 
+// Blocks the calling thread until condition() returns true
+// Returns CanceledError if the ctx is canceled.
 func Await(ctx Context, condition func() bool) error {
 	state := getState(ctx)
 	defer state.unblocked()
