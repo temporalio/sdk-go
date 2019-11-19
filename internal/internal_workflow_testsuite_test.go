@@ -2705,3 +2705,35 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
+	timeoutFn := func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	}
+	RegisterActivity(timeoutFn)
+
+	timeoutWf := func(ctx Context) error {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    1 * time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		err := ExecuteActivity(ctx, timeoutFn).Get(ctx, nil)
+		return err
+	}
+	RegisterWorkflow(timeoutWf)
+
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.ExecuteWorkflow(timeoutWf)
+	err := wfEnv.GetWorkflowError()
+	s.Error(err)
+	timeoutErr, ok := err.(*TimeoutError)
+	s.True(ok)
+	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.True(timeoutErr.HasDetails())
+	var details string
+	err = timeoutErr.Details(&details)
+	s.NoError(err)
+	s.Equal("context deadline exceeded", details)
+}
