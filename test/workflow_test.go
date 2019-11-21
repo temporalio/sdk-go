@@ -397,7 +397,7 @@ func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
 
 func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetQueryHandler(ctx, "large_query", func() ([]byte, error) {
-		result := make([]byte, 20000000)
+		result := make([]byte, 3000000)
 		rand.Read(result)
 		return result, nil
 	})
