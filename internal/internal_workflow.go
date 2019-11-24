@@ -1315,7 +1315,7 @@ func (h *queryHandler) execute(input []byte) (result []byte, err error) {
 	}()
 
 	fnType := reflect.TypeOf(h.fn)
-	args := []reflect.Value{}
+	var args []reflect.Value
 
 	if fnType.NumIn() == 1 && isTypeByteSlice(fnType.In(0)) {
 		args = append(args, reflect.ValueOf(input))

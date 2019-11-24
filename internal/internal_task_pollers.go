@@ -372,7 +372,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 					})
 				}
 			case *s.RespondQueryTaskCompletedRequest:
-				err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request)
+				err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondQueryTaskCompleted failed.", zap.Error(err1))

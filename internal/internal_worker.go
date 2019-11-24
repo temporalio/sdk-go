@@ -1120,6 +1120,18 @@ func (aw *AggregatedWorker) Start() error {
 var binaryChecksum string
 var binaryChecksumLock sync.Mutex
 
+// SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
+// The identifier is mainly used in recording reset points when respondDecisionTaskCompleted. For each workflow, the very first
+// decision completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
+// mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
+// by the binary.
+// On another hand, once the binary is marked as bad, the bad binary cannot poll decision and make any progress any more.
+func SetBinaryChecksum(checksum string) {
+	binaryChecksumLock.Lock()
+	defer binaryChecksumLock.Unlock()
+	binaryChecksum = checksum
+}
+
 func initBinaryChecksum() error {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()

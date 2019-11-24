@@ -138,6 +138,12 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
+	var expected []string
+	err := ts.executeWorkflow("test-activity-retry-on-timeout-stable-error", ts.workflows.RetryTimeoutStableErrorWorkflow, &expected)
+	ts.Nil(err)
+}
+
 func (ts *IntegrationTestSuite) TestActivityRetryOptionsChange() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-options-change", ts.workflows.ActivityRetryOptionsChange, &expected)
@@ -329,6 +335,21 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.libClient.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
+	ts.Nil(err)
+	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+	ts.Error(err)
+
+	queryErr, ok := err.(*shared.QueryFailedError)
+	ts.True(ok)
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", queryErr.Message)
+	ts.Nil(value)
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -394,7 +415,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 	return client.StartWorkflowOptions{
 		ID:                              wfID,
 		TaskList:                        ts.taskListName,
-		ExecutionStartToCloseTimeout:    10 * time.Second,
+		ExecutionStartToCloseTimeout:    15 * time.Second,
 		DecisionTaskStartToCloseTimeout: time.Second,
 		WorkflowIDReusePolicy:           client.WorkflowIDReusePolicyAllowDuplicate,
 	}
