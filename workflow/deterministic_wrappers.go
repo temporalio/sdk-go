@@ -48,6 +48,18 @@ type (
 	WaitGroup = internal.WaitGroup
 )
 
+// Await blocks the calling thread until condition() returns true
+// Returns CanceledError if the ctx is canceled.
+// The following code is going to block until the captured count
+// variable is set to 5.
+//
+// workflow.Await(ctx, func() bool {
+//   return count == 5
+// })
+func Await(ctx Context, condition func() bool) error {
+	return internal.Await(ctx, condition)
+}
+
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
 	return internal.NewChannel(ctx)
