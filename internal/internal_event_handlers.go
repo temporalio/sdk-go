@@ -317,7 +317,12 @@ func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithSearchAttributes(attrib
 
 func mergeSearchAttributes(current, upsert *shared.SearchAttributes) *shared.SearchAttributes {
 	if current == nil || len(current.IndexedFields) == 0 {
-		return upsert
+		if upsert == nil || len(upsert.IndexedFields) == 0 {
+			return nil
+		}
+		current = &shared.SearchAttributes{
+			IndexedFields: make(map[string][]byte),
+		}
 	}
 
 	fields := current.IndexedFields
@@ -571,9 +576,6 @@ func validateVersion(changeID string, version, minSupported, maxSupported Versio
 func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) Version {
 	if version, ok := wc.changeVersions[changeID]; ok {
 		validateVersion(changeID, version, minSupported, maxSupported)
-		if wc.isReplay {
-			wc.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions))
-		}
 		return version
 	}
 

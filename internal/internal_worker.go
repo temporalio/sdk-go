@@ -1036,6 +1036,7 @@ func (aw *aggregatedWorker) Start() error {
 var binaryChecksum string
 var binaryChecksumLock sync.Mutex
 
+// SetBinaryChecksum set binary checksum
 func SetBinaryChecksum(checksum string) {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()

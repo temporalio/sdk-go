@@ -1193,6 +1193,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 	diType := s.DecisionTypeUpsertWorkflowSearchAttributes
 	eType := s.EventTypeUpsertWorkflowSearchAttributes
+	strictMode := false
 
 	testCases := []struct {
 		name     string
@@ -1223,7 +1224,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 				EventType: &eType,
 				UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{},
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			name: "attributes match",
@@ -1245,7 +1246,37 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, false))
+			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, strictMode))
+		})
+	}
+
+	strictMode = true
+
+	testCases = []struct {
+		name     string
+		decision *s.Decision
+		event    *s.HistoryEvent
+		expected bool
+	}{
+		{
+			name: "attributes not match",
+			decision: &s.Decision{
+				DecisionType: &diType,
+				UpsertWorkflowSearchAttributesDecisionAttributes: &s.UpsertWorkflowSearchAttributesDecisionAttributes{
+					SearchAttributes: &s.SearchAttributes{},
+				},
+			},
+			event: &s.HistoryEvent{
+				EventType: &eType,
+				UpsertWorkflowSearchAttributesEventAttributes: &s.UpsertWorkflowSearchAttributesEventAttributes{},
+			},
+			expected: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, strictMode))
 		})
 	}
 }

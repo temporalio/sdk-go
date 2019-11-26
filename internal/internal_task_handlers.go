@@ -1068,6 +1068,20 @@ func skipDeterministicCheckForEvent(e *s.HistoryEvent) bool {
 	return false
 }
 
+// special check for upsert change version event
+func skipDeterministicCheckForUpsertChangeVersion(events []*s.HistoryEvent, idx int) bool {
+	e := events[idx]
+	if e.GetEventType() == s.EventTypeMarkerRecorded &&
+		e.MarkerRecordedEventAttributes.GetMarkerName() == versionMarkerName &&
+		idx < len(events)-1 &&
+		events[idx+1].GetEventType() == s.EventTypeUpsertWorkflowSearchAttributes {
+		if _, ok := events[idx+1].UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes.IndexedFields[CadenceChangeVersion]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func matchReplayWithHistory(replayDecisions []*s.Decision, historyEvents []*s.HistoryEvent) error {
 	di := 0
 	hi := 0
@@ -1078,6 +1092,10 @@ matchLoop:
 		var e *s.HistoryEvent
 		if hi < hSize {
 			e = historyEvents[hi]
+			if skipDeterministicCheckForUpsertChangeVersion(historyEvents, hi) {
+				hi += 2
+				continue matchLoop
+			}
 			if skipDeterministicCheckForEvent(e) {
 				hi++
 				continue matchLoop
@@ -1293,7 +1311,10 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.UpsertWorkflowSearchAttributesEventAttributes
 		decisionAttributes := d.UpsertWorkflowSearchAttributesDecisionAttributes
-		return isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes)
+		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes) {
+			return false
+		}
+		return true
 	}
 
 	return false

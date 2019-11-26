@@ -194,13 +194,13 @@ func Test_MergeSearchAttributes(t *testing.T) {
 			name:     "currentIsNil",
 			current:  nil,
 			upsert:   &s.SearchAttributes{},
-			expected: &s.SearchAttributes{},
+			expected: nil,
 		},
 		{
 			name:     "currentIsEmpty",
 			current:  &s.SearchAttributes{IndexedFields: make(map[string][]byte)},
 			upsert:   &s.SearchAttributes{},
-			expected: &s.SearchAttributes{},
+			expected: nil,
 		},
 		{
 			name: "normalMerge",
