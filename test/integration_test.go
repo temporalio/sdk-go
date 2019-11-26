@@ -346,7 +346,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 
 	queryErr, ok := err.(*shared.QueryFailedError)
 	ts.True(ok)
-	ts.Equal("query result size (20000000) exceeds limit (10000000)", queryErr.Message)
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", queryErr.Message)
 	ts.Nil(value)
 }
 
