@@ -21,8 +21,11 @@
 package internal
 
 import (
-	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetMemoOnStart(t *testing.T) {
@@ -60,4 +63,21 @@ func TestSetSearchAttributesOnStart(t *testing.T) {
 	err = env.SetSearchAttributesOnStart(searchAttr)
 	require.NoError(t, err)
 	require.NotNil(t, env.impl.workflowInfo.SearchAttributes)
+}
+
+func TestUnregisteredActivity(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	workflow := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+		})
+		return ExecuteActivity(ctx, "unregistered").Get(ctx, nil)
+	}
+	RegisterWorkflow(workflow)
+	env.ExecuteWorkflow(workflow)
+	require.Error(t, env.GetWorkflowError())
+	ee := env.GetWorkflowError()
+	require.True(t, strings.HasPrefix(ee.Error(), "unable to find activityType=unregistered"), ee.Error())
 }
