@@ -195,6 +195,12 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 	return &CanceledError{details: ErrorDetailsValues(details)}
 }
 
+// IsCanceledError return whether error in CanceledError
+func IsCanceledError(err error) bool {
+	_, ok := err.(*CanceledError)
+	return ok
+}
+
 // NewContinueAsNewError creates ContinueAsNewError instance
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options

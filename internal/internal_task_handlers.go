@@ -883,7 +883,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 }
 
 func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
-	if lar.task.retryPolicy == nil || lar.err == nil || lar.err == ErrCanceled {
+	if lar.task.retryPolicy == nil || lar.err == nil || IsCanceledError(lar.err) {
 		return false
 	}
 

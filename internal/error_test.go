@@ -343,6 +343,35 @@ func Test_CanceledError(t *testing.T) {
 	require.Equal(t, testErrorDetails3, b3)
 }
 
+func Test_IsCanceledError(t *testing.T) {
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "empty detail",
+			err:      NewCanceledError(),
+			expected: true,
+		},
+		{
+			name:     "with detail",
+			err:      NewCanceledError("details"),
+			expected: true,
+		},
+		{
+			name:     "not canceled error",
+			err:      errors.New("details"),
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		require.Equal(t, test.expected, IsCanceledError(test.err))
+	}
+}
+
 func TestErrorDetailsValues(t *testing.T) {
 	e := ErrorDetailsValues{}
 	require.Equal(t, ErrNoData, e.Get())
