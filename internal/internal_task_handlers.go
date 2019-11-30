@@ -1720,7 +1720,14 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		return nil, ctx.Err()
 	}
-
+	if err != nil {
+		ath.logger.Error("Activity error.",
+			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
+			zap.String(tagActivityType, activityType),
+			zap.Error(err),
+		)
+	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil
 }
 
