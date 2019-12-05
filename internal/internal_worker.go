@@ -670,6 +670,8 @@ func (th *hostEnvImpl) getActivityFn(fnName string) (interface{}, bool) {
 }
 
 func (th *hostEnvImpl) getRegisteredActivities() []activity {
+	th.Lock()
+	defer th.Unlock()
 	activities := make([]activity, 0, len(th.activityFuncMap))
 	for _, a := range th.activityFuncMap {
 		activities = append(activities, a)
