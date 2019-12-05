@@ -509,12 +509,3 @@ func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
 		},
 	}
 }
-
-func (w *Workflows) activityOptions(
-	startTimeout time.Duration, scheduleToCloseTimeout time.Duration, startToCloseTimeout time.Duration) workflow.ActivityOptions {
-	return workflow.ActivityOptions{
-		ScheduleToStartTimeout: startTimeout,
-		ScheduleToCloseTimeout: scheduleToCloseTimeout,
-		StartToCloseTimeout:    startToCloseTimeout,
-	}
-}
