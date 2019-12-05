@@ -99,6 +99,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
+	ts.Assertions = require.New(ts.T())
 	ts.rpcClient.Close()
 	// sleep for a while to allow the pollers to shutdown
 	// then assert that there are no lingering go routines
