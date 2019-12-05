@@ -347,7 +347,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 	}
 	workflowType := attr.WorkflowType
 	execution := &shared.WorkflowExecution{
-		RunId:      common.StringPtr(uuid.NewUUID().String()),
+		RunId:      common.StringPtr(uuid.NewRandom().String()),
 		WorkflowId: common.StringPtr("ReplayId"),
 	}
 	if first.WorkflowExecutionStartedEventAttributes.GetOriginalExecutionRunId() != "" {
