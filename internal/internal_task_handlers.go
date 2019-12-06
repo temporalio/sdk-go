@@ -1466,6 +1466,7 @@ func errorToFailDecisionTask(taskToken []byte, err error, identity string) *s.Re
 		Cause:     &failedCause,
 		Details:   details,
 		Identity:  common.StringPtr(identity),
+		BinaryChecksum: common.StringPtr(getBinaryChecksum()),
 	}
 }
 
