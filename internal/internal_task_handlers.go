@@ -145,6 +145,7 @@ type (
 		eventsHandler  *workflowExecutionEventHandlerImpl
 		loadedEvents   []*s.HistoryEvent
 		currentIndex   int
+		nextEventID    int64 // next expected eventID for sanity
 		next           []*s.HistoryEvent
 		binaryChecksum *string
 	}
@@ -161,7 +162,9 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 		loadedEvents:  task.task.History.Events,
 		currentIndex:  0,
 	}
-
+	if len(result.loadedEvents) > 0 {
+		result.nextEventID = result.loadedEvents[0].GetEventId()
+	}
 	return result
 }
 
@@ -210,6 +213,9 @@ func (eh *history) loadMoreEvents() error {
 		return err
 	}
 	eh.loadedEvents = append(eh.loadedEvents, historyPage.Events...)
+	if eh.nextEventID == 0 && len(eh.loadedEvents) > 0 {
+		eh.nextEventID = eh.loadedEvents[0].GetEventId()
+	}
 	return nil
 }
 
@@ -283,6 +289,16 @@ OrderEvents:
 		}
 
 		event := eh.loadedEvents[eh.currentIndex]
+		eventID := event.GetEventId()
+		if eventID != eh.nextEventID {
+			err = fmt.Errorf(
+				"missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
+				eh.nextEventID, eventID)
+			return
+		}
+
+		eh.nextEventID++
+
 		switch event.GetEventType() {
 		case s.EventTypeDecisionTaskStarted:
 			isFailed, binaryChecksum, err1 := eh.IsNextDecisionFailed()

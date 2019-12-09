@@ -554,6 +554,40 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	t.EqualValues(getWorkflowCache().Size(), 0)
 }
 
+func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskScheduled(6, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(7),
+	}
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	for _, startEventID := range []int64{0, 3} {
+		taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+		task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
+		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+		// will fail as it can't find laTunnel in getWorkflowCache().
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, make(chan struct{}))
+		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+
+		t.Error(err)
+		t.Nil(request)
+		t.Contains(err.Error(), "missing history events")
+
+		// There should be nothing in the cache.
+		t.EqualValues(getWorkflowCache().Size(), 0)
+	}
+}
+
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
 	t.testSideEffectDeferHelper(false)
 }
