@@ -33,6 +33,7 @@ require (
 	github.com/streadway/quantile v0.0.0-20150917103942-b0c588724d25 // indirect
 	github.com/stretchr/objx v0.1.1 // indirect
 	github.com/stretchr/testify v1.3.0
+	github.com/temporalio/temporal-proto v0.0.0
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/mapdecode v1.0.0 // indirect
 	github.com/uber-go/tally v3.3.1+incompatible
@@ -56,3 +57,5 @@ require (
 	google.golang.org/grpc v1.23.1 // indirect
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )
+
+replace github.com/temporalio/temporal-proto => ./.gen/proto

@@ -51,6 +51,52 @@ $(BINS)/versions/yarpc-$(YARPC_VERSION):
 $(BINS)/versions/golint-$(GOLINT_VERSION):
 	./versioned_go_build.sh golang.org/x/lint $(GOLINT_VERSION) golint $@
 
+#================================= protobuf ===================================
+PROTO_ROOT := .gen/proto
+PROTO_REPO := github.com/temporalio/temporal-proto
+# List only subdirectories with *.proto files (sort to remove duplicates).
+# Note: using "shell find" instead of "wildcard" because "wildcard" caches directory structure.
+PROTO_DIRS = $(sort $(dir $(shell find $(PROTO_ROOT) -name "*.proto")))
+
+# Everything that deals with go modules (go.mod) needs to take dependency on this target.
+$(PROTO_ROOT)/go.mod:
+	cd $(PROTO_ROOT) && go mod init $(PROTO_REPO)
+
+clean-proto:
+	$(foreach PROTO_DIR,$(PROTO_DIRS),rm -f $(PROTO_DIR)*.go;)
+	rm -rf $(PROTO_ROOT)/*mock
+
+update-proto-submodule:
+	git submodule update --remote $(PROTO_ROOT)
+
+install-proto-submodule:
+	git submodule update --init $(PROTO_ROOT)
+
+protoc:
+#   run protoc separately for each directory because of different package names
+	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_ROOT) $(PROTO_DIR)*.proto;)
+	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --yarpc-go_out=$(PROTO_ROOT) $(PROTO_DIR)*.proto;)
+
+# All YARPC generated service files pathes relative to PROTO_ROOT
+PROTO_YARPC_SERVICES = $(patsubst $(PROTO_ROOT)/%,%,$(shell find $(PROTO_ROOT) -name "service.pb.yarpc.go"))
+dir_no_slash = $(patsubst %/,%,$(dir $(1)))
+dirname = $(notdir $(call dir_no_slash,$(1)))
+
+proto-mock: $(PROTO_ROOT)/go.mod tools-install
+	@echo "Generate proto mocks..."
+	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_ROOT) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
+
+update-proto: clean-proto update-proto-submodule tools-install protoc proto-mock
+
+proto: clean-proto install-proto-submodule tools-install protoc proto-mock
+#==============================================================================
+
+tools-install: $(PROTO_ROOT)/go.mod
+	GO111MODULE=off go get -u github.com/myitcv/gobin
+	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
+	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
+	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
+
 # stable tool targets.  depend on / execute these instead of the versioned ones.
 # this versioned-to-nice-name thing is mostly because thriftrw depends on the yarpc
 # bin to be named "thriftrw-plugin-yarpc".
