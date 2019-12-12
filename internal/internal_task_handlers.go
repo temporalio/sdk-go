@@ -145,6 +145,7 @@ type (
 		eventsHandler  *workflowExecutionEventHandlerImpl
 		loadedEvents   []*s.HistoryEvent
 		currentIndex   int
+		nextEventID    int64 // next expected eventID for sanity
 		next           []*s.HistoryEvent
 		binaryChecksum *string
 	}
@@ -161,7 +162,9 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 		loadedEvents:  task.task.History.Events,
 		currentIndex:  0,
 	}
-
+	if len(result.loadedEvents) > 0 {
+		result.nextEventID = result.loadedEvents[0].GetEventId()
+	}
 	return result
 }
 
@@ -210,6 +213,9 @@ func (eh *history) loadMoreEvents() error {
 		return err
 	}
 	eh.loadedEvents = append(eh.loadedEvents, historyPage.Events...)
+	if eh.nextEventID == 0 && len(eh.loadedEvents) > 0 {
+		eh.nextEventID = eh.loadedEvents[0].GetEventId()
+	}
 	return nil
 }
 
@@ -283,6 +289,16 @@ OrderEvents:
 		}
 
 		event := eh.loadedEvents[eh.currentIndex]
+		eventID := event.GetEventId()
+		if eventID != eh.nextEventID {
+			err = fmt.Errorf(
+				"missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
+				eh.nextEventID, eventID)
+			return
+		}
+
+		eh.nextEventID++
+
 		switch event.GetEventType() {
 		case s.EventTypeDecisionTaskStarted:
 			isFailed, binaryChecksum, err1 := eh.IsNextDecisionFailed()
@@ -883,7 +899,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 }
 
 func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
-	if lar.task.retryPolicy == nil || lar.err == nil || lar.err == ErrCanceled {
+	if lar.task.retryPolicy == nil || lar.err == nil || IsCanceledError(lar.err) {
 		return false
 	}
 
@@ -1068,6 +1084,20 @@ func skipDeterministicCheckForEvent(e *s.HistoryEvent) bool {
 	return false
 }
 
+// special check for upsert change version event
+func skipDeterministicCheckForUpsertChangeVersion(events []*s.HistoryEvent, idx int) bool {
+	e := events[idx]
+	if e.GetEventType() == s.EventTypeMarkerRecorded &&
+		e.MarkerRecordedEventAttributes.GetMarkerName() == versionMarkerName &&
+		idx < len(events)-1 &&
+		events[idx+1].GetEventType() == s.EventTypeUpsertWorkflowSearchAttributes {
+		if _, ok := events[idx+1].UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes.IndexedFields[CadenceChangeVersion]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func matchReplayWithHistory(replayDecisions []*s.Decision, historyEvents []*s.HistoryEvent) error {
 	di := 0
 	hi := 0
@@ -1078,6 +1108,10 @@ matchLoop:
 		var e *s.HistoryEvent
 		if hi < hSize {
 			e = historyEvents[hi]
+			if skipDeterministicCheckForUpsertChangeVersion(historyEvents, hi) {
+				hi += 2
+				continue matchLoop
+			}
 			if skipDeterministicCheckForEvent(e) {
 				hi++
 				continue matchLoop
@@ -1293,7 +1327,10 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 		}
 		eventAttributes := e.UpsertWorkflowSearchAttributesEventAttributes
 		decisionAttributes := d.UpsertWorkflowSearchAttributesDecisionAttributes
-		return isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes)
+		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes) {
+			return false
+		}
+		return true
 	}
 
 	return false
@@ -1441,10 +1478,11 @@ func errorToFailDecisionTask(taskToken []byte, err error, identity string) *s.Re
 	failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
 	_, details := getErrorDetails(err, nil)
 	return &s.RespondDecisionTaskFailedRequest{
-		TaskToken: taskToken,
-		Cause:     &failedCause,
-		Details:   details,
-		Identity:  common.StringPtr(identity),
+		TaskToken:      taskToken,
+		Cause:          &failedCause,
+		Details:        details,
+		Identity:       common.StringPtr(identity),
+		BinaryChecksum: common.StringPtr(getBinaryChecksum()),
 	}
 }
 
@@ -1699,7 +1737,14 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		return nil, ctx.Err()
 	}
-
+	if err != nil {
+		ath.logger.Error("Activity error.",
+			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
+			zap.String(tagActivityType, activityType),
+			zap.Error(err),
+		)
+	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil
 }
 

@@ -18,28 +18,46 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package replaytests
 
-// below are the metadata which will be embedded as part
-// of headers in every rpc call made by this client to
-// cadence server.
+import (
+	"testing"
 
-// Update to the metadata below is typically done
-// by the cadence team as part of a major feature or
-// behavior change
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
+	"go.uber.org/cadence/worker"
+	"go.uber.org/zap"
+)
 
-// LibraryVersion is a semver that represents
-// the version of this cadence client library.
-// This represents API changes visible to Cadence
-// client side library consumers, i.e. developers
-// that are writing workflows. So every time we change API
-// that can affect them we have to change this number.
-// Format: MAJOR.MINOR.PATCH
-const LibraryVersion = "0.10.1"
+type replayTestSuite struct {
+	suite.Suite
+	mockCtrl *gomock.Controller
+	service  *workflowservicetest.MockClient
+}
 
-// FeatureVersion is a semver that represents the
-// feature set of this cadence client library support.
-// This can be used for client capability check, on
-// Cadence server, for backward compatibility
-// Format: MAJOR.MINOR.PATCH
-const FeatureVersion = "1.4.0"
+func TestReplayTestSuite(t *testing.T) {
+	s := new(replayTestSuite)
+	suite.Run(t, s)
+}
+
+func (s *replayTestSuite) SetupTest() {
+	s.mockCtrl = gomock.NewController(s.T())
+	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+}
+
+func (s *replayTestSuite) TearDownTest() {
+	s.mockCtrl.Finish() // assert mock’s expectations
+}
+
+func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
+	logger, _ := zap.NewDevelopment()
+	testFiles := []string{"basic.json", "basic_new.json", "version.json", "version_new.json"}
+	var err error
+
+	for _, testFile := range testFiles {
+		err = worker.ReplayWorkflowHistoryFromJSONFile(logger, testFile)
+		require.NoError(s.T(), err)
+	}
+}
