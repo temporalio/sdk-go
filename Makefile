@@ -95,6 +95,9 @@ tools-install: $(PROTO_ROOT)/go.mod
 	GO111MODULE=off go get -u github.com/myitcv/gobin
 	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
 	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
+	GOOS= GOARCH= gobin -mod=readonly go.uber.org/thriftrw
+	GOOS= GOARCH= gobin -mod=readonly go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc
+	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
 	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
 
 # stable tool targets.  depend on / execute these instead of the versioned ones.
