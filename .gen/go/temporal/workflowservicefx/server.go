@@ -24,10 +24,10 @@
 package workflowservicefx
 
 import (
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceserver"
-	"go.uber.org/fx"
-	"go.uber.org/yarpc/api/transport"
-	"go.uber.org/yarpc/encoding/thrift"
+	workflowserviceserver "go.temporal.io/temporal/.gen/go/temporal/workflowserviceserver"
+	fx "go.uber.org/fx"
+	transport "go.uber.org/yarpc/api/transport"
+	thrift "go.uber.org/yarpc/encoding/thrift"
 )
 
 // ServerParams defines the dependencies for the WorkflowService server.
