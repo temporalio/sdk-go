@@ -10,7 +10,7 @@ THRIFTRW_SRC := \
   idl/github.com/temporalio/temporal/shared.thrift \
 
 # one or more thriftrw-generated file(s), to create / depend on generated code
-THRIFTRW_OUT := $(THRIFT_GENDIR)/temporal/idl.go
+THRIFTRW_OUT := $(THRIFT_GENDIR)/temporal/temporal.go
 TEST_ARG ?= -v -race
 
 # general build-product folder, cleaned as part of `make clean`
