@@ -15,8 +15,6 @@ TEST_ARG ?= -v -race
 
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
-# general bins folder.  NOT cleaned via `make clean`
-BINS := .bins
 
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
@@ -36,20 +34,6 @@ UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(A
 
 # Files that needs to run lint.  excludes testify mocks and the thrift sentinel.
 LINT_SRC := $(filter-out ./mock% $(THRIFTRW_OUT),$(ALL_SRC))
-
-THRIFTRW_VERSION := v1.11.0
-YARPC_VERSION := v1.29.1
-GOLINT_VERSION := 470b6b0bb3005eda157f0275e2e4895055396a81
-
-# versioned tools.  just change the version vars above, it'll automatically trigger a rebuild.
-$(BINS)/versions/thriftrw-$(THRIFTRW_VERSION):
-	./versioned_go_build.sh go.uber.org/thriftrw $(THRIFTRW_VERSION) $@
-
-$(BINS)/versions/yarpc-$(YARPC_VERSION):
-	./versioned_go_build.sh go.uber.org/yarpc $(YARPC_VERSION) encoding/thrift/thriftrw-plugin-yarpc $@
-
-$(BINS)/versions/golint-$(GOLINT_VERSION):
-	./versioned_go_build.sh golang.org/x/lint $(GOLINT_VERSION) golint $@
 
 #================================= protobuf ===================================
 PROTO_ROOT := .gen/proto
@@ -100,25 +84,12 @@ tools-install: $(PROTO_ROOT)/go.mod
 	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
 	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
 
-# stable tool targets.  depend on / execute these instead of the versioned ones.
-# this versioned-to-nice-name thing is mostly because thriftrw depends on the yarpc
-# bin to be named "thriftrw-plugin-yarpc".
-$(BINS)/thriftrw: $(BINS)/versions/thriftrw-$(THRIFTRW_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(BINS)/thriftrw-plugin-yarpc: $(BINS)/versions/yarpc-$(YARPC_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(BINS)/golint: $(BINS)/versions/golint-$(GOLINT_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
+$(THRIFTRW_OUT): $(THRIFTRW_SRC) tools-install
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
 	@mkdir -p $(dir $@)
 	@# needs to be able to find the thriftrw-plugin-yarpc bin in PATH
 	$(foreach source,$(THRIFTRW_SRC),\
-		PATH="$(BINS)" \
-		    $(BINS)/thriftrw \
+		    thriftrw \
 		        --plugin=yarpc \
 		        --pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
 		        --out=$(THRIFT_GENDIR) $(source);)
@@ -135,7 +106,6 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 
 $(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
-
 
 bins: $(ALL_SRC) proto $(BUILD)/copyright lint $(BUILD)/dummy
 
@@ -181,10 +151,10 @@ cover_ci: $(COVER_ROOT)/cover.out
 # - filter to only files in LINT_SRC
 # - if it's not empty, run golint against the list
 define lint_if_present
-test -n "$1" && $(BINS)/golint -set_exit_status $1
+test -n "$1" && golint -set_exit_status $1
 endef
 
-lint: $(BINS)/golint $(ALL_SRC)
+lint: tools-install $(ALL_SRC)
 	$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
