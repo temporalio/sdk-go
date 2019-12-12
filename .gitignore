@@ -4,13 +4,13 @@
 *.swp
 .idea/
 .vscode/
+.gobincache/
 *.code-workspace
 *.iml
 *.cov
 *.html
 .tmp/
 /vendor
-bins
 cadence-client
 bins
 test.log

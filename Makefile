@@ -134,7 +134,7 @@ $(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
 
-bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
+bins: $(ALL_SRC) proto $(BUILD)/copyright lint $(BUILD)/dummy
 
 unit_test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
