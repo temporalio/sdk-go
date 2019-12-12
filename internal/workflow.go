@@ -535,7 +535,7 @@ func scheduleLocalActivity(ctx Context, params *executeLocalActivityParams) Futu
 			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
 
-		if lar.err == nil || lar.backoff <= 0 {
+		if lar.err == nil || IsCanceledError(lar.err) || lar.backoff <= 0 {
 			f.Set(lar.result, lar.err)
 			return
 		}

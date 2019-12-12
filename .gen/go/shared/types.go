@@ -29450,10 +29450,11 @@ func (v *RespondDecisionTaskCompletedResponse) Equals(rhs *RespondDecisionTaskCo
 }
 
 type RespondDecisionTaskFailedRequest struct {
-	TaskToken []byte                   `json:"taskToken,omitempty"`
-	Cause     *DecisionTaskFailedCause `json:"cause,omitempty"`
-	Details   []byte                   `json:"details,omitempty"`
-	Identity  *string                  `json:"identity,omitempty"`
+	TaskToken      []byte                   `json:"taskToken,omitempty"`
+	Cause          *DecisionTaskFailedCause `json:"cause,omitempty"`
+	Details        []byte                   `json:"details,omitempty"`
+	Identity       *string                  `json:"identity,omitempty"`
+	BinaryChecksum *string                  `json:"binaryChecksum,omitempty"`
 }
 
 // ToWire translates a RespondDecisionTaskFailedRequest struct into a Thrift-level intermediate
@@ -29473,7 +29474,7 @@ type RespondDecisionTaskFailedRequest struct {
 //   }
 func (v *RespondDecisionTaskFailedRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -29509,6 +29510,14 @@ func (v *RespondDecisionTaskFailedRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+	if v.BinaryChecksum != nil {
+		w, err = wire.NewValueString(*(v.BinaryChecksum)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
 		i++
 	}
 
@@ -29573,6 +29582,16 @@ func (v *RespondDecisionTaskFailedRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 50:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.BinaryChecksum = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -29586,7 +29605,7 @@ func (v *RespondDecisionTaskFailedRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [5]string
 	i := 0
 	if v.TaskToken != nil {
 		fields[i] = fmt.Sprintf("TaskToken: %v", v.TaskToken)
@@ -29602,6 +29621,10 @@ func (v *RespondDecisionTaskFailedRequest) String() string {
 	}
 	if v.Identity != nil {
 		fields[i] = fmt.Sprintf("Identity: %v", *(v.Identity))
+		i++
+	}
+	if v.BinaryChecksum != nil {
+		fields[i] = fmt.Sprintf("BinaryChecksum: %v", *(v.BinaryChecksum))
 		i++
 	}
 
@@ -29625,6 +29648,9 @@ func (v *RespondDecisionTaskFailedRequest) Equals(rhs *RespondDecisionTaskFailed
 	if !_String_EqualsPtr(v.Identity, rhs.Identity) {
 		return false
 	}
+	if !_String_EqualsPtr(v.BinaryChecksum, rhs.BinaryChecksum) {
+		return false
+	}
 
 	return true
 }
@@ -29644,6 +29670,16 @@ func (v *RespondDecisionTaskFailedRequest) GetCause() (o DecisionTaskFailedCause
 func (v *RespondDecisionTaskFailedRequest) GetIdentity() (o string) {
 	if v.Identity != nil {
 		return *v.Identity
+	}
+
+	return
+}
+
+// GetBinaryChecksum returns the value of BinaryChecksum if it is set or its
+// zero value if it is unset.
+func (v *RespondDecisionTaskFailedRequest) GetBinaryChecksum() (o string) {
+	if v.BinaryChecksum != nil {
+		return *v.BinaryChecksum
 	}
 
 	return

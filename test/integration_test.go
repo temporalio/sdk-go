@@ -98,12 +98,30 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
+	ts.Assertions = require.New(ts.T())
 	ts.rpcClient.Close()
-	// sleep for a while to allow the pollers to shutdown
-	// then assert that there are no lingering go routines
-	time.Sleep(1 * time.Minute)
-	// https://github.com/uber-go/cadence-client/issues/739
-	goleak.VerifyNoLeaks(ts.T(), goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
+	// allow the pollers to shut down, and ensure there are no goroutine leaks.
+	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
+	max := time.After(time.Minute)
+	var last error
+	for {
+		select {
+		case <-max:
+			if last != nil {
+				ts.NoError(last)
+				return
+			}
+			ts.FailNow("leaks timed out but no error, should be impossible")
+		case <-time.After(time.Second):
+			// https://github.com/uber-go/cadence-client/issues/739
+			last = goleak.FindLeaks(goleak.IgnoreTopFunction("go.uber.org/cadence/internal.(*coroutineState).initialYield"))
+			if last == nil {
+				// no leak, done waiting
+				return
+			}
+			// else wait for another check or the timeout (which will record the latest error)
+		}
+	}
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
