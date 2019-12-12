@@ -169,6 +169,6 @@ lint: tools-install $(ALL_SRC)
 fmt:
 	@gofmt -w $(ALL_SRC)
 
-clean:
+clean: clean-proto
 	rm -Rf $(BUILD)
-	rm -Rf .gen
+	rm -Rf .gen/go
