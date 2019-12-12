@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	s "go.uber.org/cadence/.gen/go/shared"
@@ -71,6 +72,7 @@ type (
 		metricsScope tally.Scope
 		logger       *zap.Logger
 
+		stickyUUID                   string
 		disableStickyExecution       bool
 		StickyScheduleToStartTimeout time.Duration
 
@@ -193,6 +195,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 	}
 }
 
+// newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(
 	taskHandler WorkflowTaskHandler,
 	service workflowserviceclient.Interface,
@@ -207,6 +210,7 @@ func newWorkflowTaskPoller(
 		taskHandler:                  taskHandler,
 		metricsScope:                 params.MetricsScope,
 		logger:                       params.Logger,
+		stickyUUID:                   uuid.New(),
 		disableStickyExecution:       params.DisableStickyExecution,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 	}
@@ -361,7 +365,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			case *s.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
 					request.StickyAttributes = &s.StickyExecutionAttributes{
-						WorkerTaskList:                &s.TaskList{Name: common.StringPtr(getWorkerTaskList())},
+						WorkerTaskList:                &s.TaskList{Name: common.StringPtr(getWorkerTaskList(wtp.stickyUUID))},
 						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
 					}
 				}
@@ -582,7 +586,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *s.PollForDecisionT
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskListName = getWorkerTaskList()
+			taskListName = getWorkerTaskList(wtp.stickyUUID)
 			taskListKind = s.TaskListKindSticky
 		} else {
 			wtp.pendingRegularPollCount++
