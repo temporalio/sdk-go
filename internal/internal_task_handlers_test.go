@@ -201,6 +201,13 @@ func createTestEventDecisionTaskCompleted(eventID int64, attr *s.DecisionTaskCom
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
+func createTestEventDecisionTaskFailed(eventID int64, attr *s.DecisionTaskFailedEventAttributes) *s.HistoryEvent {
+	return &s.HistoryEvent{
+		EventId:                           common.Int64Ptr(eventID),
+		EventType:                         common.EventTypePtr(s.EventTypeDecisionTaskFailed),
+		DecisionTaskFailedEventAttributes: attr}
+}
+
 func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *s.SignalExternalWorkflowExecutionFailedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
 		EventId:   common.Int64Ptr(eventID),
@@ -585,6 +592,61 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 
 		// There should be nothing in the cache.
 		t.EqualValues(getWorkflowCache().Size(), 0)
+	}
+}
+
+func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
+	taskList := "taskList"
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskFailed(4, &s.DecisionTaskFailedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskScheduled(5, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskStarted(6),
+		createTestEventDecisionTaskCompleted(7, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+		createTestEventActivityTaskScheduled(8, &s.ActivityTaskScheduledEventAttributes{
+			ActivityId:   common.StringPtr("0"),
+			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
+			TaskList:     &s.TaskList{Name: &taskList},
+		}),
+	}
+	params := workerExecutionParameters{
+		TaskList:                       taskList,
+		Identity:                       "test-id-1",
+		Logger:                         zap.NewNop(),
+		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+	}
+
+	testCases := []struct {
+		startedEventID         int64
+		previousStartedEventID int64
+		isResultErr            bool
+	}{
+		{0, 0, false},
+		{0, 3, false},
+		{10, 0, true},
+		{10, 6, true},
+	}
+
+	for i, tc := range testCases {
+		taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
+		task.StartedEventId = common.Int64Ptr(tc.startedEventID)
+		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+		// will fail as it can't find laTunnel in getWorkflowCache().
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, make(chan struct{}))
+		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+
+		if tc.isResultErr {
+			t.Error(err, "testcase %v failed", i)
+			t.Nil(request)
+			t.Contains(err.Error(), "premature end of stream")
+			t.EqualValues(getWorkflowCache().Size(), 0)
+			continue
+		}
+
+		t.NoError(err, "testcase %v failed", i)
 	}
 }
 

@@ -146,6 +146,7 @@ type (
 		loadedEvents   []*s.HistoryEvent
 		currentIndex   int
 		nextEventID    int64 // next expected eventID for sanity
+		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
 		next           []*s.HistoryEvent
 		binaryChecksum *string
 	}
@@ -161,6 +162,7 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 		eventsHandler: eventsHandler,
 		loadedEvents:  task.task.History.Events,
 		currentIndex:  0,
+		lastEventID:   task.task.GetStartedEventId(),
 	}
 	if len(result.loadedEvents) > 0 {
 		result.nextEventID = result.loadedEvents[0].GetEventId()
@@ -268,8 +270,27 @@ func (eh *history) getMoreEvents() (*s.History, error) {
 	return eh.workflowTask.historyIterator.GetNextPage()
 }
 
+func (eh *history) verifyAllEventsProcessed() error {
+	if eh.lastEventID > 0 && eh.nextEventID <= eh.lastEventID {
+		return fmt.Errorf(
+			"history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
+			eh.lastEventID,
+			eh.nextEventID-1)
+	}
+	if eh.lastEventID > 0 && eh.nextEventID != (eh.lastEventID+1) {
+		eh.eventsHandler.logger.Warn(
+			"history_events: processed events past the expected lastEventID",
+			zap.Int64("expectedLastEventID", eh.lastEventID),
+			zap.Int64("processedLastEventID", eh.nextEventID-1))
+	}
+	return nil
+}
+
 func (eh *history) nextDecisionEvents() (nextEvents []*s.HistoryEvent, markers []*s.HistoryEvent, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
+		if err := eh.verifyAllEventsProcessed(); err != nil {
+			return nil, nil, err
+		}
 		return []*s.HistoryEvent{}, []*s.HistoryEvent{}, nil
 	}
 
@@ -280,10 +301,12 @@ OrderEvents:
 		// load more history events if needed
 		for eh.currentIndex == len(eh.loadedEvents) {
 			if !eh.hasMoreEvents() {
+				if err = eh.verifyAllEventsProcessed(); err != nil {
+					return
+				}
 				break OrderEvents
 			}
-			if err1 := eh.loadMoreEvents(); err1 != nil {
-				err = err1
+			if err = eh.loadMoreEvents(); err != nil {
 				return
 			}
 		}
@@ -1478,10 +1501,10 @@ func errorToFailDecisionTask(taskToken []byte, err error, identity string) *s.Re
 	failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
 	_, details := getErrorDetails(err, nil)
 	return &s.RespondDecisionTaskFailedRequest{
-		TaskToken: taskToken,
-		Cause:     &failedCause,
-		Details:   details,
-		Identity:  common.StringPtr(identity),
+		TaskToken:      taskToken,
+		Cause:          &failedCause,
+		Details:        details,
+		Identity:       common.StringPtr(identity),
 		BinaryChecksum: common.StringPtr(getBinaryChecksum()),
 	}
 }
