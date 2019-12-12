@@ -349,7 +349,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	alreadyStartedErr := &shared.WorkflowExecutionAlreadyStartedError{
 		RunId:          common.StringPtr(runID),
 		Message:        common.StringPtr("Already Started"),
-		StartRequestId: common.StringPtr(uuid.NewUUID().String()),
+		StartRequestId: common.StringPtr(uuid.NewRandom().String()),
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, alreadyStartedErr).Times(1)

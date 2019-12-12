@@ -1129,6 +1129,7 @@ var binaryChecksumLock sync.Mutex
 func SetBinaryChecksum(checksum string) {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()
+
 	binaryChecksum = checksum
 }
 
@@ -1136,6 +1137,11 @@ func initBinaryChecksum() error {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()
 
+	return initBinaryChecksumLocked()
+}
+
+// callers MUST hold binaryChecksumLock before calling
+func initBinaryChecksumLocked() error {
 	if len(binaryChecksum) > 0 {
 		return nil
 	}
@@ -1149,7 +1155,9 @@ func initBinaryChecksum() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close() // error is unimportant as it is read-only
+	}()
 
 	h := md5.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -1163,8 +1171,14 @@ func initBinaryChecksum() error {
 }
 
 func getBinaryChecksum() string {
+	binaryChecksumLock.Lock()
+	defer binaryChecksumLock.Unlock()
+
 	if len(binaryChecksum) == 0 {
-		initBinaryChecksum()
+		err := initBinaryChecksumLocked()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	return binaryChecksum

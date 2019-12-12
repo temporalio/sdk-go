@@ -930,10 +930,18 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	go func() {
 		var result interface{}
 		defer func() {
-			if result == nil && recover() == nil {
+			panicErr := recover()
+			if result == nil && panicErr == nil {
 				reason := "activity called runtime.Goexit"
 				result = &shared.RespondActivityTaskFailedRequest{
 					Reason: &reason,
+				}
+			} else if panicErr != nil {
+				reason := errReasonPanic
+				details, _ := env.GetDataConverter().ToData(fmt.Sprintf("%v", panicErr))
+				result = &shared.RespondActivityTaskFailedRequest{
+					Reason:  &reason,
+					Details: details,
 				}
 			}
 			// post activity result to workflow dispatcher
