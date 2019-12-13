@@ -26,6 +26,8 @@ import (
 	"context"
 	"time"
 
+	"go.uber.org/yarpc/yarpcerrors"
+
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/internal/common/backoff"
 )
@@ -71,6 +73,26 @@ func isServiceTransientError(err error) bool {
 		*s.QueryFailedError,
 		*s.DomainNotActiveError,
 		*s.CancellationAlreadyRequestedError:
+		return false
+	}
+
+	if err == errShutdown {
+		return false
+	}
+
+	// s.InternalServiceError
+	// s.ServiceBusyError
+	// s.LimitExceededError
+	return true
+}
+
+func isServiceTransientErrorGRPC(err error) bool {
+	// Retrying by default so it covers all transport errors.
+	st := yarpcerrors.FromError(err)
+	switch st.Code() {
+	case yarpcerrors.CodeInvalidArgument,
+		yarpcerrors.CodeNotFound,
+		yarpcerrors.CodeAlreadyExists:
 		return false
 	}
 

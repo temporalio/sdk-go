@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/uber-go/tally"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
@@ -523,6 +525,48 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	}
 }
 
+// NewClientGRPC creates an instance of a workflow client
+func NewClientGRPC(service workflowservice.WorkflowServiceYARPCClient, domain string, options *ClientOptions) Client {
+	var identity string
+	if options == nil || options.Identity == "" {
+		identity = getWorkerIdentity("")
+	} else {
+		identity = options.Identity
+	}
+	var metricScope tally.Scope
+	if options != nil {
+		metricScope = options.MetricsScope
+	}
+	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+	var dataConverter DataConverter
+	if options != nil && options.DataConverter != nil {
+		dataConverter = options.DataConverter
+	} else {
+		dataConverter = getDefaultDataConverter()
+	}
+	var contextPropagators []ContextPropagator
+	if options != nil {
+		contextPropagators = options.ContextPropagators
+	}
+	var tracer opentracing.Tracer
+	if options != nil && options.Tracer != nil {
+		tracer = options.Tracer
+		contextPropagators = append(contextPropagators, NewTracingContextPropagator(zap.NewNop(), tracer))
+	} else {
+		tracer = opentracing.NoopTracer{}
+	}
+	return &workflowClient{
+		workflowServiceGRPC: metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
+		domain:              domain,
+		registry:            newRegistry(getGlobalRegistry()),
+		metricsScope:        metrics.NewTaggedScope(metricScope),
+		identity:            identity,
+		dataConverter:       dataConverter,
+		contextPropagators:  contextPropagators,
+		tracer:              tracer,
+	}
+}
+
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
 func NewDomainClient(service workflowserviceclient.Interface, options *ClientOptions) DomainClient {
 	var identity string
@@ -556,6 +600,19 @@ func (p WorkflowIDReusePolicy) toThriftPtr() *s.WorkflowIdReusePolicy {
 		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
 	}
 	return &policy
+}
+
+func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {
+	switch p {
+	case WorkflowIDReusePolicyAllowDuplicate:
+		return enums.WorkflowIdReusePolicyAllowDuplicate
+	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
+		return enums.WorkflowIdReusePolicyAllowDuplicateFailedOnly
+	case WorkflowIDReusePolicyRejectDuplicate:
+		return enums.WorkflowIdReusePolicyRejectDuplicate
+	default:
+		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
+	}
 }
 
 func (p ParentClosePolicy) toThriftPtr() *s.ParentClosePolicy {

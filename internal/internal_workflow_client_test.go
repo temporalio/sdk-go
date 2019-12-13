@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal/common"
@@ -36,6 +38,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/suite"
+
 	"go.temporal.io/temporal/internal/common/metrics"
 )
 
@@ -752,7 +755,7 @@ type (
 	workflowClientTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicetest.MockClient
+		service  *workflowservicemock.MockWorkflowServiceYARPCClient
 		client   Client
 	}
 )
@@ -769,8 +772,8 @@ func (s *workflowClientTestSuite) SetupSuite() {
 
 func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
-	s.client = NewClient(s.service, domain, nil)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.client = NewClientGRPC(s.service, domain, nil)
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -787,8 +790,8 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
 	}
 
-	createResponse := &shared.StartWorkflowExecutionResponse{
-		RunId: common.StringPtr(runID),
+	createResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
+		RunId: runID,
 	}
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(2)
 
@@ -843,8 +846,8 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 		return "result"
 	}
 
-	createResponse := &shared.StartWorkflowExecutionResponse{
-		RunId: common.StringPtr(runID),
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId: runID,
 	}
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
@@ -855,7 +858,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = NewClient(s.service, domain, &ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
+	s.client = NewClientGRPC(s.service, domain, &ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -885,7 +888,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
 	dc := newTestDataConverter()
-	s.client = NewClient(s.service, domain, &ClientOptions{DataConverter: dc})
+	s.client = NewClientGRPC(s.service, domain, &ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{

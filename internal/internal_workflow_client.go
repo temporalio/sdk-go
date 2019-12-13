@@ -32,6 +32,8 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common"
@@ -55,14 +57,15 @@ var (
 type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
-		workflowService    workflowserviceclient.Interface
-		domain             string
-		registry           *registry
-		metricsScope       *metrics.TaggedScope
-		identity           string
-		dataConverter      DataConverter
-		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
+		workflowService     workflowserviceclient.Interface
+		workflowServiceGRPC workflowservice.WorkflowServiceYARPCClient
+		domain              string
+		registry            *registry
+		metricsScope        *metrics.TaggedScope
+		identity            string
+		dataConverter       DataConverter
+		contextPropagators  []ContextPropagator
+		tracer              opentracing.Tracer
 	}
 
 	// domainClient is the client for managing domains.
@@ -176,12 +179,12 @@ func (wc *workflowClient) StartWorkflow(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(options.Memo, wc.dataConverter)
+	memo, err := getWorkflowMemoProto(options.Memo, wc.dataConverter)
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(options.SearchAttributes)
+	searchAttr, err := serializeSearchAttributesProto(options.SearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -197,28 +200,28 @@ func (wc *workflowClient) StartWorkflow(
 	span.Finish()
 
 	// get workflow headers from the context
-	header := wc.getWorkflowHeader(ctx)
+	header := wc.getWorkflowHeaderProto(ctx)
 
 	// run propagators to extract information about tracing and other stuff, store in headers field
-	startRequest := &s.StartWorkflowExecutionRequest{
-		Domain:                              common.StringPtr(wc.domain),
-		RequestId:                           common.StringPtr(uuid.New()),
-		WorkflowId:                          common.StringPtr(workflowID),
-		WorkflowType:                        workflowTypePtr(*workflowType),
-		TaskList:                            common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+	startRequest := &workflowservice.StartWorkflowExecutionRequest{
+		Domain:                              wc.domain,
+		RequestId:                           uuid.New(),
+		WorkflowId:                          workflowID,
+		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
+		TaskList:                            &commonproto.TaskList{Name: options.TaskList},
 		Input:                               input,
-		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
-		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
-		Identity:                            common.StringPtr(wc.identity),
-		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
-		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
-		CronSchedule:                        common.StringPtr(options.CronSchedule),
+		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
+		TaskStartToCloseTimeoutSeconds:      decisionTaskTimeout,
+		Identity:                            wc.identity,
+		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toProto(),
+		RetryPolicy:                         convertRetryPolicyToProto(options.RetryPolicy),
+		CronSchedule:                        options.CronSchedule,
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
 		Header:                              header,
 	}
 
-	var response *s.StartWorkflowExecutionResponse
+	var response *workflowservice.StartWorkflowExecutionResponse
 
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
@@ -227,9 +230,9 @@ func (wc *workflowClient) StartWorkflow(
 			defer cancel()
 
 			var err1 error
-			response, err1 = wc.workflowService.StartWorkflowExecution(tchCtx, startRequest, opt...)
+			response, err1 = wc.workflowServiceGRPC.StartWorkflowExecution(tchCtx, startRequest, opt...)
 			return err1
-		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientErrorGRPC)
 
 	if err != nil {
 		return nil, err
@@ -374,12 +377,12 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(options.Memo, wc.dataConverter)
+	memo, err := getWorkflowMemoProto(options.Memo, wc.dataConverter)
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(options.SearchAttributes)
+	searchAttr, err := serializeSearchAttributesProto(options.SearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -389,29 +392,29 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	span.Finish()
 
 	// get workflow headers from the context
-	header := wc.getWorkflowHeader(ctx)
+	header := wc.getWorkflowHeaderProto(ctx)
 
-	signalWithStartRequest := &s.SignalWithStartWorkflowExecutionRequest{
-		Domain:                              common.StringPtr(wc.domain),
-		RequestId:                           common.StringPtr(uuid.New()),
-		WorkflowId:                          common.StringPtr(workflowID),
-		WorkflowType:                        workflowTypePtr(*workflowType),
-		TaskList:                            common.TaskListPtr(s.TaskList{Name: common.StringPtr(options.TaskList)}),
+	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
+		Domain:                              wc.domain,
+		RequestId:                           uuid.New(),
+		WorkflowId:                          workflowID,
+		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
+		TaskList:                            &commonproto.TaskList{Name: options.TaskList},
 		Input:                               input,
-		ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(executionTimeout),
-		TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(decisionTaskTimeout),
-		SignalName:                          common.StringPtr(signalName),
+		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
+		TaskStartToCloseTimeoutSeconds:      decisionTaskTimeout,
+		SignalName:                          signalName,
 		SignalInput:                         signalInput,
-		Identity:                            common.StringPtr(wc.identity),
-		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
-		CronSchedule:                        common.StringPtr(options.CronSchedule),
+		Identity:                            wc.identity,
+		RetryPolicy:                         convertRetryPolicyToProto(options.RetryPolicy),
+		CronSchedule:                        options.CronSchedule,
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
-		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toThriftPtr(),
+		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toProto(),
 		Header:                              header,
 	}
 
-	var response *s.StartWorkflowExecutionResponse
+	var response *workflowservice.SignalWithStartWorkflowExecutionResponse
 
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
@@ -420,7 +423,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 			defer cancel()
 
 			var err1 error
-			response, err1 = wc.workflowService.SignalWithStartWorkflowExecution(tchCtx, signalWithStartRequest, opt...)
+			response, err1 = wc.workflowServiceGRPC.SignalWithStartWorkflowExecution(tchCtx, signalWithStartRequest, opt...)
 			return err1
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
@@ -944,6 +947,17 @@ func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *s.Header {
 	return header
 }
 
+func (wc *workflowClient) getWorkflowHeaderProto(ctx context.Context) *commonproto.Header {
+	header := &commonproto.Header{
+		Fields: make(map[string][]byte),
+	}
+	writer := NewHeaderWriterProto(header)
+	for _, ctxProp := range wc.contextPropagators {
+		ctxProp.Inject(ctx, writer)
+	}
+	return header
+}
+
 // Register a domain with cadence server
 // The errors it can throw:
 //	- DomainAlreadyExistsError
@@ -1124,6 +1138,22 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*s.Memo, e
 	return &s.Memo{Fields: memo}, nil
 }
 
+func getWorkflowMemoProto(input map[string]interface{}, dc DataConverter) (*commonproto.Memo, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	memo := make(map[string][]byte)
+	for k, v := range input {
+		memoBytes, err := encodeArg(dc, v)
+		if err != nil {
+			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
+		}
+		memo[k] = memoBytes
+	}
+	return &commonproto.Memo{Fields: memo}, nil
+}
+
 func serializeSearchAttributes(input map[string]interface{}) (*s.SearchAttributes, error) {
 	if input == nil {
 		return nil, nil
@@ -1138,4 +1168,19 @@ func serializeSearchAttributes(input map[string]interface{}) (*s.SearchAttribute
 		attr[k] = attrBytes
 	}
 	return &s.SearchAttributes{IndexedFields: attr}, nil
+}
+func serializeSearchAttributesProto(input map[string]interface{}) (*commonproto.SearchAttributes, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	attr := make(map[string][]byte)
+	for k, v := range input {
+		attrBytes, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
+		}
+		attr[k] = attrBytes
+	}
+	return &commonproto.SearchAttributes{IndexedFields: attr}, nil
 }

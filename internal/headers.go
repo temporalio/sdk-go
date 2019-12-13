@@ -23,6 +23,7 @@ package internal
 import (
 	"context"
 
+	commonproto "github.com/temporalio/temporal-proto/common"
 	"go.temporal.io/temporal/.gen/go/shared"
 )
 
@@ -79,7 +80,18 @@ type headerWriter struct {
 	header *shared.Header
 }
 
+type headerWriterProto struct {
+	header *commonproto.Header
+}
+
 func (hw *headerWriter) Set(key string, value []byte) {
+	if hw.header == nil {
+		return
+	}
+	hw.header.Fields[key] = value
+}
+
+func (hw *headerWriterProto) Set(key string, value []byte) {
 	if hw.header == nil {
 		return
 	}
@@ -92,4 +104,12 @@ func NewHeaderWriter(header *shared.Header) HeaderWriter {
 		header.Fields = make(map[string][]byte)
 	}
 	return &headerWriter{header}
+}
+
+// NewHeaderWriterProto returns a header writer interface
+func NewHeaderWriterProto(header *commonproto.Header) HeaderWriter {
+	if header != nil && header.Fields == nil {
+		header.Fields = make(map[string][]byte)
+	}
+	return &headerWriterProto{header}
 }

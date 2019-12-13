@@ -26,6 +26,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	commonproto "github.com/temporalio/temporal-proto/common"
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
@@ -442,4 +443,20 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *shared.RetryPolicy {
 		ExpirationIntervalInSeconds: common.Int32Ptr(common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds())),
 	}
 	return &thriftRetryPolicy
+}
+func convertRetryPolicyToProto(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+	if retryPolicy.BackoffCoefficient == 0 {
+		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
+	}
+	return &commonproto.RetryPolicy{
+		MaximumIntervalInSeconds:    common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
+		InitialIntervalInSeconds:    common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
+		BackoffCoefficient:          retryPolicy.BackoffCoefficient,
+		MaximumAttempts:             retryPolicy.MaximumAttempts,
+		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
+		ExpirationIntervalInSeconds: common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds()),
+	}
 }
