@@ -37,11 +37,18 @@ func createRootTestContext() (ctx Context) {
 	return newWorkflowContext(env.impl)
 }
 
+func requireNoExecuteErr(t *testing.T, err error) {
+	if err != nil {
+		require.IsType(t, (*workflowPanicError)(nil), err)
+		require.NoError(t, err, err.(*workflowPanicError).StackTrace())
+	}
+}
+
 func TestDispatcher(t *testing.T) {
 	value := "foo"
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) { value = "bar" })
 	require.Equal(t, "foo", value)
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 	require.Equal(t, "bar", value)
 }
@@ -58,7 +65,7 @@ func TestNonBlockingChildren(t *testing.T) {
 		history = append(history, "root")
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	require.EqualValues(t, 11, len(history))
@@ -81,7 +88,7 @@ func TestNonbufferedChannel(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -127,11 +134,11 @@ func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	c2.SendAsync("value21")
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	c2.SendAsync("value22")
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	require.True(t, d.IsDone(), d.StackTrace())
 }
@@ -157,7 +164,7 @@ func TestBufferedChannelPut(t *testing.T) {
 		history = append(history, "root-after-channel-put2")
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -207,7 +214,7 @@ func TestBufferedChannelGet(t *testing.T) {
 		history = append(history, "root-after-channel-put2")
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n")+"\n\n"+d.StackTrace())
 
 	expected := []string{
@@ -252,7 +259,7 @@ func TestNotBlockingSelect(t *testing.T) {
 		s.Select(ctx)
 		s.Select(ctx)
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -299,7 +306,7 @@ func TestBlockingSelect(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
@@ -340,7 +347,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 		}
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
@@ -388,7 +395,7 @@ func TestSelectOnClosedChannel(t *testing.T) {
 		selector.Select(ctx)
 		selector.Select(ctx)
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
@@ -430,7 +437,7 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
@@ -470,7 +477,7 @@ func TestSendSelect(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -512,7 +519,7 @@ func TestSendSelectWithAsyncReceive(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
 	expected := []string{
@@ -558,7 +565,7 @@ func TestChannelClose(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), d.StackTrace())
 
 	expected := []string{
@@ -586,7 +593,7 @@ func TestSendClosedChannel(t *testing.T) {
 		})
 		c.Send(ctx, "baz")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
 
@@ -600,7 +607,7 @@ func TestBlockedSendClosedChannel(t *testing.T) {
 		c.Close()
 		c.Send(ctx, "baz")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
 
@@ -614,7 +621,7 @@ func TestAsyncSendClosedChannel(t *testing.T) {
 		c.Close()
 		_ = c.SendAsync("baz")
 	})
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
 
@@ -633,7 +640,7 @@ func TestDispatchClose(t *testing.T) {
 		c.Receive(ctx, nil) // blocked forever
 	})
 	require.EqualValues(t, 0, len(history))
-	d.ExecuteUntilAllBlocked()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone())
 	stack := d.StackTrace()
 	// 11 coroutines (3 lines each) + 10 nl
@@ -677,7 +684,7 @@ func TestPanic(t *testing.T) {
 	require.EqualValues(t, "simulated failure", value)
 	require.EqualValues(t, "simulated failure", err.Error())
 
-	require.Contains(t, err.StackTrace(), "cadence/internal.TestPanic")
+	require.Contains(t, err.(*workflowPanicError).StackTrace(), "cadence/internal.TestPanic")
 }
 
 func TestFutureSetValue(t *testing.T) {
@@ -704,19 +711,13 @@ func TestFutureSetValue(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "future-set")
 	assert.False(t, f.IsReady())
 	s.SetValue("value1")
 	assert.True(t, f.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -754,19 +755,13 @@ func TestFutureFail(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "future-set")
 	assert.False(t, f.IsReady())
 	s.SetError(errors.New("value1"))
 	assert.True(t, f.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -818,29 +813,20 @@ func TestFutureSet(t *testing.T) {
 	})
 
 	require.EqualValues(t, 0, len(history))
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f1-set")
 	assert.False(t, f1.IsReady())
 	s1.Set("value-will-be-ignored", errors.New("error1"))
 	assert.True(t, f1.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f2-set")
 	assert.False(t, f2.IsReady())
 	s2.Set("value2", nil)
 	assert.True(t, f2.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -899,29 +885,20 @@ func TestFutureChain(t *testing.T) {
 
 	})
 	require.EqualValues(t, 0, len(history))
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f1-set")
 	assert.False(t, f1.IsReady())
 	cs1.Set("value1-will-be-ignored", errors.New("error1"))
 	assert.True(t, f1.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f2-set")
 	assert.False(t, f2.IsReady())
 	cs2.Set("value2", nil)
 	assert.True(t, f2.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	require.True(t, d.IsDone())
 
@@ -972,10 +949,7 @@ func TestSelectFuture(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -1024,10 +998,7 @@ func TestSelectDecodeFuture(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -1086,20 +1057,14 @@ func TestDecodeFutureChain(t *testing.T) {
 		history = append(history, "root-end")
 	})
 	require.EqualValues(t, 0, len(history))
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	// set f1
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f1-set")
 	assert.False(t, f1.IsReady())
 	cs1.Set([]byte("value-will-be-ignored"), errors.New("error1"))
 	assert.True(t, f1.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	// set f2
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
@@ -1107,10 +1072,7 @@ func TestDecodeFutureChain(t *testing.T) {
 	assert.False(t, f2.IsReady())
 	cs2.Set([]byte("value2"), nil)
 	assert.True(t, f2.IsReady())
-	err = d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
 	require.True(t, d.IsDone())
 
@@ -1162,10 +1124,7 @@ func TestSelectFuture_WithBatchSets(t *testing.T) {
 		s.Select(ctx)
 		s.Select(ctx)
 	})
-	err := d.ExecuteUntilAllBlocked()
-	if err != nil {
-		require.NoError(t, err, err.StackTrace())
-	}
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
 	expected := []string{
@@ -1189,7 +1148,7 @@ func TestChainedFuture(t *testing.T) {
 		var out int
 		fut, set := NewFuture(ctx)
 		set.Chain(f)
-		fut.Get(ctx, &out)
+		require.NoError(t, fut.Get(ctx, &out))
 		return out, nil
 	}
 	RegisterWorkflow(workflowFn)
