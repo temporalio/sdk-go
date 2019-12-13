@@ -24,14 +24,14 @@
 package workflowserviceclient
 
 import (
-	"context"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal"
-	"go.uber.org/thriftrw/wire"
-	"go.uber.org/yarpc"
-	"go.uber.org/yarpc/api/transport"
-	"go.uber.org/yarpc/encoding/thrift"
-	"reflect"
+	context "context"
+	shared "go.temporal.io/temporal/.gen/go/shared"
+	temporal "go.temporal.io/temporal/.gen/go/temporal"
+	wire "go.uber.org/thriftrw/wire"
+	yarpc "go.uber.org/yarpc"
+	transport "go.uber.org/yarpc/api/transport"
+	thrift "go.uber.org/yarpc/encoding/thrift"
+	reflect "reflect"
 )
 
 // Interface is a client for the WorkflowService service.
