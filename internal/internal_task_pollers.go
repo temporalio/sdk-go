@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/uber-go/tally"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
@@ -861,7 +862,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	return nil
 }
 
-func reportActivityComplete(ctx context.Context, service workflowserviceclient.Interface, request interface{}, metricsScope tally.Scope) error {
+func reportActivityComplete(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, request interface{}, metricsScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -908,7 +909,7 @@ func reportActivityComplete(ctx context.Context, service workflowserviceclient.I
 	return reportErr
 }
 
-func reportActivityCompleteByID(ctx context.Context, service workflowserviceclient.Interface, request interface{}, metricsScope tally.Scope) error {
+func reportActivityCompleteByID(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, request interface{}, metricsScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil

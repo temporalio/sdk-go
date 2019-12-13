@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common"
@@ -1775,7 +1776,7 @@ func createNewDecision(decisionType s.DecisionType) *s.Decision {
 
 func recordActivityHeartbeat(
 	ctx context.Context,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	identity string,
 	taskToken, details []byte,
 ) error {
@@ -1804,7 +1805,7 @@ func recordActivityHeartbeat(
 
 func recordActivityHeartbeatByID(
 	ctx context.Context,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	identity string,
 	domain, workflowID, runID, activityID string,
 	details []byte,

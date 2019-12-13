@@ -26,13 +26,12 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/uber-go/tally"
+	"go.uber.org/zap"
+
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
-	"github.com/uber-go/tally"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.uber.org/zap"
 )
 
 const (
@@ -167,7 +166,7 @@ type (
 		//			}
 		//			events = append(events, event)
 		//		}
-		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType s.HistoryEventFilterType) HistoryEventIterator
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return acitivity.activity.ErrResultPending to
@@ -218,14 +217,14 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		ListClosedWorkflow(ctx context.Context, request *s.ListClosedWorkflowExecutionsRequest) (*s.ListClosedWorkflowExecutionsResponse, error)
+		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListClosedWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		ListOpenWorkflow(ctx context.Context, request *s.ListOpenWorkflowExecutionsRequest) (*s.ListOpenWorkflowExecutionsResponse, error)
+		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
 		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
@@ -238,7 +237,7 @@ type (
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
-		ListWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error)
+		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Cadence
 		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
@@ -247,7 +246,7 @@ type (
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
-		ListArchivedWorkflow(ctx context.Context, request *s.ListArchivedWorkflowExecutionsRequest) (*s.ListArchivedWorkflowExecutionsResponse, error)
+		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
 		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
 		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
@@ -258,7 +257,7 @@ type (
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
-		ScanWorkflow(ctx context.Context, request *s.ListWorkflowExecutionsRequest) (*s.ListWorkflowExecutionsResponse, error)
+		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
 		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
 		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
@@ -266,12 +265,12 @@ type (
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
-		CountWorkflow(ctx context.Context, request *s.CountWorkflowExecutionsRequest) (*s.CountWorkflowExecutionsResponse, error)
+		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
 		// The search attributes can be used in query of List/Scan/Count APIs. Adding new search attributes requires temporal server
 		// to update dynamic config ValidSearchAttributes.
-		GetSearchAttributes(ctx context.Context) (*s.GetSearchAttributesResponse, error)
+		GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error)
 
 		// QueryWorkflow queries a given workflow execution and returns the query result synchronously. Parameter workflowID
 		// and queryType are required, other parameters are optional. The workflowID and runID (optional) identify the
@@ -307,7 +306,7 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*s.DescribeWorkflowExecutionResponse, error)
+		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeTaskList returns information about the target tasklist, right now this API returns the
 		// pollers which polled this tasklist in last few minutes.
@@ -315,7 +314,7 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeTaskList(ctx context.Context, tasklist string, tasklistType s.TaskListType) (*s.DescribeTaskListResponse, error)
+		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -433,7 +432,7 @@ type (
 		//	- DomainAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(ctx context.Context, request *s.RegisterDomainRequest) error
+		Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) (*workflowservice.RegisterDomainResponse, error)
 
 		// Describe a domain. The domain has 3 part of information
 		// DomainInfo - Which has Name, Status, Description, Owner Email
@@ -443,14 +442,14 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Describe(ctx context.Context, name string) (*s.DescribeDomainResponse, error)
+		Describe(ctx context.Context, name string) (*workflowservice.DescribeDomainResponse, error)
 
 		// Update a domain.
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Update(ctx context.Context, request *s.UpdateDomainRequest) error
+		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
@@ -484,7 +483,7 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowserviceclient.Interface, domain string, options *ClientOptions) Client {
+func NewClient(service workflowservice.WorkflowServiceYARPCClient, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -514,7 +513,7 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 		tracer = opentracing.NoopTracer{}
 	}
 	return &workflowClient{
-		workflowService:    metrics.NewWorkflowServiceWrapper(service, metricScope),
+		workflowService:    metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
 		domain:             domain,
 		registry:           newRegistry(getGlobalRegistry()),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
@@ -525,50 +524,8 @@ func NewClient(service workflowserviceclient.Interface, domain string, options *
 	}
 }
 
-// NewClientGRPC creates an instance of a workflow client
-func NewClientGRPC(service workflowservice.WorkflowServiceYARPCClient, domain string, options *ClientOptions) Client {
-	var identity string
-	if options == nil || options.Identity == "" {
-		identity = getWorkerIdentity("")
-	} else {
-		identity = options.Identity
-	}
-	var metricScope tally.Scope
-	if options != nil {
-		metricScope = options.MetricsScope
-	}
-	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
-	var dataConverter DataConverter
-	if options != nil && options.DataConverter != nil {
-		dataConverter = options.DataConverter
-	} else {
-		dataConverter = getDefaultDataConverter()
-	}
-	var contextPropagators []ContextPropagator
-	if options != nil {
-		contextPropagators = options.ContextPropagators
-	}
-	var tracer opentracing.Tracer
-	if options != nil && options.Tracer != nil {
-		tracer = options.Tracer
-		contextPropagators = append(contextPropagators, NewTracingContextPropagator(zap.NewNop(), tracer))
-	} else {
-		tracer = opentracing.NoopTracer{}
-	}
-	return &workflowClient{
-		workflowServiceGRPC: metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
-		domain:              domain,
-		registry:            newRegistry(getGlobalRegistry()),
-		metricsScope:        metrics.NewTaggedScope(metricScope),
-		identity:            identity,
-		dataConverter:       dataConverter,
-		contextPropagators:  contextPropagators,
-		tracer:              tracer,
-	}
-}
-
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(service workflowserviceclient.Interface, options *ClientOptions) DomainClient {
+func NewDomainClient(service workflowservice.WorkflowServiceYARPCClient, options *ClientOptions) DomainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -581,21 +538,21 @@ func NewDomainClient(service workflowserviceclient.Interface, options *ClientOpt
 	}
 	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 	return &domainClient{
-		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
+		workflowService: metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
 		metricsScope:    metricScope,
 		identity:        identity,
 	}
 }
 
-func (p WorkflowIDReusePolicy) toThriftPtr() *s.WorkflowIdReusePolicy {
-	var policy s.WorkflowIdReusePolicy
+func (p WorkflowIDReusePolicy) toThriftPtr() *enums.WorkflowIdReusePolicy {
+	var policy enums.WorkflowIdReusePolicy
 	switch p {
 	case WorkflowIDReusePolicyAllowDuplicate:
-		policy = s.WorkflowIdReusePolicyAllowDuplicate
+		policy = enums.WorkflowIdReusePolicyAllowDuplicate
 	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		policy = s.WorkflowIdReusePolicyAllowDuplicateFailedOnly
+		policy = enums.WorkflowIdReusePolicyAllowDuplicateFailedOnly
 	case WorkflowIDReusePolicyRejectDuplicate:
-		policy = s.WorkflowIdReusePolicyRejectDuplicate
+		policy = enums.WorkflowIdReusePolicyRejectDuplicate
 	default:
 		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
 	}
@@ -615,15 +572,15 @@ func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {
 	}
 }
 
-func (p ParentClosePolicy) toThriftPtr() *s.ParentClosePolicy {
-	var policy s.ParentClosePolicy
+func (p ParentClosePolicy) toThriftPtr() *enums.ParentClosePolicy {
+	var policy enums.ParentClosePolicy
 	switch p {
 	case ParentClosePolicyAbandon:
-		policy = s.ParentClosePolicyAbandon
+		policy = enums.ParentClosePolicyAbandon
 	case ParentClosePolicyRequestCancel:
-		policy = s.ParentClosePolicyRequestCancel
+		policy = enums.ParentClosePolicyRequestCancel
 	case ParentClosePolicyTerminate:
-		policy = s.ParentClosePolicyTerminate
+		policy = enums.ParentClosePolicyTerminate
 	default:
 		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}

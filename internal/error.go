@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/temporalio/temporal-proto/enums"
 	"go.temporal.io/temporal/.gen/go/shared"
 )
 
@@ -171,7 +172,7 @@ func NewCustomError(reason string, details ...interface{}) *CustomError {
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
-func NewTimeoutError(timeoutType shared.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *TimeoutError {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &TimeoutError{timeoutType: timeoutType, details: d}
