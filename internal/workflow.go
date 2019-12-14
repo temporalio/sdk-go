@@ -27,9 +27,10 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"go.temporal.io/temporal/internal/common"
 )
 
 var (
@@ -639,7 +640,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
 				// child workflow started, and ctx cancelled
-				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(*options.domain, childWorkflowExecution.ID)
+				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.domain, childWorkflowExecution.ID)
 			}
 			return false
 		}
@@ -652,8 +653,8 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	return result
 }
 
-func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *s.Header {
-	header := &s.Header{
+func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonproto.Header {
+	header := &commonproto.Header{
 		Fields: make(map[string][]byte),
 	}
 	writer := NewHeaderWriter(header)
@@ -673,13 +674,13 @@ type WorkflowInfo struct {
 	Domain                              string
 	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
 	lastCompletionResult                []byte
-	CronSchedule                        *string
-	ContinuedExecutionRunID             *string
-	ParentWorkflowDomain                *string
+	CronSchedule                        string
+	ContinuedExecutionRunID             string
+	ParentWorkflowDomain                string
 	ParentWorkflowExecution             *WorkflowExecution
-	Memo                                *s.Memo
-	SearchAttributes                    *s.SearchAttributes
-	BinaryChecksum                      *string
+	Memo                                *commonproto.Memo
+	SearchAttributes                    *commonproto.SearchAttributes
+	BinaryChecksum                      string
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
@@ -768,7 +769,7 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.domain == nil || *options.domain == "" {
+	if options.domain == "" {
 		settable.Set(nil, errDomainNotSet)
 		return future
 	}
@@ -783,7 +784,7 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	}
 
 	getWorkflowEnvironment(ctx).RequestCancelExternalWorkflow(
-		*options.domain,
+		options.domain,
 		workflowID,
 		runID,
 		resultCallback,
@@ -810,7 +811,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.domain == nil || *options.domain == "" {
+	if options.domain == "" {
 		settable.Set(nil, errDomainNotSet)
 		return future
 	}
@@ -830,7 +831,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		settable.Set(result, err)
 	}
 	getWorkflowEnvironment(ctx).SignalExternalWorkflow(
-		*options.domain,
+		options.domain,
 		workflowID,
 		runID,
 		signalName,
@@ -882,11 +883,11 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
-	wfOptions.domain = common.StringPtr(cwo.Domain)
-	wfOptions.taskListName = common.StringPtr(cwo.TaskList)
+	wfOptions.domain = cwo.Domain
+	wfOptions.taskListName = cwo.TaskList
 	wfOptions.workflowID = cwo.WorkflowID
-	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds()))
-	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds()))
+	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds())
+	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds())
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
@@ -901,14 +902,14 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 // WithWorkflowDomain adds a domain to the context.
 func WithWorkflowDomain(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).domain = common.StringPtr(name)
+	getWorkflowEnvOptions(ctx1).domain = name
 	return ctx1
 }
 
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).taskListName = common.StringPtr(name)
+	getWorkflowEnvOptions(ctx1).taskListName = name
 	return ctx1
 }
 
@@ -924,7 +925,7 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 // subjected to change in the future.
 func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(d.Seconds()))
+	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
@@ -933,7 +934,7 @@ func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ptr(common.Int32Ceil(d.Seconds()))
+	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 

@@ -26,12 +26,13 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
-	"go.temporal.io/temporal/internal/common/backoff"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/backoff"
 )
 
 type (
@@ -279,7 +280,7 @@ type ServiceInvoker interface {
 // Use this method to unit test activity implementations that use context extractor methodshared.
 func WithActivityTask(
 	ctx context.Context,
-	task *shared.PollForActivityTaskResponse,
+	task *workflowservice.PollForActivityTaskResponse,
 	taskList string,
 	invoker ServiceInvoker,
 	logger *zap.Logger,
@@ -305,21 +306,21 @@ func WithActivityTask(
 	}
 
 	logger = logger.With(
-		zapcore.Field{Key: tagActivityID, Type: zapcore.StringType, String: *task.ActivityId},
-		zapcore.Field{Key: tagActivityType, Type: zapcore.StringType, String: *task.ActivityType.Name},
-		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: *task.WorkflowType.Name},
-		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: *task.WorkflowExecution.WorkflowId},
-		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: *task.WorkflowExecution.RunId},
+		zapcore.Field{Key: tagActivityID, Type: zapcore.StringType, String: task.ActivityId},
+		zapcore.Field{Key: tagActivityType, Type: zapcore.StringType, String: task.ActivityType.Name},
+		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: task.WorkflowType.Name},
+		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: task.WorkflowExecution.WorkflowId},
+		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: task.WorkflowExecution.RunId},
 	)
 
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: *task.ActivityType.Name},
-		activityID:     *task.ActivityId,
+		activityType:   ActivityType{Name: task.ActivityType.Name},
+		activityID:     task.ActivityId,
 		workflowExecution: WorkflowExecution{
-			RunID: *task.WorkflowExecution.RunId,
-			ID:    *task.WorkflowExecution.WorkflowId},
+			RunID: task.WorkflowExecution.RunId,
+			ID:    task.WorkflowExecution.WorkflowId},
 		logger:             logger,
 		metricsScope:       scope,
 		deadline:           deadline,
@@ -331,9 +332,9 @@ func WithActivityTask(
 		attempt:            task.GetAttempt(),
 		heartbeatDetails:   task.HeartbeatDetails,
 		workflowType: &WorkflowType{
-			Name: *task.WorkflowType.Name,
+			Name: task.WorkflowType.Name,
 		},
-		workflowDomain:     *task.WorkflowDomain,
+		workflowDomain:     task.WorkflowDomain,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
 		tracer:             tracer,
@@ -353,7 +354,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
 	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
 	eap.WaitForCancellation = options.WaitForCancellation
-	eap.ActivityID = common.StringPtr(options.ActivityID)
+	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
 	return ctx1
 }
@@ -427,24 +428,7 @@ func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	return ctx1
 }
 
-func convertRetryPolicy(retryPolicy *RetryPolicy) *shared.RetryPolicy {
-	if retryPolicy == nil {
-		return nil
-	}
-	if retryPolicy.BackoffCoefficient == 0 {
-		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
-	}
-	thriftRetryPolicy := shared.RetryPolicy{
-		InitialIntervalInSeconds:    common.Int32Ptr(common.Int32Ceil(retryPolicy.InitialInterval.Seconds())),
-		MaximumIntervalInSeconds:    common.Int32Ptr(common.Int32Ceil(retryPolicy.MaximumInterval.Seconds())),
-		BackoffCoefficient:          &retryPolicy.BackoffCoefficient,
-		MaximumAttempts:             &retryPolicy.MaximumAttempts,
-		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
-		ExpirationIntervalInSeconds: common.Int32Ptr(common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds())),
-	}
-	return &thriftRetryPolicy
-}
-func convertRetryPolicyToProto(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
+func convertRetryPolicy(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}

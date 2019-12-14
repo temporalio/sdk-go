@@ -215,7 +215,7 @@ func (wc *workflowClient) StartWorkflow(
 		TaskStartToCloseTimeoutSeconds:      decisionTaskTimeout,
 		Identity:                            wc.identity,
 		WorkflowIdReusePolicy:               options.WorkflowIDReusePolicy.toProto(),
-		RetryPolicy:                         convertRetryPolicyToProto(options.RetryPolicy),
+		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        options.CronSchedule,
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
@@ -412,7 +412,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		SignalName:                          signalName,
 		SignalInput:                         signalInput,
 		Identity:                            wc.identity,
-		RetryPolicy:                         convertRetryPolicyToProto(options.RetryPolicy),
+		RetryPolicy:                         convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                        options.CronSchedule,
 		Memo:                                memo,
 		SearchAttributes:                    searchAttr,
@@ -949,7 +949,7 @@ func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.He
 	header := &commonproto.Header{
 		Fields: make(map[string][]byte),
 	}
-	writer := NewHeaderWriterProto(header)
+	writer := NewHeaderWriter(header)
 	for _, ctxProp := range wc.contextPropagators {
 		_ = ctxProp.Inject(ctx, writer)
 	}
@@ -961,23 +961,15 @@ func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.He
 //	- DomainAlreadyExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) (*workflowservice.RegisterDomainResponse, error) {
-
-	var resp *workflowservice.RegisterDomainResponse
-	err := backoff.Retry(ctx,
+func (dc *domainClient) Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) error {
+	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel, opt := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			resp, err = dc.workflowService.RegisterDomain(tchCtx, request, opt...)
+			_, err = dc.workflowService.RegisterDomain(tchCtx, request, opt...)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-
-	if err != nil {
-		return nil, nil
-	}
-
-	return resp, nil
 }
 
 // Describe a domain. The domain has 3 part of information

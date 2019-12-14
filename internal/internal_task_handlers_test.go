@@ -34,6 +34,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonproto "github.com/temporalio/temporal-proto/common"
 	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal/common"
@@ -122,59 +123,59 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 }
 
 func createTestEventWorkflowExecutionCompleted(eventID int64, attr *s.WorkflowExecutionCompletedEventAttributes) *s.HistoryEvent {
-	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionCompleted), WorkflowExecutionCompletedEventAttributes: attr}
+	return &s.HistoryEvent{EventId: eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionCompleted, WorkflowExecutionCompletedEventAttributes: attr}
 }
 
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *s.WorkflowExecutionStartedEventAttributes) *s.HistoryEvent {
-	return &s.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionStarted), WorkflowExecutionStartedEventAttributes: attr}
+	return &s.HistoryEvent{EventId: eventID), EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionStarted, WorkflowExecutionStartedEventAttributes: attr}
 }
 
 func createTestEventLocalActivity(eventID int64, attr *s.MarkerRecordedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                       common.Int64Ptr(eventID),
-		EventType:                     common.EventTypePtr(s.EventTypeMarkerRecorded),
+		EventId:                       eventID,
+		EventType:                     s.EventTypeMarkerRecorded,
 		MarkerRecordedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskScheduled(eventID int64, attr *s.ActivityTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                              common.Int64Ptr(eventID),
-		EventType:                            common.EventTypePtr(s.EventTypeActivityTaskScheduled),
+		EventId:                              eventID,
+		EventType:                            s.EventTypeActivityTaskScheduled,
 		ActivityTaskScheduledEventAttributes: attr}
 }
 
 func createTestEventActivityTaskStarted(eventID int64, attr *s.ActivityTaskStartedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                            common.Int64Ptr(eventID),
-		EventType:                          common.EventTypePtr(s.EventTypeActivityTaskStarted),
+		EventId:                            eventID,
+		EventType:                          s.EventTypeActivityTaskStarted,
 		ActivityTaskStartedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskCompleted(eventID int64, attr *s.ActivityTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                              common.Int64Ptr(eventID),
-		EventType:                            common.EventTypePtr(s.EventTypeActivityTaskCompleted),
+		EventId:                              eventID,
+		EventType:                            s.EventTypeActivityTaskCompleted,
 		ActivityTaskCompletedEventAttributes: attr}
 }
 
 func createTestEventActivityTaskTimedOut(eventID int64, attr *s.ActivityTaskTimedOutEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                             common.Int64Ptr(eventID),
-		EventType:                           common.EventTypePtr(s.EventTypeActivityTaskTimedOut),
+		EventId:                             eventID,
+		EventType:                           s.EventTypeActivityTaskTimedOut,
 		ActivityTaskTimedOutEventAttributes: attr}
 }
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *s.DecisionTaskScheduledEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                              common.Int64Ptr(eventID),
-		EventType:                            common.EventTypePtr(s.EventTypeDecisionTaskScheduled),
+		EventId:                              eventID,
+		EventType:                            s.EventTypeDecisionTaskScheduled,
 		DecisionTaskScheduledEventAttributes: attr}
 }
 
 func createTestEventDecisionTaskStarted(eventID int64) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeDecisionTaskStarted)}
+		EventId:   eventID,
+		EventType: s.EventTypeDecisionTaskStarted}
 }
 
 func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *s.HistoryEvent {
@@ -183,27 +184,27 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 
 func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload []byte) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeWorkflowExecutionSignaled),
+		EventId:   eventID,
+		EventType: s.EventTypeWorkflowExecutionSignaled,
 		WorkflowExecutionSignaledEventAttributes: &s.WorkflowExecutionSignaledEventAttributes{
-			SignalName: common.StringPtr(signalName),
+			SignalName: signalName,
 			Input:      payload,
-			Identity:   common.StringPtr("test-identity"),
+			Identity:   "test-identity",
 		},
 	}
 }
 
 func createTestEventDecisionTaskCompleted(eventID int64, attr *s.DecisionTaskCompletedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:                              common.Int64Ptr(eventID),
-		EventType:                            common.EventTypePtr(s.EventTypeDecisionTaskCompleted),
+		EventId:                              eventID,
+		EventType:                            s.EventTypeDecisionTaskCompleted,
 		DecisionTaskCompletedEventAttributes: attr}
 }
 
 func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *s.SignalExternalWorkflowExecutionFailedEventAttributes) *s.HistoryEvent {
 	return &s.HistoryEvent{
-		EventId:   common.Int64Ptr(eventID),
-		EventType: common.EventTypePtr(s.EventTypeSignalExternalWorkflowExecutionFailed),
+		EventId:   eventID,
+		EventType: s.EventTypeSignalExternalWorkflowExecutionFailed,
 		SignalExternalWorkflowExecutionFailedEventAttributes: attr,
 	}
 }
@@ -225,12 +226,12 @@ func createWorkflowTaskWithQueries(
 	eventsCopy := make([]*s.HistoryEvent, len(events))
 	copy(eventsCopy, events)
 	return &s.PollForDecisionTaskResponse{
-		PreviousStartedEventId: common.Int64Ptr(previousStartEventID),
-		WorkflowType:           workflowTypePtr(WorkflowType{workflowName}),
+		PreviousStartedEventId: previousStartEventID,
+		WorkflowType:           &commonproto.WorkflowType{Name: workflowName},
 		History:                &s.History{Events: eventsCopy},
 		WorkflowExecution: &s.WorkflowExecution{
-			WorkflowId: common.StringPtr("fake-workflow-id"),
-			RunId:      common.StringPtr(uuid.New()),
+			WorkflowId: "fake-workflow-id",
+			RunId:      uuid.New(),
 		},
 		Queries: queries,
 	}
@@ -244,7 +245,7 @@ func createQueryTask(
 ) *s.PollForDecisionTaskResponse {
 	task := createWorkflowTask(events, previousStartEventID, workflowName)
 	task.Query = &s.WorkflowQuery{
-		QueryType: common.StringPtr(queryType),
+		QueryType: queryType,
 	}
 	return task
 }
@@ -252,25 +253,25 @@ func createQueryTask(
 func createTestEventTimerStarted(eventID int64, id int) *s.HistoryEvent {
 	timerID := fmt.Sprintf("%v", id)
 	attr := &s.TimerStartedEventAttributes{
-		TimerId:                      common.StringPtr(timerID),
+		TimerId:                      timerID,
 		StartToFireTimeoutSeconds:    nil,
 		DecisionTaskCompletedEventId: nil,
 	}
 	return &s.HistoryEvent{
-		EventId:                     common.Int64Ptr(eventID),
-		EventType:                   common.EventTypePtr(s.EventTypeTimerStarted),
+		EventId:                     eventID,
+		EventType:                   s.EventTypeTimerStarted,
 		TimerStartedEventAttributes: attr}
 }
 
 func createTestEventTimerFired(eventID int64, id int) *s.HistoryEvent {
 	timerID := fmt.Sprintf("%v", id)
 	attr := &s.TimerFiredEventAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 
 	return &s.HistoryEvent{
-		EventId:                   common.Int64Ptr(eventID),
-		EventType:                 common.EventTypePtr(s.EventTypeTimerFired),
+		EventId:                   eventID,
+		EventType:                 s.EventTypeTimerFired,
 		TimerFiredEventAttributes: attr}
 }
 
@@ -319,13 +320,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(2), BinaryChecksum: common.StringPtr(checksum1)}),
+			ScheduledEventId: 2), BinaryChecksum: common.StringPtr(checksum1)},
 		createTestEventTimerStarted(5, 0),
 		createTestEventTimerFired(6, 0),
 		createTestEventDecisionTaskScheduled(7, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(8),
 		createTestEventDecisionTaskCompleted(9, &s.DecisionTaskCompletedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(7), BinaryChecksum: common.StringPtr(checksum2)}),
+			ScheduledEventId: 7), BinaryChecksum: common.StringPtr(checksum2)},
 		createTestEventTimerStarted(10, 1),
 		createTestEventTimerFired(11, 1),
 		createTestEventDecisionTaskScheduled(12, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
@@ -361,14 +362,14 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			ActivityId:   "0",
+			ActivityType: &s.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5)},
 		createTestEventDecisionTaskStarted(8),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
@@ -402,21 +403,21 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "sticky-tl"
 	execution := &s.WorkflowExecution{
-		WorkflowId: common.StringPtr("fake-workflow-id"),
-		RunId:      common.StringPtr(uuid.New()),
+		WorkflowId: "fake-workflow-id",
+		RunId:      uuid.New(),
 	}
 	testEvents := []*s.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			ActivityId:   "0",
+			ActivityType: &s.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5)},
 	}
 	params := workerExecutionParameters{
 		TaskList: taskList,
@@ -427,7 +428,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 
 	// first make progress on the workflow
 	task := createWorkflowTask(testEvents[0:1], 0, "HelloWorld_Workflow")
-	task.StartedEventId = common.Int64Ptr(1)
+	task.StartedEventId = 1
 	task.WorkflowExecution = execution
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response := request.(*s.RespondDecisionTaskCompletedRequest)
@@ -452,14 +453,14 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("Greeter_Activity")},
+			ActivityId:   "0",
+			ActivityType: &s.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 		createTestEventActivityTaskStarted(6, &s.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
+		createTestEventActivityTaskCompleted(7, &s.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5)},
 		createTestEventDecisionTaskStarted(8),
 		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
 	}
@@ -522,10 +523,10 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
+			ActivityId:   "0",
+			ActivityType: &s.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 	}
@@ -538,7 +539,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	// now change the history event so it does not match to decision produced via replay
-	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
@@ -559,7 +560,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventDecisionTaskScheduled(6, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
@@ -657,10 +658,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2)},
 		createTestEventActivityTaskScheduled(5, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
+			ActivityId:   "0",
+			ActivityType: &s.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskList:     &s.TaskList{Name: &taskList},
 		}),
 	}
@@ -682,7 +683,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.NotNil(response)
 
 	// now change the history event so it does not match to decision produced via replay
-	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("some-other-activity")
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = "some-other-activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
@@ -713,7 +714,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.Contains(*closeDecision.FailWorkflowExecutionDecisionAttributes.Reason, "NonDeterministicWorkflowPolicyFailWorkflow")
 
 	// now with different package name to activity type
-	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = common.StringPtr("new-package.Greeter_Activity")
+	testEvents[4].ActivityTaskScheduledEventAttributes.ActivityType.Name = "new-package.Greeter_Activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.NoError(err)
@@ -878,15 +879,15 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &s.DecisionTaskCompletedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(2), BinaryChecksum: common.StringPtr(checksum1)}),
+			ScheduledEventId: 2), BinaryChecksum: common.StringPtr(checksum1)},
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventDecisionTaskScheduled(6, &s.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(7),
 	}
 
 	queries := map[string]*s.WorkflowQuery{
-		"id1": {QueryType: common.StringPtr(queryType)},
-		"id2": {QueryType: common.StringPtr(errQueryType)},
+		"id1": {QueryType: queryType},
+		"id2": {QueryType: errQueryType},
 	}
 	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries)
 
@@ -904,12 +905,12 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.Len(response.Decisions, 0)
 	expectedQueryResults := map[string]*s.WorkflowQueryResult{
 		"id1": {
-			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+			ResultType: s.QueryResultTypeAnswered,
 			Answer:     []byte(fmt.Sprintf("\"%v\"\n", startingQueryValue)),
 		},
 		"id2": {
-			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
-			ErrorMessage: common.StringPtr(queryErr),
+			ResultType:   s.QueryResultTypeFailed,
+			ErrorMessage: queryErr,
 		},
 	}
 	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
@@ -923,12 +924,12 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.Len(response.Decisions, 1)
 	expectedQueryResults = map[string]*s.WorkflowQueryResult{
 		"id1": {
-			ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+			ResultType: s.QueryResultTypeAnswered,
 			Answer:     []byte(fmt.Sprintf("\"%v\"\n", "signal data")),
 		},
 		"id2": {
-			ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
-			ErrorMessage: common.StringPtr(queryErr),
+			ResultType:   s.QueryResultTypeFailed,
+			ErrorMessage: queryErr,
 		},
 	}
 	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
@@ -1131,18 +1132,18 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		pats := &s.PollForActivityTaskResponse{
 			TaskToken: []byte("token"),
 			WorkflowExecution: &s.WorkflowExecution{
-				WorkflowId: common.StringPtr("wID"),
-				RunId:      common.StringPtr("rID")},
-			ActivityType:                  &s.ActivityType{Name: common.StringPtr("test")},
-			ActivityId:                    common.StringPtr(uuid.New()),
-			ScheduledTimestamp:            common.Int64Ptr(d.ScheduleTS.UnixNano()),
-			ScheduleToCloseTimeoutSeconds: common.Int32Ptr(d.ScheduleDuration),
-			StartedTimestamp:              common.Int64Ptr(d.StartTS.UnixNano()),
-			StartToCloseTimeoutSeconds:    common.Int32Ptr(d.StartDuration),
+				WorkflowId: "wID",
+				RunId:      "rID"},
+			ActivityType:                  &s.ActivityType{Name: "test"},
+			ActivityId:                    uuid.New(),
+			ScheduledTimestamp:            d.ScheduleTS.UnixNano(),
+			ScheduleToCloseTimeoutSeconds: d.ScheduleDuration,
+			StartedTimestamp:              d.StartTS.UnixNano(),
+			StartToCloseTimeoutSeconds:    d.StartDuration,
 			WorkflowType: &s.WorkflowType{
-				Name: common.StringPtr("wType"),
+				Name: "wType",
 			},
-			WorkflowDomain: common.StringPtr("domain"),
+			WorkflowDomain: "domain",
 		}
 		td := fmt.Sprintf("testIndex: %v, testDetails: %v", i, d)
 		r, err := activityHandler.Execute(tasklist, pats)
@@ -1186,18 +1187,18 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	pats := &s.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
 		WorkflowExecution: &s.WorkflowExecution{
-			WorkflowId: common.StringPtr("wID"),
-			RunId:      common.StringPtr("rID")},
-		ActivityType:                  &s.ActivityType{Name: common.StringPtr("test")},
-		ActivityId:                    common.StringPtr(uuid.New()),
-		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
-		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(1),
-		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
-		StartToCloseTimeoutSeconds:    common.Int32Ptr(1),
+			WorkflowId: "wID",
+			RunId:      "rID"},
+		ActivityType:                  &s.ActivityType{Name: "test"},
+		ActivityId:                    uuid.New(),
+		ScheduledTimestamp:            time.Now().UnixNano(),
+		ScheduleToCloseTimeoutSeconds: 1,
+		StartedTimestamp:              time.Now().UnixNano(),
+		StartToCloseTimeoutSeconds:    1,
 		WorkflowType: &s.WorkflowType{
-			Name: common.StringPtr("wType"),
+			Name: "wType",
 		},
-		WorkflowDomain: common.StringPtr("domain"),
+		WorkflowDomain: "domain",
 	}
 	close(workerStopCh)
 	r, err := activityHandler.Execute(tasklist, pats)

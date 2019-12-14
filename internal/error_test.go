@@ -27,7 +27,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -118,7 +117,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType shared.TimeoutType) {
 	activityID := "activityID"
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityDecisionStateMachine(
-		&shared.ScheduleActivityTaskDecisionAttributes{ActivityId: common.StringPtr(activityID)})
+		&shared.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r []byte, e error) {
@@ -129,8 +128,8 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType shared.TimeoutType) {
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &shared.ActivityTaskTimedOutEventAttributes{
 		Details:          encodedDetails1,
-		ScheduledEventId: common.Int64Ptr(5),
-		StartedEventId:   common.Int64Ptr(6),
+		ScheduledEventId: 5,
+		StartedEventId:   6,
 		TimeoutType:      &timeoutType,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
@@ -414,7 +413,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	context.decisionsHelper.addDecision(di)
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &shared.SignalExternalWorkflowExecutionFailedEventAttributes{
-		InitiatedEventId: common.Int64Ptr(initiatedEventID),
+		InitiatedEventId: initiatedEventID,
 		Cause:            shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution.Ptr(),
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))

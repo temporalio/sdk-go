@@ -36,7 +36,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
 )
@@ -180,33 +179,33 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/internal.testReplayWorkflow")},
-			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
+			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
+			TaskList:     &shared.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(5, &shared.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &shared.ActivityType{Name: common.StringPtr("testActivity")},
+			ActivityId:   "0",
+			ActivityType: &shared.ActivityType{Name: "testActivity"},
 			TaskList:     &shared.TaskList{Name: &taskList},
 		}),
 		createTestEventActivityTaskStarted(6, &shared.ActivityTaskStartedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(5),
+			ScheduledEventId: 5,
 		}),
 		createTestEventActivityTaskCompleted(7, &shared.ActivityTaskCompletedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(5),
-			StartedEventId:   common.Int64Ptr(6),
+			ScheduledEventId: 5,
+			StartedEventId:   6,
 		}),
 		createTestEventDecisionTaskScheduled(8, &shared.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(9),
 		createTestEventDecisionTaskCompleted(10, &shared.DecisionTaskCompletedEventAttributes{
-			ScheduledEventId: common.Int64Ptr(8),
-			StartedEventId:   common.Int64Ptr(9),
+			ScheduledEventId: 8,
+			StartedEventId:   9,
 		}),
 		createTestEventWorkflowExecutionCompleted(11, &shared.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: common.Int64Ptr(10),
+			DecisionTaskCompletedEventId: 10,
 		}),
 	}
 
@@ -220,8 +219,8 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity")},
-			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
+			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
+			TaskList:     &shared.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
@@ -229,13 +228,13 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
-			MarkerName:                   common.StringPtr(localActivityMarkerName),
+			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -249,8 +248,8 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity")},
-			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
+			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
+			TaskList:     &shared.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
@@ -258,14 +257,14 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
-			MarkerName:                   common.StringPtr(localActivityMarkerName),
+			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
 			Result:                       []byte("some-incorrect-result"),
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -279,8 +278,8 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/internal.testReplayWorkflow")},
-			TaskList:     &shared.TaskList{Name: common.StringPtr(taskList)},
+			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
+			TaskList:     &shared.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
@@ -288,14 +287,14 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
-			MarkerName:                   common.StringPtr(localActivityMarkerName),
+			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
 			Result:                       []byte("some-incorrect-result"),
-			DecisionTaskCompletedEventId: common.Int64Ptr(4),
+			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -321,7 +320,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	taskList := "taskList1"
 	testEvents := []*shared.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			TaskList: &shared.TaskList{Name: common.StringPtr(taskList)},
+			TaskList: &shared.TaskList{Name: taskList},
 			Input:    testEncodeFunctionArgs(params.DataConverter, testReplayWorkflow),
 		}),
 		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
@@ -336,7 +335,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 		WorkflowExecution:      &shared.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
 		WorkflowType:           &shared.WorkflowType{Name: &workflowType},
 		History:                &shared.History{Events: testEvents},
-		PreviousStartedEventId: common.Int64Ptr(0),
+		PreviousStartedEventId: 0,
 	}
 
 	r := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
@@ -1135,8 +1134,8 @@ func TestActivityNilArgs_WithDataConverter(t *testing.T) {
 }
 
 /*
-var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
-var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
+var testWorkflowID1 = s.WorkflowExecution{WorkflowId: "testWID", RunId: "runID"}
+var testWorkflowID2 = s.WorkflowExecution{WorkflowId: "testWID2", RunId: "runID2"}
 var thriftEncodingTests = []encodingTest{
 	{&thriftEncoding{}, []interface{}{&testWorkflowID1}},
 	{&thriftEncoding{}, []interface{}{&testWorkflowID1, &testWorkflowID2}},

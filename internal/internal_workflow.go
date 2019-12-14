@@ -33,12 +33,11 @@ import (
 	"unicode"
 
 	"github.com/robfig/cron"
-	"go.temporal.io/temporal/.gen/go/shared"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
-	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 const (
@@ -165,17 +164,17 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	workflowOptions struct {
-		taskListName                        *string
-		executionStartToCloseTimeoutSeconds *int32
-		taskStartToCloseTimeoutSeconds      *int32
-		domain                              *string
+		taskListName                        string
+		executionStartToCloseTimeoutSeconds int32
+		taskStartToCloseTimeoutSeconds      int32
+		domain                              string
 		workflowID                          string
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       DataConverter
-		retryPolicy                         *shared.RetryPolicy
+		retryPolicy                         *commonproto.RetryPolicy
 		cronSchedule                        string
 		contextPropagators                  []ContextPropagator
 		memo                                map[string]interface{}
@@ -187,7 +186,7 @@ type (
 		workflowOptions
 		workflowType         *WorkflowType
 		input                []byte
-		header               *shared.Header
+		header               *commonproto.Header
 		attempt              int32     // used by test framework to support child workflow retry
 		scheduledTime        time.Time // used by test framework to support child workflow retry
 		lastCompletionResult []byte    // used by test framework to support cron
@@ -408,7 +407,7 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	return rootCtx
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *shared.Header, input []byte) {
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env), func(ctx Context) {
 		r := &workflowResult{}
 
@@ -1097,7 +1096,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 
 	default:
 		return nil, nil, fmt.Errorf(
-			"Invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
+			"invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
 			workflowFunc)
 	}
 
@@ -1118,21 +1117,21 @@ func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
 		return nil, errWorkflowOptionBadRequest
 	}
 	info := GetWorkflowInfo(ctx)
-	if p.domain == nil || *p.domain == "" {
+	if p.domain == "" {
 		// default to use current workflow's domain
-		p.domain = common.StringPtr(info.Domain)
+		p.domain = info.Domain
 	}
-	if p.taskListName == nil || *p.taskListName == "" {
+	if p.taskListName == "" {
 		// default to use current workflow's task list
-		p.taskListName = common.StringPtr(info.TaskListName)
+		p.taskListName = info.TaskListName
 	}
-	if p.taskStartToCloseTimeoutSeconds == nil || *p.taskStartToCloseTimeoutSeconds < 0 {
+	if p.taskStartToCloseTimeoutSeconds < 0 {
 		return nil, errors.New("missing or negative DecisionTaskStartToCloseTimeout")
 	}
-	if *p.taskStartToCloseTimeoutSeconds == 0 {
-		p.taskStartToCloseTimeoutSeconds = common.Int32Ptr(defaultDecisionTaskTimeoutInSecs)
+	if p.taskStartToCloseTimeoutSeconds == 0 {
+		p.taskStartToCloseTimeoutSeconds = defaultDecisionTaskTimeoutInSecs
 	}
-	if p.executionStartToCloseTimeoutSeconds == nil || *p.executionStartToCloseTimeoutSeconds <= 0 {
+	if p.executionStartToCloseTimeoutSeconds <= 0 {
 		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
 	}
 	if err := validateRetryPolicy(p.retryPolicy); err != nil {
@@ -1195,13 +1194,13 @@ func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 	return options.contextPropagators
 }
 
-func getHeadersFromContext(ctx Context) *shared.Header {
-	header := &s.Header{
+func getHeadersFromContext(ctx Context) *commonproto.Header {
+	header := &commonproto.Header{
 		Fields: make(map[string][]byte),
 	}
 	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)
 	for _, ctxProp := range contextPropagators {
-		ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
+		_ = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
 	}
 	return header
 }
@@ -1218,7 +1217,7 @@ func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Chann
 
 // getUnhandledSignals checks if there are any signal channels that have data to be consumed.
 func (w *workflowOptions) getUnhandledSignals() []string {
-	unhandledSignals := []string{}
+	var unhandledSignals []string
 	for k, c := range w.signalChannels {
 		ch := c.(*channelImpl)
 		v, ok, _ := ch.receiveAsyncImpl(nil)

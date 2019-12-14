@@ -30,7 +30,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/yarpc"
 )
 
@@ -92,7 +91,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 		logger:         getLogger()})
 
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
-		Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: common.BoolPtr(true)}, nil).Times(1)
+		Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: true}, nil).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 	<-ctx.Done()

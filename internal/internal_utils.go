@@ -34,10 +34,10 @@ import (
 
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
-	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/yarpc"
+
+	"github.com/temporalio/temporal-proto/enums"
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 const (
@@ -147,20 +147,6 @@ var workerUUID = uuid.New()
 func getWorkerTaskList() string {
 	// includes hostname for debuggability, workerUUID guarantees the uniqueness
 	return fmt.Sprintf("%s:%s", getHostName(), workerUUID)
-}
-
-// ActivityTypePtr makes a copy and returns the pointer to a ActivityType.
-func activityTypePtr(v ActivityType) *s.ActivityType {
-	return &s.ActivityType{Name: common.StringPtr(v.Name)}
-}
-
-func flowWorkflowTypeFrom(v s.WorkflowType) WorkflowType {
-	return WorkflowType{Name: v.GetName()}
-}
-
-// WorkflowTypePtr makes a copy and returns the pointer to a WorkflowType.
-func workflowTypePtr(t WorkflowType) *s.WorkflowType {
-	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
 }
 
 // getErrorDetails gets reason and details.
@@ -293,9 +279,9 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }
 
-func getTimeoutTypeFromErrReason(reason string) (s.TimeoutType, error) {
+func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	var timeoutType s.TimeoutType
+	var timeoutType enums.TimeoutType
 	if err := timeoutType.UnmarshalText([]byte(timeoutTypeStr)); err != nil {
 		// this happens when the timeout error reason is constructed by an prior constructed by prior client version
 		return 0, err

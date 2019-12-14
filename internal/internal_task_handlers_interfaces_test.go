@@ -28,7 +28,6 @@ import (
 	"github.com/uber/tchannel-go/thrift"
 	m "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"golang.org/x/net/context"
 )
 
@@ -147,12 +146,12 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		{
-			EventId:   common.Int64Ptr(4),
-			EventType: common.EventTypePtr(m.EventTypeDecisionTaskFailed),
+			EventId:   4,
+			EventType: m.EventTypeDecisionTaskFailed,
 		},
 		{
-			EventId:   common.Int64Ptr(5),
-			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionSignaled),
+			EventId:   5,
+			EventType: m.EventTypeWorkflowExecutionSignaled,
 		},
 		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(7),

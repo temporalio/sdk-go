@@ -40,7 +40,6 @@ import (
 	m "go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.temporal.io/temporal/internal"
-	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/worker"
 	"go.uber.org/atomic"
 	"go.uber.org/yarpc"
@@ -101,20 +100,20 @@ func TestWorkersTestSuite(t *testing.T) {
 var callOptions = []interface{}{gomock.Any(), gomock.Any(), gomock.Any()}
 
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *m.WorkflowExecutionStartedEventAttributes) *m.HistoryEvent {
-	return &m.HistoryEvent{EventId: common.Int64Ptr(eventID), EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionStarted), WorkflowExecutionStartedEventAttributes: attr}
+	return &m.HistoryEvent{EventId: eventID, EventType: m.EventTypeWorkflowExecutionStarted, WorkflowExecutionStartedEventAttributes: attr}
 }
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *m.DecisionTaskScheduledEventAttributes) *m.HistoryEvent {
 	return &m.HistoryEvent{
-		EventId:                              common.Int64Ptr(eventID),
-		EventType:                            common.EventTypePtr(m.EventTypeDecisionTaskScheduled),
+		EventId:                              eventID,
+		EventType:                            m.EventTypeDecisionTaskScheduled,
 		DecisionTaskScheduledEventAttributes: attr}
 }
 
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	testEvents := []*m.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{
-			TaskList: &m.TaskList{Name: common.StringPtr("tasklist")},
+			TaskList: &m.TaskList{Name: "tasklist"},
 		}),
 		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{}),
 	}
@@ -124,8 +123,8 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	mockPollForDecisionTask := func(ctx context.Context, _PollRequest *m.PollForDecisionTaskRequest, opts ...yarpc.CallOption,
 	) (success *m.PollForDecisionTaskResponse, err error) {
 		taskID := taskCounter.Inc()
-		workflowID := common.StringPtr("testID" + strconv.Itoa(int(taskID)))
-		runID := common.StringPtr("runID" + strconv.Itoa(int(taskID)))
+		workflowID := "testID" + strconv.Itoa(int(taskID))
+		runID := "runID" + strconv.Itoa(int(taskID))
 		// how we initialize the response here is the result of a series of trial and error
 		// the goal is we want to fabricate a response that looks real enough to our worker
 		// that it will actually go along with processing it instead of just tossing it out
@@ -133,9 +132,9 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		ret := &m.PollForDecisionTaskResponse{
 			TaskToken:              make([]byte, 5),
 			WorkflowExecution:      &m.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
-			WorkflowType:           &m.WorkflowType{Name: common.StringPtr("go.temporal.io/temporal/evictiontest.testReplayWorkflow")},
+			WorkflowType:           &m.WorkflowType{Name: "go.temporal.io/temporal/evictiontest.testReplayWorkflow"},
 			History:                &m.History{Events: testEvents},
-			PreviousStartedEventId: common.Int64Ptr(5)}
+			PreviousStartedEventId: 5}
 		return ret, nil
 	}
 

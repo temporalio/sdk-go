@@ -30,7 +30,8 @@ package internal
 import (
 	"time"
 
-	s "go.temporal.io/temporal/.gen/go/shared"
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/workflowservice"
 )
 
 type (
@@ -39,7 +40,7 @@ type (
 	// HistoryIterator iterator through history events
 	HistoryIterator interface {
 		// GetNextPage returns next page of history events
-		GetNextPage() (*s.History, error)
+		GetNextPage() (*commonproto.History, error)
 		// Reset resets the internal state so next GetNextPage() call will return first page of events from beginning.
 		Reset()
 		// HasNextPage returns if there are more page of events
@@ -64,7 +65,7 @@ type (
 		CompleteDecisionTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
 		// GetDecisionTimeout returns the TaskStartToCloseTimeout
 		GetDecisionTimeout() time.Duration
-		GetCurrentDecisionTask() *s.PollForDecisionTaskResponse
+		GetCurrentDecisionTask() *workflowservice.PollForDecisionTaskResponse
 		IsDestroyed() bool
 		StackTrace() string
 	}
@@ -89,7 +90,7 @@ type (
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCanceledRequest
-		Execute(taskList string, task *s.PollForActivityTaskResponse) (interface{}, error)
+		Execute(taskList string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error)
 	}
 )
 

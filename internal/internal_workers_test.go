@@ -141,18 +141,18 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	pats := &m.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
 		WorkflowExecution: &m.WorkflowExecution{
-			WorkflowId: common.StringPtr("wID"),
-			RunId:      common.StringPtr("rID")},
-		ActivityType:                  &m.ActivityType{Name: common.StringPtr("test")},
-		ActivityId:                    common.StringPtr(uuid.New()),
-		ScheduledTimestamp:            common.Int64Ptr(time.Now().UnixNano()),
-		ScheduleToCloseTimeoutSeconds: common.Int32Ptr(1),
-		StartedTimestamp:              common.Int64Ptr(time.Now().UnixNano()),
-		StartToCloseTimeoutSeconds:    common.Int32Ptr(1),
+			WorkflowId: "wID",
+			RunId:      "rID"},
+		ActivityType:                  &m.ActivityType{Name: "test"},
+		ActivityId:                    uuid.New(),
+		ScheduledTimestamp:            time.Now(.UnixNano()),
+		ScheduleToCloseTimeoutSeconds: 1,
+		StartedTimestamp:              time.Now(.UnixNano()),
+		StartToCloseTimeoutSeconds:    1,
 		WorkflowType: &m.WorkflowType{
-			Name: common.StringPtr("wType"),
+			Name: "wType",
 		},
-		WorkflowDomain: common.StringPtr("domain"),
+		WorkflowDomain: "domain",
 	}
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
@@ -247,37 +247,37 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	taskList := "long-running-decision-tl"
 	testEvents := []*m.HistoryEvent{
 		{
-			EventId:   common.Int64Ptr(1),
-			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionStarted),
+			EventId:   1,
+			EventType: m.EventTypeWorkflowExecutionStarted,
 			WorkflowExecutionStartedEventAttributes: &m.WorkflowExecutionStartedEventAttributes{
 				TaskList:                            &m.TaskList{Name: &taskList},
-				ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(10),
-				TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(2),
-				WorkflowType:                        &m.WorkflowType{Name: common.StringPtr("long-running-decision-workflow-type")},
+				ExecutionStartToCloseTimeoutSeconds: 10,
+				TaskStartToCloseTimeoutSeconds:      2,
+				WorkflowType:                        &m.WorkflowType{Name: "long-running-decision-workflow-type"},
 			},
 		},
 		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
-			EventId:   common.Int64Ptr(5),
-			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
+			EventId:   5,
+			EventType: m.EventTypeMarkerRecorded,
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
-				DecisionTaskCompletedEventId: common.Int64Ptr(4),
+				DecisionTaskCompletedEventId: 4,
 			},
 		},
 		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
-			EventId:   common.Int64Ptr(9),
-			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
+			EventId:   9,
+			EventType: m.EventTypeMarkerRecorded,
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
-				DecisionTaskCompletedEventId: common.Int64Ptr(8),
+				DecisionTaskCompletedEventId: 8,
 			},
 		},
 		createTestEventDecisionTaskScheduled(10, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
@@ -288,14 +288,14 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	task := &m.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &m.WorkflowExecution{
-			WorkflowId: common.StringPtr("long-running-decision-workflow-id"),
-			RunId:      common.StringPtr("long-running-decision-workflow-run-id"),
+			WorkflowId: "long-running-decision-workflow-id",
+			RunId:      "long-running-decision-workflow-run-id",
 		},
 		WorkflowType: &m.WorkflowType{
-			Name: common.StringPtr("long-running-decision-workflow-type"),
+			Name: "long-running-decision-workflow-type",
 		},
-		PreviousStartedEventId: common.Int64Ptr(0),
-		StartedEventId:         common.Int64Ptr(3),
+		PreviousStartedEventId: 0,
+		StartedEventId:         3,
 		History:                &m.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
@@ -383,37 +383,37 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	taskList := "multiple-local-activities-tl"
 	testEvents := []*m.HistoryEvent{
 		{
-			EventId:   common.Int64Ptr(1),
-			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionStarted),
+			EventId:   1,
+			EventType: m.EventTypeWorkflowExecutionStarted,
 			WorkflowExecutionStartedEventAttributes: &m.WorkflowExecutionStartedEventAttributes{
 				TaskList:                            &m.TaskList{Name: &taskList},
-				ExecutionStartToCloseTimeoutSeconds: common.Int32Ptr(10),
-				TaskStartToCloseTimeoutSeconds:      common.Int32Ptr(3),
-				WorkflowType:                        &m.WorkflowType{Name: common.StringPtr("multiple-local-activities-workflow-type")},
+				ExecutionStartToCloseTimeoutSeconds: 10,
+				TaskStartToCloseTimeoutSeconds:      3,
+				WorkflowType:                        &m.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			},
 		},
 		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
-			EventId:   common.Int64Ptr(5),
-			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
+			EventId:   5,
+			EventType: m.EventTypeMarkerRecorded,
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
-				DecisionTaskCompletedEventId: common.Int64Ptr(4),
+				DecisionTaskCompletedEventId: 4,
 			},
 		},
 		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
+		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
-			EventId:   common.Int64Ptr(9),
-			EventType: common.EventTypePtr(m.EventTypeMarkerRecorded),
+			EventId:   9,
+			EventType: m.EventTypeMarkerRecorded,
 			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
-				MarkerName:                   common.StringPtr(localActivityMarkerName),
+				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
-				DecisionTaskCompletedEventId: common.Int64Ptr(8),
+				DecisionTaskCompletedEventId: 8,
 			},
 		},
 		createTestEventDecisionTaskScheduled(10, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
@@ -424,14 +424,14 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	task := &m.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &m.WorkflowExecution{
-			WorkflowId: common.StringPtr("multiple-local-activities-workflow-id"),
-			RunId:      common.StringPtr("multiple-local-activities-workflow-run-id"),
+			WorkflowId: "multiple-local-activities-workflow-id",
+			RunId:      "multiple-local-activities-workflow-run-id",
 		},
 		WorkflowType: &m.WorkflowType{
-			Name: common.StringPtr("multiple-local-activities-workflow-type"),
+			Name: "multiple-local-activities-workflow-type",
 		},
-		PreviousStartedEventId: common.Int64Ptr(0),
-		StartedEventId:         common.Int64Ptr(3),
+		PreviousStartedEventId: 0,
+		StartedEventId:         3,
 		History:                &m.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}

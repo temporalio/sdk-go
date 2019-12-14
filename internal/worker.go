@@ -34,11 +34,12 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 type (
@@ -240,7 +241,7 @@ func IsReplayDomain(dn string) bool {
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
 func NewWorker(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	taskList string,
 	options WorkerOptions,
@@ -251,13 +252,13 @@ func NewWorker(
 // ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is the only optional parameter. Defaults to the noop logger.
-func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.Interface, logger *zap.Logger, domain string, execution WorkflowExecution) error {
-	sharedExecution := &shared.WorkflowExecution{
-		RunId:      common.StringPtr(execution.RunID),
-		WorkflowId: common.StringPtr(execution.ID),
+func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+	sharedExecution := &commonproto.WorkflowExecution{
+		RunId:      execution.RunID,
+		WorkflowId: execution.ID,
 	}
-	request := &shared.GetWorkflowExecutionHistoryRequest{
-		Domain:    common.StringPtr(domain),
+	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
+		Domain:    domain,
 		Execution: sharedExecution,
 	}
 	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
@@ -271,7 +272,7 @@ func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.
 // ReplayWorkflowHistory executes a single decision task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
+func ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
 
 	if logger == nil {
 		logger = zap.NewNop()
@@ -279,7 +280,7 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
 
 	testReporter := logger.Sugar()
 	controller := gomock.NewController(testReporter)
-	service := workflowservicetest.NewMockClient(controller)
+	service := workflowservicemock.NewMockWorkflowServiceYARPCClient(controller)
 
 	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
@@ -310,12 +311,12 @@ func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName s
 
 	testReporter := logger.Sugar()
 	controller := gomock.NewController(testReporter)
-	service := workflowservicetest.NewMockClient(controller)
+	service := workflowservicemock.NewMockWorkflowServiceYARPCClient(controller)
 
 	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
 
-func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Interface, domain string, history *shared.History) error {
+func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceYARPCClient, domain string, history *commonproto.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {
@@ -325,31 +326,31 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 		return errors.New("at least 3 events expected in the history")
 	}
 	first := events[0]
-	if first.GetEventType() != shared.EventTypeWorkflowExecutionStarted {
+	if first.GetEventType() != enums.EventTypeWorkflowExecutionStarted {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
 	last := events[len(events)-1]
 
-	attr := first.WorkflowExecutionStartedEventAttributes
+	attr := first.GetWorkflowExecutionStartedEventAttributes()
 	if attr == nil {
 		return errors.New("corrupted WorkflowExecutionStarted")
 	}
 	workflowType := attr.WorkflowType
-	execution := &shared.WorkflowExecution{
-		RunId:      common.StringPtr(uuid.NewRandom().String()),
-		WorkflowId: common.StringPtr("ReplayId"),
+	execution := &commonproto.WorkflowExecution{
+		RunId:      uuid.NewRandom().String(),
+		WorkflowId: "ReplayId",
 	}
-	if first.WorkflowExecutionStartedEventAttributes.GetOriginalExecutionRunId() != "" {
-		execution.RunId = common.StringPtr(first.WorkflowExecutionStartedEventAttributes.GetOriginalExecutionRunId())
+	if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
+		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
-	task := &shared.PollForDecisionTaskResponse{
-		Attempt:                common.Int64Ptr(0),
+	task := &workflowservice.PollForDecisionTaskResponse{
+		Attempt:                0,
 		TaskToken:              []byte("ReplayTaskToken"),
 		WorkflowType:           workflowType,
 		WorkflowExecution:      execution,
 		History:                history,
-		PreviousStartedEventId: common.Int64Ptr(math.MaxInt64),
+		PreviousStartedEventId: math.MaxInt64,
 	}
 	if logger == nil {
 		logger = zap.NewNop()
@@ -375,27 +376,27 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 		return err
 	}
 
-	if last.GetEventType() != shared.EventTypeWorkflowExecutionCompleted && last.GetEventType() != shared.EventTypeWorkflowExecutionContinuedAsNew {
+	if last.GetEventType() != enums.EventTypeWorkflowExecutionCompleted && last.GetEventType() != enums.EventTypeWorkflowExecutionContinuedAsNew {
 		return nil
 	}
 	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
 	if resp != nil {
-		completeReq, ok := resp.(*shared.RespondDecisionTaskCompletedRequest)
+		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == shared.DecisionTypeContinueAsNewWorkflowExecution {
-					if last.GetEventType() == shared.EventTypeWorkflowExecutionContinuedAsNew {
-						inputA := d.ContinueAsNewWorkflowExecutionDecisionAttributes.Input
-						inputB := last.WorkflowExecutionContinuedAsNewEventAttributes.Input
+				if d.GetDecisionType() == enums.DecisionTypeContinueAsNewWorkflowExecution {
+					if last.GetEventType() == enums.EventTypeWorkflowExecutionContinuedAsNew {
+						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
+						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
 						if bytes.Compare(inputA, inputB) == 0 {
 							return nil
 						}
 					}
 				}
-				if d.GetDecisionType() == shared.DecisionTypeCompleteWorkflowExecution {
-					if last.GetEventType() == shared.EventTypeWorkflowExecutionCompleted {
-						resultA := last.WorkflowExecutionCompletedEventAttributes.Result
-						resultB := d.CompleteWorkflowExecutionDecisionAttributes.Result
+				if d.GetDecisionType() == enums.DecisionTypeCompleteWorkflowExecution {
+					if last.GetEventType() == enums.EventTypeWorkflowExecutionCompleted {
+						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
+						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
 						if bytes.Compare(resultA, resultB) == 0 {
 							return nil
 						}
@@ -407,13 +408,13 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowserviceclient.Int
 	return err
 }
 
-func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*shared.History, error) {
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonproto.History, error) {
 	raw, err := ioutil.ReadFile(jsonfileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var deserializedEvents []*shared.HistoryEvent
+	var deserializedEvents []*commonproto.HistoryEvent
 	err = json.Unmarshal(raw, &deserializedEvents)
 
 	if err != nil {
@@ -421,11 +422,11 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*shared.His
 	}
 
 	if lastEventID <= 0 {
-		return &shared.History{Events: deserializedEvents}, nil
+		return &commonproto.History{Events: deserializedEvents}, nil
 	}
 
 	// Caller is potentially asking for subset of history instead of all history events
-	events := []*shared.HistoryEvent{}
+	var events []*commonproto.HistoryEvent
 	for _, event := range deserializedEvents {
 		events = append(events, event)
 		if event.GetEventId() == lastEventID {
@@ -433,7 +434,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*shared.His
 			break
 		}
 	}
-	history := &shared.History{Events: events}
+	history := &commonproto.History{Events: events}
 
 	return history, nil
 }

@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	"github.com/temporalio/temporal-proto/enums"
-	"go.temporal.io/temporal/.gen/go/shared"
 )
 
 /*
@@ -84,6 +83,7 @@ When panic happen in workflow implementation code, temporal client library catch
 That decision task will be retried at a later time (with exponential backoff retry intervals).
 */
 
+//todo:!!!!!!!!!!!!!!!!!!!!
 type (
 	// CustomError returned from workflow and activity implementations with reason and optional details.
 	CustomError struct {
@@ -98,7 +98,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
-		timeoutType shared.TimeoutType
+		timeoutType enums.TimeoutType
 		details     Values
 	}
 
@@ -183,7 +183,7 @@ func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *Tim
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(shared.TimeoutTypeHeartbeat, details...)
+	return NewTimeoutError(enums.TimeoutTypeHeartbeat, details...)
 }
 
 // NewCanceledError creates CanceledError instance
@@ -225,13 +225,13 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 	if err != nil {
 		panic(err)
 	}
-	if options.taskListName == nil || *options.taskListName == "" {
+	if options.taskListName == "" {
 		panic("invalid task list provided")
 	}
-	if options.executionStartToCloseTimeoutSeconds == nil || *options.executionStartToCloseTimeoutSeconds <= 0 {
+	if options.executionStartToCloseTimeoutSeconds <= 0 {
 		panic("invalid executionStartToCloseTimeoutSeconds provided")
 	}
-	if options.taskStartToCloseTimeoutSeconds == nil || *options.taskStartToCloseTimeoutSeconds <= 0 {
+	if options.taskStartToCloseTimeoutSeconds <= 0 {
 		panic("invalid taskStartToCloseTimeoutSeconds provided")
 	}
 
@@ -278,7 +278,7 @@ func (e *TimeoutError) Error() string {
 }
 
 // TimeoutType return timeout type of this error
-func (e *TimeoutError) TimeoutType() shared.TimeoutType {
+func (e *TimeoutError) TimeoutType() enums.TimeoutType {
 	return e.timeoutType
 }
 

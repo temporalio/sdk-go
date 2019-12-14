@@ -432,7 +432,7 @@ type (
 		//	- DomainAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) (*workflowservice.RegisterDomainResponse, error)
+		Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) error
 
 		// Describe a domain. The domain has 3 part of information
 		// DomainInfo - Which has Name, Status, Description, Owner Email
@@ -544,21 +544,6 @@ func NewDomainClient(service workflowservice.WorkflowServiceYARPCClient, options
 	}
 }
 
-func (p WorkflowIDReusePolicy) toThriftPtr() *enums.WorkflowIdReusePolicy {
-	var policy enums.WorkflowIdReusePolicy
-	switch p {
-	case WorkflowIDReusePolicyAllowDuplicate:
-		policy = enums.WorkflowIdReusePolicyAllowDuplicate
-	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		policy = enums.WorkflowIdReusePolicyAllowDuplicateFailedOnly
-	case WorkflowIDReusePolicyRejectDuplicate:
-		policy = enums.WorkflowIdReusePolicyRejectDuplicate
-	default:
-		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
-	}
-	return &policy
-}
-
 func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {
 	switch p {
 	case WorkflowIDReusePolicyAllowDuplicate:
@@ -572,19 +557,17 @@ func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {
 	}
 }
 
-func (p ParentClosePolicy) toThriftPtr() *enums.ParentClosePolicy {
-	var policy enums.ParentClosePolicy
+func (p ParentClosePolicy) toProto() enums.ParentClosePolicy {
 	switch p {
 	case ParentClosePolicyAbandon:
-		policy = enums.ParentClosePolicyAbandon
+		return enums.ParentClosePolicyAbandon
 	case ParentClosePolicyRequestCancel:
-		policy = enums.ParentClosePolicyRequestCancel
+		return enums.ParentClosePolicyRequestCancel
 	case ParentClosePolicyTerminate:
-		policy = enums.ParentClosePolicyTerminate
+		return enums.ParentClosePolicyTerminate
 	default:
 		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}
-	return &policy
 }
 
 // NewValue creates a new encoded.Value which can be used to decode binary data returned by Cadence.  For example:

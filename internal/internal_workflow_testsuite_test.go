@@ -33,7 +33,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -1311,7 +1310,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	actualValues := []string{}
-	retVal := &shared.WorkflowExecution{WorkflowId: common.StringPtr("retwID2"), RunId: common.StringPtr("retrID2")}
+	retVal := &shared.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
 
 	// Passing one argument
 	activitySingleFn := func(ctx context.Context, wf *shared.WorkflowExecution) (*shared.WorkflowExecution, error) {
@@ -1321,7 +1320,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	}
 	RegisterActivity(activitySingleFn)
 
-	input := &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID1"), RunId: common.StringPtr("rID1")}
+	input := &shared.WorkflowExecution{WorkflowId: "wID1", RunId: "rID1"}
 	env := s.NewTestActivityEnvironment()
 	blob, err := env.ExecuteActivity(activitySingleFn, input)
 	s.NoError(err)
@@ -1338,8 +1337,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	}
 	RegisterActivity(activityDoubleArgFn)
 
-	input = &shared.WorkflowExecution{WorkflowId: common.StringPtr("wID2"), RunId: common.StringPtr("rID3")}
-	wt := &shared.WorkflowType{Name: common.StringPtr("wType")}
+	input = &shared.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
+	wt := &shared.WorkflowType{Name: "wType"}
 	env = s.NewTestActivityEnvironment()
 	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
 	s.NoError(err)

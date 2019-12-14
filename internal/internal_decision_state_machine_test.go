@@ -25,13 +25,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 )
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 	timerID := "test-timer-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
@@ -45,7 +44,7 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 	timerID := "test-timer-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
@@ -70,7 +69,7 @@ func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	timerID := "test-timer-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
@@ -95,7 +94,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 	timerID := "test-timer-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
@@ -114,7 +113,7 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 func Test_TimerStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	timerID := "test-timer-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	h.startTimer(attributes)
@@ -133,7 +132,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	timerID := "test-timer-1"
 	localActivityID := "test-activity-1"
 	attributes := &s.StartTimerDecisionAttributes{
-		TimerId: common.StringPtr(timerID),
+		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
 	d := h.startTimer(attributes)
@@ -158,7 +157,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{
-		ActivityId: common.StringPtr(activityID),
+		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
 
@@ -182,7 +181,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{
-		ActivityId: common.StringPtr(activityID),
+		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
 
@@ -202,7 +201,7 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{
-		ActivityId: common.StringPtr(activityID),
+		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
 
@@ -234,7 +233,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{
-		ActivityId: common.StringPtr(activityID),
+		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
 
@@ -266,7 +265,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	activityID := "test-activity-1"
 	attributes := &s.ScheduleActivityTaskDecisionAttributes{
-		ActivityId: common.StringPtr(activityID),
+		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
 
@@ -294,7 +293,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	workflowID := "test-child-workflow-1"
 	attributes := &s.StartChildWorkflowExecutionDecisionAttributes{
-		WorkflowId: common.StringPtr(workflowID),
+		WorkflowId: workflowID,
 	}
 	h := newDecisionsHelper()
 
@@ -332,7 +331,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	initiatedEventID := int64(28)
 	isChildWorkflowOnly := true
 	attributes := &s.StartChildWorkflowExecutionDecisionAttributes{
-		WorkflowId: common.StringPtr(workflowID),
+		WorkflowId: workflowID,
 	}
 	h := newDecisionsHelper()
 
@@ -373,7 +372,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	workflowID := "test-workflow-id"
 	runID := ""
 	attributes := &s.StartChildWorkflowExecutionDecisionAttributes{
-		WorkflowId: common.StringPtr(workflowID),
+		WorkflowId: workflowID,
 	}
 	cancellationID := ""
 	initiatedEventID := int64(28)
@@ -455,7 +454,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	workflowID := "test-workflow-id"
 	runID := ""
 	attributes := &s.StartChildWorkflowExecutionDecisionAttributes{
-		WorkflowId: common.StringPtr(workflowID),
+		WorkflowId: workflowID,
 	}
 	cancellationID := ""
 	initiatedEventID := int64(28)
@@ -535,11 +534,11 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	require.Equal(
 		t,
 		&s.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-			Domain:            common.StringPtr(domain),
-			WorkflowId:        common.StringPtr(workflowID),
-			RunId:             common.StringPtr(runID),
+			Domain:            domain,
+			WorkflowId:        workflowID,
+			RunId:             runID,
 			Control:           []byte(cancellationID),
-			ChildWorkflowOnly: common.BoolPtr(childWorkflowOnly),
+			ChildWorkflowOnly: childWorkflowOnly,
 		},
 		decisions[0].RequestCancelExternalWorkflowExecutionDecisionAttributes,
 	)
@@ -581,11 +580,11 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.Equal(
 		t,
 		&s.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-			Domain:            common.StringPtr(domain),
-			WorkflowId:        common.StringPtr(workflowID),
-			RunId:             common.StringPtr(runID),
+			Domain:            domain,
+			WorkflowId:        workflowID,
+			RunId:             runID,
 			Control:           []byte(cancellationID),
-			ChildWorkflowOnly: common.BoolPtr(childWorkflowOnly),
+			ChildWorkflowOnly: childWorkflowOnly,
 		},
 		decisions[0].RequestCancelExternalWorkflowExecutionDecisionAttributes,
 	)

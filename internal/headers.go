@@ -24,7 +24,6 @@ import (
 	"context"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
-	"go.temporal.io/temporal/.gen/go/shared"
 )
 
 // HeaderWriter is an interface to write information to cadence headers
@@ -56,7 +55,7 @@ type ContextPropagator interface {
 }
 
 type headerReader struct {
-	header *shared.Header
+	header *commonproto.Header
 }
 
 func (hr *headerReader) ForEachKey(handler func(string, []byte) error) error {
@@ -72,15 +71,11 @@ func (hr *headerReader) ForEachKey(handler func(string, []byte) error) error {
 }
 
 // NewHeaderReader returns a header reader interface
-func NewHeaderReader(header *shared.Header) HeaderReader {
+func NewHeaderReader(header *commonproto.Header) HeaderReader {
 	return &headerReader{header}
 }
 
 type headerWriter struct {
-	header *shared.Header
-}
-
-type headerWriterProto struct {
 	header *commonproto.Header
 }
 
@@ -91,25 +86,10 @@ func (hw *headerWriter) Set(key string, value []byte) {
 	hw.header.Fields[key] = value
 }
 
-func (hw *headerWriterProto) Set(key string, value []byte) {
-	if hw.header == nil {
-		return
-	}
-	hw.header.Fields[key] = value
-}
-
 // NewHeaderWriter returns a header writer interface
-func NewHeaderWriter(header *shared.Header) HeaderWriter {
+func NewHeaderWriter(header *commonproto.Header) HeaderWriter {
 	if header != nil && header.Fields == nil {
 		header.Fields = make(map[string][]byte)
 	}
 	return &headerWriter{header}
-}
-
-// NewHeaderWriterProto returns a header writer interface
-func NewHeaderWriterProto(header *commonproto.Header) HeaderWriter {
-	if header != nil && header.Fields == nil {
-		header.Fields = make(map[string][]byte)
-	}
-	return &headerWriterProto{header}
 }
