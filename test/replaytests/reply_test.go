@@ -26,15 +26,17 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/cadence/.gen/go/cadence/workflowservicetest"
-	"go.uber.org/cadence/worker"
+
+	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal/worker"
+
 	"go.uber.org/zap"
 )
 
 type replayTestSuite struct {
 	suite.Suite
 	mockCtrl *gomock.Controller
-	service  *workflowservicetest.MockClient
+	service  *workflowservicemock.MockWorkflowServiceYARPCClient
 }
 
 func TestReplayTestSuite(t *testing.T) {
@@ -44,7 +46,7 @@ func TestReplayTestSuite(t *testing.T) {
 
 func (s *replayTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *replayTestSuite) TearDownTest() {

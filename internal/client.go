@@ -513,7 +513,7 @@ func NewClient(service workflowservice.WorkflowServiceYARPCClient, domain string
 		tracer = opentracing.NoopTracer{}
 	}
 	return &workflowClient{
-		workflowService:    metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
+		workflowService:    metrics.NewWorkflowServiceWrapper(service, metricScope),
 		domain:             domain,
 		registry:           newRegistry(getGlobalRegistry()),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
@@ -538,7 +538,7 @@ func NewDomainClient(service workflowservice.WorkflowServiceYARPCClient, options
 	}
 	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 	return &domainClient{
-		workflowService: metrics.NewWorkflowServiceWrapperGRPC(service, metricScope),
+		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
 		metricsScope:    metricScope,
 		identity:        identity,
 	}

@@ -32,10 +32,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.uber.org/yarpc"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 var (
@@ -69,34 +70,34 @@ func Test_Wrapper(t *testing.T) {
 	ctx, _ := thrift.NewContext(time.Minute)
 	tests := []testCase{
 		// one case for each service call
-		{"DeprecateDomain", []interface{}{ctx, &s.DeprecateDomainRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"DescribeDomain", []interface{}{ctx, &s.DescribeDomainRequest{}}, []interface{}{&s.DescribeDomainResponse{}, nil}, []string{CadenceRequest}},
-		{"GetWorkflowExecutionHistory", []interface{}{ctx, &s.GetWorkflowExecutionHistoryRequest{}}, []interface{}{&s.GetWorkflowExecutionHistoryResponse{}, nil}, []string{CadenceRequest}},
-		{"ListClosedWorkflowExecutions", []interface{}{ctx, &s.ListClosedWorkflowExecutionsRequest{}}, []interface{}{&s.ListClosedWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
-		{"ListOpenWorkflowExecutions", []interface{}{ctx, &s.ListOpenWorkflowExecutionsRequest{}}, []interface{}{&s.ListOpenWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
-		{"PollForActivityTask", []interface{}{ctx, &s.PollForActivityTaskRequest{}}, []interface{}{&s.PollForActivityTaskResponse{}, nil}, []string{CadenceRequest}},
-		{"PollForDecisionTask", []interface{}{ctx, &s.PollForDecisionTaskRequest{}}, []interface{}{&s.PollForDecisionTaskResponse{}, nil}, []string{CadenceRequest}},
-		{"RecordActivityTaskHeartbeat", []interface{}{ctx, &s.RecordActivityTaskHeartbeatRequest{}}, []interface{}{&s.RecordActivityTaskHeartbeatResponse{}, nil}, []string{CadenceRequest}},
-		{"RegisterDomain", []interface{}{ctx, &s.RegisterDomainRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RequestCancelWorkflowExecution", []interface{}{ctx, &s.RequestCancelWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCanceled", []interface{}{ctx, &s.RespondActivityTaskCanceledRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCompleted", []interface{}{ctx, &s.RespondActivityTaskCompletedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskFailed", []interface{}{ctx, &s.RespondActivityTaskFailedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &s.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &s.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskFailedByID", []interface{}{ctx, &s.RespondActivityTaskFailedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"RespondDecisionTaskCompleted", []interface{}{ctx, &s.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil, nil}, []string{CadenceRequest}},
-		{"SignalWorkflowExecution", []interface{}{ctx, &s.SignalWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"StartWorkflowExecution", []interface{}{ctx, &s.StartWorkflowExecutionRequest{}}, []interface{}{&s.StartWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"TerminateWorkflowExecution", []interface{}{ctx, &s.TerminateWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
-		{"ResetWorkflowExecution", []interface{}{ctx, &s.ResetWorkflowExecutionRequest{}}, []interface{}{&s.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"UpdateDomain", []interface{}{ctx, &s.UpdateDomainRequest{}}, []interface{}{&s.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
+		{"DeprecateDomain", []interface{}{ctx, &workflowservice.DeprecateDomainRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"DescribeDomain", []interface{}{ctx, &workflowservice.DescribeDomainRequest{}}, []interface{}{&workflowservice.DescribeDomainResponse{}, nil}, []string{CadenceRequest}},
+		{"GetWorkflowExecutionHistory", []interface{}{ctx, &workflowservice.GetWorkflowExecutionHistoryRequest{}}, []interface{}{&workflowservice.GetWorkflowExecutionHistoryResponse{}, nil}, []string{CadenceRequest}},
+		{"ListClosedWorkflowExecutions", []interface{}{ctx, &workflowservice.ListClosedWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListClosedWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
+		{"ListOpenWorkflowExecutions", []interface{}{ctx, &workflowservice.ListOpenWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListOpenWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{&workflowservice.PollForActivityTaskResponse{}, nil}, []string{CadenceRequest}},
+		{"PollForDecisionTask", []interface{}{ctx, &workflowservice.PollForDecisionTaskRequest{}}, []interface{}{&workflowservice.PollForDecisionTaskResponse{}, nil}, []string{CadenceRequest}},
+		{"RecordActivityTaskHeartbeat", []interface{}{ctx, &workflowservice.RecordActivityTaskHeartbeatRequest{}}, []interface{}{&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil}, []string{CadenceRequest}},
+		{"RegisterDomain", []interface{}{ctx, &workflowservice.RegisterDomainRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RequestCancelWorkflowExecution", []interface{}{ctx, &workflowservice.RequestCancelWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCanceled", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCompleted", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskFailed", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondActivityTaskFailedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedByIDRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"RespondDecisionTaskCompleted", []interface{}{ctx, &workflowservice.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil, nil}, []string{CadenceRequest}},
+		{"SignalWorkflowExecution", []interface{}{ctx, &workflowservice.SignalWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"StartWorkflowExecution", []interface{}{ctx, &workflowservice.StartWorkflowExecutionRequest{}}, []interface{}{&workflowservice.StartWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
+		{"TerminateWorkflowExecution", []interface{}{ctx, &workflowservice.TerminateWorkflowExecutionRequest{}}, []interface{}{nil}, []string{CadenceRequest}},
+		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
+		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
 		// one case of invalid request
-		{"PollForActivityTask", []interface{}{ctx, &s.PollForActivityTaskRequest{}}, []interface{}{nil, &s.EntityNotExistsError{}}, []string{CadenceRequest, CadenceInvalidRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, &commonproto.EntityNotExistsError{}}, []string{CadenceRequest, CadenceInvalidRequest}},
 		// one case of server error
-		{"PollForActivityTask", []interface{}{ctx, &s.PollForActivityTaskRequest{}}, []interface{}{nil, &s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
-		{"QueryWorkflow", []interface{}{ctx, &s.QueryWorkflowRequest{}}, []interface{}{nil, &s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &s.RespondQueryTaskCompletedRequest{}}, []interface{}{&s.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, &commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
+		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, &commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{&commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
 	}
 
 	// run each test twice - once with the regular scope, once with a sanitized metrics scope
@@ -109,7 +110,7 @@ func Test_Wrapper(t *testing.T) {
 func runTest(
 	t *testing.T,
 	test testCase,
-	serviceFunc func(*testing.T) (*workflowservicetest.MockClient, workflowserviceclient.Interface, io.Closer, *CapturingStatsReporter),
+	serviceFunc func(*testing.T) (*workflowservicemock.MockWorkflowServiceYARPCClient, workflowservice.WorkflowServiceYARPCClient, io.Closer, *CapturingStatsReporter),
 	validationFunc func(*testing.T, *CapturingStatsReporter, string, []string),
 	name string,
 ) {
@@ -227,13 +228,13 @@ func makePromCompatible(name string) string {
 }
 
 func newService(t *testing.T) (
-	mockService *workflowservicetest.MockClient,
-	wrapperService workflowserviceclient.Interface,
+	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
+	wrapperService workflowservice.WorkflowServiceYARPCClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicetest.NewMockClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
@@ -241,13 +242,13 @@ func newService(t *testing.T) (
 }
 
 func newPromService(t *testing.T) (
-	mockService *workflowservicetest.MockClient,
-	wrapperService workflowserviceclient.Interface,
+	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
+	wrapperService workflowservice.WorkflowServiceYARPCClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicetest.NewMockClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := newPromScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
