@@ -29,9 +29,12 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
-	m "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 const (
@@ -52,7 +55,7 @@ type (
 	InterfacesTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicetest.MockClient
+		service  *workflowservicemock.MockWorkflowServiceYARPCClient
 	}
 )
 
@@ -111,8 +114,8 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 	return nil
 }
 
-func binaryChecksumWorkflowFunc(ctx Context) ([]*string, error) {
-	var result []*string
+func binaryChecksumWorkflowFunc(ctx Context) ([]string, error) {
+	var result []string
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
 	Sleep(ctx, time.Hour)
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
@@ -162,7 +165,7 @@ func TestInterfacesTestSuite(t *testing.T) {
 
 func (s *InterfacesTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *InterfacesTestSuite) TearDownTest() {
@@ -180,21 +183,21 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Tracer:                    opentracing.NoopTracer{},
 	}
 
-	domainStatus := m.DomainStatusRegistered
-	domainDesc := &m.DescribeDomainResponse{
-		DomainInfo: &m.DomainInfo{
-			Name:   &domain,
-			Status: &domainStatus,
+	domainStatus := enums.DomainStatusRegistered
+	domainDesc := &workflowservice.DescribeDomainResponse{
+		DomainInfo: &commonproto.DomainInfo{
+			Name:   domain,
+			Status: domainStatus,
 		},
 	}
 
 	// mocks
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
-	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	registry := getGlobalRegistry()
 	// Launch worker.

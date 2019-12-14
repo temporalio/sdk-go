@@ -26,7 +26,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	s "go.temporal.io/temporal/.gen/go/shared"
+
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
@@ -54,7 +55,7 @@ func TestNewValues(t *testing.T) {
 	var res string
 	var res2 int
 	var res3 testStruct
-	NewValues(data).Get(&res, &res2, &res3)
+	_ = NewValues(data).Get(&res, &res2, &res3)
 	require.Equal(t, heartbeatDetail, res)
 	require.Equal(t, heartbeatDetail2, res2)
 	require.Equal(t, heartbeatDetail3, res3)
@@ -67,7 +68,7 @@ func TestNewValue(t *testing.T) {
 		panic(err)
 	}
 	var res string
-	NewValue(data).Get(&res)
+	_ = NewValue(data).Get(&res)
 	require.Equal(t, res, heartbeatDetail)
 }
 
@@ -115,16 +116,16 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError(s.TimeoutTypeScheduleToStart, val)
+	timeoutErr1 := NewTimeoutError(enums.TimeoutTypeScheduleToStart, val)
 	reason, data := getErrorDetails(timeoutErr1, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeScheduleToStart), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeScheduleToStart), reason)
 	require.Equal(t, val.values, data)
 
-	timeoutErr2 := NewTimeoutError(s.TimeoutTypeHeartbeat, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError(enums.TimeoutTypeHeartbeat, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
 	reason, data = getErrorDetails(timeoutErr2, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeHeartbeat), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeHeartbeat), reason)
 	require.Equal(t, val2, data)
 }
 
@@ -133,7 +134,7 @@ func TestConstructError_TimeoutError(t *testing.T) {
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)
 
-	reason := fmt.Sprintf("%v %v", errReasonTimeout, s.TimeoutTypeHeartbeat)
+	reason := fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeHeartbeat)
 	constructedErr := constructError(reason, details, dc)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
@@ -145,10 +146,10 @@ func TestConstructError_TimeoutError(t *testing.T) {
 
 	// Backward compatibility test
 	reason = errReasonTimeout
-	details, err = dc.ToData(s.TimeoutTypeHeartbeat)
+	details, err = dc.ToData(enums.TimeoutTypeHeartbeat)
 	constructedErr = constructError(reason, details, dc)
 	timeoutErr, ok = constructedErr.(*TimeoutError)
 	require.True(t, ok)
-	require.Equal(t, s.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
+	require.Equal(t, enums.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
 	require.False(t, timeoutErr.HasDetails())
 }
