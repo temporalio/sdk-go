@@ -32,8 +32,10 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal/.gen/go/shared"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -54,7 +56,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.localActivityOptions = LocalActivityOptions{
 		ScheduleToCloseTimeout: time.Second * 3,
 	}
-	s.header = &shared.Header{
+	s.header = &commonproto.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
 	}
 	s.ctxProps = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
@@ -383,7 +385,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	}
 	RegisterActivity(activityWithUserContext)
 
-	s.SetHeader(&shared.Header{
+	s.SetHeader(&commonproto.Header{
 		Fields: map[string][]byte{
 			testHeader: []byte("test-data"),
 		},
@@ -1310,26 +1312,26 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	actualValues := []string{}
-	retVal := &shared.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
+	retVal := &commonproto.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
 
 	// Passing one argument
-	activitySingleFn := func(ctx context.Context, wf *shared.WorkflowExecution) (*shared.WorkflowExecution, error) {
+	activitySingleFn := func(ctx context.Context, wf *commonproto.WorkflowExecution) (*commonproto.WorkflowExecution, error) {
 		actualValues = append(actualValues, wf.GetWorkflowId())
 		actualValues = append(actualValues, wf.GetRunId())
 		return retVal, nil
 	}
 	RegisterActivity(activitySingleFn)
 
-	input := &shared.WorkflowExecution{WorkflowId: "wID1", RunId: "rID1"}
+	input := &commonproto.WorkflowExecution{WorkflowId: "wID1", RunId: "rID1"}
 	env := s.NewTestActivityEnvironment()
 	blob, err := env.ExecuteActivity(activitySingleFn, input)
 	s.NoError(err)
-	var ret *shared.WorkflowExecution
+	var ret *commonproto.WorkflowExecution
 	blob.Get(&ret)
 	s.Equal(retVal, ret)
 
 	// Passing more than one argument
-	activityDoubleArgFn := func(ctx context.Context, wf *shared.WorkflowExecution, t *shared.WorkflowType) (*shared.WorkflowExecution, error) {
+	activityDoubleArgFn := func(ctx context.Context, wf *commonproto.WorkflowExecution, t *commonproto.WorkflowType) (*commonproto.WorkflowExecution, error) {
 		actualValues = append(actualValues, wf.GetWorkflowId())
 		actualValues = append(actualValues, wf.GetRunId())
 		actualValues = append(actualValues, t.GetName())
@@ -1337,8 +1339,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	}
 	RegisterActivity(activityDoubleArgFn)
 
-	input = &shared.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
-	wt := &shared.WorkflowType{Name: "wType"}
+	input = &commonproto.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
+	wt := &commonproto.WorkflowType{Name: "wType"}
 	env = s.NewTestActivityEnvironment()
 	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
 	s.NoError(err)
@@ -1487,7 +1489,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 	}
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	s.SetHeader(&shared.Header{
+	s.SetHeader(&commonproto.Header{
 		Fields: map[string][]byte{
 			testHeader: []byte("test-data"),
 		},
@@ -2570,7 +2572,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 
 		err = f2.Get(ctx1, &result2)
 		s.Error(err)
-		_, ok := err.(*shared.WorkflowExecutionAlreadyStartedError)
+		_, ok := err.(*commonproto.WorkflowExecutionAlreadyStartedError)
 		s.True(ok)
 
 		return result1 + " " + result2, nil
@@ -2743,7 +2745,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(shared.TimeoutTypeStartToClose, testErrorDetails1)
+		return NewTimeoutError(enums.TimeoutTypeStartToClose, testErrorDetails1)
 	}
 	RegisterActivity(timeoutFn)
 
@@ -2770,7 +2772,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(enums.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)
@@ -2783,7 +2785,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(enums.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	err = timeoutErr.Details(&details)
 	s.NoError(err)
@@ -2814,7 +2816,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(shared.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(enums.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)

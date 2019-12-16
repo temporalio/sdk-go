@@ -34,10 +34,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 func init() {
@@ -75,7 +78,7 @@ func init() {
 type internalWorkerTestSuite struct {
 	suite.Suite
 	mockCtrl *gomock.Controller
-	service  *workflowservicetest.MockClient
+	service  *workflowservicemock.MockWorkflowServiceYARPCClient
 }
 
 func TestInternalWorkerTestSuite(t *testing.T) {
@@ -85,7 +88,7 @@ func TestInternalWorkerTestSuite(t *testing.T) {
 
 func (s *internalWorkerTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *internalWorkerTestSuite) TearDownTest() {
@@ -177,39 +180,39 @@ func testActivity(ctx context.Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	taskList := "taskList1"
-	testEvents := []*shared.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
-			TaskList:     &shared.TaskList{Name: taskList},
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonproto.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow),
 		}),
-		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
-		createTestEventActivityTaskScheduled(5, &shared.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &commonproto.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
-			ActivityType: &shared.ActivityType{Name: "testActivity"},
-			TaskList:     &shared.TaskList{Name: &taskList},
+			ActivityType: &commonproto.ActivityType{Name: "testActivity"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(6, &shared.ActivityTaskStartedEventAttributes{
+		createTestEventActivityTaskStarted(6, &commonproto.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 5,
 		}),
-		createTestEventActivityTaskCompleted(7, &shared.ActivityTaskCompletedEventAttributes{
+		createTestEventActivityTaskCompleted(7, &commonproto.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 5,
 			StartedEventId:   6,
 		}),
-		createTestEventDecisionTaskScheduled(8, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(8, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &shared.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(10, &commonproto.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 8,
 			StartedEventId:   9,
 		}),
-		createTestEventWorkflowExecutionCompleted(11, &shared.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(11, &commonproto.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 10,
 		}),
 	}
 
-	history := &shared.History{Events: testEvents}
+	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
@@ -217,28 +220,28 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskList := "taskList1"
-	testEvents := []*shared.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
-			TaskList:     &shared.TaskList{Name: taskList},
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonproto.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
-		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &commonproto.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(6, &commonproto.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &shared.History{Events: testEvents}
+	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
@@ -246,29 +249,29 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
-	testEvents := []*shared.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
-			TaskList:     &shared.TaskList{Name: taskList},
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonproto.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflowLocalActivity"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflowLocalActivity),
 		}),
-		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &commonproto.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(6, &commonproto.WorkflowExecutionCompletedEventAttributes{
 			Result:                       []byte("some-incorrect-result"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &shared.History{Events: testEvents}
+	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
@@ -276,29 +279,29 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
-	testEvents := []*shared.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &shared.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
-			TaskList:     &shared.TaskList{Name: taskList},
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonproto.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil, testReplayWorkflow),
 		}),
-		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &shared.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &shared.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &commonproto.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &shared.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(6, &commonproto.WorkflowExecutionCompletedEventAttributes{
 			Result:                       []byte("some-incorrect-result"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &shared.History{Events: testEvents}
+	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
 	err := ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
@@ -318,12 +321,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 
 func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExecutionParameters) {
 	taskList := "taskList1"
-	testEvents := []*shared.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &shared.WorkflowExecutionStartedEventAttributes{
-			TaskList: &shared.TaskList{Name: taskList},
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
+			TaskList: &commonproto.TaskList{Name: taskList},
 			Input:    testEncodeFunctionArgs(params.DataConverter, testReplayWorkflow),
 		}),
-		createTestEventDecisionTaskScheduled(2, &shared.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 	}
 
@@ -331,10 +334,10 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	workflowID := "testID"
 	runID := "testRunID"
 
-	task := &shared.PollForDecisionTaskResponse{
-		WorkflowExecution:      &shared.WorkflowExecution{WorkflowId: &workflowID, RunId: &runID},
-		WorkflowType:           &shared.WorkflowType{Name: &workflowType},
-		History:                &shared.History{Events: testEvents},
+	task := &workflowservice.PollForDecisionTaskResponse{
+		WorkflowExecution:      &commonproto.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+		WorkflowType:           &commonproto.WorkflowType{Name: workflowType},
+		History:                &commonproto.History{Events: testEvents},
 		PreviousStartedEventId: 0,
 	}
 
@@ -398,7 +401,7 @@ func (s *internalWorkerTestSuite) TestCreateWorker_WithDataConverter() {
 func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	// Create service endpoint
 	mockCtrl := gomock.NewController(s.T())
-	service := workflowservicetest.NewMockClient(mockCtrl)
+	service := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 
 	worker := createWorker(service)
 	var wg sync.WaitGroup
@@ -429,18 +432,18 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
 		domainErr  error
 		isErrFatal bool
 	}{
-		{&shared.EntityNotExistsError{}, true},
-		{&shared.BadRequestError{}, true},
-		{&shared.InternalServiceError{}, false},
+		{&commonproto.EntityNotExistsError{}, true},
+		{&commonproto.BadRequestError{}, true},
+		{&commonproto.InternalServiceError{}, false},
 		{errors.New("unknown"), false},
 	}
 
 	mockCtrl := gomock.NewController(t)
 
 	for _, tc := range testCases {
-		service := workflowservicetest.NewMockClient(mockCtrl)
+		service := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, tc.domainErr).Do(
-			func(ctx context.Context, request *shared.DescribeDomainRequest, opts ...yarpc.CallOption) {
+			func(ctx context.Context, request *workflowservice.DescribeDomainRequest, opts ...yarpc.CallOption) {
 				// log
 			}).Times(2)
 
@@ -473,39 +476,39 @@ type mockPollForActivityTaskRequest struct {
 }
 
 func (m *mockPollForActivityTaskRequest) Matches(x interface{}) bool {
-	v, ok := x.(*shared.PollForActivityTaskRequest)
+	v, ok := x.(*workflowservice.PollForActivityTaskRequest)
 	if !ok {
 		return false
 	}
-	return *(v.TaskListMetadata.MaxTasksPerSecond) == m.tps
+	return v.TaskListMetadata.MaxTasksPerSecond == m.tps
 }
 
 func (m *mockPollForActivityTaskRequest) String() string {
 	return "PollForActivityTaskRequest"
 }
 
-func createWorker(service *workflowservicetest.MockClient) *AggregatedWorker {
+func createWorker(service *workflowservicemock.MockWorkflowServiceYARPCClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), nil)
 }
 
 func createWorkerWithThrottle(
-	service *workflowservicetest.MockClient, activitiesPerSecond float64, dc DataConverter,
+	service *workflowservicemock.MockWorkflowServiceYARPCClient, activitiesPerSecond float64, dc DataConverter,
 ) *AggregatedWorker {
 	domain := "testDomain"
-	domainStatus := shared.DomainStatusRegistered
-	domainDesc := &shared.DescribeDomainResponse{
-		DomainInfo: &shared.DomainInfo{
-			Name:   &domain,
-			Status: &domainStatus,
+	domainStatus := enums.DomainStatusRegistered
+	domainDesc := &workflowservice.DescribeDomainResponse{
+		DomainInfo: &commonproto.DomainInfo{
+			Name:   domain,
+			Status: domainStatus,
 		},
 	}
 	// mocks
 	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).Do(
-		func(ctx context.Context, request *shared.DescribeDomainRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.DescribeDomainRequest, opts ...yarpc.CallOption) {
 			// log
 		}).AnyTimes()
 
-	activityTask := &shared.PollForActivityTaskResponse{}
+	activityTask := &workflowservice.PollForActivityTaskResponse{}
 	expectedActivitiesPerSecond := activitiesPerSecond
 	if expectedActivitiesPerSecond == 0.0 {
 		expectedActivitiesPerSecond = defaultTaskListActivitiesPerSecond
@@ -515,7 +518,7 @@ func createWorkerWithThrottle(
 	).Return(activityTask, nil).AnyTimes()
 	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
-	decisionTask := &shared.PollForDecisionTaskResponse{}
+	decisionTask := &workflowservice.PollForDecisionTaskResponse{}
 	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(decisionTask, nil).AnyTimes()
 	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
 
@@ -537,7 +540,7 @@ func createWorkerWithThrottle(
 	return worker
 }
 
-func createWorkerWithDataConverter(service *workflowservicetest.MockClient) *AggregatedWorker {
+func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceYARPCClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, float64(0.0), newTestDataConverter())
 }
 
@@ -548,15 +551,15 @@ func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt *ClientOptions)
 	wfClient := NewClient(mockService, domain, opt)
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
 	mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskCanceledRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
 	mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
 
@@ -586,15 +589,15 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
 	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
 	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
-		func(ctx context.Context, request *shared.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) {
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
 
@@ -615,11 +618,11 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 	domain := "testDomain"
 	wfClient := NewClient(s.service, domain, nil)
-	var heartbeatRequest *shared.RecordActivityTaskHeartbeatRequest
+	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	cancelRequested := false
-	heartbeatResponse := shared.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
-		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			heartbeatRequest = request
 		}).Times(2)
 
@@ -634,16 +637,16 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 	dc := newTestDataConverter()
 	opt := &ClientOptions{DataConverter: dc}
 	wfClient := NewClient(s.service, domain, opt)
-	var heartbeatRequest *shared.RecordActivityTaskHeartbeatRequest
+	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	cancelRequested := false
-	heartbeatResponse := shared.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: cancelRequested}
 	detail1 := "testStack"
 	detail2 := testStruct{"abc", 123}
 	detail3 := 4
 	encodedDetail, err := dc.ToData(detail1, detail2, detail3)
 	require.Nil(t, err)
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
-		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
 			heartbeatRequest = request
 			require.Equal(t, encodedDetail, request.Details)
 		}).Times(1)
@@ -655,11 +658,11 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 	domain := "testDomain"
 	wfClient := NewClient(s.service, domain, nil)
-	var heartbeatRequest *shared.RecordActivityTaskHeartbeatByIDRequest
+	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIDRequest
 	cancelRequested := false
-	heartbeatResponse := shared.RecordActivityTaskHeartbeatResponse{CancelRequested: &cancelRequested}
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: cancelRequested}
 	s.service.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
-		Do(func(ctx context.Context, request *shared.RecordActivityTaskHeartbeatByIDRequest, opts ...yarpc.CallOption) {
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIDRequest, opts ...yarpc.CallOption) {
 			heartbeatRequest = request
 		}).Times(2)
 

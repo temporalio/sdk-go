@@ -233,7 +233,7 @@ func (wc *workflowClient) StartWorkflow(
 			var err1 error
 			response, err1 = wc.workflowService.StartWorkflowExecution(tchCtx, startRequest, opt...)
 			return err1
-		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientErrorGRPC)
+		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	if err != nil {
 		return nil, err

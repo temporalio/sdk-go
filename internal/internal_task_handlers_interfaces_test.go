@@ -29,6 +29,7 @@ import (
 	"golang.org/x/net/context"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
@@ -47,7 +48,7 @@ type sampleWorkflowTaskHandler struct {
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-	d decisionHeartbeatFunc,
+	_ decisionHeartbeatFunc,
 ) (interface{}, error) {
 	return &workflowservice.RespondDecisionTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
@@ -66,7 +67,7 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(taskList string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
@@ -144,18 +145,18 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
 	testEvents := []*commonproto.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{TaskList: &commonproto.TaskList{Name: &taskList}}),
-		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: &taskList}}),
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: commonproto.EventTypeDecisionTaskFailed,
+			EventType: enums.EventTypeDecisionTaskFailed,
 		},
 		{
 			EventId:   5,
-			EventType: commonproto.EventTypeWorkflowExecutionSignaled,
+			EventType: enums.EventTypeWorkflowExecutionSignaled,
 		},
-		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
@@ -177,7 +178,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	s.NoError(err)
 	s.Equal(3, len(events))
-	s.Equal(commonproto.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
-	s.Equal(commonproto.EventTypeDecisionTaskStarted, events[2].GetEventType())
+	s.Equal(enums.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
+	s.Equal(enums.EventTypeDecisionTaskStarted, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

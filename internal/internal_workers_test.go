@@ -29,11 +29,13 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	m "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 // ActivityTaskHandler never returns response
@@ -45,7 +47,7 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(taskList string, task *m.PollForActivityTaskResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(taskList string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
@@ -61,14 +63,14 @@ type (
 	WorkersTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicetest.MockClient
+		service  *workflowservicemock.MockWorkflowServiceYARPCClient
 	}
 )
 
 // Test suite.
 func (s *WorkersTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *WorkersTestSuite) TearDownTest() {
@@ -89,7 +91,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -115,7 +117,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
@@ -138,18 +140,18 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
-	pats := &m.PollForActivityTaskResponse{
+	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &m.WorkflowExecution{
+		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
-		ActivityType:                  &m.ActivityType{Name: "test"},
+		ActivityType:                  &commonproto.ActivityType{Name: "test"},
 		ActivityId:                    uuid.New(),
-		ScheduledTimestamp:            time.Now(.UnixNano()),
+		ScheduledTimestamp:            time.Now().UnixNano(),
 		ScheduleToCloseTimeoutSeconds: 1,
-		StartedTimestamp:              time.Now(.UnixNano()),
+		StartedTimestamp:              time.Now().UnixNano(),
 		StartToCloseTimeoutSeconds:    1,
-		WorkflowType: &m.WorkflowType{
+		WorkflowType: &commonproto.WorkflowType{
 			Name: "wType",
 		},
 		WorkflowDomain: "domain",
@@ -196,7 +198,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -245,81 +247,81 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 
 	domain := "testDomain"
 	taskList := "long-running-decision-tl"
-	testEvents := []*m.HistoryEvent{
+	testEvents := []*commonproto.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: m.EventTypeWorkflowExecutionStarted,
-			WorkflowExecutionStartedEventAttributes: &m.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &m.TaskList{Name: &taskList},
+			EventType: enums.EventTypeWorkflowExecutionStarted,
+			Attributes: &commonproto.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &commonproto.WorkflowExecutionStartedEventAttributes{
+				TaskList:                            &commonproto.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
 				TaskStartToCloseTimeoutSeconds:      2,
-				WorkflowType:                        &m.WorkflowType{Name: "long-running-decision-workflow-type"},
-			},
+				WorkflowType:                        &commonproto.WorkflowType{Name: "long-running-decision-workflow-type"},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: m.EventTypeMarkerRecorded,
-			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
+			EventType: enums.EventTypeMarkerRecorded,
+			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
 				DecisionTaskCompletedEventId: 4,
-			},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: m.EventTypeMarkerRecorded,
-			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
+			EventType: enums.EventTypeMarkerRecorded,
+			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
 				DecisionTaskCompletedEventId: 8,
-			},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(10, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
-	task := &m.PollForDecisionTaskResponse{
+	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &m.WorkflowExecution{
+		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: "long-running-decision-workflow-id",
 			RunId:      "long-running-decision-workflow-run-id",
 		},
-		WorkflowType: &m.WorkflowType{
+		WorkflowType: &commonproto.WorkflowType{
 			Name: "long-running-decision-workflow-type",
 		},
 		PreviousStartedEventId: 0,
 		StartedEventId:         3,
-		History:                &m.History{Events: testEvents[0:3]},
+		History:                &commonproto.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *m.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
-	) (success *m.RespondDecisionTaskCompletedResponse, err error) {
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
+	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {
 		case 1:
 			s.Equal(1, len(request.Decisions))
-			s.Equal(m.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
-			*task.PreviousStartedEventId = 3
-			*task.StartedEventId = 7
+			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			task.PreviousStartedEventId = 3
+			task.StartedEventId = 7
 			task.History.Events = testEvents[3:7]
-			return &m.RespondDecisionTaskCompletedResponse{DecisionTask: task}, nil
+			return &workflowservice.RespondDecisionTaskCompletedResponse{DecisionTask: task}, nil
 		case 2:
 			s.Equal(2, len(request.Decisions))
-			s.Equal(m.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
-			s.Equal(m.DecisionTypeCompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
-			*task.PreviousStartedEventId = 7
-			*task.StartedEventId = 11
+			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(enums.DecisionTypeCompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
+			task.PreviousStartedEventId = 7
+			task.StartedEventId = 11
 			task.History.Events = testEvents[7:11]
 			close(doneCh)
 			return nil, nil
@@ -381,73 +383,73 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 
 	domain := "testDomain"
 	taskList := "multiple-local-activities-tl"
-	testEvents := []*m.HistoryEvent{
+	testEvents := []*commonproto.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: m.EventTypeWorkflowExecutionStarted,
-			WorkflowExecutionStartedEventAttributes: &m.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &m.TaskList{Name: &taskList},
+			EventType: enums.EventTypeWorkflowExecutionStarted,
+			Attributes: &commonproto.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &commonproto.WorkflowExecutionStartedEventAttributes{
+				TaskList:                            &commonproto.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
 				TaskStartToCloseTimeoutSeconds:      3,
-				WorkflowType:                        &m.WorkflowType{Name: "multiple-local-activities-workflow-type"},
-			},
+				WorkflowType:                        &commonproto.WorkflowType{Name: "multiple-local-activities-workflow-type"},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: m.EventTypeMarkerRecorded,
-			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
+			EventType: enums.EventTypeMarkerRecorded,
+			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
 				DecisionTaskCompletedEventId: 4,
-			},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &m.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: m.EventTypeMarkerRecorded,
-			MarkerRecordedEventAttributes: &m.MarkerRecordedEventAttributes{
+			EventType: enums.EventTypeMarkerRecorded,
+			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
 				DecisionTaskCompletedEventId: 8,
-			},
+			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(10, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
-	task := &m.PollForDecisionTaskResponse{
+	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &m.WorkflowExecution{
+		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: "multiple-local-activities-workflow-id",
 			RunId:      "multiple-local-activities-workflow-run-id",
 		},
-		WorkflowType: &m.WorkflowType{
+		WorkflowType: &commonproto.WorkflowType{
 			Name: "multiple-local-activities-workflow-type",
 		},
 		PreviousStartedEventId: 0,
 		StartedEventId:         3,
-		History:                &m.History{Events: testEvents[0:3]},
+		History:                &commonproto.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *m.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
-	) (success *m.RespondDecisionTaskCompletedResponse, err error) {
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
+	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {
 		case 1:
 			s.Equal(3, len(request.Decisions))
-			s.Equal(m.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
-			*task.PreviousStartedEventId = 3
-			*task.StartedEventId = 7
+			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			task.PreviousStartedEventId = 3
+			task.StartedEventId = 7
 			task.History.Events = testEvents[3:11]
 			close(doneCh)
 			return nil, nil
