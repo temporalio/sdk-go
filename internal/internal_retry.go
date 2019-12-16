@@ -26,9 +26,10 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/yarpc/yarpcerrors"
+	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -64,11 +65,7 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 
 func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
-	st := yarpcerrors.FromError(err)
-	switch st.Code() {
-	case yarpcerrors.CodeInvalidArgument,
-		yarpcerrors.CodeNotFound,
-		yarpcerrors.CodeAlreadyExists:
+	if protobufutils.IsOfCode(err, codes.InvalidArgument, codes.NotFound, codes.AlreadyExists) {
 		return false
 	}
 

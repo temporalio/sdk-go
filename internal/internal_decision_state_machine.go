@@ -260,7 +260,7 @@ func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType
 
 func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *commonproto.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
 	d := createNewDecision(enums.DecisionTypeRecordMarker)
-	d.RecordMarkerDecisionAttributes = attributes
+	d.Attributes = &commonproto.Decision_RecordMarkerDecisionAttributes{RecordMarkerDecisionAttributes: attributes}
 	return &markerDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
 	}
@@ -268,7 +268,7 @@ func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *c
 
 func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
 	d := createNewDecision(enums.DecisionTypeRequestCancelExternalWorkflowExecution)
-	d.RequestCancelExternalWorkflowExecutionDecisionAttributes = attributes
+	d.Attributes = &commonproto.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &cancelExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeCancellation, cancellationID, d),
 	}
@@ -276,7 +276,7 @@ func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *comm
 
 func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *commonproto.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
 	d := createNewDecision(enums.DecisionTypeSignalExternalWorkflowExecution)
-	d.SignalExternalWorkflowExecutionDecisionAttributes = attributes
+	d.Attributes = &commonproto.Decision_SignalExternalWorkflowExecutionDecisionAttributes{SignalExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &signalExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
 	}
@@ -284,7 +284,7 @@ func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *comm
 
 func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *commonproto.UpsertWorkflowSearchAttributesDecisionAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
 	d := createNewDecision(enums.DecisionTypeUpsertWorkflowSearchAttributes)
-	d.UpsertWorkflowSearchAttributesDecisionAttributes = attributes
+	d.Attributes = &commonproto.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: attributes}
 	return &upsertSearchAttributesDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeUpsertSearchAttributes, upsertID, d),
 	}
@@ -430,13 +430,13 @@ func (d *activityDecisionStateMachine) getDecision() *commonproto.Decision {
 	switch d.state {
 	case decisionStateCreated:
 		decision := createNewDecision(enums.DecisionTypeScheduleActivityTask)
-		decision.ScheduleActivityTaskDecisionAttributes = d.attributes
+		decision.Attributes = &commonproto.Decision_ScheduleActivityTaskDecisionAttributes{ScheduleActivityTaskDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
 		decision := createNewDecision(enums.DecisionTypeRequestCancelActivityTask)
-		decision.RequestCancelActivityTaskDecisionAttributes = &commonproto.RequestCancelActivityTaskDecisionAttributes{
+		decision.Attributes = &commonproto.Decision_RequestCancelActivityTaskDecisionAttributes{RequestCancelActivityTaskDecisionAttributes: &commonproto.RequestCancelActivityTaskDecisionAttributes{
 			ActivityId: d.attributes.ActivityId,
-		}
+		}}
 		return decision
 	default:
 		return nil
@@ -492,13 +492,13 @@ func (d *timerDecisionStateMachine) getDecision() *commonproto.Decision {
 	switch d.state {
 	case decisionStateCreated:
 		decision := createNewDecision(enums.DecisionTypeStartTimer)
-		decision.StartTimerDecisionAttributes = d.attributes
+		decision.Attributes = &commonproto.Decision_StartTimerDecisionAttributes{StartTimerDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
 		decision := createNewDecision(enums.DecisionTypeCancelTimer)
-		decision.CancelTimerDecisionAttributes = &commonproto.CancelTimerDecisionAttributes{
+		decision.Attributes = &commonproto.Decision_CancelTimerDecisionAttributes{CancelTimerDecisionAttributes: &commonproto.CancelTimerDecisionAttributes{
 			TimerId: d.attributes.TimerId,
-		}
+		}}
 		return decision
 	default:
 		return nil
@@ -509,15 +509,15 @@ func (d *childWorkflowDecisionStateMachine) getDecision() *commonproto.Decision 
 	switch d.state {
 	case decisionStateCreated:
 		decision := createNewDecision(enums.DecisionTypeStartChildWorkflowExecution)
-		decision.StartChildWorkflowExecutionDecisionAttributes = d.attributes
+		decision.Attributes = &commonproto.Decision_StartChildWorkflowExecutionDecisionAttributes{StartChildWorkflowExecutionDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterStarted:
 		decision := createNewDecision(enums.DecisionTypeRequestCancelExternalWorkflowExecution)
-		decision.RequestCancelExternalWorkflowExecutionDecisionAttributes = &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
+		decision.Attributes = &commonproto.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
 			Domain:            d.attributes.Domain,
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
-		}
+		}}
 		return decision
 	default:
 		return nil
@@ -754,14 +754,14 @@ func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID strin
 func (h *decisionsHelper) getActivityID(event *commonproto.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
-	case commonproto.EventTypeActivityTaskCanceled:
-		scheduledEventID = event.ActivityTaskCanceledEventAttributes.GetScheduledEventId()
-	case commonproto.EventTypeActivityTaskCompleted:
-		scheduledEventID = event.ActivityTaskCompletedEventAttributes.GetScheduledEventId()
-	case commonproto.EventTypeActivityTaskFailed:
-		scheduledEventID = event.ActivityTaskFailedEventAttributes.GetScheduledEventId()
-	case commonproto.EventTypeActivityTaskTimedOut:
-		scheduledEventID = event.ActivityTaskTimedOutEventAttributes.GetScheduledEventId()
+	case enums.EventTypeActivityTaskCanceled:
+		scheduledEventID = event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId()
+	case enums.EventTypeActivityTaskCompleted:
+		scheduledEventID = event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId()
+	case enums.EventTypeActivityTaskFailed:
+		scheduledEventID = event.GetActivityTaskFailedEventAttributes().GetScheduledEventId()
+	case enums.EventTypeActivityTaskTimedOut:
+		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
 		panicIllegalState(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
 	}

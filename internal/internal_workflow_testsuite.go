@@ -37,13 +37,16 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -260,7 +263,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return &commonproto.EntityNotExistsError{}
+			return protobufutils.NewError(codes.NotFound)
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
@@ -285,7 +288,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		// the lock and setting return value from inside the action is going to run into races.
 		// err := mockHeartbeatFn(ctx, r, opts)
 		// em.Return(&shared.RecordActivityTaskHeartbeatResponse{CancelRequested: false}, err)
-		mockHeartbeatFn(ctx, r, opts...)
+		_ = mockHeartbeatFn(ctx, r, opts...)
 	}).AnyTimes()
 
 	env.service = mockService
@@ -349,19 +352,13 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, &commonproto.WorkflowExecutionAlreadyStartedError{
-				Message: "Workflow execution already started",
-			}
+			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
 		}
 		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
-			return nil, &commonproto.WorkflowExecutionAlreadyStartedError{
-				Message: "Workflow execution already started",
-			}
+			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
 		}
 		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
-			return nil, &commonproto.WorkflowExecutionAlreadyStartedError{
-				Message: "Workflow execution already started",
-			}
+			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
 		}
 	}
 
@@ -473,7 +470,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 	wf, ok := env.registry.getWorkflowFn(wt.Name)
 	if !ok {
 		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
-		return nil, fmt.Errorf("Unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
+		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
 		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
@@ -660,6 +657,10 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 		}
 	}
 
+	if nextTimer == nil {
+		return false
+	}
+
 	// function to fire timer
 	fireTimer := func(th *testTimerHandle) {
 		skipDuration := th.mockTimeToFire.Sub(env.mockClock.Now())
@@ -815,7 +816,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	// pass down the last completion result
 	var result []byte
 	if env.testResult != nil {
-		env.testResult.Get(&result)
+		_ = env.testResult.Get(&result)
 	}
 	if len(result) == 0 {
 		// not successful run this time, carry over from whatever previous run pass to this run.
@@ -835,7 +836,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 			// the childWorkflowID will be the same for retry run.
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt++
-			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 
 			return true
 		}
@@ -853,7 +854,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt = 0
 			params.scheduledTime = env.Now()
-			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
 		}
 	}
@@ -1628,7 +1629,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string
 	env.queryHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(domainName, workflowID string) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID string) {
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
 		childEnv := childHandle.env
@@ -1763,13 +1764,13 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), cal
 func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported, maxSupported Version) (retVersion Version) {
 	if mockVersion, ok := env.getMockedVersion(changeID, changeID, minSupported, maxSupported); ok {
 		// GetVersion for changeID is mocked
-		env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
 		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
 	if mockVersion, ok := env.getMockedVersion(mock.Anything, changeID, minSupported, maxSupported); ok {
 		// GetVersion is mocked with any changeID.
-		env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
+		_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, mockVersion, env.changeVersions))
 		env.changeVersions[changeID] = mockVersion
 		return mockVersion
 	}
@@ -1779,7 +1780,7 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 		validateVersion(changeID, version, minSupported, maxSupported)
 		return version
 	}
-	env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, maxSupported, env.changeVersions))
+	_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, maxSupported, env.changeVersions))
 	env.changeVersions[changeID] = maxSupported
 	return maxSupported
 }
@@ -1833,7 +1834,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) Value {
 	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
 }
 
@@ -1902,7 +1903,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 
 	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
 		if workflowHandle.handled {
-			return &commonproto.EntityNotExistsError{Message: fmt.Sprintf("Workflow %v already completed", workflowID)}
+			return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID))
 		}
 		workflowHandle.env.postCallback(func() {
 			workflowHandle.env.signalHandler(signalName, data)
@@ -1910,7 +1911,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 		return nil
 	}
 
-	return &commonproto.EntityNotExistsError{Message: fmt.Sprintf("Workflow %v not exists", workflowID)}
+	return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {
@@ -1971,23 +1972,23 @@ func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentI
 	}
 }
 
-func (t *testSessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
+func (t *testSessionEnvironmentImpl) SignalCreationResponse(_ context.Context, sessionID string) error {
 	t.testWorkflowEnvironment.signalWorkflow(sessionID, t.sessionEnvironmentImpl.getCreationResponse(), true)
 	return nil
 }
 
 // function signature for mock SignalExternalWorkflow
-func mockFnSignalExternalWorkflow(domainName, workflowID, runID, signalName string, arg interface{}) error {
+func mockFnSignalExternalWorkflow(string, string, string, string, interface{}) error {
 	return nil
 }
 
 // function signature for mock RequestCancelExternalWorkflow
-func mockFnRequestCancelExternalWorkflow(domainName, workflowID, runID string) error {
+func mockFnRequestCancelExternalWorkflow(string, string, string) error {
 	return nil
 }
 
 // function signature for mock GetVersion
-func mockFnGetVersion(changeID string, minSupported, maxSupported Version) Version {
+func mockFnGetVersion(string, Version, Version) Version {
 	return DefaultVersion
 }
 

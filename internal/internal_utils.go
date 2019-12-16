@@ -24,6 +24,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -229,7 +230,7 @@ func constructError(reason string, details []byte, dataConverter DataConverter) 
 		// panic error
 		var msg, st string
 		details := newEncodedValues(details, dataConverter)
-		details.Get(&msg, &st)
+		_ = details.Get(&msg, &st)
 		return newPanicError(msg, st)
 	case errReasonGeneric:
 		// errors created other than using NewCustomError() API.
@@ -281,10 +282,10 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 
 func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	var timeoutType enums.TimeoutType
-	if err := timeoutType.UnmarshalText([]byte(timeoutTypeStr)); err != nil {
-		// this happens when the timeout error reason is constructed by an prior constructed by prior client version
-		return 0, err
+	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
+		return enums.TimeoutType(timeoutType), nil
 	}
-	return timeoutType, nil
+
+	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
+	return 0, errors.New(fmt.Sprintf("timeout type %q is not defined", timeoutTypeStr))
 }

@@ -36,6 +36,8 @@ import (
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/errordetails"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -86,7 +88,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("mock_world", result)
 	env.AssertExpectations(s.T())
 }
@@ -131,7 +133,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter(
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("mock_world,mock_world1", result)
 	env.AssertExpectations(s.T())
 }
@@ -145,7 +147,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockValues() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("mock_value", result)
 	env.AssertExpectations(s.T())
 }
@@ -173,7 +175,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 		s.NoError(args.Get(&input))
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
 	})
-	expectedCalls := []string{}
+	var expectedCalls []string
 	for i := 1; i <= runCount; i++ {
 		expectedCalls = append(expectedCalls, fmt.Sprintf("testActivityHello:msg%v", i))
 	}
@@ -256,7 +258,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowAutoForwardClock() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("hello_controlled_execution", result)
 }
 
@@ -285,7 +287,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 			}
 		}).Select(ctx) // wait until t2 fires
 
-		t1.Get(ctx, nil) // wait for the long timer to fire.
+		_ = t1.Get(ctx, nil) // wait for the long timer to fire.
 
 		return "expected", nil
 	} // END of workflow code
@@ -297,7 +299,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowMixedClock() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("expected", result)
 }
 
@@ -366,7 +368,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 	blob, err := env.ExecuteActivity(activityWithUserContext, testKey)
 	s.NoError(err)
 	var value string
-	blob.Get(&value)
+	_ = blob.Get(&value)
 	s.Equal(testValue, value)
 }
 
@@ -396,7 +398,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	blob, err := env.ExecuteActivity(activityWithUserContext)
 	s.NoError(err)
 	var value string
-	blob.Get(&value)
+	_ = blob.Get(&value)
 	s.Equal("test-data", value)
 }
 
@@ -419,7 +421,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CompleteActivity() {
 	env.AssertExpectations(s.T())
 
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("async_complete", result)
 }
 
@@ -479,19 +481,19 @@ func testWorkflowHello(ctx Context) (string, error) {
 func testWorkflowContext(ctx Context) (string, error) {
 	value := ctx.Value(contextKey(testHeader))
 	if val, ok := value.(string); ok {
-		return string(val), nil
+		return val, nil
 	}
 	return "", fmt.Errorf("context did not propagate to workflow")
 }
 
-func testActivityHello(ctx context.Context, msg string) (string, error) {
+func testActivityHello(_ context.Context, msg string) (string, error) {
 	return "hello" + "_" + msg, nil
 }
 
 func testActivityContext(ctx context.Context) (string, error) {
 	value := ctx.Value(contextKey(testHeader))
 	if val, ok := value.(string); ok {
-		return string(val), nil
+		return val, nil
 	}
 	return "", fmt.Errorf("context did not propagate to workflow")
 }
@@ -713,7 +715,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		childWorkflow := ExecuteChildWorkflow(ctx, testWorkflowHello)
-		childWorkflow.GetChildWorkflowExecution().Get(ctx, nil)
+		_ = childWorkflow.GetChildWorkflowExecution().Get(ctx, nil)
 		err := childWorkflow.Get(ctx, &helloWorkflowResult)
 		if err != nil {
 			return "", err
@@ -828,8 +830,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 		selector.Select(ctx)
 		selector.Select(ctx)
 
-		t1.Get(ctx, nil)
-		f1.Get(ctx, nil)
+		_ = t1.Get(ctx, nil)
+		_ = f1.Get(ctx, nil)
 
 		return nil
 	}
@@ -926,8 +928,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWaitFn() {
 	workflowFn := func(ctx Context) ([]string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		var first, second string
-		ExecuteActivity(ctx, testActivityHello, "mock_delay_1").Get(ctx, &first)
-		ExecuteActivity(ctx, testActivityHello, "mock_delay_2").Get(ctx, &second)
+		_ = ExecuteActivity(ctx, testActivityHello, "mock_delay_1").Get(ctx, &first)
+		_ = ExecuteActivity(ctx, testActivityHello, "mock_delay_2").Get(ctx, &second)
 		return []string{first, second}, nil
 	}
 
@@ -1282,7 +1284,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		NewValue(valBytes).Get(&result)
+		_ = NewValue(valBytes).Get(&result)
 		s.Equal(1, result)
 
 		return nil
@@ -1311,7 +1313,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
-	actualValues := []string{}
+	var actualValues []string
 	retVal := &commonproto.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
 
 	// Passing one argument
@@ -1327,7 +1329,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	blob, err := env.ExecuteActivity(activitySingleFn, input)
 	s.NoError(err)
 	var ret *commonproto.WorkflowExecution
-	blob.Get(&ret)
+	_ = blob.Get(&ret)
 	s.Equal(retVal, ret)
 
 	// Passing more than one argument
@@ -1344,7 +1346,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
 	env = s.NewTestActivityEnvironment()
 	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
 	s.NoError(err)
-	blob.Get(&ret)
+	_ = blob.Get(&ret)
 	s.Equal(retVal, ret)
 
 	expectedValues := []string{
@@ -1370,13 +1372,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {
 	encodedValue, err := env.ExecuteActivity(activityFn, input)
 	s.NoError(err)
 	output := ""
-	encodedValue.Get(&output)
+	_ = encodedValue.Get(&output)
 	s.Equal(input, output)
 
 	encodedValue, err = env.ExecuteActivity(activityAlias, input)
 	s.NoError(err)
 	output = ""
-	encodedValue.Get(&output)
+	_ = encodedValue.Get(&output)
 	s.Equal(input, output)
 }
 
@@ -1834,12 +1836,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 		childCtx := WithChildWorkflowOptions(ctx, cwo)
 		childCtx, cancel := WithCancel(childCtx)
 		childFuture := ExecuteChildWorkflow(childCtx, childWorkflowFn)
-		Sleep(ctx, 2*time.Second)
+		_ = Sleep(ctx, 2*time.Second)
 		cancel()
 
 		err := childFuture.Get(childCtx, nil)
 		if _, ok := err.(*CanceledError); !ok {
-			return fmt.Errorf("Cancel child workflow should receive CanceledError, instead got: %v", err)
+			return fmt.Errorf("cancel child workflow should receive CanceledError, instead got: %v", err)
 		}
 		return nil
 	}
@@ -2028,8 +2030,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
 				})
 			}
 		}
-
-		return nil
 	}
 
 	RegisterWorkflow(workflowFn)
@@ -2053,7 +2053,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ContextMisuse() {
 		ch := NewChannel(ctx)
 
 		Go(ctx, func(shouldUseThisCtx Context) {
-			Sleep(ctx, time.Hour)
+			_ = Sleep(ctx, time.Hour)
 			ch.Send(ctx, "done")
 		})
 
@@ -2100,7 +2100,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_DrainSignalChannel() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("s1s2", result)
 }
 
@@ -2433,7 +2433,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	RegisterWorkflow(workflowFn)
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflowByID("test-retry-signal-child-workflow", "test-signal-name", "test-signal-data")
+		_ = env.SignalWorkflowByID("test-retry-signal-child-workflow", "test-signal-name", "test-signal-data")
 	}, time.Second*7 /* after 2nd attempt failed, but before 3rd attempt starts */)
 
 	env.ExecuteWorkflow(workflowFn)
@@ -2448,7 +2448,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 func (s *WorkflowTestSuiteUnitTest) Test_TestWorkflowTimeoutInBusyLoop() {
 	neverEndingWorkflow := func(ctx Context) error {
 		for {
-			Sleep(ctx, time.Hour)
+			_ = Sleep(ctx, time.Hour)
 		}
 	}
 
@@ -2469,7 +2469,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestWorkflowTimeoutInBusyLoop() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
 	childWorkflowFn := func(ctx Context) error {
-		Sleep(ctx, time.Hour*5)
+		_ = Sleep(ctx, time.Hour*5)
 		return nil
 	}
 
@@ -2572,8 +2572,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 
 		err = f2.Get(ctx1, &result2)
 		s.Error(err)
-		_, ok := err.(*commonproto.WorkflowExecutionAlreadyStartedError)
-		s.True(ok)
+		_, isAlreadyStartedFailure := protobufutils.GetFailure(err).(*errordetails.WorkflowExecutionAlreadyStartedFailure)
+		s.True(isAlreadyStartedFailure)
 
 		return result1 + " " + result2, nil
 	}
@@ -2598,9 +2598,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 		info := GetWorkflowInfo(ctx)
 		var result int
 		if HasLastCompletionResult(ctx) {
-			GetLastCompletionResult(ctx, &result)
+			_ = GetLastCompletionResult(ctx, &result)
 		}
-		Sleep(ctx, time.Second*3)
+		_ = Sleep(ctx, time.Second*3)
 		if info.Attempt == 0 {
 			failedCount++
 			return 0, errors.New("please-retry")
@@ -2660,7 +2660,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastResult() {
 	cronWorkflow := func(ctx Context) (int, error) {
 		var result int
 		if HasLastCompletionResult(ctx) {
-			GetLastCompletionResult(ctx, &result)
+			_ = GetLastCompletionResult(ctx, &result)
 		}
 
 		return result + 1, nil
@@ -2687,7 +2687,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProgress() {
 	activityFn := func(ctx context.Context) (int, error) {
 		var progress int
 		if HasHeartbeatDetails(ctx) {
-			GetHeartbeatDetails(ctx, &progress)
+			_ = GetHeartbeatDetails(ctx, &progress)
 		}
 
 		return progress + 1, nil

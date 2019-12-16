@@ -32,16 +32,16 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc/encoding/protobuf"
-	"go.uber.org/yarpc/yarpcerrors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/errordetails"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -1163,9 +1163,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	err := protobuf.NewError(yarpcerrors.CodeAlreadyExists, "Workflow execution already started", protobuf.WithErrorDetails(
-		&errordetails.WorkflowExecutionAlreadyStartedFailure{},
-	))
+	err := protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
 
 	childWorkflow.handle(nil, err)
 

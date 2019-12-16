@@ -29,14 +29,14 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/yarpc/encoding/protobuf"
-	"go.uber.org/yarpc/yarpcerrors"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal/internal/protobufutils"
 
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
@@ -255,7 +255,7 @@ func (s *historyEventIteratorSuite) TestIterator_Error() {
 	s.NotNil(event)
 	s.Nil(err)
 
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(nil, protobuf.NewError(yarpcerrors.CodeNotFound, "")).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(nil, protobufutils.NewError(codes.NotFound)).Times(1)
 
 	s.True(iter.HasNext())
 	event, err = iter.Next()
@@ -352,12 +352,12 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
-	alreadyStartedErr := protobuf.NewError(yarpcerrors.CodeAlreadyExists, "Already Started", protobuf.WithErrorDetails(
+	alreadyStartedErr := protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Already Started",
 		&errordetails.WorkflowExecutionAlreadyStartedFailure{
 			StartRequestId: uuid.NewRandom().String(),
 			RunId:          runID,
 		},
-	))
+	)
 
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, alreadyStartedErr).Times(1)
@@ -1052,7 +1052,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	responseErr := protobuf.NewError(yarpcerrors.CodeInvalidArgument, "")
+	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	request.Domain = "another"
 	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
 		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
@@ -1075,7 +1075,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	responseErr := protobuf.NewError(yarpcerrors.CodeInvalidArgument, "")
+	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	request.Domain = "another"
 	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
 		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
@@ -1096,7 +1096,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	responseErr := protobuf.NewError(yarpcerrors.CodeInvalidArgument, "")
+	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	request.Domain = "another"
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
 		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
@@ -1117,7 +1117,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	responseErr := protobuf.NewError(yarpcerrors.CodeInvalidArgument, "")
+	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	request.Domain = "another"
 	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
 		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
@@ -1134,7 +1134,7 @@ func (s *workflowClientTestSuite) TestGetSearchAttributes() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	responseErr := protobuf.NewError(yarpcerrors.CodeInvalidArgument, "")
+	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any()).Return(nil, responseErr)
 	resp, err = s.client.GetSearchAttributes(context.Background())
 	s.Equal(responseErr, err)

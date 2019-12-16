@@ -34,11 +34,14 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal/internal/protobufutils"
 
 	"go.uber.org/zap"
 )
@@ -90,11 +93,11 @@ func init() {
 	)
 }
 
-func returnPanicWorkflowFunc(ctx Context, input []byte) error {
+func returnPanicWorkflowFunc(Context, []byte) error {
 	return newPanicError("panicError", "stackTrace")
 }
 
-func panicWorkflowFunc(ctx Context, input []byte) error {
+func panicWorkflowFunc(Context, []byte) error {
 	panic("panicError")
 }
 
@@ -186,11 +189,11 @@ func createTestEventDecisionTaskStarted(eventID int64) *commonproto.HistoryEvent
 		EventType: enums.EventTypeDecisionTaskStarted}
 }
 
-func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *commonproto.HistoryEvent {
-	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
+func createTestEventWorkflowExecutionSignaled(eventID int64) *commonproto.HistoryEvent {
+	return createTestEventWorkflowExecutionSignaledWithPayload(eventID)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload []byte) *commonproto.HistoryEvent {
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64) *commonproto.HistoryEvent {
 	return &commonproto.HistoryEvent{
 		EventId:   eventID,
 		EventType: enums.EventTypeWorkflowExecutionSignaled,
@@ -259,8 +262,8 @@ func createTestEventTimerStarted(eventID int64, id int) *commonproto.HistoryEven
 	timerID := fmt.Sprintf("%v", id)
 	attr := &commonproto.TimerStartedEventAttributes{
 		TimerId:                      timerID,
-		StartToFireTimeoutSeconds:    nil,
-		DecisionTaskCompletedEventId: nil,
+		StartToFireTimeoutSeconds:    0,
+		DecisionTaskCompletedEventId: 0,
 	}
 	return &commonproto.HistoryEvent{
 		EventId:    eventID,
@@ -351,7 +354,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(enums.DecisionTypeCompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
 	checksumsJSON := string(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().Result)
 	var checksums []string
-	json.Unmarshal([]byte(checksumsJSON), &checksums)
+	_ = json.Unmarshal([]byte(checksumsJSON), &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
@@ -465,7 +468,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventActivityTaskStarted(6, &commonproto.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(7, &commonproto.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventDecisionTaskStarted(8),
-		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
+		createTestEventWorkflowExecutionSignaled(9),
 	}
 	params := workerExecutionParameters{
 		TaskList: taskList,
@@ -612,7 +615,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 			}
 			close(doneCh)
 		}()
-		Sleep(ctx, 1*time.Second)
+		_ = Sleep(ctx, 1*time.Second)
 		return nil
 	}
 	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-Sticky=%v", disableSticky)
@@ -872,7 +875,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := getDefaultDataConverter().ToData(2)
 	t.NoError(err)
-	signal, err := getDefaultDataConverter().ToData("signal data")
+	_, err = getDefaultDataConverter().ToData("signal data")
 	t.NoError(err)
 	testEvents := []*commonproto.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
@@ -883,7 +886,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 2, BinaryChecksum: checksum1}),
-		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
+		createTestEventWorkflowExecutionSignaledWithPayload(5),
 		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(7),
 	}
@@ -1028,7 +1031,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 
-	entityNotExistsError := &commonproto.EntityNotExistsError{}
+	entityNotExistsError := protobufutils.NewError(codes.NotFound)
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
@@ -1041,15 +1044,15 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	_, ok := (heartbeatErr).(*commonproto.EntityNotExistsError)
-	t.True(ok, "heartbeatErr must be EntityNotExistsError.")
+	isNotFound := protobufutils.IsOfCode(heartbeatErr, codes.NotFound)
+	t.True(isNotFound, "heartbeatErr must have code NotFound.")
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
 
-	domainNotActiveError := &commonproto.DomainNotActiveError{}
+	domainNotActiveError := protobufutils.NewErrorWithFailure(codes.InvalidArgument, "", &errordetails.DomainNotActiveFailure{})
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, domainNotActiveError)
 
 	called := false
@@ -1065,8 +1068,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	_, ok := (heartbeatErr).(*commonproto.DomainNotActiveError)
-	t.True(ok, "heartbeatErr must be DomainNotActiveError.")
+	_, isDomainNotActive := protobufutils.GetFailure(heartbeatErr).(*errordetails.DomainNotActiveFailure)
+	t.True(isDomainNotActive, "heartbeatErr failure must be DomainNotActiveFailure.")
 	t.True(called)
 }
 
@@ -1075,7 +1078,7 @@ type testActivityDeadline struct {
 	d      time.Duration
 }
 
-func (t *testActivityDeadline) Execute(ctx context.Context, input []byte) ([]byte, error) {
+func (t *testActivityDeadline) Execute(ctx context.Context, _ []byte) ([]byte, error) {
 	if d, _ := ctx.Deadline(); d.IsZero() {
 		panic("invalid deadline provided")
 	}
@@ -1112,9 +1115,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
 		{time.Duration(0), time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
 		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-		{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
-		{time.Duration(1 * time.Second), time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
-		{time.Duration(1 * time.Second), time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
 	}
 	a := &testActivityDeadline{logger: t.logger}
 	registry := getGlobalRegistry()
@@ -1165,7 +1168,7 @@ func activityWithWorkerStop(ctx context.Context) error {
 	case <-workerStopCh:
 		return nil
 	case <-time.NewTimer(time.Second * 5).C:
-		return fmt.Errorf("Activity failed to handle worker stop event")
+		return fmt.Errorf("activity failed to handle worker stop event")
 	}
 }
 

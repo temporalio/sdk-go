@@ -33,10 +33,11 @@ import (
 	"github.com/uber-go/tally"
 	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/yarpc"
+	"google.golang.org/grpc/codes"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 var (
@@ -93,11 +94,11 @@ func Test_Wrapper(t *testing.T) {
 		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
 		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
 		// one case of invalid request
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, &commonproto.EntityNotExistsError{}}, []string{CadenceRequest, CadenceInvalidRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, protobufutils.NewError(codes.NotFound)}, []string{CadenceRequest, CadenceInvalidRequest}},
 		// one case of server error
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, &commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
-		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, &commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{&commonproto.InternalServiceError{}}, []string{CadenceRequest, CadenceError}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
+		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
 	}
 
 	// run each test twice - once with the regular scope, once with a sanitized metrics scope
@@ -179,7 +180,7 @@ func runTest(
 		inputs = append(inputs, reflect.ValueOf(callOption))
 		method := reflect.ValueOf(wrapperService).MethodByName(test.serviceMethod)
 		method.Call(inputs)
-		closer.Close()
+		_ = closer.Close()
 		validationFunc(t, reporter, test.serviceMethod, test.expectedCounters)
 	})
 }

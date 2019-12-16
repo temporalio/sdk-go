@@ -45,12 +45,13 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -234,11 +235,11 @@ func verifyDomainExist(client workflowservice.WorkflowServiceYARPCClient, domain
 		defer cancel()
 		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt...)
 		if err != nil {
-			if _, ok := err.(*commonproto.EntityNotExistsError); ok {
+			if protobufutils.IsOfCode(err, codes.NotFound) {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
-			if _, ok := err.(*workflowservice.BadRequestError); ok {
+			if protobufutils.IsOfCode(err, codes.InvalidArgument) {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
@@ -575,7 +576,7 @@ func (r *registry) RegisterActivityWithOptions(
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		r.registerActivityStructWithOptions(af, options)
+		_ = r.registerActivityStructWithOptions(af, options)
 		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
@@ -974,7 +975,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 
 func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	fnType := reflect.TypeOf(ae.fn)
-	args := []reflect.Value{}
+	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
@@ -1008,7 +1009,7 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 
 func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []reflect.Value {
 	fnType := reflect.TypeOf(ae.fn)
-	args := []reflect.Value{}
+	var args []reflect.Value
 
 	// activities optionally might not take context.
 	argsOffeset := 0
@@ -1442,7 +1443,7 @@ type thriftEncoding struct{}
 
 // Marshal encodes an array of thrift into bytes
 func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
-	tlist := []thrift.TStruct{}
+	var tlist []thrift.TStruct
 	for i := 0; i < len(objs); i++ {
 		if !isThriftType(objs[i]) {
 			return nil, fmt.Errorf("pointer to thrift.TStruct type is required for %v argument", i+1)
@@ -1455,7 +1456,7 @@ func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
 
 // Unmarshal decodes an array of thrift into bytes
 func (g thriftEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	tlist := []thrift.TStruct{}
+	var tlist []thrift.TStruct
 	for i := 0; i < len(objs); i++ {
 		rVal := reflect.ValueOf(objs[i])
 		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {

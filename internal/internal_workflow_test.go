@@ -428,9 +428,9 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	s.NotNil(env.GetWorkflowError())
 	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.workflowType.Name)
-	s.EqualValues(1, *resultErr.params.executionStartToCloseTimeoutSeconds)
-	s.EqualValues(1, *resultErr.params.taskStartToCloseTimeoutSeconds)
-	s.EqualValues("default-test-tasklist", *resultErr.params.taskListName)
+	s.EqualValues(1, resultErr.params.executionStartToCloseTimeoutSeconds)
+	s.EqualValues(1, resultErr.params.taskStartToCloseTimeoutSeconds)
+	s.EqualValues("default-test-tasklist", resultErr.params.taskListName)
 }
 
 func cancelWorkflowTest(ctx Context) (string, error) {
@@ -911,7 +911,7 @@ func activityOptionsWorkflow(ctx Context) (result string, err error) {
 
 	ctx1Ao := getActivityOptions(ctx1)
 	ctx2Ao := getActivityOptions(ctx2)
-	return *ctx1Ao.ActivityID + " " + *ctx2Ao.ActivityID, nil
+	return ctx1Ao.ActivityID + " " + ctx2Ao.ActivityID, nil
 }
 
 // Test that activity options are correctly spawned with WithActivityOptions is called.

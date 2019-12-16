@@ -31,11 +31,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 // ActivityTaskHandler never returns response
@@ -47,7 +49,7 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(taskList string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
@@ -106,7 +108,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	workflowWorker := newWorkflowWorkerInternal(
 		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
-	workflowWorker.Start()
+	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
 	s.Nil(ctx.Err())
@@ -132,7 +134,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	activityWorker := newActivityWorker(
 		s.service, domain, executionParameters, overrides, registry, nil,
 	)
-	activityWorker.Start()
+	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
 
@@ -181,8 +183,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	worker := newActivityWorker(
 		s.service, domain, executionParameters, overrides, registry, nil,
 	)
-	worker.Start()
-	activityTaskHandler.BlockedOnExecuteCalled()
+	_ = worker.Start()
+	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
 
 	<-worker.worker.shutdownCh
@@ -198,7 +200,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -209,7 +211,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	workflowWorker := newWorkflowWorkerInternal(
 		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
-	workflowWorker.Start()
+	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 }
 
@@ -302,7 +304,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
@@ -336,7 +338,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		Identity:              "test-worker-identity",
 	}
 	worker := newAggregatedWorker(s.service, domain, taskList, options)
-	worker.Start()
+	_ = worker.Start()
 	// wait for test to complete
 	select {
 	case <-doneCh:
@@ -438,7 +440,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, &commonproto.InternalServiceError{}).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
@@ -464,7 +466,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		Identity:              "test-worker-identity",
 	}
 	worker := newAggregatedWorker(s.service, domain, taskList, options)
-	worker.Start()
+	_ = worker.Start()
 	// wait for test to complete
 	select {
 	case <-doneCh:

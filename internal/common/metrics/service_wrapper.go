@@ -26,11 +26,12 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc/yarpcerrors"
+	"google.golang.org/grpc/codes"
 
 	"go.uber.org/yarpc"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 type (
@@ -117,13 +118,9 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 func (s *operationScope) handleError(err error) {
 	s.scope.Timer(CadenceLatency).Record(time.Now().Sub(s.startTime))
 	if err != nil {
-		st := yarpcerrors.FromError(err)
-		switch st.Code() {
-		case yarpcerrors.CodeNotFound,
-			yarpcerrors.CodeInvalidArgument,
-			yarpcerrors.CodeAlreadyExists:
+		if protobufutils.IsOfCode(err, codes.NotFound, codes.InvalidArgument, codes.AlreadyExists) {
 			s.scope.Counter(CadenceInvalidRequest).Inc(1)
-		default:
+		} else {
 			s.scope.Counter(CadenceError).Inc(1)
 		}
 	}

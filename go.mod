@@ -13,6 +13,7 @@ require (
 	github.com/fatih/structtag v1.0.0 // indirect
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/golang/mock v1.3.1
+	github.com/golang/protobuf v1.3.2
 	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pborman/uuid v0.0.0-20160209185913-a97ce2ca70fa
@@ -37,6 +38,7 @@ require (
 	go.uber.org/zap v1.13.0
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
 	golang.org/x/time v0.0.0-20170927054726-6dc17368e09b
+	google.golang.org/grpc v1.25.1
 )
 
 replace github.com/temporalio/temporal-proto => ./.gen/proto

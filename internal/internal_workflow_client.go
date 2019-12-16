@@ -31,8 +31,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc/encoding/protobuf"
-	"go.uber.org/yarpc/yarpcerrors"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
@@ -41,6 +39,7 @@ import (
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -267,15 +266,9 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	var workflowID string
 	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
 	if err != nil {
-		st := yarpcerrors.FromError(err)
-		details := protobuf.GetErrorDetails(err)
-		if st.Code() == yarpcerrors.CodeAlreadyExists && len(details) > 0 {
-			if failure, ok := details[0].(*errordetails.WorkflowExecutionAlreadyStartedFailure); ok {
-				runID = failure.RunId
-				workflowID = options.ID
-			} else {
-				return nil, err
-			}
+		if failure, isExecutionAlreadyStartedFailure := protobufutils.GetFailure(err).(*errordetails.WorkflowExecutionAlreadyStartedFailure); isExecutionAlreadyStartedFailure {
+			runID = failure.RunId
+			workflowID = options.ID
 		} else {
 			return nil, err
 		}

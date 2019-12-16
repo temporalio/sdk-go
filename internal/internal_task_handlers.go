@@ -35,14 +35,17 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/cache"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/common/util"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -1614,13 +1617,11 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 
 	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
-	switch err.(type) {
-	case *CanceledError:
+	if _, ok := err.(*CanceledError); ok {
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
 		isActivityCancelled = true
-
-	case *commonproto.EntityNotExistsError, *commonproto.DomainNotActiveError:
+	} else if _, isDomainNotActiveFailure := protobufutils.GetFailure(err).(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || protobufutils.IsOfCode(err, codes.NotFound) {
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
