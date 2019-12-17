@@ -1522,13 +1522,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(workflowFn)
 	s.False(env.IsWorkflowCompleted())
-	s.Contains(env.GetWorkflowError().Error(), "Unable to find activityType")
+	s.Contains(env.GetWorkflowError().Error(), "unable to find activityType")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFullyQualifiedName() {
 	defer func() {
 		if r := recover(); r != nil {
-			s.Contains(r.(error).Error(), "Unable to find workflow type")
+			s.Contains(r.(error).Error(), "unable to find workflow type")
 		}
 	}()
 	env := s.NewTestWorkflowEnvironment()

@@ -520,6 +520,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 					EventType: eventType,
 					Attributes: &commonproto.HistoryEvent_WorkflowExecutionFailedEventAttributes{WorkflowExecutionFailedEventAttributes: &commonproto.WorkflowExecutionFailedEventAttributes{
 						Details: encodedDetails,
+						Reason:  reason,
 					}},
 				},
 			},

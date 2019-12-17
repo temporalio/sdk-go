@@ -514,7 +514,7 @@ func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expected
 	t.NotNil(response)
 	queryResp, ok := response.(*workflowservice.RespondQueryTaskCompletedRequest)
 	t.True(ok)
-	t.Nil(queryResp.ErrorMessage)
+	t.Empty(queryResp.ErrorMessage)
 	t.NotNil(queryResp.QueryResult)
 	encodedValue := newEncodedValue(queryResp.QueryResult, nil)
 	var queryResult string
@@ -776,7 +776,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondDecisionTaskFailedRequest)
 	t.True(ok)
-	t.EqualValues("WORKFLOW_WORKER_UNHANDLED_FAILURE", r.Cause.String())
+	t.EqualValues(enums.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure, r.Cause)
 	t.EqualValues("panicError", string(r.Details))
 }
 
