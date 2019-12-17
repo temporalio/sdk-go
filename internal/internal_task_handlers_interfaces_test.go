@@ -122,7 +122,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 
 	// mocks
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil)
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil)
 
 	response, err := s.service.PollForActivityTask(ctx, &workflowservice.PollForActivityTaskRequest{})
 	s.NoError(err)

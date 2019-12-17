@@ -822,7 +822,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
 	s.Nil(resp)
 
 	options.ExecutionStartToCloseTimeout = timeoutInSeconds
-	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+	createResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
 		RunId: runID,
 	}
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
@@ -1089,7 +1089,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	request := &workflowservice.ScanWorkflowExecutionsRequest{}
 	response := &workflowservice.ScanWorkflowExecutionsResponse{}
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal(domain, request.GetDomain())
 		})
 	resp, err := s.client.ScanWorkflow(context.Background(), request)
@@ -1099,7 +1099,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	request.Domain = "another"
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr).
-		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
 	resp, err = s.client.ScanWorkflow(context.Background(), request)
@@ -1129,13 +1129,13 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 
 func (s *workflowClientTestSuite) TestGetSearchAttributes() {
 	response := &workflowservice.GetSearchAttributesResponse{}
-	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any()).Return(response, nil)
+	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
 	resp, err := s.client.GetSearchAttributes(context.Background())
 	s.Nil(err)
 	s.Equal(response, resp)
 
 	responseErr := protobufutils.NewError(codes.InvalidArgument)
-	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any()).Return(nil, responseErr)
+	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr)
 	resp, err = s.client.GetSearchAttributes(context.Background())
 	s.Equal(responseErr, err)
 }

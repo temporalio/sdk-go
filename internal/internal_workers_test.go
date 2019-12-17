@@ -120,7 +120,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -161,7 +161,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(pats, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())

@@ -518,7 +518,7 @@ func createWorkerWithThrottle(
 	service.EXPECT().PollForActivityTask(
 		gomock.Any(), ofPollForActivityTaskRequest(expectedActivitiesPerSecond), callOptions...,
 	).Return(activityTask, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	decisionTask := &workflowservice.PollForDecisionTaskResponse{}
 	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(decisionTask, nil).AnyTimes()
@@ -552,15 +552,15 @@ func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt *ClientOptions)
 	domain := "testDomain"
 	wfClient := NewClient(mockService, domain, opt)
 	var completedRequest, canceledRequest, failedRequest interface{}
-	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCanceledResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskFailedResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
@@ -590,15 +590,15 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	domain := "testDomain"
 	wfClient := NewClient(mockService, domain, nil)
 	var completedRequest, canceledRequest, failedRequest interface{}
-	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...yarpc.CallOption) {
 			completedRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCanceledByIDResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIDRequest, opts ...yarpc.CallOption) {
 			canceledRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), callOptions...).Return(nil).Do(
+	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskFailedByIDResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIDRequest, opts ...yarpc.CallOption) {
 			failedRequest = request
 		})
@@ -659,7 +659,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 	domain := "testDomain"
 	wfClient := NewClient(s.service, domain, nil)
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIDRequest
-	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIDResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil).
 		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIDRequest, opts ...yarpc.CallOption) {
 			heartbeatRequest = request

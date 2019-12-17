@@ -83,7 +83,6 @@ When panic happen in workflow implementation code, temporal client library catch
 That decision task will be retried at a later time (with exponential backoff retry intervals).
 */
 
-//todo:!!!!!!!!!!!!!!!!!!!!
 type (
 	// CustomError returned from workflow and activity implementations with reason and optional details.
 	CustomError struct {
