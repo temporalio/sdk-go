@@ -1065,6 +1065,97 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	t.NotNil(response)
 }
 
+func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
+	backoffIntervalInSeconds := int32(1)
+	backoffDuration := time.Second * time.Duration(backoffIntervalInSeconds)
+	workflowComplete := false
+
+	retryLocalActivityWorkflowFunc := func(ctx Context, intput []byte) error {
+		ao := LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:    backoffDuration,
+				BackoffCoefficient: 1.1,
+				MaximumInterval:    time.Minute,
+				ExpirationInterval: time.Minute,
+			},
+		}
+		ctx = WithLocalActivityOptions(ctx, ao)
+
+		err := ExecuteLocalActivity(ctx, func() error {
+			return errors.New("some random error")
+		}).Get(ctx, nil)
+		workflowComplete = true
+		return err
+	}
+	RegisterWorkflowWithOptions(
+		retryLocalActivityWorkflowFunc,
+		RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflow"},
+	)
+
+	decisionTaskStartedEvent := createTestEventDecisionTaskStarted(3)
+	decisionTaskStartedEvent.Timestamp = common.Int64Ptr(time.Now().UnixNano())
+	testEvents := []*s.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
+			// make sure the timeout is same as the backoff interval
+			TaskStartToCloseTimeoutSeconds: common.Int32Ptr(backoffIntervalInSeconds),
+			TaskList:                       &s.TaskList{Name: &testWorkflowTaskTasklist}},
+		),
+		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
+		decisionTaskStartedEvent,
+	}
+
+	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
+	params := workerExecutionParameters{
+		TaskList: testWorkflowTaskTasklist,
+		Identity: "test-id-1",
+		Logger:   t.logger,
+		Tracer:   opentracing.NoopTracer{},
+	}
+
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	laTunnel := &localActivityTunnel{
+		taskCh:   make(chan *localActivityTask, 1000),
+		resultCh: make(chan interface{}),
+	}
+	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
+	t.True(ok)
+	taskHandlerImpl.laTunnel = laTunnel
+
+	laTaskPoller := newLocalActivityPoller(params, laTunnel)
+	doneCh := make(chan struct{})
+	go func() {
+		// laTaskPoller needs to poll the local activity and process it
+		task, err := laTaskPoller.PollTask()
+		t.NoError(err)
+		err = laTaskPoller.ProcessTask(task)
+		t.NoError(err)
+
+		// before clearing workflow state, a reset sticky task will be sent to this chan,
+		// drain the chan so that workflow state can be cleared
+		<-laTunnel.resultCh
+
+		close(doneCh)
+	}()
+
+	laResultCh := make(chan *localActivityResult)
+	response, err := taskHandler.ProcessWorkflowTask(
+		&workflowTask{
+			task:       task,
+			laResultCh: laResultCh,
+		},
+		func(response interface{}, startTime time.Time) (*workflowTask, error) {
+			return nil, &s.EntityNotExistsError{Message: "Decision task not found."}
+		})
+	t.Nil(response)
+	t.Error(err)
+
+	// wait for the retry timer to fire
+	time.Sleep(backoffDuration)
+	t.False(workflowComplete)
+	<-doneCh
+}
+
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicetest.NewMockClient(mockCtrl)
