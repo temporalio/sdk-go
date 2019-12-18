@@ -295,8 +295,8 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		NonRetriableErrorReasons: []string{
 			"cadenceInternal:Panic",
 			"cadenceInternal:Generic",
-			"cadenceInternal:Timeout START_TO_CLOSE",
-			"cadenceInternal:Timeout HEARTBEAT",
+			"cadenceInternal:Timeout TimeoutTypeStartToClose",
+			"cadenceInternal:Timeout TimeoutTypeHeartbeat",
 		},
 	}
 

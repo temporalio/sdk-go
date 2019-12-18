@@ -419,7 +419,7 @@ type (
 		// Error reason for custom error is specified when your activity/workflow return temporal.NewCustomError(reason).
 		// Error reason for panic error is "cadenceInternal:Panic".
 		// Error reason for any other error is "cadenceInternal:Generic".
-		// Error reason for timeouts is: "cadenceInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be START_TO_CLOSE or HEARTBEAT.
+		// Error reason for timeouts is: "cadenceInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be TimeoutTypeStartToClose or TimeoutTypeHeartbeat.
 		// Note, cancellation is not a failure, so it won't be retried.
 		NonRetriableErrorReasons []string
 	}
