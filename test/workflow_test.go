@@ -33,6 +33,10 @@ import (
 	"go.uber.org/cadence/workflow"
 )
 
+const (
+	consistentQuerySignalCh = "consistent-query-signal-chan"
+)
+
 type Workflows struct{}
 
 func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
@@ -409,6 +413,25 @@ func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, erro
 	return "hello", nil
 }
 
+func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Duration) error {
+	queryResult := "starting-value"
+	err := workflow.SetQueryHandler(ctx, "consistent_query", func() (string, error) {
+		return queryResult, nil
+	})
+	if err != nil {
+		return errors.New("failed to register query handler")
+	}
+	ch := workflow.GetSignalChannel(ctx, consistentQuerySignalCh)
+	var signalData string
+	ch.Receive(ctx, &signalData)
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	})
+	workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
+	queryResult = signalData
+	return nil
+}
+
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Second * 2,
@@ -486,6 +509,7 @@ func (w *Workflows) register() {
 	workflow.Register(w.SimplestWorkflow)
 	workflow.Register(w.LargeQueryResultWorkflow)
 	workflow.Register(w.RetryTimeoutStableErrorWorkflow)
+	workflow.Register(w.ConsistentQueryWorkflow)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

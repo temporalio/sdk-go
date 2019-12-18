@@ -368,6 +368,8 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 						WorkerTaskList:                &s.TaskList{Name: common.StringPtr(getWorkerTaskList(wtp.stickyUUID))},
 						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
 					}
+				} else {
+					request.ReturnNewDecisionTask = common.BoolPtr(false)
 				}
 				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
