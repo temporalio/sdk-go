@@ -112,9 +112,8 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 			if last != nil {
 				ts.NoError(last)
 				return
-			} else {
-				ts.FailNow("leaks timed out but no error, should be impossible")
 			}
+			ts.FailNow("leaks timed out but no error, should be impossible")
 		case <-time.After(time.Second):
 			// https://github.com/uber-go/cadence-client/issues/739
 			last = goleak.FindLeaks(goleak.IgnoreTopFunction("go.uber.org/cadence/internal.(*coroutineState).initialYield"))

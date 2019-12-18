@@ -132,20 +132,34 @@ type (
 	localActivityTunnel struct {
 		taskCh   chan *localActivityTask
 		resultCh chan interface{}
+		stopCh   <-chan struct{}
 	}
 )
 
-func (lat *localActivityTunnel) getTask(stopC <-chan struct{}) *localActivityTask {
+func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
+	return &localActivityTunnel{
+		taskCh:   make(chan *localActivityTask, 1000),
+		resultCh: make(chan interface{}),
+		stopCh:   stopCh,
+	}
+}
+
+func (lat *localActivityTunnel) getTask() *localActivityTask {
 	select {
 	case task := <-lat.taskCh:
 		return task
-	case <-stopC:
+	case <-lat.stopCh:
 		return nil
 	}
 }
 
-func (lat *localActivityTunnel) sendTask(task *localActivityTask) {
-	lat.taskCh <- task
+func (lat *localActivityTunnel) sendTask(task *localActivityTask) bool {
+	select {
+	case lat.taskCh <- task:
+		return true
+	case <-lat.stopCh:
+		return false
+	}
 }
 
 func isClientSideError(err error) bool {
@@ -414,7 +428,7 @@ func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localAct
 }
 
 func (latp *localActivityTaskPoller) PollTask() (interface{}, error) {
-	return latp.laTunnel.getTask(latp.shutdownC), nil
+	return latp.laTunnel.getTask(), nil
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {

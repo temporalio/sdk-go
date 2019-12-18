@@ -308,10 +308,7 @@ func newWorkflowTaskWorkerInternal(
 	)
 
 	// laTunnel is the glue that hookup 3 parts
-	laTunnel := &localActivityTunnel{
-		taskCh:   make(chan *localActivityTask, 1000),
-		resultCh: make(chan interface{}),
-	}
+	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
 
 	// 1) workflow handler will send local activity task to laTunnel
 	if handlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl); ok {

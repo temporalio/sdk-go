@@ -976,7 +976,10 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 			}
 
 			lar.task.attempt++
-			w.laTunnel.sendTask(lar.task)
+
+			if !w.laTunnel.sendTask(lar.task) {
+				lar.task.attempt--
+			}
 		})
 		return true
 	}
@@ -1055,13 +1058,18 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workfl
 	if w.hasPendingLocalActivityWork() && w.laTunnel != nil {
 		if len(eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
+			unstartedLaTasks := make(map[string]struct{})
 			for activityID := range eventHandler.unstartedLaTasks {
 				task := eventHandler.pendingLaTasks[activityID]
 				task.wc = w
 				task.workflowTask = workflowTask
-				w.laTunnel.sendTask(task)
+				if !w.laTunnel.sendTask(task) {
+					unstartedLaTasks[activityID] = struct{}{}
+					task.wc = nil
+					task.workflowTask = nil
+				}
 			}
-			eventHandler.unstartedLaTasks = make(map[string]struct{})
+			eventHandler.unstartedLaTasks = unstartedLaTasks
 		}
 		// cannot complete decision task as there are pending local activities
 		if waitLocalActivities {

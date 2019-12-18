@@ -1106,18 +1106,18 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	}
 
 	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
+	stopCh := make(chan struct{})
 	params := workerExecutionParameters{
-		TaskList: testWorkflowTaskTasklist,
-		Identity: "test-id-1",
-		Logger:   t.logger,
-		Tracer:   opentracing.NoopTracer{},
+		TaskList:          testWorkflowTaskTasklist,
+		Identity:          "test-id-1",
+		Logger:            t.logger,
+		Tracer:            opentracing.NoopTracer{},
+		WorkerStopChannel: stopCh,
 	}
+	defer close(stopCh)
 
 	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
-	laTunnel := &localActivityTunnel{
-		taskCh:   make(chan *localActivityTask, 1000),
-		resultCh: make(chan interface{}),
-	}
+	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
 	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
