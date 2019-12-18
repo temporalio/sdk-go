@@ -366,7 +366,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	ts.True(protobufutils.IsOfCode(err, codes.InvalidArgument))
+	ts.True(protobufutils.GetCode(err) == codes.InvalidArgument)
 	ts.Equal("query result size (3000000) exceeds limit (2000000)", protobufutils.GetMessage(err))
 	ts.Nil(value)
 }
@@ -382,7 +382,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if protobufutils.IsOfCode(err, codes.AlreadyExists) {
+		if protobufutils.GetCode(err) == codes.AlreadyExists {
 			return
 		}
 	}
@@ -393,7 +393,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if protobufutils.IsOfCode(err, codes.NotFound) {
+		if protobufutils.GetCode(err) == codes.NotFound {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

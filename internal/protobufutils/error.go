@@ -1,8 +1,6 @@
 package protobufutils
 
 import (
-	"fmt"
-
 	"github.com/gogo/protobuf/proto"
 	"go.uber.org/yarpc/encoding/protobuf"
 	"go.uber.org/yarpc/yarpcerrors"
@@ -14,26 +12,19 @@ func NewError(code codes.Code) error {
 }
 
 func NewErrorWithMessage(code codes.Code, message string) error {
-	return protobuf.NewError(toYARPCCode(code), message)
+	return protobuf.NewError(yarpcerrors.Code(code), message)
 }
 
 func NewErrorWithFailure(code codes.Code, message string, failure proto.Message) error {
-	return protobuf.NewError(toYARPCCode(code), message, protobuf.WithErrorDetails(failure))
+	return protobuf.NewError(yarpcerrors.Code(code), message, protobuf.WithErrorDetails(failure))
 }
 
-func IsOfCode(err error, codes ...codes.Code) bool {
+func GetCode(err error) codes.Code {
 	if err == nil {
-		return false
+		return codes.OK
 	}
 
-	errCode := yarpcerrors.FromError(err).Code()
-	for _, code := range codes {
-		if errCode == toYARPCCode(code) {
-			return true
-		}
-	}
-
-	return false
+	return codes.Code(yarpcerrors.FromError(err).Code())
 }
 
 func GetMessage(err error) string {
@@ -51,45 +42,4 @@ func GetFailure(err error) interface{} {
 	}
 
 	return nil
-}
-
-func toYARPCCode(code codes.Code) yarpcerrors.Code {
-	switch code {
-	case codes.OK:
-		return yarpcerrors.CodeOK
-	case codes.Canceled:
-		return yarpcerrors.CodeCancelled
-	case codes.Unknown:
-		return yarpcerrors.CodeUnknown
-	case codes.InvalidArgument:
-		return yarpcerrors.CodeInvalidArgument
-	case codes.DeadlineExceeded:
-		return yarpcerrors.CodeDeadlineExceeded
-	case codes.NotFound:
-		return yarpcerrors.CodeNotFound
-	case codes.AlreadyExists:
-		return yarpcerrors.CodeAlreadyExists
-	case codes.PermissionDenied:
-		return yarpcerrors.CodePermissionDenied
-	case codes.ResourceExhausted:
-		return yarpcerrors.CodeResourceExhausted
-	case codes.FailedPrecondition:
-		return yarpcerrors.CodeFailedPrecondition
-	case codes.Aborted:
-		return yarpcerrors.CodeAborted
-	case codes.OutOfRange:
-		return yarpcerrors.CodeOutOfRange
-	case codes.Unimplemented:
-		return yarpcerrors.CodeUnimplemented
-	case codes.Internal:
-		return yarpcerrors.CodeInternal
-	case codes.Unavailable:
-		return yarpcerrors.CodeUnavailable
-	case codes.DataLoss:
-		return yarpcerrors.CodeDataLoss
-	case codes.Unauthenticated:
-		return yarpcerrors.CodeUnauthenticated
-	}
-
-	panic(fmt.Sprintf("Unexpected error code: %v", code))
 }

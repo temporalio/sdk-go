@@ -1621,7 +1621,7 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
 		isActivityCancelled = true
-	} else if _, isDomainNotActiveFailure := protobufutils.GetFailure(err).(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || protobufutils.IsOfCode(err, codes.NotFound) {
+	} else if _, isDomainNotActiveFailure := protobufutils.GetFailure(err).(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || protobufutils.GetCode(err) == codes.NotFound {
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()

@@ -235,11 +235,11 @@ func verifyDomainExist(client workflowservice.WorkflowServiceYARPCClient, domain
 		defer cancel()
 		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt...)
 		if err != nil {
-			if protobufutils.IsOfCode(err, codes.NotFound) {
+			if protobufutils.GetCode(err) == codes.NotFound {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
-			if protobufutils.IsOfCode(err, codes.InvalidArgument) {
+			if protobufutils.GetCode(err) == codes.InvalidArgument {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}

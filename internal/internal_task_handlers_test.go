@@ -1046,8 +1046,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	isNotFound := protobufutils.IsOfCode(heartbeatErr, codes.NotFound)
-	t.True(isNotFound, "heartbeatErr must have code NotFound.")
+	t.Equal(codes.NotFound, protobufutils.GetCode(heartbeatErr), "heartbeatErr must have code NotFound.")
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {

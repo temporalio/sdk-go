@@ -65,7 +65,8 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 
 func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
-	if protobufutils.IsOfCode(err, codes.InvalidArgument, codes.NotFound, codes.AlreadyExists) {
+	errCode := protobufutils.GetCode(err)
+	if errCode == codes.InvalidArgument || errCode == codes.NotFound || errCode == codes.AlreadyExists {
 		return false
 	}
 
