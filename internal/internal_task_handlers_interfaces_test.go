@@ -25,7 +25,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber/tchannel-go/thrift"
 	"golang.org/x/net/context"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
@@ -98,7 +97,7 @@ func (s *PollLayerInterfacesTestSuite) TearDownTest() {
 }
 
 func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
-	ctx, _ := thrift.NewContext(10)
+	ctx, _ := context.WithTimeout(context.Background(), 10)
 
 	// mocks
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil)
@@ -118,7 +117,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 }
 
 func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
-	ctx, _ := thrift.NewContext(10)
+	ctx, _ := context.WithTimeout(context.Background(), 10)
 
 	// mocks
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil)

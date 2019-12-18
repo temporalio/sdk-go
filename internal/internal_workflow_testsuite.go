@@ -830,7 +830,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		if params.retryPolicy.GetExpirationIntervalInSeconds() > 0 {
 			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.retryPolicy.GetExpirationIntervalInSeconds()))
 		}
-		backoff := getRetryBackoffFromThriftRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
+		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
 		if backoff > 0 {
 			// remove the current child workflow from the pending child workflow map because
 			// the childWorkflowID will be the same for retry run.
@@ -1000,7 +1000,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 		// check if a retry is needed
 		if request, ok := result.(*workflowservice.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
-			p := fromThriftRetryPolicy(parameters.RetryPolicy)
+			p := fromProtoRetryPolicy(parameters.RetryPolicy)
 			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), request.Reason, env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
@@ -1028,7 +1028,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	return
 }
 
-func fromThriftRetryPolicy(p *commonproto.RetryPolicy) *RetryPolicy {
+func fromProtoRetryPolicy(p *commonproto.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
 		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
@@ -1039,12 +1039,12 @@ func fromThriftRetryPolicy(p *commonproto.RetryPolicy) *RetryPolicy {
 	}
 }
 
-func getRetryBackoffFromThriftRetryPolicy(tp *commonproto.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
-	if tp == nil {
+func getRetryBackoffFromProtoRetryPolicy(prp *commonproto.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+	if prp == nil {
 		return noRetryBackoff
 	}
 
-	p := fromThriftRetryPolicy(tp)
+	p := fromProtoRetryPolicy(prp)
 	return getRetryBackoffWithNowTime(p, attempt, errReason, now, expireTime)
 }
 

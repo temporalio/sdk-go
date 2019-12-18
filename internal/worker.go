@@ -235,7 +235,7 @@ func IsReplayDomain(dn string) bool {
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
-// service 	- thrift connection to the cadence server.
+// service 	- gRPC connection to the cadence server.
 // domain - the name of the cadence domain.
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
