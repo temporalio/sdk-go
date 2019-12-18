@@ -33,12 +33,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/internal/protobufutils"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
 )
@@ -254,7 +255,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.Contains(gerr.Error(), "WorkflowExecutionAlreadyStartedError"))
+	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -271,7 +272,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.Contains(gerr.Error(), "WorkflowExecutionAlreadyStartedError"))
+	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -365,9 +366,8 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	queryErr, ok := err.(*commonproto.QueryFailedError)
-	ts.True(ok)
-	ts.Equal("query result size (3000000) exceeds limit (2000000)", queryErr.Message)
+	ts.True(protobufutils.IsOfCode(err, codes.InvalidArgument))
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", protobufutils.GetMessage(err))
 	ts.Nil(value)
 }
 
@@ -382,7 +382,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if _, ok := err.(*commonproto.DomainAlreadyExistsError); ok {
+		if protobufutils.IsOfCode(err, codes.AlreadyExists) {
 			return
 		}
 	}
@@ -393,7 +393,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*commonproto.EntityNotExistsError); ok {
+		if protobufutils.IsOfCode(err, codes.NotFound) {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

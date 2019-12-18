@@ -36,6 +36,14 @@ func IsOfCode(err error, codes ...codes.Code) bool {
 	return false
 }
 
+func GetMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return yarpcerrors.FromError(err).Message()
+}
+
 func GetFailure(err error) interface{} {
 	details := protobuf.GetErrorDetails(err)
 	if len(details) > 0 {

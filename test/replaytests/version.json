@@ -1,146 +1,146 @@
-[
-  {
-    "eventId":1,
-    "timestamp":1574721098274980000,
-    "eventType":"WorkflowExecutionStarted",
-    "version":-24,
-    "taskId":22020314,
-    "workflowExecutionStartedEventAttributes":{
-      "workflowType":{
-        "name":"go.uber.org/cadence/test/replaytests.Workflow2"
-      },
-      "taskList":{
-        "name":"helloWorldGroup"
-      },
-      "input":"IkNhZGVuY2UiCg==",
-      "executionStartToCloseTimeoutSeconds":60,
-      "taskStartToCloseTimeoutSeconds":60,
-      "originalExecutionRunId":"d27163e6-9d88-4fbf-8c68-dc5b0b9dceda",
-      "identity":"53892@boweixu-C02V61JZHTDG@",
-      "firstExecutionRunId":"d27163e6-9d88-4fbf-8c68-dc5b0b9dceda",
-      "attempt":0,
-      "cronSchedule":"",
-      "firstDecisionTaskBackoffSeconds":0,
-      "header":{
-
-      }
-    }
-  },
-  {
-    "eventId":2,
-    "timestamp":1574721098274995000,
-    "eventType":"DecisionTaskScheduled",
-    "version":-24,
-    "taskId":22020315,
-    "decisionTaskScheduledEventAttributes":{
-      "taskList":{
-        "name":"helloWorldGroup"
-      },
-      "startToCloseTimeoutSeconds":60,
-      "attempt":0
-    }
-  },
-  {
-    "eventId":3,
-    "timestamp":1574721098289590000,
-    "eventType":"DecisionTaskStarted",
-    "version":-24,
-    "taskId":22020320,
-    "decisionTaskStartedEventAttributes":{
-      "scheduledEventId":2,
-      "identity":"53889@boweixu-C02V61JZHTDG@helloWorldGroup",
-      "requestId":"184e6af2-86a3-41ed-8e3a-c9b9aef7fa02"
-    }
-  },
-  {
-    "eventId":4,
-    "timestamp":1574721098297975000,
-    "eventType":"DecisionTaskCompleted",
-    "version":-24,
-    "taskId":22020323,
-    "decisionTaskCompletedEventAttributes":{
-      "scheduledEventId":2,
-      "startedEventId":3,
-      "identity":"53889@boweixu-C02V61JZHTDG@helloWorldGroup",
-      "binaryChecksum":"7f290aacf6e88e919a61ceb1aff64636"
-    }
-  },
-  {
-    "eventId":5,
-    "timestamp":1574721098298006000,
-    "eventType":"MarkerRecorded",
-    "version":-24,
-    "taskId":22020324,
-    "markerRecordedEventAttributes":{
-      "markerName":"Version",
-      "details":"InRlc3QtY2hhbmdlIgoxCg==",
-      "decisionTaskCompletedEventId":4
-    }
-  },
-  {
-    "eventId":6,
-    "timestamp":1574721098298848000,
-    "eventType":"UpsertWorkflowSearchAttributes",
-    "version":-24,
-    "taskId":22020325,
-    "upsertWorkflowSearchAttributesEventAttributes":{
-      "decisionTaskCompletedEventId":4,
-      "searchAttributes":{
-        "indexedFields":{
-          "CustomKeywordField":"InRlc3RrZXki"
+{
+  "events": [
+    {
+      "eventId": 1,
+      "timestamp": 1574721098274980000,
+      "eventType": "EventTypeWorkflowExecutionStarted",
+      "version": -24,
+      "taskId": 22020314,
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "go.temporal.io/temporal/test/replaytests.Workflow2"
+        },
+        "taskList": {
+          "name": "helloWorldGroup"
+        },
+        "input": "IkNhZGVuY2UiCg==",
+        "executionStartToCloseTimeoutSeconds": 60,
+        "taskStartToCloseTimeoutSeconds": 60,
+        "originalExecutionRunId": "d27163e6-9d88-4fbf-8c68-dc5b0b9dceda",
+        "identity": "53892@boweixu-C02V61JZHTDG@",
+        "firstExecutionRunId": "d27163e6-9d88-4fbf-8c68-dc5b0b9dceda",
+        "attempt": 0,
+        "cronSchedule": "",
+        "firstDecisionTaskBackoffSeconds": 0,
+        "header": {
         }
       }
-    }
-  },
-  {
-    "eventId":7,
-    "timestamp":1574721098298863000,
-    "eventType":"ActivityTaskScheduled",
-    "version":-24,
-    "taskId":22020326,
-    "activityTaskScheduledEventAttributes":{
-      "activityId":"1",
-      "activityType":{
-        "name":"main.helloworldActivity"
-      },
-      "taskList":{
-        "name":"helloWorldGroup"
-      },
-      "input":"IkNhZGVuY2UiCg==",
-      "scheduleToCloseTimeoutSeconds":60,
-      "scheduleToStartTimeoutSeconds":60,
-      "startToCloseTimeoutSeconds":60,
-      "heartbeatTimeoutSeconds":20,
-      "decisionTaskCompletedEventId":4,
-      "header":{
-
+    },
+    {
+      "eventId": 2,
+      "timestamp": 1574721098274995000,
+      "eventType": "EventTypeDecisionTaskScheduled",
+      "version": -24,
+      "taskId": 22020315,
+      "decisionTaskScheduledEventAttributes": {
+        "taskList": {
+          "name": "helloWorldGroup"
+        },
+        "startToCloseTimeoutSeconds": 60,
+        "attempt": 0
+      }
+    },
+    {
+      "eventId": 3,
+      "timestamp": 1574721098289590000,
+      "eventType": "EventTypeDecisionTaskStarted",
+      "version": -24,
+      "taskId": 22020320,
+      "decisionTaskStartedEventAttributes": {
+        "scheduledEventId": 2,
+        "identity": "53889@boweixu-C02V61JZHTDG@helloWorldGroup",
+        "requestId": "184e6af2-86a3-41ed-8e3a-c9b9aef7fa02"
+      }
+    },
+    {
+      "eventId": 4,
+      "timestamp": 1574721098297975000,
+      "eventType": "EventTypeDecisionTaskCompleted",
+      "version": -24,
+      "taskId": 22020323,
+      "decisionTaskCompletedEventAttributes": {
+        "scheduledEventId": 2,
+        "startedEventId": 3,
+        "identity": "53889@boweixu-C02V61JZHTDG@helloWorldGroup",
+        "binaryChecksum": "7f290aacf6e88e919a61ceb1aff64636"
+      }
+    },
+    {
+      "eventId": 5,
+      "timestamp": 1574721098298006000,
+      "eventType": "EventTypeMarkerRecorded",
+      "version": -24,
+      "taskId": 22020324,
+      "markerRecordedEventAttributes": {
+        "markerName": "Version",
+        "details": "InRlc3QtY2hhbmdlIgoxCg==",
+        "decisionTaskCompletedEventId": 4
+      }
+    },
+    {
+      "eventId": 6,
+      "timestamp": 1574721098298848000,
+      "eventType": "EventTypeUpsertWorkflowSearchAttributes",
+      "version": -24,
+      "taskId": 22020325,
+      "upsertWorkflowSearchAttributesEventAttributes": {
+        "decisionTaskCompletedEventId": 4,
+        "searchAttributes": {
+          "indexedFields": {
+            "CustomKeywordField": "InRlc3RrZXki"
+          }
+        }
+      }
+    },
+    {
+      "eventId": 7,
+      "timestamp": 1574721098298863000,
+      "eventType": "EventTypeActivityTaskScheduled",
+      "version": -24,
+      "taskId": 22020326,
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "1",
+        "activityType": {
+          "name": "main.helloworldActivity"
+        },
+        "taskList": {
+          "name": "helloWorldGroup"
+        },
+        "input": "IkNhZGVuY2UiCg==",
+        "scheduleToCloseTimeoutSeconds": 60,
+        "scheduleToStartTimeoutSeconds": 60,
+        "startToCloseTimeoutSeconds": 60,
+        "heartbeatTimeoutSeconds": 20,
+        "decisionTaskCompletedEventId": 4,
+        "header": {
+        }
+      }
+    },
+    {
+      "eventId": 8,
+      "timestamp": 1574721098309137000,
+      "eventType": "EventTypeActivityTaskStarted",
+      "version": -24,
+      "taskId": 22020331,
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": 7,
+        "identity": "53889@boweixu-C02V61JZHTDG@helloWorldGroup",
+        "requestId": "63b3f2cf-07f5-494c-850c-d6ec020839aa",
+        "attempt": 0
+      }
+    },
+    {
+      "eventId": 9,
+      "timestamp": 1574721098324013000,
+      "eventType": "EventTypeActivityTaskCompleted",
+      "version": -24,
+      "taskId": 22020334,
+      "activityTaskCompletedEventAttributes": {
+        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "scheduledEventId": 7,
+        "startedEventId": 8,
+        "identity": "53889@boweixu-C02V61JZHTDG@helloWorldGroup"
       }
     }
-  },
-  {
-    "eventId":8,
-    "timestamp":1574721098309137000,
-    "eventType":"ActivityTaskStarted",
-    "version":-24,
-    "taskId":22020331,
-    "activityTaskStartedEventAttributes":{
-      "scheduledEventId":7,
-      "identity":"53889@boweixu-C02V61JZHTDG@helloWorldGroup",
-      "requestId":"63b3f2cf-07f5-494c-850c-d6ec020839aa",
-      "attempt":0
-    }
-  },
-  {
-    "eventId":9,
-    "timestamp":1574721098324013000,
-    "eventType":"ActivityTaskCompleted",
-    "version":-24,
-    "taskId":22020334,
-    "activityTaskCompletedEventAttributes":{
-      "result":"IkhlbGxvIENhZGVuY2UhIgo=",
-      "scheduledEventId":7,
-      "startedEventId":8,
-      "identity":"53889@boweixu-C02V61JZHTDG@helloWorldGroup"
-    }
-  }
-]
+  ]
+}
