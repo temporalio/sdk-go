@@ -189,16 +189,18 @@ func createTestEventDecisionTaskStarted(eventID int64) *commonproto.HistoryEvent
 		EventType: enums.EventTypeDecisionTaskStarted}
 }
 
-func createTestEventWorkflowExecutionSignaled(eventID int64) *commonproto.HistoryEvent {
-	return createTestEventWorkflowExecutionSignaledWithPayload(eventID)
+func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *commonproto.HistoryEvent {
+	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64) *commonproto.HistoryEvent {
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload []byte) *commonproto.HistoryEvent {
 	return &commonproto.HistoryEvent{
 		EventId:   eventID,
 		EventType: enums.EventTypeWorkflowExecutionSignaled,
 		Attributes: &commonproto.HistoryEvent_WorkflowExecutionSignaledEventAttributes{WorkflowExecutionSignaledEventAttributes: &commonproto.WorkflowExecutionSignaledEventAttributes{
-			Identity: "test-identity",
+			SignalName: signalName,
+			Input:      payload,
+			Identity:   "test-identity",
 		}},
 	}
 }
@@ -468,7 +470,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventActivityTaskStarted(6, &commonproto.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(7, &commonproto.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventDecisionTaskStarted(8),
-		createTestEventWorkflowExecutionSignaled(9),
+		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
 	}
 	params := workerExecutionParameters{
 		TaskList: taskList,
@@ -875,7 +877,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := getDefaultDataConverter().ToData(2)
 	t.NoError(err)
-	_, err = getDefaultDataConverter().ToData("signal data")
+	signal, err := getDefaultDataConverter().ToData("signal data")
 	t.NoError(err)
 	testEvents := []*commonproto.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
@@ -886,7 +888,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 2, BinaryChecksum: checksum1}),
-		createTestEventWorkflowExecutionSignaledWithPayload(5),
+		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(7),
 	}

@@ -2757,7 +2757,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:          time.Second,
 				BackoffCoefficient:       1.1,
 				MaximumAttempts:          3,
-				NonRetriableErrorReasons: []string{"cadenceInternal:Timeout START_TO_CLOSE"},
+				NonRetriableErrorReasons: []string{"cadenceInternal:Timeout TimeoutTypeStartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)

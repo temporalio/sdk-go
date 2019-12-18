@@ -23,13 +23,13 @@ package internal
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
+	"os"
 	"time"
 
+	"github.com/gogo/protobuf/jsonpb"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -409,25 +409,25 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowS
 }
 
 func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonproto.History, error) {
-	raw, err := ioutil.ReadFile(jsonfileName)
+	reader, err := os.Open(jsonfileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var deserializedEvents []*commonproto.HistoryEvent
-	err = json.Unmarshal(raw, &deserializedEvents)
+	var deserializedHistory commonproto.History
+	err = jsonpb.Unmarshal(reader, &deserializedHistory)
 
 	if err != nil {
 		return nil, err
 	}
 
 	if lastEventID <= 0 {
-		return &commonproto.History{Events: deserializedEvents}, nil
+		return &deserializedHistory, nil
 	}
 
 	// Caller is potentially asking for subset of history instead of all history events
 	var events []*commonproto.HistoryEvent
-	for _, event := range deserializedEvents {
+	for _, event := range deserializedHistory.Events {
 		events = append(events, event)
 		if event.GetEventId() == lastEventID {
 			// Copy history upto last event (inclusive)
