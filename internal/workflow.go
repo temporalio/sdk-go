@@ -317,7 +317,7 @@ func NewSelector(ctx Context) Selector {
 
 // NewNamedSelector creates a new Selector instance with a given human readable name.
 // Name appears in stack traces that are blocked on this Selector.
-func NewNamedSelector(ctx Context, name string) Selector {
+func NewNamedSelector(_ Context, name string) Selector {
 	return &selectorImpl{name: name}
 }
 
@@ -502,7 +502,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 			err := f.Get(ctx, &result)
 			if retryErr, ok := err.(*needRetryError); ok && retryErr.Backoff > 0 {
 				// Backoff for retry
-				Sleep(ctx, retryErr.Backoff)
+				_ = Sleep(ctx, retryErr.Backoff)
 				// increase the attempt, and retry the local activity
 				params.Attempt = retryErr.Attempt + 1
 				continue
@@ -659,7 +659,7 @@ func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonproto.H
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
-		ctxProp.InjectFromWorkflow(ctx, writer)
+		_ = ctxProp.InjectFromWorkflow(ctx, writer)
 	}
 	return header
 }
@@ -802,7 +802,7 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 //	ctx := WithWorkflowDomain(ctx, "domain-name")
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
-	childWorkflowOnly := false // this means we are not limited to child workflow
+	const childWorkflowOnly = false // this means we are not limited to child workflow
 	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
 }
 

@@ -1275,8 +1275,11 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 				}},
 			},
 			event: &commonproto.HistoryEvent{
-				EventType:  eType,
-				Attributes: &commonproto.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &commonproto.UpsertWorkflowSearchAttributesEventAttributes{}}},
+				EventType: eType,
+				Attributes: &commonproto.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &commonproto.UpsertWorkflowSearchAttributesEventAttributes{
+					SearchAttributes: &commonproto.SearchAttributes{},
+				}},
+			},
 			expected: true,
 		},
 	}

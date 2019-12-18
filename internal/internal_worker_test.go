@@ -1131,6 +1131,11 @@ func TestActivityNilArgs_WithDataConverter(t *testing.T) {
 }
 
 /*
+type encodingTest struct {
+	encoding encoding
+	input    []interface{}
+}
+
 var testWorkflowID1 = s.WorkflowExecution{WorkflowId: "testWID", RunId: "runID"}
 var testWorkflowID2 = s.WorkflowExecution{WorkflowId: "testWID2", RunId: "runID2"}
 var thriftEncodingTests = []encodingTest{

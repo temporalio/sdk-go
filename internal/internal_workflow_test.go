@@ -31,8 +31,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
+
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 type WorkflowUnitTest struct {
@@ -82,7 +83,7 @@ func TestWorkflowUnitTest(t *testing.T) {
 	suite.Run(t, new(WorkflowUnitTest))
 }
 
-func worldWorkflow(ctx Context, input string) (result string, err error) {
+func worldWorkflow(_ Context, input string) (result string, err error) {
 	return input + " World!", nil
 }
 
@@ -101,7 +102,7 @@ func helloWorldAct(ctx context.Context) (string, error) {
 	return "test", nil
 }
 
-func helloWorldActivityWorkflow(ctx Context, input string) (result string, err error) {
+func helloWorldActivityWorkflow(ctx Context, _ string) (result string, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
@@ -134,7 +135,7 @@ func (s *WorkflowUnitTest) Test_SingleActivityWorkflow() {
 
 func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err error) {
 	var result1, result2 string
-	var err1, err2 error
+	var err1 error
 
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
@@ -181,14 +182,11 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 	if err1 != nil {
 		return "", err1
 	}
-	if err2 != nil {
-		return "", err2
-	}
 
 	return result1 + result2, nil
 }
 
-func returnPanicWorkflow(ctx Context) (err error) {
+func returnPanicWorkflow(_ Context) (err error) {
 	return newPanicError("panicError", "stackTrace")
 }
 
@@ -210,7 +208,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	s.NoError(env.GetWorkflowError())
 	env.AssertExpectations(s.T())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("Hello Flow!", result)
 }
 
@@ -249,7 +247,7 @@ func (s *WorkflowUnitTest) Test_ClockWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var nowTime time.Time
-	env.GetWorkflowResult(&nowTime)
+	_ = env.GetWorkflowResult(&nowTime)
 	s.False(nowTime.IsZero())
 }
 
@@ -257,7 +255,7 @@ type testTimerWorkflow struct {
 	t *testing.T
 }
 
-func (w *testTimerWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+func (w *testTimerWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
 	// Start a timer.
 	t := NewTimer(ctx, 1)
 
@@ -312,11 +310,11 @@ type testActivityCancelWorkflow struct {
 	t *testing.T
 }
 
-func testAct(ctx context.Context) (string, error) {
+func testAct(_ context.Context) (string, error) {
 	return "test", nil
 }
 
-func (w *testActivityCancelWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+func (w *testActivityCancelWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
@@ -413,7 +411,7 @@ func (s *WorkflowUnitTest) Test_ExternalExampleWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("Hello cadence!", result)
 }
 
@@ -576,7 +574,7 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result []byte
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.EqualValues(strings.Join(expected, ""), string(result))
 }
 
@@ -676,12 +674,12 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPa
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	closer.Close()
+	_ = closer.Close()
 	counts := reporter.Counts()
 	s.EqualValues(1, len(counts))
 	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
@@ -709,12 +707,12 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLog
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	closer.Close()
+	_ = closer.Close()
 	counts := reporter.Counts()
 	s.EqualValues(1, len(counts))
 	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
@@ -731,11 +729,11 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ReceiveAsync_ShouldLogMe
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	closer.Close()
+	_ = closer.Close()
 	counts := reporter.Counts()
 	s.EqualValues(1, len(counts))
 	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
@@ -750,7 +748,7 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_ReceiveAs
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.EqualValues(0, len(result))
 }
 
@@ -767,7 +765,7 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_S
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.EqualValues(0, len(result))
 }
 
@@ -922,7 +920,7 @@ func (s *WorkflowUnitTest) Test_ActivityOptionsWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal("id1 id2", result)
 }
 
@@ -953,7 +951,7 @@ func (s *WorkflowUnitTest) Test_MemoWorkflow() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
-	env.GetWorkflowResult(&result)
+	_ = env.GetWorkflowResult(&result)
 	s.Equal(memoTestVal, result)
 }
 
@@ -1150,7 +1148,7 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {
 	s.NoError(env.GetWorkflowError())
 
 	var total int
-	env.GetWorkflowResult(&total)
+	_ = env.GetWorkflowResult(&total)
 	s.Equal(10, total)
 }
 
@@ -1165,7 +1163,7 @@ func (s *WorkflowUnitTest) Test_WaitGroupWaitForMWorkflowTest() {
 	s.NoError(env.GetWorkflowError())
 
 	var total int
-	env.GetWorkflowResult(&total)
+	_ = env.GetWorkflowResult(&total)
 	s.Equal(m, total)
 }
 
@@ -1180,6 +1178,6 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.NoError(env.GetWorkflowError())
 
 	var total int
-	env.GetWorkflowResult(&total)
+	_ = env.GetWorkflowResult(&total)
 	s.Equal(n, total)
 }
