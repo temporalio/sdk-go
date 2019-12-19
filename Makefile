@@ -35,12 +35,6 @@ UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(A
 # Files that needs to run lint.  excludes testify mocks and the thrift sentinel.
 LINT_SRC := $(filter-out ./mock% $(THRIFTRW_OUT),$(ALL_SRC))
 
-THRIFTRW_VERSION := v1.11.0
-YARPC_VERSION := v1.29.1
-GOLINT_VERSION := 470b6b0bb3005eda157f0275e2e4895055396a81
-STATICCHECK_VERSION := 2019.2.3
-ERRCHECK_VERSION := v1.2.0
-
 #================================= protobuf ===================================
 PROTO_ROOT := .gen/proto
 PROTO_REPO := github.com/temporalio/temporal-proto
@@ -78,7 +72,6 @@ proto-mock: $(PROTO_ROOT)/go.mod tools-install
 
 update-proto: clean-proto update-proto-submodule tools-install protoc proto-mock
 
-<<<<<<< HEAD
 proto: clean-proto install-proto-submodule tools-install protoc proto-mock
 #==============================================================================
 
@@ -90,28 +83,10 @@ tools-install: $(PROTO_ROOT)/go.mod
 	GOOS= GOARCH= gobin -mod=readonly go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc
 	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
 	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
+	GOOS= GOARCH= gobin -mod=readonly honnef.co/go/tools/cmd/staticcheck
+	GOOS= GOARCH= gobin -mod=readonly github.com/kisielk/errcheck
 
 $(THRIFTRW_OUT): $(THRIFTRW_SRC) tools-install
-
-$(BINS)/versions/staticcheck-$(STATICCHECK_VERSION):
-	./versioned_go_build.sh honnef.co/go/tools $(STATICCHECK_VERSION) cmd/staticcheck $@
-
-$(BINS)/versions/errcheck-$(ERRCHECK_VERSION):
-	./versioned_go_build.sh github.com/kisielk/errcheck $(ERRCHECK_VERSION) $@
-
-# stable tool targets.  depend on / execute these instead of the versioned ones.
-# this versioned-to-nice-name thing is mostly because thriftrw depends on the yarpc
-# bin to be named "thriftrw-plugin-yarpc".
-$(BINS)/thriftrw: $(BINS)/versions/thriftrw-$(THRIFTRW_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(BINS)/staticcheck: $(BINS)/versions/staticcheck-$(STATICCHECK_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(BINS)/errcheck: $(BINS)/versions/errcheck-$(ERRCHECK_VERSION)
-	@ln -fs $(CURDIR)/$< $@
-
-$(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
 	@mkdir -p $(dir $@)
 	@# needs to be able to find the thriftrw-plugin-yarpc bin in PATH
@@ -193,11 +168,11 @@ lint: tools-install $(ALL_SRC)
 		exit 1; \
 	fi
 
-staticcheck: $(BINS)/staticcheck $(ALL_SRC)
-	$(BINS)/staticcheck ./...
+staticcheck: tools-install $(ALL_SRC)
+	staticcheck ./...
 
-errcheck: $(BINS)/errcheck $(ALL_SRC)
-	$(BINS)/errcheck ./...
+errcheck: tools-install $(ALL_SRC)
+	errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)
