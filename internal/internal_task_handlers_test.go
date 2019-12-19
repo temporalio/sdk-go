@@ -629,7 +629,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	}
 
 	for i, tc := range testCases {
-		taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+		taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
 		task.StartedEventId = common.Int64Ptr(tc.startedEventID)
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
@@ -1115,7 +1115,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	}
 	defer close(stopCh)
 
-	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getHostEnvironment())
+	taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
 	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
 	t.True(ok)

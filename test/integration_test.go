@@ -243,7 +243,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	// this workflow will start a local activity which blocks for long enough
 	// to ensure that consistent query must wait in order to satisfy consistency
 	wfOpts := ts.startWorkflowOptions("test-consistent-query")
-	wfOpts.DecisionTaskStartToCloseTimeout = 5 *time.Second
+	wfOpts.DecisionTaskStartToCloseTimeout = 5 * time.Second
 	run, err := ts.libClient.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
 	ts.Nil(err)
 	// Wait for a second to ensure that first decision task gets started and completed before we send signal.
@@ -256,9 +256,9 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	ts.NoError(err)
 
 	value, err := ts.libClient.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
-		WorkflowID: "test-consistent-query",
-		RunID: run.GetRunID(),
-		QueryType: "consistent_query",
+		WorkflowID:            "test-consistent-query",
+		RunID:                 run.GetRunID(),
+		QueryType:             "consistent_query",
 		QueryConsistencyLevel: shared.QueryConsistencyLevelStrong.Ptr(),
 	})
 	ts.Nil(err)
@@ -473,6 +473,6 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 }
 
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
-	ts.workflows.register(w)
+	ts.workflows.register()
 	ts.activities.register(w)
 }
