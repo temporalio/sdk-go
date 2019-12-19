@@ -107,7 +107,7 @@ func TestHeaderReader(t *testing.T) {
 					"key2": []byte("val2"),
 				},
 			},
-			map[string]struct{}{"key1": struct{}{}, "key2": struct{}{}},
+			map[string]struct{}{"key1": {}, "key2": {}},
 			false,
 		},
 		{
@@ -118,7 +118,7 @@ func TestHeaderReader(t *testing.T) {
 					"key2": []byte("val2"),
 				},
 			},
-			map[string]struct{}{"key2": struct{}{}},
+			map[string]struct{}{"key2": {}},
 			true,
 		},
 	}

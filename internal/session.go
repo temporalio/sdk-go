@@ -117,7 +117,7 @@ const (
 
 	errTooManySessionsMsg string = "too many outstanding sessions"
 
-	sessionHeartBeatTimeout time.Duration = time.Second * 10
+	sessionHeartBeatTimeout = time.Second * 10
 )
 
 var (
@@ -492,7 +492,7 @@ func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int
 	}
 }
 
-func (env *sessionEnvironmentImpl) CreateSession(ctx context.Context, sessionID string) (<-chan struct{}, error) {
+func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
 	if !env.sessionTokenBucket.getToken() {
 		return nil, NewCustomError(errTooManySessionsMsg)
 	}

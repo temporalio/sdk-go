@@ -281,6 +281,7 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 }
 
 func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
+	// "reason" is a string like "cadenceInternal:Timeout TimeoutTypeStartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
 	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
 		return enums.TimeoutType(timeoutType), nil

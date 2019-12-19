@@ -59,9 +59,9 @@ type (
 	}
 )
 
-func helloWorldWorkflowFunc(ctx Context, input []byte) error {
+func helloWorldWorkflowFunc(ctx Context, _ []byte) error {
 	queryResult := startingQueryValue
-	SetQueryHandler(ctx, queryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, queryType, func() (string, error) {
 		return queryResult, nil
 	})
 
@@ -88,11 +88,11 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 
 func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 	queryResult := startingQueryValue
-	SetQueryHandler(ctx, queryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, queryType, func() (string, error) {
 		return queryResult, nil
 	})
 
-	SetQueryHandler(ctx, errQueryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, errQueryType, func() (string, error) {
 		return "", errors.New(queryErr)
 	})
 
@@ -117,14 +117,14 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 func binaryChecksumWorkflowFunc(ctx Context) ([]string, error) {
 	var result []string
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
-	Sleep(ctx, time.Hour)
+	_ = Sleep(ctx, time.Hour)
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
-	Sleep(ctx, time.Hour)
+	_ = Sleep(ctx, time.Hour)
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
 	return result, nil
 }
 
-func helloWorldWorkflowCancelFunc(ctx Context, input []byte) error {
+func helloWorldWorkflowCancelFunc(ctx Context, _ []byte) error {
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{
 		TaskList:               "taskList",
@@ -145,7 +145,7 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	return ActivityType{Name: activityName}
 }
 
-func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
+func (ga greeterActivity) Execute(context.Context, []byte) ([]byte, error) {
 	return []byte("World"), nil
 }
 
@@ -154,7 +154,7 @@ func (ga greeterActivity) GetFunction() interface{} {
 }
 
 // Greeter activity func
-func greeterActivityFunc(ctx context.Context, input []byte) ([]byte, error) {
+func greeterActivityFunc(context.Context, []byte) ([]byte, error) {
 	return []byte("Hello world"), nil
 }
 
@@ -203,7 +203,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Launch worker.
 	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
-	workflowWorker.Start()
+	_ = workflowWorker.Start()
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
@@ -216,7 +216,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Register activity instances and launch the worker.
 	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
-	activityWorker.Start()
+	_ = activityWorker.Start()
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{

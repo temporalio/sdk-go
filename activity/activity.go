@@ -24,8 +24,9 @@ import (
 	"context"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/internal"
 	"go.uber.org/zap"
+
+	"go.temporal.io/temporal/internal"
 )
 
 type (

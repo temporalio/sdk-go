@@ -708,12 +708,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}()
 
 	var response interface{}
-process_Workflow_Loop:
+processWorkflowLoop:
 	for {
 		startTime := time.Now()
 		response, err = workflowContext.ProcessWorkflowTask(workflowTask)
 		if err == nil && response == nil {
-		wait_LocalActivity_Loop:
+		waitLocalActivityLoop:
 			for {
 				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
 				delayDuration := startTime.Add(deadlineToTrigger).Sub(time.Now())
@@ -730,20 +730,20 @@ process_Workflow_Loop:
 					if workflowTask == nil {
 						return nil, nil
 					}
-					continue process_Workflow_Loop
+					continue processWorkflowLoop
 
 				case lar := <-workflowTask.laResultCh:
 					// local activity result ready
 					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
 					if err == nil && response == nil {
 						// decision task is not done yet, still waiting for more local activities
-						continue wait_LocalActivity_Loop
+						continue waitLocalActivityLoop
 					}
-					break process_Workflow_Loop
+					break processWorkflowLoop
 				}
 			}
 		} else {
-			break process_Workflow_Loop
+			break processWorkflowLoop
 		}
 	}
 	return response, err

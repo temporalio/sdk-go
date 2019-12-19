@@ -383,7 +383,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 		return f.GetChildWorkflowExecution()
 	}
 
-	childWorkflowOnly := true // this means we are targeting child workflow
+	const childWorkflowOnly = true // this means we are targeting child workflow
 	// below we use empty run ID indicating the current running one, in case child do continue-as-new
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }

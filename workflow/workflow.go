@@ -22,9 +22,10 @@ package workflow
 
 import (
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
+
 	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"
-	"go.uber.org/zap"
 )
 
 type (

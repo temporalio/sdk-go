@@ -387,12 +387,12 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 	})
 
 	// Cause the workflow to block on sleep
-	workflow.Sleep(ctx, 10*time.Second)
+	_ = workflow.Sleep(ctx, 10*time.Second)
 
 	return []string{"toUpperWithDelay"}, nil
 }
 
-func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
+func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 

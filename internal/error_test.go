@@ -135,7 +135,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enums.TimeoutType) {
 		TimeoutType:      timeoutType,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
-	weh.handleActivityTaskTimedOut(event)
+	_ = weh.handleActivityTaskTimedOut(event)
 	err, ok := actualErr.(*TimeoutError)
 	require.True(t, ok)
 	require.True(t, err.HasDetails())
@@ -151,12 +151,12 @@ func Test_CustomError(t *testing.T) {
 	var a3 testStruct
 	err0 := NewCustomError(customErrReasonA, testErrorDetails1)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1)
+	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
 	err0 = NewCustomError(customErrReasonA, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1, &a2, &a3)
+	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)
@@ -176,13 +176,13 @@ func Test_CustomError(t *testing.T) {
 	var b1 string
 	var b2 int
 	var b3 testStruct
-	err1.Details(&b1, &b2, &b3)
+	_ = err1.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
 
 	// test reason and no detail
-	require.Panics(t, func() { NewCustomError("cadenceInternal:testReason") })
+	require.Panics(t, func() { _ = NewCustomError("cadenceInternal:testReason") })
 	newReason := "another reason"
 	err2 := NewCustomError(newReason)
 	require.True(t, !err2.HasDetails())
@@ -204,7 +204,7 @@ func Test_CustomError(t *testing.T) {
 	err4, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err4.HasDetails())
-	err4.Details(&b1, &b2, &b3)
+	_ = err4.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -266,7 +266,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	err5, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err5.HasDetails())
-	err5.Details(&b1)
+	_ = err5.Details(&b1)
 	require.NoError(t, err5.Details(&b1))
 	require.Equal(t, testErrorDetails4, b1)
 
@@ -281,7 +281,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	err6, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err6.HasDetails())
-	err6.Details(&b2)
+	_ = err6.Details(&b2)
 	require.NoError(t, err6.Details(&b2))
 	require.Equal(t, &testErrorDetails4, b2)
 }
@@ -293,12 +293,12 @@ func Test_CanceledError(t *testing.T) {
 	var a3 testStruct
 	err0 := NewCanceledError(testErrorDetails1)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1)
+	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
 	err0 = NewCanceledError(testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1, &a2, &a3)
+	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)
@@ -318,7 +318,7 @@ func Test_CanceledError(t *testing.T) {
 	var b1 string
 	var b2 int
 	var b3 testStruct
-	err1.Details(&b1, &b2, &b3)
+	_ = err1.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -338,7 +338,7 @@ func Test_CanceledError(t *testing.T) {
 	err3, ok := err.(*CanceledError)
 	require.True(t, ok)
 	require.True(t, err3.HasDetails())
-	err3.Details(&b1, &b2, &b3)
+	_ = err3.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -382,9 +382,9 @@ func TestErrorDetailsValues(t *testing.T) {
 	var a2 int
 	var a3 testStruct
 	require.True(t, e.HasValues())
-	e.Get(&a1)
+	_ = e.Get(&a1)
 	require.Equal(t, testErrorDetails1, a1)
-	e.Get(&a1, &a2, &a3)
+	_ = e.Get(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)

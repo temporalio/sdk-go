@@ -146,7 +146,7 @@ func (*emptyCtx) Err() error {
 	return nil
 }
 
-func (*emptyCtx) Value(key interface{}) interface{} {
+func (*emptyCtx) Value(_ interface{}) interface{} {
 	return nil
 }
 

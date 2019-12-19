@@ -331,7 +331,6 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	runID := ""
 	cancellationID := ""
 	initiatedEventID := int64(28)
-	isChildWorkflowOnly := true
 	attributes := &commonproto.StartChildWorkflowExecutionDecisionAttributes{
 		WorkflowId: workflowID,
 	}
@@ -347,7 +346,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h.handleChildWorkflowExecutionStarted(workflowID)
 
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, isChildWorkflowOnly)
+	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
 	require.Equal(t, decisionStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -378,7 +377,6 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	}
 	cancellationID := ""
 	initiatedEventID := int64(28)
-	isChildWorkflowOnly := true
 	h := newDecisionsHelper()
 
 	// start child workflow
@@ -415,7 +413,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	require.NotNil(t, err)
 
 	// cancel child workflow after child workflow is started
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, isChildWorkflowOnly)
+	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
 	require.Equal(t, decisionStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -460,7 +458,6 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	}
 	cancellationID := ""
 	initiatedEventID := int64(28)
-	isChildWorkflowOnly := true
 	h := newDecisionsHelper()
 
 	// start child workflow
@@ -472,7 +469,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	// child workflow started
 	h.handleChildWorkflowExecutionStarted(workflowID)
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, isChildWorkflowOnly)
+	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
 	// send cancel request
 	h.getDecisions(true)
 	// cancel request initiated
@@ -520,11 +517,10 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	runID := "test-run-id"
 	cancellationID := "1"
 	initiatedEventID := int64(28)
-	childWorkflowOnly := false
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, childWorkflowOnly)
+	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
@@ -540,7 +536,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           []byte(cancellationID),
-			ChildWorkflowOnly: childWorkflowOnly,
+			ChildWorkflowOnly: false,
 		},
 		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),
 	)
@@ -566,11 +562,10 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	runID := "test-run-id"
 	cancellationID := "2"
 	initiatedEventID := int64(28)
-	childWorkflowOnly := false
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, childWorkflowOnly)
+	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
@@ -586,7 +581,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           []byte(cancellationID),
-			ChildWorkflowOnly: childWorkflowOnly,
+			ChildWorkflowOnly: false,
 		},
 		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),
 	)

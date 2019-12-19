@@ -273,17 +273,13 @@ func (wc *workflowEnvironmentImpl) Complete(result []byte, err error) {
 
 func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(domainName string, workflowID string) {
 	// For cancellation of child workflow only, we do not use cancellation ID and run ID
-	isChildWorkflowOnly := true
-	cancellationID := ""
-	runID := ""
-	wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID, cancellationID, isChildWorkflowOnly)
+	wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, "", "", true)
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName, workflowID, runID string, callback resultHandler) {
 	// for cancellation of external workflow, we have to use cancellation ID and set isChildWorkflowOnly to false
-	isChildWorkflowOnly := false
 	cancellationID := wc.GenerateSequenceID()
-	decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID, cancellationID, isChildWorkflowOnly)
+	decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID, cancellationID, false)
 	decision.setData(&scheduledCancellation{callback: callback})
 }
 
