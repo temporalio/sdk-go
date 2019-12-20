@@ -36,7 +36,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	config := jaeger_config.Configuration{}
 	closer, err := config.InitGlobalTracer("test-service")
 	assert.NoError(t, err)
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 	tracer := opentracing.GlobalTracer()
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
@@ -76,7 +76,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	config := jaeger_config.Configuration{}
 	closer, err := config.InitGlobalTracer("test-service")
 	assert.NoError(t, err)
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 	tracer := opentracing.GlobalTracer()
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
