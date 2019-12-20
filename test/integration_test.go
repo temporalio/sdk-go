@@ -241,6 +241,39 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test.(*Workflows).Basic"))
 }
 
+func (ts *IntegrationTestSuite) TestConsistentQuery() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	// this workflow will start a local activity which blocks for long enough
+	// to ensure that consistent query must wait in order to satisfy consistency
+	wfOpts := ts.startWorkflowOptions("test-consistent-query")
+	wfOpts.DecisionTaskStartToCloseTimeout = 5 * time.Second
+	run, err := ts.libClient.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
+	ts.Nil(err)
+	// Wait for a second to ensure that first decision task gets started and completed before we send signal.
+	// Query cannot be run until first decision task has been completed.
+	// If signal occurs right after workflow start then WorkflowStarted and Signal events will both be part of the same
+	// decision task. So query will be blocked waiting for signal to complete, this is not what we want because it
+	// will not exercise the consistent query code path.
+	<-time.After(time.Second)
+	err = ts.libClient.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
+	ts.NoError(err)
+
+	value, err := ts.libClient.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:            "test-consistent-query",
+		RunID:                 run.GetRunID(),
+		QueryType:             "consistent_query",
+		QueryConsistencyLevel: shared.QueryConsistencyLevelStrong.Ptr(),
+	})
+	ts.Nil(err)
+	ts.NotNil(value)
+	ts.NotNil(value.QueryResult)
+	ts.Nil(value.QueryRejected)
+	var queryResult string
+	ts.Nil(value.QueryResult.Get(&queryResult))
+	ts.Equal("signal-input", queryResult)
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	var result string
 	err := ts.executeWorkflow(
@@ -331,7 +364,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0)
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0, "CloseTime is not greater than zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
@@ -340,7 +373,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0)
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0, "CloseTime is not zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {

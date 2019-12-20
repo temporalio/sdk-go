@@ -2153,6 +2153,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	RegisterWorkflow(workflowFn)
 	RegisterActivity(activityFailedFn)
 	RegisterActivity(activityFn)
+
+	// set a workflow timeout timer to test
+	// if the timer will fire during activity retry
+	env.SetWorkflowTimeout(10 * time.Second)
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())

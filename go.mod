@@ -22,7 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/streadway/quantile v0.0.0-20150917103942-b0c588724d25 // indirect
 	github.com/stretchr/testify v1.4.0
-	github.com/temporalio/temporal-proto v0.0.0
+	github.com/temporalio/temporal-proto v0.0.0-00010101000000-000000000000
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/mapdecode v1.0.0 // indirect
 	github.com/uber-go/tally v3.3.13+incompatible

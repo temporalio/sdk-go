@@ -33,7 +33,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	"go.uber.org/yarpc"
 
@@ -142,12 +141,9 @@ func getHostName() string {
 	return hostName
 }
 
-// worker uuid per process
-var workerUUID = uuid.New()
-
-func getWorkerTaskList() string {
-	// includes hostname for debuggability, workerUUID guarantees the uniqueness
-	return fmt.Sprintf("%s:%s", getHostName(), workerUUID)
+func getWorkerTaskList(stickyUUID string) string {
+	// includes hostname for debuggability, stickyUUID guarantees the uniqueness
+	return fmt.Sprintf("%s:%s", getHostName(), stickyUUID)
 }
 
 // getErrorDetails gets reason and details.

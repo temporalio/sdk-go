@@ -42,4 +42,4 @@ const LibraryVersion = "0.10.1"
 // This can be used for client capability check, on
 // Cadence server, for backward compatibility
 // Format: MAJOR.MINOR.PATCH
-const FeatureVersion = "1.4.0"
+const FeatureVersion = "1.5.0"
