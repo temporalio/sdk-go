@@ -56,8 +56,6 @@ proto-mock: $(PROTO_GEN)
 	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
 
 update-proto: clean-proto update-proto-submodule tools-install protoc proto-mock
-
-proto: clean-proto install-proto-submodule tools-install protoc proto-mock
 #==============================================================================
 
 tools-install:
@@ -79,7 +77,7 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 $(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
-bins: $(ALL_SRC) proto $(BUILD)/copyright lint $(BUILD)/dummy
+bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
 
 unit_test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
@@ -151,5 +149,5 @@ errcheck: tools-install $(ALL_SRC)
 fmt:
 	@gofmt -w $(ALL_SRC)
 
-clean: clean-proto
+clean:
 	rm -rf $(BUILD)
