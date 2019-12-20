@@ -83,6 +83,8 @@ tools-install: $(PROTO_ROOT)/go.mod
 	GOOS= GOARCH= gobin -mod=readonly go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc
 	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
 	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
+	GOOS= GOARCH= gobin -mod=readonly honnef.co/go/tools/cmd/staticcheck
+	GOOS= GOARCH= gobin -mod=readonly github.com/kisielk/errcheck
 
 $(THRIFTRW_OUT): $(THRIFTRW_SRC) tools-install
 	@echo 'thriftrw: $(THRIFTRW_SRC)'
@@ -165,6 +167,12 @@ lint: tools-install $(ALL_SRC)
 		echo "$$OUTPUT"; \
 		exit 1; \
 	fi
+
+staticcheck: tools-install $(ALL_SRC)
+	staticcheck ./...
+
+errcheck: tools-install $(ALL_SRC)
+	errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)

@@ -61,6 +61,11 @@ func (a *Activities) Sleep(ctx context.Context, delay time.Duration) error {
 	return nil
 }
 
+func LocalSleep(ctx context.Context, delay time.Duration) error {
+	time.Sleep(delay)
+	return nil
+}
+
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
 	a.append("heartbeatAndSleep")
 	if activity.HasHeartbeatDetails(ctx) {
