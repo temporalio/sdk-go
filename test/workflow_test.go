@@ -30,6 +30,7 @@ import (
 	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"
+	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
 )
 
@@ -488,28 +489,28 @@ func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
 	return workflow.ExecuteActivity(ctx, "Activities_Sleep", d).Get(ctx, nil)
 }
 
-func (w *Workflows) register() {
-	workflow.Register(w.Basic)
-	workflow.Register(w.ActivityRetryOnError)
-	workflow.Register(w.ActivityRetryOnHBTimeout)
-	workflow.Register(w.ActivityRetryOnTimeout)
-	workflow.Register(w.ActivityRetryOptionsChange)
-	workflow.Register(w.ContinueAsNew)
-	workflow.Register(w.ContinueAsNewWithOptions)
-	workflow.Register(w.IDReusePolicy)
-	workflow.Register(w.ChildWorkflowRetryOnError)
-	workflow.Register(w.ChildWorkflowRetryOnTimeout)
-	workflow.Register(w.ChildWorkflowSuccess)
-	workflow.Register(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
-	workflow.Register(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
-	workflow.Register(w.sleep)
-	workflow.Register(w.child)
-	workflow.Register(w.childForMemoAndSearchAttr)
-	workflow.Register(w.ActivityCancelRepro)
-	workflow.Register(w.SimplestWorkflow)
-	workflow.Register(w.LargeQueryResultWorkflow)
-	workflow.Register(w.RetryTimeoutStableErrorWorkflow)
-	workflow.Register(w.ConsistentQueryWorkflow)
+func (w *Workflows) register(worker worker.Worker) {
+	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.ActivityRetryOnError)
+	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
+	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
+	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
+	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.IDReusePolicy)
+	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
+	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.sleep)
+	worker.RegisterWorkflow(w.child)
+	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
+	worker.RegisterWorkflow(w.ActivityCancelRepro)
+	worker.RegisterWorkflow(w.SimplestWorkflow)
+	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
+	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
+	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

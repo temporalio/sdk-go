@@ -360,7 +360,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0)
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0, "CloseTime is not greater than zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
@@ -369,7 +369,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0)
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0, "CloseTime is not zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
@@ -473,6 +473,6 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 }
 
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
-	ts.workflows.register()
+	ts.workflows.register(w)
 	ts.activities.register(w)
 }
