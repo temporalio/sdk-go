@@ -40,6 +40,10 @@ clean-proto:
 update-proto-submodule:
 	git submodule update --init --remote $(PROTO_ROOT)
 
+proto-plugins:
+	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
+	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
+
 protoc:
 #   run protoc separately for each directory because of different package names
 	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
@@ -50,20 +54,15 @@ PROTO_YARPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -na
 dir_no_slash = $(patsubst %/,%,$(dir $(1)))
 dirname = $(notdir $(call dir_no_slash,$(1)))
 
-proto-mock: protoc
+proto-mock: protoc gobin
 	@echo "Generate proto mocks..."
+	gobin -mod=readonly github.com/golang/mock/mockgen
 	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
 
-proto: $(PROTO_GEN) clean-proto update-proto-submodule tools-install protoc proto-mock copyright
+proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
 
-tools-install:
+gobin:
 	GO111MODULE=off go get -u github.com/myitcv/gobin
-	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
-	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
-	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
-	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
-	GOOS= GOARCH= gobin -mod=readonly honnef.co/go/tools/cmd/staticcheck
-	GOOS= GOARCH= gobin -mod=readonly github.com/kisielk/errcheck
 
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
@@ -126,7 +125,8 @@ define lint_if_present
 test -n "$1" && golint -set_exit_status $1
 endef
 
-lint: tools-install $(ALL_SRC)
+lint: gobin $(ALL_SRC)
+	gobin -mod=readonly golang.org/x/lint/golint
 	$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
@@ -138,11 +138,12 @@ lint: tools-install $(ALL_SRC)
 		exit 1; \
 	fi
 
-staticcheck: tools-install $(ALL_SRC)
-	staticcheck ./...
 
-errcheck: tools-install $(ALL_SRC)
-	errcheck ./...
+staticcheck: gobin $(ALL_SRC)
+	gobin -mod=readonly -run honnef.co/go/tools/cmd/staticcheck ./...
+
+errcheck: gobin $(ALL_SRC)
+	gobin -mod=readonly -run github.com/kisielk/errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)
