@@ -24,7 +24,6 @@ package internal
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -284,5 +283,5 @@ func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
 	}
 
 	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
-	return 0, errors.New(fmt.Sprintf("timeout type %q is not defined", timeoutTypeStr))
+	return 0, fmt.Errorf("timeout type %q is not defined", timeoutTypeStr)
 }
