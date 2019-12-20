@@ -24,12 +24,13 @@ INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)
 LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
 #================================= protobuf ===================================
-PROTO_ROOT := .gen/proto
+PROTO_ROOT := proto
 PROTO_REPO := github.com/temporalio/temporal-proto
 # List only subdirectories with *.proto files (sort to remove duplicates).
 # Note: using "shell find" instead of "wildcard" because "wildcard" caches directory structure.
 PROTO_DIRS = $(sort $(dir $(shell find $(PROTO_ROOT) -name "*.proto")))
 PROTO_SERVICES := $(shell find $(PROTO_ROOT) -name "*service.proto")
+PROTO_GEN = .gen/proto
 
 # Everything that deals with go modules (go.mod) needs to take dependency on this target.
 $(PROTO_ROOT)/go.mod:
