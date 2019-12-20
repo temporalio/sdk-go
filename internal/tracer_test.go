@@ -68,7 +68,7 @@ func TestTracingContextPropagatorNoSpan(t *testing.T) {
 	assert.NoError(t, err)
 
 	returnCtx := context.Background()
-	returnCtx, err = ctxProp.Extract(returnCtx, NewHeaderReader(header))
+	_, err = ctxProp.Extract(returnCtx, NewHeaderReader(header))
 	assert.NoError(t, err)
 }
 
@@ -108,6 +108,6 @@ func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	assert.NoError(t, err)
 
 	returnCtx := Background()
-	returnCtx, err = ctxProp.ExtractToWorkflow(returnCtx, NewHeaderReader(header))
+	_, err = ctxProp.ExtractToWorkflow(returnCtx, NewHeaderReader(header))
 	assert.NoError(t, err)
 }

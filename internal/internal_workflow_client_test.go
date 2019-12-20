@@ -1059,7 +1059,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
-	resp, err = s.client.ListWorkflow(context.Background(), request)
+	_, err = s.client.ListWorkflow(context.Background(), request)
 	s.Equal(responseErr, err)
 }
 
@@ -1082,7 +1082,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
-	resp, err = s.client.ListArchivedWorkflow(ctxWithTimeout, request)
+	_, err = s.client.ListArchivedWorkflow(ctxWithTimeout, request)
 	s.Equal(responseErr, err)
 }
 
@@ -1103,7 +1103,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
-	resp, err = s.client.ScanWorkflow(context.Background(), request)
+	_, err = s.client.ScanWorkflow(context.Background(), request)
 	s.Equal(responseErr, err)
 }
 
@@ -1124,7 +1124,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
-	resp, err = s.client.CountWorkflow(context.Background(), request)
+	_, err = s.client.CountWorkflow(context.Background(), request)
 	s.Equal(responseErr, err)
 }
 
@@ -1137,6 +1137,6 @@ func (s *workflowClientTestSuite) TestGetSearchAttributes() {
 
 	responseErr := protobufutils.NewError(codes.InvalidArgument)
 	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, responseErr)
-	resp, err = s.client.GetSearchAttributes(context.Background())
+	_, err = s.client.GetSearchAttributes(context.Background())
 	s.Equal(responseErr, err)
 }

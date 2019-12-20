@@ -388,7 +388,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowS
 					if last.GetEventType() == enums.EventTypeWorkflowExecutionContinuedAsNew {
 						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
-						if bytes.Compare(inputA, inputB) == 0 {
+						if bytes.Equal(inputA, inputB) {
 							return nil
 						}
 					}
@@ -397,7 +397,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowS
 					if last.GetEventType() == enums.EventTypeWorkflowExecutionCompleted {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
-						if bytes.Compare(resultA, resultB) == 0 {
+						if bytes.Equal(resultA, resultB) {
 							return nil
 						}
 					}

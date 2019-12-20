@@ -1114,7 +1114,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	lamd := localActivityMarkerData{
 		ActivityID:   lar.task.activityID,
 		ActivityType: lar.task.params.ActivityType,
-		ReplayTime:   weh.currentReplayTime.Add(time.Now().Sub(weh.currentLocalTime)),
+		ReplayTime:   weh.currentReplayTime.Add(time.Since(weh.currentLocalTime)),
 		Attempt:      lar.task.attempt,
 	}
 	if lar.err != nil {

@@ -543,7 +543,6 @@ func scheduleLocalActivity(ctx Context, params *executeLocalActivityParams) Futu
 
 		// set retry error, and it will be handled by workflow.ExecuteLocalActivity().
 		f.Set(nil, &needRetryError{Backoff: lar.backoff, Attempt: lar.attempt})
-		return
 	})
 
 	if cancellable {

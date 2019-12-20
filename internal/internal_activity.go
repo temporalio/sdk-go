@@ -409,8 +409,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 	if params != nil {
 		newParams = *params
 		if params.RetryPolicy != nil {
-			var newRetryPolicy commonproto.RetryPolicy
-			newRetryPolicy = *newParams.RetryPolicy
+			newRetryPolicy := *newParams.RetryPolicy
 			newParams.RetryPolicy = &newRetryPolicy
 		}
 	}

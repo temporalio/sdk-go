@@ -60,6 +60,11 @@ func Workflow(ctx workflow.Context, name string) error {
 		}
 	} else {
 		err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
+		if err != nil {
+			logger.Error("Activity failed.", zap.Error(err))
+			return err
+		}
+
 		err = workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 		if err != nil {
 			logger.Error("Activity failed.", zap.Error(err))

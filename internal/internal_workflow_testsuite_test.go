@@ -1157,6 +1157,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 			f = ExecuteActivity(ctx, newActivity, "new_msg")
 		}
 		err := f.Get(ctx, nil) // wait for result
+		if err != nil {
+			return err
+		}
 
 		// test searchable change version
 		wfInfo := GetWorkflowInfo(ctx)
@@ -1202,6 +1205,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		}
 		var ret1 string
 		err := f.Get(ctx, &ret1) // wait for result
+		if err != nil {
+			return "", err
+		}
 
 		v2 := GetVersion(ctx, "change_2", DefaultVersion, 2)
 		if v2 == DefaultVersion {
@@ -1211,6 +1217,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		}
 		var ret2 string
 		err = f.Get(ctx, &ret2) // wait for result
+		if err != nil {
+			return "", err
+		}
 
 		// test searchable change version
 		wfInfo := GetWorkflowInfo(ctx)
@@ -1627,6 +1636,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	s.Equal("hello local_activity", laResult)
 }
 
+// This is flaky test. Rerun if failed.
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil

@@ -128,7 +128,6 @@ type (
 		ctxProps     []ContextPropagator
 		mockClock    *clock.Mock
 		wallClock    clock.Clock
-		startTime    time.Time
 
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
@@ -1677,7 +1676,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
 			executor := &activityExecutor{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(nil, args)
+			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -1729,7 +1728,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
 			executor := &activityExecutor{name: mockMethodForSignalExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(nil, args)
+			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -1801,7 +1800,7 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
-		reflectValues := executor.executeWithActualArgsWithoutParseResult(nil, args)
+		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
 		if len(reflectValues) != 1 || !reflect.TypeOf(reflectValues[0].Interface()).AssignableTo(reflect.TypeOf(DefaultVersion)) {
 			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
 				reflectValues[0].Interface(), reflectValues[0].Interface()))
