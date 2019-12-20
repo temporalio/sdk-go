@@ -4,14 +4,6 @@
 default: test
 
 IMPORT_ROOT := go.temporal.io/temporal
-THRIFT_GENDIR := .gen/go
-THRIFTRW_SRC := \
-  idl/github.com/temporalio/temporal/temporal.thrift \
-  idl/github.com/temporalio/temporal/shared.thrift \
-
-# one or more thriftrw-generated file(s), to create / depend on generated code
-THRIFTRW_OUT := $(THRIFT_GENDIR)/temporal/temporal.go
-TEST_ARG ?= -v -race
 
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
@@ -22,18 +14,14 @@ UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
 INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
 INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 
-# Automatically gather all srcs + a "sentinel" thriftrw output file (which forces generation).
-ALL_SRC := $(THRIFTRW_OUT) $(shell \
-	find . -name "*.go" | \
-	grep -v \
-	-e .gen/ \
-	-e .build/ \
-)
+# Automatically gather all srcs
+ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e .gen/ -e .build/)
 
 UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
+INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)))
 
-# Files that needs to run lint.  excludes testify mocks and the thrift sentinel.
-LINT_SRC := $(filter-out ./mock% $(THRIFTRW_OUT),$(ALL_SRC))
+# Files that needs to run lint. Excludes testify mocks.
+LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
 #================================= protobuf ===================================
 PROTO_ROOT := .gen/proto
@@ -80,25 +68,10 @@ tools-install: $(PROTO_ROOT)/go.mod
 	GO111MODULE=off go get -u github.com/myitcv/gobin
 	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
 	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
-	GOOS= GOARCH= gobin -mod=readonly go.uber.org/thriftrw
-	GOOS= GOARCH= gobin -mod=readonly go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc
 	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
 	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
 	GOOS= GOARCH= gobin -mod=readonly honnef.co/go/tools/cmd/staticcheck
 	GOOS= GOARCH= gobin -mod=readonly github.com/kisielk/errcheck
-
-$(THRIFTRW_OUT): $(THRIFTRW_SRC) tools-install
-	@echo 'thriftrw: $(THRIFTRW_SRC)'
-	@mkdir -p $(dir $@)
-	@# needs to be able to find the thriftrw-plugin-yarpc bin in PATH
-	$(foreach source,$(THRIFTRW_SRC),\
-		    thriftrw \
-		        --plugin=yarpc \
-		        --pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
-		        --out=$(THRIFT_GENDIR) $(source);)
-
-clean_thrift:
-	rm -rf .gen
 
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
@@ -123,11 +96,15 @@ unit_test: $(BUILD)/dummy
 
 integ_test_sticky_off: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
-	STICKY_OFF=true go test $(TEST_ARG) ./test -coverprofile=$(INTEG_STICKY_OFF_COVER_FILE) -coverpkg=./...
+	@for dir in $(INTEG_TEST_DIRS); do \
+		STICKY_OFF=true go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_OFF_COVER_FILE) -coverpkg=./... || exit 1; \
+	done;
 
 integ_test_sticky_on: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
-	STICKY_OFF=false go test $(TEST_ARG) ./test -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./...
+	@for dir in $(INTEG_TEST_DIRS); do \
+		STICKY_OFF=false go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./... || exit 1; \
+	done;
 
 test: unit_test integ_test_sticky_off integ_test_sticky_on
 
@@ -179,5 +156,4 @@ fmt:
 	@gofmt -w $(ALL_SRC)
 
 clean: clean-proto
-	rm -Rf $(BUILD)
-	rm -Rf .gen/go
+	rm -rf $(BUILD)
