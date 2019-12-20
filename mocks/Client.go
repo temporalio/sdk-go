@@ -27,7 +27,9 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
-	"go.temporal.io/temporal/.gen/go/shared"
+
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"
@@ -82,20 +84,20 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, domain string, workf
 }
 
 // CountWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) CountWorkflow(ctx context.Context, request *shared.CountWorkflowExecutionsRequest) (*shared.CountWorkflowExecutionsResponse, error) {
+func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.CountWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.CountWorkflowExecutionsRequest) *shared.CountWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.CountWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.CountWorkflowExecutionsRequest) *workflowservice.CountWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.CountWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.CountWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.CountWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.CountWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)
@@ -105,20 +107,20 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *shared.CountWorkfl
 }
 
 // DescribeTaskList provides a mock function with given fields: ctx, tasklist, tasklistType
-func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType shared.TaskListType) (*shared.DescribeTaskListResponse, error) {
+func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	ret := _m.Called(ctx, tasklist, tasklistType)
 
-	var r0 *shared.DescribeTaskListResponse
-	if rf, ok := ret.Get(0).(func(context.Context, string, shared.TaskListType) *shared.DescribeTaskListResponse); ok {
+	var r0 *workflowservice.DescribeTaskListResponse
+	if rf, ok := ret.Get(0).(func(context.Context, string, enums.TaskListType) *workflowservice.DescribeTaskListResponse); ok {
 		r0 = rf(ctx, tasklist, tasklistType)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.DescribeTaskListResponse)
+			r0 = ret.Get(0).(*workflowservice.DescribeTaskListResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, shared.TaskListType) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, string, enums.TaskListType) error); ok {
 		r1 = rf(ctx, tasklist, tasklistType)
 	} else {
 		r1 = ret.Error(1)
@@ -128,15 +130,15 @@ func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklis
 }
 
 // DescribeWorkflowExecution provides a mock function with given fields: ctx, workflowID, runID
-func (_m *Client) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*shared.DescribeWorkflowExecutionResponse, error) {
+func (_m *Client) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	ret := _m.Called(ctx, workflowID, runID)
 
-	var r0 *shared.DescribeWorkflowExecutionResponse
-	if rf, ok := ret.Get(0).(func(context.Context, string, string) *shared.DescribeWorkflowExecutionResponse); ok {
+	var r0 *workflowservice.DescribeWorkflowExecutionResponse
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) *workflowservice.DescribeWorkflowExecutionResponse); ok {
 		r0 = rf(ctx, workflowID, runID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.DescribeWorkflowExecutionResponse)
+			r0 = ret.Get(0).(*workflowservice.DescribeWorkflowExecutionResponse)
 		}
 	}
 
@@ -177,15 +179,15 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 }
 
 // GetSearchAttributes provides a mock function with given fields: ctx
-func (_m *Client) GetSearchAttributes(ctx context.Context) (*shared.GetSearchAttributesResponse, error) {
+func (_m *Client) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
 	ret := _m.Called(ctx)
 
-	var r0 *shared.GetSearchAttributesResponse
-	if rf, ok := ret.Get(0).(func(context.Context) *shared.GetSearchAttributesResponse); ok {
+	var r0 *workflowservice.GetSearchAttributesResponse
+	if rf, ok := ret.Get(0).(func(context.Context) *workflowservice.GetSearchAttributesResponse); ok {
 		r0 = rf(ctx)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.GetSearchAttributesResponse)
+			r0 = ret.Get(0).(*workflowservice.GetSearchAttributesResponse)
 		}
 	}
 
@@ -216,11 +218,11 @@ func (_m *Client) GetWorkflow(ctx context.Context, workflowID string, runID stri
 }
 
 // GetWorkflowHistory provides a mock function with given fields: ctx, workflowID, runID, isLongPoll, filterType
-func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType shared.HistoryEventFilterType) client.HistoryEventIterator {
+func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) client.HistoryEventIterator {
 	ret := _m.Called(ctx, workflowID, runID, isLongPoll, filterType)
 
 	var r0 internal.HistoryEventIterator
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, shared.HistoryEventFilterType) internal.HistoryEventIterator); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, enums.HistoryEventFilterType) internal.HistoryEventIterator); ok {
 		r0 = rf(ctx, workflowID, runID, isLongPoll, filterType)
 	} else {
 		if ret.Get(0) != nil {
@@ -232,20 +234,20 @@ func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, run
 }
 
 // ListClosedWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) ListClosedWorkflow(ctx context.Context, request *shared.ListClosedWorkflowExecutionsRequest) (*shared.ListClosedWorkflowExecutionsResponse, error) {
+func (_m *Client) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.ListClosedWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListClosedWorkflowExecutionsRequest) *shared.ListClosedWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.ListClosedWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ListClosedWorkflowExecutionsRequest) *workflowservice.ListClosedWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.ListClosedWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.ListClosedWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListClosedWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ListClosedWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)
@@ -255,20 +257,20 @@ func (_m *Client) ListClosedWorkflow(ctx context.Context, request *shared.ListCl
 }
 
 // ListOpenWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) ListOpenWorkflow(ctx context.Context, request *shared.ListOpenWorkflowExecutionsRequest) (*shared.ListOpenWorkflowExecutionsResponse, error) {
+func (_m *Client) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.ListOpenWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListOpenWorkflowExecutionsRequest) *shared.ListOpenWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.ListOpenWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ListOpenWorkflowExecutionsRequest) *workflowservice.ListOpenWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.ListOpenWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.ListOpenWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListOpenWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ListOpenWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)
@@ -278,20 +280,20 @@ func (_m *Client) ListOpenWorkflow(ctx context.Context, request *shared.ListOpen
 }
 
 // ListWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) ListWorkflow(ctx context.Context, request *shared.ListWorkflowExecutionsRequest) (*shared.ListWorkflowExecutionsResponse, error) {
+func (_m *Client) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.ListWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListWorkflowExecutionsRequest) *shared.ListWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.ListWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ListWorkflowExecutionsRequest) *workflowservice.ListWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.ListWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.ListWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ListWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)
@@ -301,20 +303,20 @@ func (_m *Client) ListWorkflow(ctx context.Context, request *shared.ListWorkflow
 }
 
 // ListArchivedWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) ListArchivedWorkflow(ctx context.Context, request *shared.ListArchivedWorkflowExecutionsRequest) (*shared.ListArchivedWorkflowExecutionsResponse, error) {
+func (_m *Client) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.ListArchivedWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListArchivedWorkflowExecutionsRequest) *shared.ListArchivedWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.ListArchivedWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ListArchivedWorkflowExecutionsRequest) *workflowservice.ListArchivedWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.ListArchivedWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.ListArchivedWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListArchivedWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ListArchivedWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)
@@ -409,20 +411,20 @@ func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, domain string
 }
 
 // ScanWorkflow provides a mock function with given fields: ctx, request
-func (_m *Client) ScanWorkflow(ctx context.Context, request *shared.ListWorkflowExecutionsRequest) (*shared.ListWorkflowExecutionsResponse, error) {
+func (_m *Client) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
-	var r0 *shared.ListWorkflowExecutionsResponse
-	if rf, ok := ret.Get(0).(func(context.Context, *shared.ListWorkflowExecutionsRequest) *shared.ListWorkflowExecutionsResponse); ok {
+	var r0 *workflowservice.ScanWorkflowExecutionsResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ScanWorkflowExecutionsRequest) *workflowservice.ScanWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*shared.ListWorkflowExecutionsResponse)
+			r0 = ret.Get(0).(*workflowservice.ScanWorkflowExecutionsResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *shared.ListWorkflowExecutionsRequest) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ScanWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
 		r1 = ret.Error(1)

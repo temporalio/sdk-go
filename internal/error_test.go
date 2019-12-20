@@ -26,9 +26,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 const (
@@ -91,7 +92,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(shared.TimeoutTypeScheduleToStart)
+	timeoutErr := NewTimeoutError(enums.TimeoutTypeScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
@@ -103,12 +104,12 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, shared.TimeoutTypeHeartbeat)
-	testTimeoutErrorDetails(t, shared.TimeoutTypeScheduleToClose)
-	testTimeoutErrorDetails(t, shared.TimeoutTypeStartToClose)
+	testTimeoutErrorDetails(t, enums.TimeoutTypeHeartbeat)
+	testTimeoutErrorDetails(t, enums.TimeoutTypeScheduleToClose)
+	testTimeoutErrorDetails(t, enums.TimeoutTypeStartToClose)
 }
 
-func testTimeoutErrorDetails(t *testing.T, timeoutType shared.TimeoutType) {
+func testTimeoutErrorDetails(t *testing.T, timeoutType enums.TimeoutType) {
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   getDefaultDataConverter(),
@@ -118,7 +119,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType shared.TimeoutType) {
 	activityID := "activityID"
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityDecisionStateMachine(
-		&shared.ScheduleActivityTaskDecisionAttributes{ActivityId: common.StringPtr(activityID)})
+		&commonproto.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r []byte, e error) {
@@ -127,14 +128,14 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType shared.TimeoutType) {
 	})
 	context.decisionsHelper.addDecision(di)
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
-	event := createTestEventActivityTaskTimedOut(7, &shared.ActivityTaskTimedOutEventAttributes{
+	event := createTestEventActivityTaskTimedOut(7, &commonproto.ActivityTaskTimedOutEventAttributes{
 		Details:          encodedDetails1,
-		ScheduledEventId: common.Int64Ptr(5),
-		StartedEventId:   common.Int64Ptr(6),
-		TimeoutType:      &timeoutType,
+		ScheduledEventId: 5,
+		StartedEventId:   6,
+		TimeoutType:      timeoutType,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
-	weh.handleActivityTaskTimedOut(event)
+	_ = weh.handleActivityTaskTimedOut(event)
 	err, ok := actualErr.(*TimeoutError)
 	require.True(t, ok)
 	require.True(t, err.HasDetails())
@@ -150,12 +151,12 @@ func Test_CustomError(t *testing.T) {
 	var a3 testStruct
 	err0 := NewCustomError(customErrReasonA, testErrorDetails1)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1)
+	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
 	err0 = NewCustomError(customErrReasonA, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1, &a2, &a3)
+	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)
@@ -175,13 +176,13 @@ func Test_CustomError(t *testing.T) {
 	var b1 string
 	var b2 int
 	var b3 testStruct
-	err1.Details(&b1, &b2, &b3)
+	_ = err1.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
 
 	// test reason and no detail
-	require.Panics(t, func() { NewCustomError("cadenceInternal:testReason") })
+	require.Panics(t, func() { _ = NewCustomError("cadenceInternal:testReason") })
 	newReason := "another reason"
 	err2 := NewCustomError(newReason)
 	require.True(t, !err2.HasDetails())
@@ -203,7 +204,7 @@ func Test_CustomError(t *testing.T) {
 	err4, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err4.HasDetails())
-	err4.Details(&b1, &b2, &b3)
+	_ = err4.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -265,7 +266,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	err5, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err5.HasDetails())
-	err5.Details(&b1)
+	_ = err5.Details(&b1)
 	require.NoError(t, err5.Details(&b1))
 	require.Equal(t, testErrorDetails4, b1)
 
@@ -280,7 +281,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	err6, ok := err.(*CustomError)
 	require.True(t, ok)
 	require.True(t, err6.HasDetails())
-	err6.Details(&b2)
+	_ = err6.Details(&b2)
 	require.NoError(t, err6.Details(&b2))
 	require.Equal(t, &testErrorDetails4, b2)
 }
@@ -292,12 +293,12 @@ func Test_CanceledError(t *testing.T) {
 	var a3 testStruct
 	err0 := NewCanceledError(testErrorDetails1)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1)
+	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
 	err0 = NewCanceledError(testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
-	err0.Details(&a1, &a2, &a3)
+	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)
@@ -317,7 +318,7 @@ func Test_CanceledError(t *testing.T) {
 	var b1 string
 	var b2 int
 	var b3 testStruct
-	err1.Details(&b1, &b2, &b3)
+	_ = err1.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -337,7 +338,7 @@ func Test_CanceledError(t *testing.T) {
 	err3, ok := err.(*CanceledError)
 	require.True(t, ok)
 	require.True(t, err3.HasDetails())
-	err3.Details(&b1, &b2, &b3)
+	_ = err3.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
 	require.Equal(t, testErrorDetails2, b2)
 	require.Equal(t, testErrorDetails3, b3)
@@ -381,9 +382,9 @@ func TestErrorDetailsValues(t *testing.T) {
 	var a2 int
 	var a3 testStruct
 	require.True(t, e.HasValues())
-	e.Get(&a1)
+	_ = e.Get(&a1)
 	require.Equal(t, testErrorDetails1, a1)
-	e.Get(&a1, &a2, &a3)
+	_ = e.Get(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
 	require.Equal(t, testErrorDetails2, a2)
 	require.Equal(t, testErrorDetails3, a3)
@@ -402,7 +403,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	signalID := "signalID"
 	context.decisionsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	di := h.newSignalExternalWorkflowStateMachine(
-		&shared.SignalExternalWorkflowExecutionDecisionAttributes{},
+		&commonproto.SignalExternalWorkflowExecutionDecisionAttributes{},
 		signalID,
 	)
 	di.state = decisionStateInitiated
@@ -413,9 +414,9 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	})
 	context.decisionsHelper.addDecision(di)
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
-	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &shared.SignalExternalWorkflowExecutionFailedEventAttributes{
-		InitiatedEventId: common.Int64Ptr(initiatedEventID),
-		Cause:            shared.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution.Ptr(),
+	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &commonproto.SignalExternalWorkflowExecutionFailedEventAttributes{
+		InitiatedEventId: initiatedEventID,
+		Cause:            enums.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution,
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)
@@ -434,7 +435,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 		Name: continueAsNewWfName,
 	})
 
-	header := &shared.Header{
+	header := &commonproto.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
 	}
 

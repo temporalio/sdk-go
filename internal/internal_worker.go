@@ -43,13 +43,15 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
+
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -81,7 +83,7 @@ type (
 	// task list names they might have to manage 'n' workers for 'n' task lists.
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     workflowserviceclient.Interface
+		workflowService     workflowservice.WorkflowServiceYARPCClient
 		domain              string
 		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
@@ -94,7 +96,7 @@ type (
 	// TODO: Worker doing heartbeating automatically while activity task is running
 	activityWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     workflowserviceclient.Interface
+		workflowService     workflowservice.WorkflowServiceYARPCClient
 		domain              string
 		poller              taskPoller
 		worker              *baseWorker
@@ -190,7 +192,7 @@ type (
 
 // newWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -226,18 +228,18 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyDomainExist does a DescribeDomain operation on the specified domain with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyDomainExist(client workflowserviceclient.Interface, domain string, logger *zap.Logger) error {
+func verifyDomainExist(client workflowservice.WorkflowServiceYARPCClient, domain string, logger *zap.Logger) error {
 	ctx := context.Background()
 	descDomainOp := func() error {
 		tchCtx, cancel, opt := newChannelContext(ctx)
 		defer cancel()
-		_, err := client.DescribeDomain(tchCtx, &shared.DescribeDomainRequest{Name: &domain}, opt...)
+		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt...)
 		if err != nil {
-			if _, ok := err.(*shared.EntityNotExistsError); ok {
+			if protobufutils.GetCode(err) == codes.NotFound {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
-			if _, ok := err.(*shared.BadRequestError); ok {
+			if protobufutils.GetCode(err) == codes.InvalidArgument {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
@@ -256,7 +258,7 @@ func verifyDomainExist(client workflowserviceclient.Interface, domain string, lo
 }
 
 func newWorkflowWorkerInternal(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -278,7 +280,7 @@ func newWorkflowWorkerInternal(
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	stopC chan struct{},
@@ -371,7 +373,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowserviceclient.Interface,
+func newSessionWorker(service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
@@ -430,7 +432,7 @@ func (sw *sessionWorker) Stop() {
 }
 
 func newActivityWorker(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
@@ -453,7 +455,7 @@ func newActivityWorker(
 
 func newActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	workerParams workerExecutionParameters,
 	sessionTokenBucket *sessionTokenBucket,
@@ -571,7 +573,7 @@ func (r *registry) RegisterActivityWithOptions(
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		r.registerActivityStructWithOptions(af, options)
+		_ = r.registerActivityStructWithOptions(af, options)
 		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
@@ -970,7 +972,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 
 func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, error) {
 	fnType := reflect.TypeOf(ae.fn)
-	args := []reflect.Value{}
+	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
@@ -1004,7 +1006,7 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArg
 
 func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []reflect.Value {
 	fnType := reflect.TypeOf(ae.fn)
-	args := []reflect.Value{}
+	var args []reflect.Value
 
 	// activities optionally might not take context.
 	argsOffeset := 0
@@ -1211,7 +1213,7 @@ func (aw *AggregatedWorker) Stop() {
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func newAggregatedWorker(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	taskList string,
 	options WorkerOptions,
@@ -1438,7 +1440,7 @@ type thriftEncoding struct{}
 
 // Marshal encodes an array of thrift into bytes
 func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
-	tlist := []thrift.TStruct{}
+	var tlist []thrift.TStruct
 	for i := 0; i < len(objs); i++ {
 		if !isThriftType(objs[i]) {
 			return nil, fmt.Errorf("pointer to thrift.TStruct type is required for %v argument", i+1)
@@ -1451,7 +1453,7 @@ func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
 
 // Unmarshal decodes an array of thrift into bytes
 func (g thriftEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	tlist := []thrift.TStruct{}
+	var tlist []thrift.TStruct
 	for i := 0; i < len(objs); i++ {
 		rVal := reflect.ValueOf(objs[i])
 		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {

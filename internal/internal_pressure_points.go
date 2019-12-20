@@ -26,8 +26,9 @@ import (
 	"strconv"
 	"time"
 
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.uber.org/zap"
+
+	"github.com/temporalio/temporal-proto/workflowservice"
 )
 
 // ** This is for internal stress testing framework **
@@ -57,7 +58,7 @@ type (
 
 // newWorkflowWorkerWithPressurePoints returns an instance of a workflow worker.
 func newWorkflowWorkerWithPressurePoints(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string,

@@ -153,7 +153,7 @@ func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, num
 	}
 
 	if p.expirationInterval != NoInterval {
-		remainingTime := float64(math.Max(0, float64(p.expirationInterval-elapsedTime)))
+		remainingTime := math.Max(0, float64(p.expirationInterval-elapsedTime))
 		nextInterval = math.Min(remainingTime, nextInterval)
 	}
 

@@ -26,8 +26,10 @@ import (
 	"context"
 	"time"
 
-	s "go.temporal.io/temporal/.gen/go/shared"
+	"google.golang.org/grpc/codes"
+
 	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -63,14 +65,8 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 
 func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
-	switch err.(type) {
-	case *s.BadRequestError,
-		*s.EntityNotExistsError,
-		*s.WorkflowExecutionAlreadyStartedError,
-		*s.DomainAlreadyExistsError,
-		*s.QueryFailedError,
-		*s.DomainNotActiveError,
-		*s.CancellationAlreadyRequestedError:
+	errCode := protobufutils.GetCode(err)
+	if errCode == codes.InvalidArgument || errCode == codes.NotFound || errCode == codes.AlreadyExists {
 		return false
 	}
 

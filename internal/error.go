@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.temporal.io/temporal/.gen/go/shared"
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 /*
@@ -97,7 +97,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
-		timeoutType shared.TimeoutType
+		timeoutType enums.TimeoutType
 		details     Values
 	}
 
@@ -171,7 +171,7 @@ func NewCustomError(reason string, details ...interface{}) *CustomError {
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
-func NewTimeoutError(timeoutType shared.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *TimeoutError {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &TimeoutError{timeoutType: timeoutType, details: d}
@@ -182,7 +182,7 @@ func NewTimeoutError(timeoutType shared.TimeoutType, details ...interface{}) *Ti
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(shared.TimeoutTypeHeartbeat, details...)
+	return NewTimeoutError(enums.TimeoutTypeHeartbeat, details...)
 }
 
 // NewCanceledError creates CanceledError instance
@@ -224,13 +224,13 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 	if err != nil {
 		panic(err)
 	}
-	if options.taskListName == nil || *options.taskListName == "" {
+	if options.taskListName == "" {
 		panic("invalid task list provided")
 	}
-	if options.executionStartToCloseTimeoutSeconds == nil || *options.executionStartToCloseTimeoutSeconds <= 0 {
+	if options.executionStartToCloseTimeoutSeconds <= 0 {
 		panic("invalid executionStartToCloseTimeoutSeconds provided")
 	}
-	if options.taskStartToCloseTimeoutSeconds == nil || *options.taskStartToCloseTimeoutSeconds <= 0 {
+	if options.taskStartToCloseTimeoutSeconds <= 0 {
 		panic("invalid taskStartToCloseTimeoutSeconds provided")
 	}
 
@@ -277,7 +277,7 @@ func (e *TimeoutError) Error() string {
 }
 
 // TimeoutType return timeout type of this error
-func (e *TimeoutError) TimeoutType() shared.TimeoutType {
+func (e *TimeoutError) TimeoutType() enums.TimeoutType {
 	return e.timeoutType
 }
 

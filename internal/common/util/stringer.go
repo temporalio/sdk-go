@@ -25,7 +25,8 @@ import (
 	"fmt"
 	"reflect"
 
-	s "go.temporal.io/temporal/.gen/go/shared"
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 func anyToString(d interface{}) string {
@@ -77,74 +78,74 @@ func valueToString(v reflect.Value) string {
 }
 
 // HistoryEventToString convert HistoryEvent to string
-func HistoryEventToString(e *s.HistoryEvent) string {
+func HistoryEventToString(e *commonproto.HistoryEvent) string {
 	var data interface{}
 	switch e.GetEventType() {
-	case s.EventTypeWorkflowExecutionStarted:
-		data = e.WorkflowExecutionStartedEventAttributes
+	case enums.EventTypeWorkflowExecutionStarted:
+		data = e.GetWorkflowExecutionStartedEventAttributes()
 
-	case s.EventTypeWorkflowExecutionCompleted:
-		data = e.WorkflowExecutionCompletedEventAttributes
+	case enums.EventTypeWorkflowExecutionCompleted:
+		data = e.GetWorkflowExecutionCompletedEventAttributes()
 
-	case s.EventTypeWorkflowExecutionFailed:
-		data = e.WorkflowExecutionFailedEventAttributes
+	case enums.EventTypeWorkflowExecutionFailed:
+		data = e.GetWorkflowExecutionFailedEventAttributes()
 
-	case s.EventTypeWorkflowExecutionTimedOut:
-		data = e.WorkflowExecutionTimedOutEventAttributes
+	case enums.EventTypeWorkflowExecutionTimedOut:
+		data = e.GetWorkflowExecutionTimedOutEventAttributes()
 
-	case s.EventTypeDecisionTaskScheduled:
-		data = e.DecisionTaskScheduledEventAttributes
+	case enums.EventTypeDecisionTaskScheduled:
+		data = e.GetDecisionTaskScheduledEventAttributes()
 
-	case s.EventTypeDecisionTaskStarted:
-		data = e.DecisionTaskStartedEventAttributes
+	case enums.EventTypeDecisionTaskStarted:
+		data = e.GetDecisionTaskStartedEventAttributes()
 
-	case s.EventTypeDecisionTaskCompleted:
-		data = e.DecisionTaskCompletedEventAttributes
+	case enums.EventTypeDecisionTaskCompleted:
+		data = e.GetDecisionTaskCompletedEventAttributes()
 
-	case s.EventTypeDecisionTaskTimedOut:
-		data = e.DecisionTaskTimedOutEventAttributes
+	case enums.EventTypeDecisionTaskTimedOut:
+		data = e.GetDecisionTaskTimedOutEventAttributes()
 
-	case s.EventTypeActivityTaskScheduled:
-		data = e.ActivityTaskScheduledEventAttributes
+	case enums.EventTypeActivityTaskScheduled:
+		data = e.GetActivityTaskScheduledEventAttributes()
 
-	case s.EventTypeActivityTaskStarted:
-		data = e.ActivityTaskStartedEventAttributes
+	case enums.EventTypeActivityTaskStarted:
+		data = e.GetActivityTaskStartedEventAttributes()
 
-	case s.EventTypeActivityTaskCompleted:
-		data = e.ActivityTaskCompletedEventAttributes
+	case enums.EventTypeActivityTaskCompleted:
+		data = e.GetActivityTaskCompletedEventAttributes()
 
-	case s.EventTypeActivityTaskFailed:
-		data = e.ActivityTaskFailedEventAttributes
+	case enums.EventTypeActivityTaskFailed:
+		data = e.GetActivityTaskFailedEventAttributes()
 
-	case s.EventTypeActivityTaskTimedOut:
-		data = e.ActivityTaskTimedOutEventAttributes
+	case enums.EventTypeActivityTaskTimedOut:
+		data = e.GetActivityTaskTimedOutEventAttributes()
 
-	case s.EventTypeActivityTaskCancelRequested:
-		data = e.ActivityTaskCancelRequestedEventAttributes
+	case enums.EventTypeActivityTaskCancelRequested:
+		data = e.GetActivityTaskCancelRequestedEventAttributes()
 
-	case s.EventTypeRequestCancelActivityTaskFailed:
-		data = e.RequestCancelActivityTaskFailedEventAttributes
+	case enums.EventTypeRequestCancelActivityTaskFailed:
+		data = e.GetRequestCancelActivityTaskFailedEventAttributes()
 
-	case s.EventTypeActivityTaskCanceled:
-		data = e.ActivityTaskCanceledEventAttributes
+	case enums.EventTypeActivityTaskCanceled:
+		data = e.GetActivityTaskCanceledEventAttributes()
 
-	case s.EventTypeTimerStarted:
-		data = e.TimerStartedEventAttributes
+	case enums.EventTypeTimerStarted:
+		data = e.GetTimerStartedEventAttributes()
 
-	case s.EventTypeTimerFired:
-		data = e.TimerFiredEventAttributes
+	case enums.EventTypeTimerFired:
+		data = e.GetTimerFiredEventAttributes()
 
-	case s.EventTypeCancelTimerFailed:
-		data = e.CancelTimerFailedEventAttributes
+	case enums.EventTypeCancelTimerFailed:
+		data = e.GetCancelTimerFailedEventAttributes()
 
-	case s.EventTypeTimerCanceled:
-		data = e.TimerCanceledEventAttributes
+	case enums.EventTypeTimerCanceled:
+		data = e.GetTimerCanceledEventAttributes()
 
-	case s.EventTypeMarkerRecorded:
-		data = e.MarkerRecordedEventAttributes
+	case enums.EventTypeMarkerRecorded:
+		data = e.GetMarkerRecordedEventAttributes()
 
-	case s.EventTypeWorkflowExecutionTerminated:
-		data = e.WorkflowExecutionTerminatedEventAttributes
+	case enums.EventTypeWorkflowExecutionTerminated:
+		data = e.GetWorkflowExecutionTerminatedEventAttributes()
 
 	default:
 		data = e
@@ -154,29 +155,29 @@ func HistoryEventToString(e *s.HistoryEvent) string {
 }
 
 // DecisionToString convert Decision to string
-func DecisionToString(d *s.Decision) string {
+func DecisionToString(d *commonproto.Decision) string {
 	var data interface{}
 	switch d.GetDecisionType() {
-	case s.DecisionTypeScheduleActivityTask:
-		data = d.ScheduleActivityTaskDecisionAttributes
+	case enums.DecisionTypeScheduleActivityTask:
+		data = d.GetScheduleActivityTaskDecisionAttributes()
 
-	case s.DecisionTypeRequestCancelActivityTask:
-		data = d.RequestCancelActivityTaskDecisionAttributes
+	case enums.DecisionTypeRequestCancelActivityTask:
+		data = d.GetRequestCancelActivityTaskDecisionAttributes()
 
-	case s.DecisionTypeStartTimer:
-		data = d.StartTimerDecisionAttributes
+	case enums.DecisionTypeStartTimer:
+		data = d.GetStartTimerDecisionAttributes()
 
-	case s.DecisionTypeCancelTimer:
-		data = d.CancelTimerDecisionAttributes
+	case enums.DecisionTypeCancelTimer:
+		data = d.GetCancelTimerDecisionAttributes()
 
-	case s.DecisionTypeCompleteWorkflowExecution:
-		data = d.CompleteWorkflowExecutionDecisionAttributes
+	case enums.DecisionTypeCompleteWorkflowExecution:
+		data = d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-	case s.DecisionTypeFailWorkflowExecution:
-		data = d.FailWorkflowExecutionDecisionAttributes
+	case enums.DecisionTypeFailWorkflowExecution:
+		data = d.GetFailWorkflowExecutionDecisionAttributes()
 
-	case s.DecisionTypeRecordMarker:
-		data = d.RecordMarkerDecisionAttributes
+	case enums.DecisionTypeRecordMarker:
+		data = d.GetRecordMarkerDecisionAttributes()
 
 	default:
 		data = d

@@ -35,14 +35,18 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
-	"go.temporal.io/temporal/internal/common"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/errordetails"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/cache"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/common/util"
-	"go.uber.org/zap"
+	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -58,7 +62,7 @@ type (
 	workflowExecutionEventHandler interface {
 		// Process a single event and return the assosciated decisions.
 		// Return List of decisions made, any error.
-		ProcessEvent(event *s.HistoryEvent, isReplay bool, isLast bool) error
+		ProcessEvent(event *commonproto.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs []byte) ([]byte, error)
 		StackTrace() string
@@ -68,7 +72,7 @@ type (
 
 	// workflowTask wraps a decision task.
 	workflowTask struct {
-		task            *s.PollForDecisionTaskResponse
+		task            *workflowservice.PollForDecisionTaskResponse
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
@@ -76,13 +80,13 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task          *s.PollForActivityTaskResponse
+		task          *workflowservice.PollForActivityTaskResponse
 		pollStartTime time.Time
 	}
 
 	// resetStickinessTask wraps a ResetStickyTaskListRequest.
 	resetStickinessTask struct {
-		task *s.ResetStickyTaskListRequest
+		task *workflowservice.ResetStickyTaskListRequest
 	}
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
@@ -103,8 +107,8 @@ type (
 
 		previousStartedEventID int64
 
-		newDecisions        []*s.Decision
-		currentDecisionTask *s.PollForDecisionTaskResponse
+		newDecisions        []*commonproto.Decision
+		currentDecisionTask *workflowservice.PollForDecisionTaskResponse
 		laTunnel            *localActivityTunnel
 		decisionStartTime   time.Time
 	}
@@ -132,7 +136,7 @@ type (
 	activityTaskHandlerImpl struct {
 		taskListName       string
 		identity           string
-		service            workflowserviceclient.Interface
+		service            workflowservice.WorkflowServiceYARPCClient
 		metricsScope       *metrics.TaggedScope
 		logger             *zap.Logger
 		userContext        context.Context
@@ -148,12 +152,12 @@ type (
 	history struct {
 		workflowTask   *workflowTask
 		eventsHandler  *workflowExecutionEventHandlerImpl
-		loadedEvents   []*s.HistoryEvent
+		loadedEvents   []*commonproto.HistoryEvent
 		currentIndex   int
 		nextEventID    int64 // next expected eventID for sanity
 		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
-		next           []*s.HistoryEvent
-		binaryChecksum *string
+		next           []*commonproto.HistoryEvent
+		binaryChecksum string
 	}
 
 	decisionHeartbeatError struct {
@@ -180,38 +184,38 @@ func (e decisionHeartbeatError) Error() string {
 }
 
 // Get workflow start event.
-func (eh *history) GetWorkflowStartedEvent() (*s.HistoryEvent, error) {
+func (eh *history) GetWorkflowStartedEvent() (*commonproto.HistoryEvent, error) {
 	events := eh.workflowTask.task.History.Events
-	if len(events) == 0 || events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+	if len(events) == 0 || events[0].GetEventType() != enums.EventTypeWorkflowExecutionStarted {
 		return nil, errors.New("unable to find WorkflowExecutionStartedEventAttributes in the history")
 	}
 	return events[0], nil
 }
 
-func (eh *history) IsReplayEvent(event *s.HistoryEvent) bool {
+func (eh *history) IsReplayEvent(event *commonproto.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isDecisionEvent(event.GetEventType())
 }
 
-func (eh *history) IsNextDecisionFailed() (isFailed bool, binaryChecksum *string, err error) {
+func (eh *history) IsNextDecisionFailed() (isFailed bool, binaryChecksum string, err error) {
 
 	nextIndex := eh.currentIndex + 1
 	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
-			return false, nil, err
+			return false, "", err
 		}
 	}
 
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
-		isFailed := nextEventType == s.EventTypeDecisionTaskTimedOut || nextEventType == s.EventTypeDecisionTaskFailed
-		var binaryChecksum *string
-		if nextEventType == s.EventTypeDecisionTaskCompleted {
-			binaryChecksum = nextEvent.DecisionTaskCompletedEventAttributes.BinaryChecksum
+		isFailed := nextEventType == enums.EventTypeDecisionTaskTimedOut || nextEventType == enums.EventTypeDecisionTaskFailed
+		var binaryChecksum string
+		if nextEventType == enums.EventTypeDecisionTaskCompleted {
+			binaryChecksum = nextEvent.GetDecisionTaskCompletedEventAttributes().BinaryChecksum
 		}
 		return isFailed, binaryChecksum, nil
 	}
-	return false, nil, nil
+	return false, "", nil
 }
 
 func (eh *history) loadMoreEvents() error {
@@ -226,22 +230,22 @@ func (eh *history) loadMoreEvents() error {
 	return nil
 }
 
-func isDecisionEvent(eventType s.EventType) bool {
+func isDecisionEvent(eventType enums.EventType) bool {
 	switch eventType {
-	case s.EventTypeWorkflowExecutionCompleted,
-		s.EventTypeWorkflowExecutionFailed,
-		s.EventTypeWorkflowExecutionCanceled,
-		s.EventTypeWorkflowExecutionContinuedAsNew,
-		s.EventTypeActivityTaskScheduled,
-		s.EventTypeActivityTaskCancelRequested,
-		s.EventTypeTimerStarted,
-		s.EventTypeTimerCanceled,
-		s.EventTypeCancelTimerFailed,
-		s.EventTypeMarkerRecorded,
-		s.EventTypeStartChildWorkflowExecutionInitiated,
-		s.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
-		s.EventTypeSignalExternalWorkflowExecutionInitiated,
-		s.EventTypeUpsertWorkflowSearchAttributes:
+	case enums.EventTypeWorkflowExecutionCompleted,
+		enums.EventTypeWorkflowExecutionFailed,
+		enums.EventTypeWorkflowExecutionCanceled,
+		enums.EventTypeWorkflowExecutionContinuedAsNew,
+		enums.EventTypeActivityTaskScheduled,
+		enums.EventTypeActivityTaskCancelRequested,
+		enums.EventTypeTimerStarted,
+		enums.EventTypeTimerCanceled,
+		enums.EventTypeCancelTimerFailed,
+		enums.EventTypeMarkerRecorded,
+		enums.EventTypeStartChildWorkflowExecutionInitiated,
+		enums.EventTypeRequestCancelExternalWorkflowExecutionInitiated,
+		enums.EventTypeSignalExternalWorkflowExecutionInitiated,
+		enums.EventTypeUpsertWorkflowSearchAttributes:
 		return true
 	default:
 		return false
@@ -250,7 +254,7 @@ func isDecisionEvent(eventType s.EventType) bool {
 
 // NextDecisionEvents returns events that there processed as new by the next decision.
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextDecisionEvents() (result []*s.HistoryEvent, markers []*s.HistoryEvent, binaryChecksum *string, err error) {
+func (eh *history) NextDecisionEvents() (result []*commonproto.HistoryEvent, markers []*commonproto.HistoryEvent, binaryChecksum string, err error) {
 	if eh.next == nil {
 		eh.next, _, err = eh.nextDecisionEvents()
 		if err != nil {
@@ -271,7 +275,7 @@ func (eh *history) hasMoreEvents() bool {
 	return historyIterator != nil && historyIterator.HasNextPage()
 }
 
-func (eh *history) getMoreEvents() (*s.History, error) {
+func (eh *history) getMoreEvents() (*commonproto.History, error) {
 	return eh.workflowTask.historyIterator.GetNextPage()
 }
 
@@ -291,12 +295,12 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextDecisionEvents() (nextEvents []*s.HistoryEvent, markers []*s.HistoryEvent, err error) {
+func (eh *history) nextDecisionEvents() (nextEvents []*commonproto.HistoryEvent, markers []*commonproto.HistoryEvent, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
 			return nil, nil, err
 		}
-		return []*s.HistoryEvent{}, []*s.HistoryEvent{}, nil
+		return []*commonproto.HistoryEvent{}, []*commonproto.HistoryEvent{}, nil
 	}
 
 	// Process events
@@ -328,7 +332,7 @@ OrderEvents:
 		eh.nextEventID++
 
 		switch event.GetEventType() {
-		case s.EventTypeDecisionTaskStarted:
+		case enums.EventTypeDecisionTaskStarted:
 			isFailed, binaryChecksum, err1 := eh.IsNextDecisionFailed()
 			if err1 != nil {
 				err = err1
@@ -340,9 +344,9 @@ OrderEvents:
 				nextEvents = append(nextEvents, event)
 				break OrderEvents
 			}
-		case s.EventTypeDecisionTaskScheduled,
-			s.EventTypeDecisionTaskTimedOut,
-			s.EventTypeDecisionTaskFailed:
+		case enums.EventTypeDecisionTaskScheduled,
+			enums.EventTypeDecisionTaskTimedOut,
+			enums.EventTypeDecisionTaskFailed:
 			// Skip
 		default:
 			if isPreloadMarkerEvent(event) {
@@ -360,8 +364,8 @@ OrderEvents:
 	return nextEvents, markers, nil
 }
 
-func isPreloadMarkerEvent(event *s.HistoryEvent) bool {
-	return event.GetEventType() == s.EventTypeMarkerRecorded
+func isPreloadMarkerEvent(event *commonproto.HistoryEvent) bool {
+	return event.GetEventType() == enums.EventTypeMarkerRecorded
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -528,11 +532,11 @@ func (w *workflowExecutionContextImpl) IsDestroyed() bool {
 
 func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
-	task.task = &s.ResetStickyTaskListRequest{
-		Domain: common.StringPtr(w.workflowInfo.Domain),
-		Execution: &s.WorkflowExecution{
-			WorkflowId: common.StringPtr(w.workflowInfo.WorkflowExecution.ID),
-			RunId:      common.StringPtr(w.workflowInfo.WorkflowExecution.RunID),
+	task.task = &workflowservice.ResetStickyTaskListRequest{
+		Domain: w.workflowInfo.Domain,
+		Execution: &commonproto.WorkflowExecution{
+			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
+			RunId:      w.workflowInfo.WorkflowExecution.RunID,
 		},
 	}
 	// w.laTunnel could be nil for worker.ReplayHistory() because there is no worker started, in that case we don't
@@ -575,7 +579,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 	w.eventHandler.Store(eventHandler)
 }
 
-func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*s.History, error) {
+func resetHistory(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*commonproto.History, error) {
 	historyIterator.Reset()
 	firstPageHistory, err := historyIterator.GetNextPage()
 	if err != nil {
@@ -585,9 +589,9 @@ func resetHistory(task *s.PollForDecisionTaskResponse, historyIterator HistoryIt
 	return firstPageHistory, nil
 }
 
-func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisionTaskResponse) (*workflowExecutionContextImpl, error) {
+func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.PollForDecisionTaskResponse) (*workflowExecutionContextImpl, error) {
 	h := task.History
-	attributes := h.Events[0].WorkflowExecutionStartedEventAttributes
+	attributes := h.Events[0].GetWorkflowExecutionStartedEventAttributes()
 	if attributes == nil {
 		return nil, errors.New("first history event is not WorkflowExecutionStarted")
 	}
@@ -612,7 +616,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 			ID:    workflowID,
 			RunID: runID,
 		},
-		WorkflowType:                        flowWorkflowTypeFrom(*task.WorkflowType),
+		WorkflowType:                        WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskListName:                        taskList.GetName(),
 		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
@@ -632,7 +636,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *s.PollForDecisio
 }
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
-	task *s.PollForDecisionTaskResponse,
+	task *workflowservice.PollForDecisionTaskResponse,
 	historyIterator HistoryIterator,
 ) (workflowContext *workflowExecutionContextImpl, err error) {
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
@@ -663,7 +667,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 			metricsScope.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
 			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
-			workflowContext.ResetIfStale(task, historyIterator)
+			_ = workflowContext.ResetIfStale(task, historyIterator)
 		}
 	} else {
 		if !isFullHistory {
@@ -693,14 +697,14 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	return
 }
 
-func isFullHistory(history *s.History) bool {
-	if len(history.Events) == 0 || history.Events[0].GetEventType() != s.EventTypeWorkflowExecutionStarted {
+func isFullHistory(history *commonproto.History) bool {
+	if len(history.Events) == 0 || history.Events[0].GetEventType() != enums.EventTypeWorkflowExecutionStarted {
 		return false
 	}
 	return true
 }
 
-func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
+func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
 	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
@@ -726,8 +730,8 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}
 	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
-		task.History = &s.History{
-			Events: []*s.HistoryEvent{},
+		task.History = &commonproto.History{
+			Events: []*commonproto.HistoryEvent{},
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
@@ -758,12 +762,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}()
 
 	var response interface{}
-process_Workflow_Loop:
+processWorkflowLoop:
 	for {
 		startTime := time.Now()
 		response, err = workflowContext.ProcessWorkflowTask(workflowTask)
 		if err == nil && response == nil {
-		wait_LocalActivity_Loop:
+		waitLocalActivityLoop:
 			for {
 				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
 				delayDuration := startTime.Add(deadlineToTrigger).Sub(time.Now())
@@ -780,20 +784,20 @@ process_Workflow_Loop:
 					if workflowTask == nil {
 						return nil, nil
 					}
-					continue process_Workflow_Loop
+					continue processWorkflowLoop
 
 				case lar := <-workflowTask.laResultCh:
 					// local activity result ready
 					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
 					if err == nil && response == nil {
 						// decision task is not done yet, still waiting for more local activities
-						continue wait_LocalActivity_Loop
+						continue waitLocalActivityLoop
 					}
-					break process_Workflow_Loop
+					break processWorkflowLoop
 				}
 			}
 		} else {
-			break process_Workflow_Loop
+			break processWorkflowLoop
 		}
 	}
 	return response, err
@@ -809,8 +813,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
-	var replayDecisions []*s.Decision
-	var respondEvents []*s.HistoryEvent
+	var replayDecisions []*commonproto.Decision
+	var respondEvents []*commonproto.HistoryEvent
 
 	skipReplayCheck := w.skipReplayCheck()
 	// Process events
@@ -824,14 +828,14 @@ ProcessEvents:
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
-		if binaryChecksum == nil {
-			w.workflowInfo.BinaryChecksum = common.StringPtr(getBinaryChecksum())
+		if binaryChecksum == "" {
+			w.workflowInfo.BinaryChecksum = getBinaryChecksum()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
 		// Markers are from the events that are produced from the current decision
 		for _, m := range markers {
-			if m.MarkerRecordedEventAttributes.GetMarkerName() != localActivityMarkerName {
+			if m.GetMarkerRecordedEventAttributes().GetMarkerName() != localActivityMarkerName {
 				// local activity marker needs to be applied after decision task started event
 				err := eventHandler.ProcessEvent(m, true, false)
 				if err != nil {
@@ -872,7 +876,7 @@ ProcessEvents:
 
 		// now apply local activity markers
 		for _, m := range markers {
-			if m.MarkerRecordedEventAttributes.GetMarkerName() == localActivityMarkerName {
+			if m.GetMarkerRecordedEventAttributes().GetMarkerName() == localActivityMarkerName {
 				err := eventHandler.ProcessEvent(m, true, false)
 				if err != nil {
 					return nil, err
@@ -1000,7 +1004,7 @@ func getRetryBackoff(lar *localActivityResult, now time.Time) time.Duration {
 	var errReason string
 	if len(p.NonRetriableErrorReasons) > 0 {
 		if lar.err == ErrDeadlineExceeded {
-			errReason = "timeout:" + s.TimeoutTypeScheduleToClose.String()
+			errReason = "timeout:" + enums.TimeoutTypeScheduleToClose.String()
 		} else {
 			errReason, _ = getErrorDetails(lar.err, nil)
 		}
@@ -1106,7 +1110,7 @@ func (w *workflowExecutionContextImpl) skipReplayCheck() bool {
 	return w.currentDecisionTask.Query != nil || !isFullHistory(w.currentDecisionTask.History)
 }
 
-func (w *workflowExecutionContextImpl) SetCurrentTask(task *s.PollForDecisionTaskResponse) {
+func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.PollForDecisionTaskResponse) {
 	w.currentDecisionTask = task
 	// do not update the previousStartedEventID for query task
 	if task.Query == nil {
@@ -1115,7 +1119,7 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *s.PollForDecisionTas
 	w.decisionStartTime = time.Now()
 }
 
-func (w *workflowExecutionContextImpl) ResetIfStale(task *s.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
+func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
 		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
@@ -1139,9 +1143,9 @@ func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
 	return time.Second * time.Duration(w.workflowInfo.TaskStartToCloseTimeoutSeconds)
 }
 
-func skipDeterministicCheckForDecision(d *s.Decision) bool {
-	if d.GetDecisionType() == s.DecisionTypeRecordMarker {
-		markerName := d.RecordMarkerDecisionAttributes.GetMarkerName()
+func skipDeterministicCheckForDecision(d *commonproto.Decision) bool {
+	if d.GetDecisionType() == enums.DecisionTypeRecordMarker {
+		markerName := d.GetRecordMarkerDecisionAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
@@ -1149,9 +1153,9 @@ func skipDeterministicCheckForDecision(d *s.Decision) bool {
 	return false
 }
 
-func skipDeterministicCheckForEvent(e *s.HistoryEvent) bool {
-	if e.GetEventType() == s.EventTypeMarkerRecorded {
-		markerName := e.MarkerRecordedEventAttributes.GetMarkerName()
+func skipDeterministicCheckForEvent(e *commonproto.HistoryEvent) bool {
+	if e.GetEventType() == enums.EventTypeMarkerRecorded {
+		markerName := e.GetMarkerRecordedEventAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
@@ -1160,27 +1164,27 @@ func skipDeterministicCheckForEvent(e *s.HistoryEvent) bool {
 }
 
 // special check for upsert change version event
-func skipDeterministicCheckForUpsertChangeVersion(events []*s.HistoryEvent, idx int) bool {
+func skipDeterministicCheckForUpsertChangeVersion(events []*commonproto.HistoryEvent, idx int) bool {
 	e := events[idx]
-	if e.GetEventType() == s.EventTypeMarkerRecorded &&
-		e.MarkerRecordedEventAttributes.GetMarkerName() == versionMarkerName &&
+	if e.GetEventType() == enums.EventTypeMarkerRecorded &&
+		e.GetMarkerRecordedEventAttributes().GetMarkerName() == versionMarkerName &&
 		idx < len(events)-1 &&
-		events[idx+1].GetEventType() == s.EventTypeUpsertWorkflowSearchAttributes {
-		if _, ok := events[idx+1].UpsertWorkflowSearchAttributesEventAttributes.SearchAttributes.IndexedFields[CadenceChangeVersion]; ok {
+		events[idx+1].GetEventType() == enums.EventTypeUpsertWorkflowSearchAttributes {
+		if _, ok := events[idx+1].GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes.IndexedFields[CadenceChangeVersion]; ok {
 			return true
 		}
 	}
 	return false
 }
 
-func matchReplayWithHistory(replayDecisions []*s.Decision, historyEvents []*s.HistoryEvent) error {
+func matchReplayWithHistory(replayDecisions []*commonproto.Decision, historyEvents []*commonproto.HistoryEvent) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
 	dSize := len(replayDecisions)
 matchLoop:
 	for hi < hSize || di < dSize {
-		var e *s.HistoryEvent
+		var e *commonproto.HistoryEvent
 		if hi < hSize {
 			e = historyEvents[hi]
 			if skipDeterministicCheckForUpsertChangeVersion(historyEvents, hi) {
@@ -1193,7 +1197,7 @@ matchLoop:
 			}
 		}
 
-		var d *s.Decision
+		var d *commonproto.Decision
 		if di < dSize {
 			d = replayDecisions[di]
 			if skipDeterministicCheckForDecision(d) {
@@ -1229,14 +1233,14 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) bool {
+func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, strictMode bool) bool {
 	switch d.GetDecisionType() {
-	case s.DecisionTypeScheduleActivityTask:
-		if e.GetEventType() != s.EventTypeActivityTaskScheduled {
+	case enums.DecisionTypeScheduleActivityTask:
+		if e.GetEventType() != enums.EventTypeActivityTaskScheduled {
 			return false
 		}
-		eventAttributes := e.ActivityTaskScheduledEventAttributes
-		decisionAttributes := d.ScheduleActivityTaskDecisionAttributes
+		eventAttributes := e.GetActivityTaskScheduledEventAttributes()
+		decisionAttributes := d.GetScheduleActivityTaskDecisionAttributes()
 
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
 			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
@@ -1247,24 +1251,24 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeRequestCancelActivityTask:
-		if e.GetEventType() != s.EventTypeActivityTaskCancelRequested {
+	case enums.DecisionTypeRequestCancelActivityTask:
+		if e.GetEventType() != enums.EventTypeActivityTaskCancelRequested {
 			return false
 		}
-		decisionAttributes := d.RequestCancelActivityTaskDecisionAttributes
-		eventAttributes := e.ActivityTaskCancelRequestedEventAttributes
+		decisionAttributes := d.GetRequestCancelActivityTaskDecisionAttributes()
+		eventAttributes := e.GetActivityTaskCancelRequestedEventAttributes()
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
 			return false
 		}
 
 		return true
 
-	case s.DecisionTypeStartTimer:
-		if e.GetEventType() != s.EventTypeTimerStarted {
+	case enums.DecisionTypeStartTimer:
+		if e.GetEventType() != enums.EventTypeTimerStarted {
 			return false
 		}
-		eventAttributes := e.TimerStartedEventAttributes
-		decisionAttributes := d.StartTimerDecisionAttributes
+		eventAttributes := e.GetTimerStartedEventAttributes()
+		decisionAttributes := d.GetStartTimerDecisionAttributes()
 
 		if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() ||
 			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != decisionAttributes.GetStartToFireTimeoutSeconds()) {
@@ -1273,18 +1277,18 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeCancelTimer:
-		if e.GetEventType() != s.EventTypeTimerCanceled && e.GetEventType() != s.EventTypeCancelTimerFailed {
+	case enums.DecisionTypeCancelTimer:
+		if e.GetEventType() != enums.EventTypeTimerCanceled && e.GetEventType() != enums.EventTypeCancelTimerFailed {
 			return false
 		}
-		decisionAttributes := d.CancelTimerDecisionAttributes
-		if e.GetEventType() == s.EventTypeTimerCanceled {
-			eventAttributes := e.TimerCanceledEventAttributes
+		decisionAttributes := d.GetCancelTimerDecisionAttributes()
+		if e.GetEventType() == enums.EventTypeTimerCanceled {
+			eventAttributes := e.GetTimerCanceledEventAttributes()
 			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
 				return false
 			}
-		} else if e.GetEventType() == s.EventTypeCancelTimerFailed {
-			eventAttributes := e.CancelTimerFailedEventAttributes
+		} else if e.GetEventType() == enums.EventTypeCancelTimerFailed {
+			eventAttributes := e.GetCancelTimerFailedEventAttributes()
 			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
 				return false
 			}
@@ -1292,13 +1296,13 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeCompleteWorkflowExecution:
-		if e.GetEventType() != s.EventTypeWorkflowExecutionCompleted {
+	case enums.DecisionTypeCompleteWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeWorkflowExecutionCompleted {
 			return false
 		}
 		if strictMode {
-			eventAttributes := e.WorkflowExecutionCompletedEventAttributes
-			decisionAttributes := d.CompleteWorkflowExecutionDecisionAttributes
+			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
+			decisionAttributes := d.GetCompleteWorkflowExecutionDecisionAttributes()
 
 			if bytes.Compare(eventAttributes.Result, decisionAttributes.Result) != 0 {
 				return false
@@ -1307,13 +1311,13 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeFailWorkflowExecution:
-		if e.GetEventType() != s.EventTypeWorkflowExecutionFailed {
+	case enums.DecisionTypeFailWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeWorkflowExecutionFailed {
 			return false
 		}
 		if strictMode {
-			eventAttributes := e.WorkflowExecutionFailedEventAttributes
-			decisionAttributes := d.FailWorkflowExecutionDecisionAttributes
+			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
+			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
 
 			if eventAttributes.GetReason() != decisionAttributes.GetReason() ||
 				bytes.Compare(eventAttributes.Details, decisionAttributes.Details) != 0 {
@@ -1323,24 +1327,24 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeRecordMarker:
-		if e.GetEventType() != s.EventTypeMarkerRecorded {
+	case enums.DecisionTypeRecordMarker:
+		if e.GetEventType() != enums.EventTypeMarkerRecorded {
 			return false
 		}
-		eventAttributes := e.MarkerRecordedEventAttributes
-		decisionAttributes := d.RecordMarkerDecisionAttributes
+		eventAttributes := e.GetMarkerRecordedEventAttributes()
+		decisionAttributes := d.GetRecordMarkerDecisionAttributes()
 		if eventAttributes.GetMarkerName() != decisionAttributes.GetMarkerName() {
 			return false
 		}
 
 		return true
 
-	case s.DecisionTypeRequestCancelExternalWorkflowExecution:
-		if e.GetEventType() != s.EventTypeRequestCancelExternalWorkflowExecutionInitiated {
+	case enums.DecisionTypeRequestCancelExternalWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeRequestCancelExternalWorkflowExecutionInitiated {
 			return false
 		}
-		eventAttributes := e.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
-		decisionAttributes := d.RequestCancelExternalWorkflowExecutionDecisionAttributes
+		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
+		decisionAttributes := d.GetRequestCancelExternalWorkflowExecutionDecisionAttributes()
 		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
 			return false
@@ -1348,12 +1352,12 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeSignalExternalWorkflowExecution:
-		if e.GetEventType() != s.EventTypeSignalExternalWorkflowExecutionInitiated {
+	case enums.DecisionTypeSignalExternalWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeSignalExternalWorkflowExecutionInitiated {
 			return false
 		}
-		eventAttributes := e.SignalExternalWorkflowExecutionInitiatedEventAttributes
-		decisionAttributes := d.SignalExternalWorkflowExecutionDecisionAttributes
+		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
+		decisionAttributes := d.GetSignalExternalWorkflowExecutionDecisionAttributes()
 		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
 			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
@@ -1362,32 +1366,32 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeCancelWorkflowExecution:
-		if e.GetEventType() != s.EventTypeWorkflowExecutionCanceled {
+	case enums.DecisionTypeCancelWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeWorkflowExecutionCanceled {
 			return false
 		}
 		if strictMode {
-			eventAttributes := e.WorkflowExecutionCanceledEventAttributes
-			decisionAttributes := d.CancelWorkflowExecutionDecisionAttributes
+			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
+			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
 			if bytes.Compare(eventAttributes.Details, decisionAttributes.Details) != 0 {
 				return false
 			}
 		}
 		return true
 
-	case s.DecisionTypeContinueAsNewWorkflowExecution:
-		if e.GetEventType() != s.EventTypeWorkflowExecutionContinuedAsNew {
+	case enums.DecisionTypeContinueAsNewWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeWorkflowExecutionContinuedAsNew {
 			return false
 		}
 
 		return true
 
-	case s.DecisionTypeStartChildWorkflowExecution:
-		if e.GetEventType() != s.EventTypeStartChildWorkflowExecutionInitiated {
+	case enums.DecisionTypeStartChildWorkflowExecution:
+		if e.GetEventType() != enums.EventTypeStartChildWorkflowExecutionInitiated {
 			return false
 		}
-		eventAttributes := e.StartChildWorkflowExecutionInitiatedEventAttributes
-		decisionAttributes := d.StartChildWorkflowExecutionDecisionAttributes
+		eventAttributes := e.GetStartChildWorkflowExecutionInitiatedEventAttributes()
+		decisionAttributes := d.GetStartChildWorkflowExecutionDecisionAttributes()
 		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
 			(strictMode && checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain())) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
@@ -1396,12 +1400,12 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 
 		return true
 
-	case s.DecisionTypeUpsertWorkflowSearchAttributes:
-		if e.GetEventType() != s.EventTypeUpsertWorkflowSearchAttributes {
+	case enums.DecisionTypeUpsertWorkflowSearchAttributes:
+		if e.GetEventType() != enums.EventTypeUpsertWorkflowSearchAttributes {
 			return false
 		}
-		eventAttributes := e.UpsertWorkflowSearchAttributesEventAttributes
-		decisionAttributes := d.UpsertWorkflowSearchAttributesDecisionAttributes
+		eventAttributes := e.GetUpsertWorkflowSearchAttributesEventAttributes()
+		decisionAttributes := d.GetUpsertWorkflowSearchAttributesDecisionAttributes()
 		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes) {
 			return false
 		}
@@ -1411,7 +1415,7 @@ func isDecisionMatchEvent(d *s.Decision, e *s.HistoryEvent, strictMode bool) boo
 	return false
 }
 
-func isSearchAttributesMatched(attrFromEvent, attrFromDecision *s.SearchAttributes) bool {
+func isSearchAttributesMatched(attrFromEvent, attrFromDecision *commonproto.SearchAttributes) bool {
 	if attrFromEvent != nil && attrFromDecision != nil {
 		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromDecision.IndexedFields)
 	}
@@ -1431,26 +1435,26 @@ func checkDomainsInDecisionAndEvent(eventDomainName, decisionDomainName string) 
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	eventHandler *workflowExecutionEventHandlerImpl,
-	task *s.PollForDecisionTaskResponse,
+	task *workflowservice.PollForDecisionTaskResponse,
 	workflowContext *workflowExecutionContextImpl,
-	decisions []*s.Decision,
+	decisions []*commonproto.Decision,
 	forceNewDecision bool) interface{} {
 
 	// for query task
 	if task.Query != nil {
-		queryCompletedRequest := &s.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
+		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
 		if panicErr, ok := workflowContext.err.(*PanicError); ok {
-			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeFailed)
-			queryCompletedRequest.ErrorMessage = common.StringPtr("Workflow panic: " + panicErr.Error())
+			queryCompletedRequest.CompletedType = enums.QueryTaskCompletedTypeFailed
+			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
 			return queryCompletedRequest
 		}
 
 		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs)
 		if err != nil {
-			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeFailed)
-			queryCompletedRequest.ErrorMessage = common.StringPtr(err.Error())
+			queryCompletedRequest.CompletedType = enums.QueryTaskCompletedTypeFailed
+			queryCompletedRequest.ErrorMessage = err.Error()
 		} else {
-			queryCompletedRequest.CompletedType = common.QueryTaskCompletedTypePtr(s.QueryTaskCompletedTypeCompleted)
+			queryCompletedRequest.CompletedType = enums.QueryTaskCompletedTypeCompleted
 			queryCompletedRequest.QueryResult = result
 		}
 		return queryCompletedRequest
@@ -1471,45 +1475,45 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 
 	// complete decision task
-	var closeDecision *s.Decision
+	var closeDecision *commonproto.Decision
 	if canceledErr, ok := workflowContext.err.(*CanceledError); ok {
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
-		closeDecision = createNewDecision(s.DecisionTypeCancelWorkflowExecution)
+		closeDecision = createNewDecision(enums.DecisionTypeCancelWorkflowExecution)
 		_, details := getErrorDetails(canceledErr, wth.dataConverter)
-		closeDecision.CancelWorkflowExecutionDecisionAttributes = &s.CancelWorkflowExecutionDecisionAttributes{
+		closeDecision.Attributes = &commonproto.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &commonproto.CancelWorkflowExecutionDecisionAttributes{
 			Details: details,
-		}
+		}}
 	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
 		// Continue as new error.
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
-		closeDecision = createNewDecision(s.DecisionTypeContinueAsNewWorkflowExecution)
-		closeDecision.ContinueAsNewWorkflowExecutionDecisionAttributes = &s.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType:                        workflowTypePtr(*contErr.params.workflowType),
+		closeDecision = createNewDecision(enums.DecisionTypeContinueAsNewWorkflowExecution)
+		closeDecision.Attributes = &commonproto.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &commonproto.ContinueAsNewWorkflowExecutionDecisionAttributes{
+			WorkflowType:                        &commonproto.WorkflowType{Name: contErr.params.workflowType.Name},
 			Input:                               contErr.params.input,
-			TaskList:                            common.TaskListPtr(s.TaskList{Name: contErr.params.taskListName}),
+			TaskList:                            &commonproto.TaskList{Name: contErr.params.taskListName},
 			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
 			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
 			Header:                              contErr.params.header,
 			Memo:                                workflowContext.workflowInfo.Memo,
 			SearchAttributes:                    workflowContext.workflowInfo.SearchAttributes,
-		}
+		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
-		closeDecision = createNewDecision(s.DecisionTypeFailWorkflowExecution)
+		closeDecision = createNewDecision(enums.DecisionTypeFailWorkflowExecution)
 		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
-		closeDecision.FailWorkflowExecutionDecisionAttributes = &s.FailWorkflowExecutionDecisionAttributes{
-			Reason:  common.StringPtr(reason),
+		closeDecision.Attributes = &commonproto.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &commonproto.FailWorkflowExecutionDecisionAttributes{
+			Reason:  reason,
 			Details: details,
-		}
+		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
 		metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
-		closeDecision = createNewDecision(s.DecisionTypeCompleteWorkflowExecution)
-		closeDecision.CompleteWorkflowExecutionDecisionAttributes = &s.CompleteWorkflowExecutionDecisionAttributes{
+		closeDecision = createNewDecision(enums.DecisionTypeCompleteWorkflowExecution)
+		closeDecision.Attributes = &commonproto.Decision_CompleteWorkflowExecutionDecisionAttributes{CompleteWorkflowExecutionDecisionAttributes: &commonproto.CompleteWorkflowExecutionDecisionAttributes{
 			Result: workflowContext.result,
-		}
+		}}
 	}
 
 	if closeDecision != nil {
@@ -1519,58 +1523,57 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		forceNewDecision = false
 	}
 
-	var queryResults map[string]*s.WorkflowQueryResult
+	var queryResults map[string]*commonproto.WorkflowQueryResult
 	if len(task.Queries) != 0 {
-		queryResults = make(map[string]*s.WorkflowQueryResult)
+		queryResults = make(map[string]*commonproto.WorkflowQueryResult)
 		for queryID, query := range task.Queries {
 			result, err := eventHandler.ProcessQuery(query.GetQueryType(), query.QueryArgs)
 			if err != nil {
-				queryResults[queryID] = &s.WorkflowQueryResult{
-					ResultType:   common.QueryResultTypePtr(s.QueryResultTypeFailed),
-					ErrorMessage: common.StringPtr(err.Error()),
+				queryResults[queryID] = &commonproto.WorkflowQueryResult{
+					ResultType:   enums.QueryResultTypeFailed,
+					ErrorMessage: err.Error(),
 				}
 			} else {
-				queryResults[queryID] = &s.WorkflowQueryResult{
-					ResultType: common.QueryResultTypePtr(s.QueryResultTypeAnswered),
+				queryResults[queryID] = &commonproto.WorkflowQueryResult{
+					ResultType: enums.QueryResultTypeAnswered,
 					Answer:     result,
 				}
 			}
 		}
 	}
 
-	return &s.RespondDecisionTaskCompletedRequest{
+	return &workflowservice.RespondDecisionTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Decisions:                  decisions,
-		Identity:                   common.StringPtr(wth.identity),
-		ReturnNewDecisionTask:      common.BoolPtr(true),
-		ForceCreateNewDecisionTask: common.BoolPtr(forceNewDecision),
-		BinaryChecksum:             common.StringPtr(getBinaryChecksum()),
+		Identity:                   wth.identity,
+		ReturnNewDecisionTask:      true,
+		ForceCreateNewDecisionTask: forceNewDecision,
+		BinaryChecksum:             getBinaryChecksum(),
 		QueryResults:               queryResults,
 	}
 }
 
-func errorToFailDecisionTask(taskToken []byte, err error, identity string) *s.RespondDecisionTaskFailedRequest {
-	failedCause := s.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure
+func errorToFailDecisionTask(taskToken []byte, err error, identity string) *workflowservice.RespondDecisionTaskFailedRequest {
 	_, details := getErrorDetails(err, nil)
-	return &s.RespondDecisionTaskFailedRequest{
+	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
-		Cause:          &failedCause,
+		Cause:          enums.DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure,
 		Details:        details,
-		Identity:       common.StringPtr(identity),
-		BinaryChecksum: common.StringPtr(getBinaryChecksum()),
+		Identity:       identity,
+		BinaryChecksum: getBinaryChecksum(),
 	}
 }
 
-func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEvent, isInReplay bool) error {
+func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *commonproto.HistoryEvent, isInReplay bool) error {
 	if wth.ppMgr != nil && !reflect.ValueOf(wth.ppMgr).IsNil() && !isInReplay {
 		switch event.GetEventType() {
-		case s.EventTypeDecisionTaskStarted:
+		case enums.EventTypeDecisionTaskStarted:
 			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskStartTimeout)
-		case s.EventTypeActivityTaskScheduled:
+		case enums.EventTypeActivityTaskScheduled:
 			return wth.ppMgr.Execute(pressurePointTypeActivityTaskScheduleTimeout)
-		case s.EventTypeActivityTaskStarted:
+		case enums.EventTypeActivityTaskStarted:
 			return wth.ppMgr.Execute(pressurePointTypeActivityTaskStartTimeout)
-		case s.EventTypeDecisionTaskCompleted:
+		case enums.EventTypeDecisionTaskCompleted:
 			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskCompleted)
 		}
 	}
@@ -1578,7 +1581,7 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *s.HistoryEve
 }
 
 func newActivityTaskHandler(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	params workerExecutionParameters,
 	registry *registry,
 ) ActivityTaskHandler {
@@ -1586,7 +1589,7 @@ func newActivityTaskHandler(
 }
 
 func newActivityTaskHandlerWithCustomProvider(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	params workerExecutionParameters,
 	registry *registry,
 	activityProvider activityProvider,
@@ -1610,7 +1613,7 @@ func newActivityTaskHandlerWithCustomProvider(
 type cadenceInvoker struct {
 	sync.Mutex
 	identity              string
-	service               workflowserviceclient.Interface
+	service               workflowservice.WorkflowServiceYARPCClient
 	taskToken             []byte
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
@@ -1670,7 +1673,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 			i.Unlock()
 
 			if detailsToReport != nil {
-				i.Heartbeat(*detailsToReport)
+				_ = i.Heartbeat(*detailsToReport)
 			}
 		}()
 	}
@@ -1689,13 +1692,11 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 
 	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
-	switch err.(type) {
-	case *CanceledError:
+	if _, ok := err.(*CanceledError); ok {
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
 		isActivityCancelled = true
-
-	case *s.EntityNotExistsError, *s.DomainNotActiveError:
+	} else if _, isDomainNotActiveFailure := protobufutils.GetFailure(err).(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || protobufutils.GetCode(err) == codes.NotFound {
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
@@ -1714,7 +1715,7 @@ func (i *cadenceInvoker) Close(flushBufferedHeartbeat bool) {
 	if i.hbBatchEndTimer != nil {
 		i.hbBatchEndTimer.Stop()
 		if flushBufferedHeartbeat && i.lastDetailsToReport != nil {
-			i.internalHeartBeat(*i.lastDetailsToReport)
+			_, _ = i.internalHeartBeat(*i.lastDetailsToReport)
 			i.lastDetailsToReport = nil
 		}
 	}
@@ -1727,7 +1728,7 @@ func (i *cadenceInvoker) GetClient(domain string, options *ClientOptions) Client
 func newServiceInvoker(
 	taskToken []byte,
 	identity string,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	cancelHandler func(),
 	heartBeatTimeoutInSec int32,
 	workerStopChannel <-chan struct{},
@@ -1744,7 +1745,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivityTaskResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.PollForActivityTaskResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
@@ -1760,7 +1761,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *s.PollForActivit
 
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds(), ath.workerStopCh)
 	defer func() {
-		_, activityCompleted := result.(*s.RespondActivityTaskCompletedRequest)
+		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
 	}()
 
@@ -1842,24 +1843,24 @@ func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames 
 	return
 }
 
-func createNewDecision(decisionType s.DecisionType) *s.Decision {
-	return &s.Decision{
-		DecisionType: common.DecisionTypePtr(decisionType),
+func createNewDecision(decisionType enums.DecisionType) *commonproto.Decision {
+	return &commonproto.Decision{
+		DecisionType: decisionType,
 	}
 }
 
 func recordActivityHeartbeat(
 	ctx context.Context,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	identity string,
 	taskToken, details []byte,
 ) error {
-	request := &s.RecordActivityTaskHeartbeatRequest{
+	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
 		Details:   details,
-		Identity:  common.StringPtr(identity)}
+		Identity:  identity}
 
-	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
+	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel, opt := newChannelContext(ctx)
@@ -1879,20 +1880,20 @@ func recordActivityHeartbeat(
 
 func recordActivityHeartbeatByID(
 	ctx context.Context,
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	identity string,
 	domain, workflowID, runID, activityID string,
 	details []byte,
 ) error {
-	request := &s.RecordActivityTaskHeartbeatByIDRequest{
-		Domain:     common.StringPtr(domain),
-		WorkflowID: common.StringPtr(workflowID),
-		RunID:      common.StringPtr(runID),
-		ActivityID: common.StringPtr(activityID),
+	request := &workflowservice.RecordActivityTaskHeartbeatByIDRequest{
+		Domain:     domain,
+		WorkflowID: workflowID,
+		RunID:      runID,
+		ActivityID: activityID,
 		Details:    details,
-		Identity:   common.StringPtr(identity)}
+		Identity:   identity}
 
-	var heartbeatResponse *s.RecordActivityTaskHeartbeatResponse
+	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIDResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel, opt := newChannelContext(ctx)

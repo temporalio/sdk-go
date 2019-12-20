@@ -92,7 +92,7 @@ func Retry(ctx context.Context, operation Operation, policy RetryPolicy, isRetry
 	var next time.Duration
 
 	r := NewRetrier(policy, SystemClock)
-Retry_Loop:
+RetryLoop:
 	for {
 		// operation completed successfully.  No need to retry.
 		if err = operation(); err == nil {
@@ -115,7 +115,7 @@ Retry_Loop:
 			case <-ctxDone:
 				return err
 			case <-timer.C:
-				continue Retry_Loop
+				continue RetryLoop
 			}
 		}
 

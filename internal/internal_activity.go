@@ -31,9 +31,9 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
 )
 
 type (
@@ -54,7 +54,7 @@ type (
 
 	// activityOptions configuration parameters for scheduling an activity
 	activityOptions struct {
-		ActivityID                    *string // Users can choose IDs but our framework makes it optional to decrease the crust.
+		ActivityID                    string // Users can choose IDs but our framework makes it optional to decrease the crust.
 		TaskListName                  string
 		ScheduleToCloseTimeoutSeconds int32
 		ScheduleToStartTimeoutSeconds int32
@@ -62,7 +62,7 @@ type (
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
 		OriginalTaskListName          string
-		RetryPolicy                   *shared.RetryPolicy
+		RetryPolicy                   *commonproto.RetryPolicy
 	}
 
 	localActivityOptions struct {
@@ -75,7 +75,7 @@ type (
 		ActivityType  ActivityType
 		Input         []byte
 		DataConverter DataConverter
-		Header        *shared.Header
+		Header        *commonproto.Header
 	}
 
 	executeLocalActivityParams struct {
@@ -212,7 +212,7 @@ func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error
 	return p, nil
 }
 
-func validateRetryPolicy(p *shared.RetryPolicy) error {
+func validateRetryPolicy(p *commonproto.RetryPolicy) error {
 	if p == nil {
 		return nil
 	}
@@ -225,7 +225,7 @@ func validateRetryPolicy(p *shared.RetryPolicy) error {
 	}
 	if p.GetMaximumIntervalInSeconds() == 0 {
 		// if not set, default to 100x of initial interval
-		p.MaximumIntervalInSeconds = common.Int32Ptr(100 * p.GetInitialIntervalInSeconds())
+		p.MaximumIntervalInSeconds = 100 * p.GetInitialIntervalInSeconds()
 	}
 	if p.GetMaximumAttempts() < 0 {
 		return errors.New("negative MaximumAttempts on retry policy is invalid")
@@ -246,7 +246,7 @@ func validateRetryPolicy(p *shared.RetryPolicy) error {
 func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {
 	fType := reflect.TypeOf(f)
 	if fType == nil || fType.Kind() != reflect.Func {
-		return fmt.Errorf("Provided type: %v is not a function type", f)
+		return fmt.Errorf("provided type: %v is not a function type", f)
 	}
 	fnName := getFunctionName(f)
 
@@ -300,7 +300,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, dataConvert
 
 	default:
 		return nil, nil, fmt.Errorf(
-			"Invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
+			"invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
 	}
 
 	input, err := encodeArgs(dataConverter, args)
@@ -328,7 +328,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 
 	if resultSize < 1 || resultSize > 2 {
 		return nil, fmt.Errorf(
-			"The function: %v signature returns %d results, it is expecting to return either error or (result, error)",
+			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
 			fnName, resultSize)
 	}
 
@@ -354,7 +354,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	errInterface, ok := errValue.Interface().(error)
 	if !ok {
 		return nil, fmt.Errorf(
-			"Failed to parse error result as it is not of error interface: %v",
+			"failed to parse error result as it is not of error interface: %v",
 			errValue)
 	}
 	return result, errInterface
@@ -409,7 +409,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 	if params != nil {
 		newParams = *params
 		if params.RetryPolicy != nil {
-			var newRetryPolicy shared.RetryPolicy
+			var newRetryPolicy commonproto.RetryPolicy
 			newRetryPolicy = *newParams.RetryPolicy
 			newParams.RetryPolicy = &newRetryPolicy
 		}

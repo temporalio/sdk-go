@@ -24,12 +24,13 @@ package worker
 import (
 	"context"
 
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
+	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/activity"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/workflow"
-	"go.uber.org/zap"
 )
 
 type (
@@ -139,14 +140,14 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    service  - thrift connection to the temporal server
+//    service  - gRPC connection to the temporal server
 //    domain   - the name of the temporal domain
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process
 //    options  - configure any worker specific options like logger, metrics, identity
 func New(
-	service workflowserviceclient.Interface,
+	service workflowservice.WorkflowServiceYARPCClient,
 	domain string,
 	taskList string,
 	options Options,
@@ -164,7 +165,7 @@ func EnableVerboseLogging(enable bool) {
 // ReplayWorkflowHistory executes a single decision task for the given json history file.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func ReplayWorkflowHistory(logger *zap.Logger, history *shared.History) error {
+func ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
 	return internal.ReplayWorkflowHistory(logger, history)
 }
 
@@ -190,7 +191,7 @@ func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName s
 // ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is the only optional parameter. Defaults to the noop logger.
-func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.Interface, logger *zap.Logger, domain string, execution workflow.Execution) error {
+func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, logger *zap.Logger, domain string, execution workflow.Execution) error {
 	return internal.ReplayWorkflowExecution(ctx, service, logger, domain, execution)
 }
 

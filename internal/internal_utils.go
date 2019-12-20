@@ -24,6 +24,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -33,10 +34,10 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	s "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common"
-	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/yarpc"
+
+	"github.com/temporalio/temporal-proto/enums"
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 const (
@@ -145,20 +146,6 @@ func getWorkerTaskList(stickyUUID string) string {
 	return fmt.Sprintf("%s:%s", getHostName(), stickyUUID)
 }
 
-// ActivityTypePtr makes a copy and returns the pointer to a ActivityType.
-func activityTypePtr(v ActivityType) *s.ActivityType {
-	return &s.ActivityType{Name: common.StringPtr(v.Name)}
-}
-
-func flowWorkflowTypeFrom(v s.WorkflowType) WorkflowType {
-	return WorkflowType{Name: v.GetName()}
-}
-
-// WorkflowTypePtr makes a copy and returns the pointer to a WorkflowType.
-func workflowTypePtr(t WorkflowType) *s.WorkflowType {
-	return &s.WorkflowType{Name: common.StringPtr(t.Name)}
-}
-
 // getErrorDetails gets reason and details.
 func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
 	switch err := err.(type) {
@@ -239,7 +226,7 @@ func constructError(reason string, details []byte, dataConverter DataConverter) 
 		// panic error
 		var msg, st string
 		details := newEncodedValues(details, dataConverter)
-		details.Get(&msg, &st)
+		_ = details.Get(&msg, &st)
 		return newPanicError(msg, st)
 	case errReasonGeneric:
 		// errors created other than using NewCustomError() API.
@@ -289,12 +276,13 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }
 
-func getTimeoutTypeFromErrReason(reason string) (s.TimeoutType, error) {
+func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
+	// "reason" is a string like "cadenceInternal:Timeout TimeoutTypeStartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	var timeoutType s.TimeoutType
-	if err := timeoutType.UnmarshalText([]byte(timeoutTypeStr)); err != nil {
-		// this happens when the timeout error reason is constructed by an prior constructed by prior client version
-		return 0, err
+	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
+		return enums.TimeoutType(timeoutType), nil
 	}
-	return timeoutType, nil
+
+	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
+	return 0, errors.New(fmt.Sprintf("timeout type %q is not defined", timeoutTypeStr))
 }

@@ -334,7 +334,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 		}
 		sessionInfo := GetSessionInfo(sessionCtx)
 		if sessionInfo == nil {
-			return errors.New("Returned session info should not be nil")
+			return errors.New("returned session info should not be nil")
 		}
 
 		for i := 0; i != maxConcurrentSessionExecutionSize; i++ {
@@ -389,7 +389,7 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
-	taskListUsed := []string{}
+	var taskListUsed []string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
 		taskListUsed = append(taskListUsed, activityInfo.TaskList)
 	})
@@ -442,7 +442,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
-	taskListUsed := []string{}
+	var taskListUsed []string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
 		taskListUsed = append(taskListUsed, activityInfo.TaskList)
 	})
@@ -639,6 +639,6 @@ func (s *SessionTestSuite) createSessionWithoutRetry(ctx Context) (Context, erro
 	return createSession(ctx, getCreationTasklist(baseTasklist), s.sessionOptions, false)
 }
 
-func testSessionActivity(ctx context.Context, name string) (string, error) {
+func testSessionActivity(_ context.Context, name string) (string, error) {
 	return "Hello" + name + "!", nil
 }

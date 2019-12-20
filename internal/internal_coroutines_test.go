@@ -137,6 +137,7 @@ func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	c2.SendAsync("value21")
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
+	_ = d.ExecuteUntilAllBlocked()
 	c2.SendAsync("value22")
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 

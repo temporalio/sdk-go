@@ -25,18 +25,19 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber/tchannel-go/thrift"
-	m "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
-	"go.temporal.io/temporal/internal/common"
 	"golang.org/x/net/context"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 type (
 	PollLayerInterfacesTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicetest.MockClient
+		service  *workflowservicemock.MockWorkflowServiceYARPCClient
 	}
 )
 
@@ -46,9 +47,9 @@ type sampleWorkflowTaskHandler struct {
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-	d decisionHeartbeatFunc,
+	_ decisionHeartbeatFunc,
 ) (interface{}, error) {
-	return &m.RespondDecisionTaskCompletedRequest{
+	return &workflowservice.RespondDecisionTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
 	}, nil
 }
@@ -65,17 +66,17 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(taskList string, task *m.PollForActivityTaskResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
 		reason := err.Error()
-		return &m.RespondActivityTaskFailedRequest{
+		return &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
-			Reason:    &reason,
+			Reason:    reason,
 		}, nil
 	}
-	return &m.RespondActivityTaskCompletedRequest{
+	return &workflowservice.RespondActivityTaskCompletedRequest{
 		TaskToken: task.TaskToken,
 		Result:    result,
 	}, nil
@@ -88,7 +89,7 @@ func TestPollLayerInterfacesTestSuite(t *testing.T) {
 
 func (s *PollLayerInterfacesTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *PollLayerInterfacesTestSuite) TearDownTest() {
@@ -96,19 +97,19 @@ func (s *PollLayerInterfacesTestSuite) TearDownTest() {
 }
 
 func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
-	ctx, _ := thrift.NewContext(10)
+	ctx, _ := context.WithTimeout(context.Background(), 10)
 
 	// mocks
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&m.PollForDecisionTaskResponse{}, nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil)
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	response, err := s.service.PollForDecisionTask(ctx, &m.PollForDecisionTaskRequest{})
+	response, err := s.service.PollForDecisionTask(ctx, &workflowservice.PollForDecisionTaskRequest{})
 	s.NoError(err)
 
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil)
-	completionRequest := request.(*m.RespondDecisionTaskCompletedRequest)
+	completionRequest := request.(*workflowservice.RespondDecisionTaskCompletedRequest)
 	s.NoError(err)
 
 	_, err = s.service.RespondDecisionTaskCompleted(ctx, completionRequest)
@@ -116,13 +117,13 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 }
 
 func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
-	ctx, _ := thrift.NewContext(10)
+	ctx, _ := context.WithTimeout(context.Background(), 10)
 
 	// mocks
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&m.PollForActivityTaskResponse{}, nil)
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil)
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil)
 
-	response, err := s.service.PollForActivityTask(ctx, &m.PollForActivityTaskRequest{})
+	response, err := s.service.PollForActivityTask(ctx, &workflowservice.PollForActivityTaskRequest{})
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
@@ -130,11 +131,11 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	request, err := taskHandler.Execute(tasklist, response)
 	s.NoError(err)
 	switch request.(type) {
-	case *m.RespondActivityTaskCompletedRequest:
-		err = s.service.RespondActivityTaskCompleted(ctx, request.(*m.RespondActivityTaskCompletedRequest))
+	case *workflowservice.RespondActivityTaskCompletedRequest:
+		_, err = s.service.RespondActivityTaskCompleted(ctx, request.(*workflowservice.RespondActivityTaskCompletedRequest))
 		s.NoError(err)
-	case *m.RespondActivityTaskFailedRequest: // shouldn't happen
-		err = s.service.RespondActivityTaskFailed(ctx, request.(*m.RespondActivityTaskFailedRequest))
+	case *workflowservice.RespondActivityTaskFailedRequest: // shouldn't happen
+		_, err = s.service.RespondActivityTaskFailed(ctx, request.(*workflowservice.RespondActivityTaskFailedRequest))
 		s.NoError(err)
 	}
 }
@@ -142,26 +143,26 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*m.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &m.WorkflowExecutionStartedEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
-		createTestEventDecisionTaskScheduled(2, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		{
-			EventId:   common.Int64Ptr(4),
-			EventType: common.EventTypePtr(m.EventTypeDecisionTaskFailed),
+			EventId:   4,
+			EventType: enums.EventTypeDecisionTaskFailed,
 		},
 		{
-			EventId:   common.Int64Ptr(5),
-			EventType: common.EventTypePtr(m.EventTypeWorkflowExecutionSignaled),
+			EventId:   5,
+			EventType: enums.EventTypeWorkflowExecutionSignaled,
 		},
-		createTestEventDecisionTaskScheduled(6, &m.DecisionTaskScheduledEventAttributes{TaskList: &m.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
 
 	historyIterator := &historyIteratorImpl{
-		iteratorFunc: func(nextToken []byte) (*m.History, []byte, error) {
-			return &m.History{
+		iteratorFunc: func(nextToken []byte) (*commonproto.History, []byte, error) {
+			return &commonproto.History{
 				Events: testEvents[3:],
 			}, nil, nil
 		},
@@ -176,7 +177,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	s.NoError(err)
 	s.Equal(3, len(events))
-	s.Equal(m.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
-	s.Equal(m.EventTypeDecisionTaskStarted, events[2].GetEventType())
+	s.Equal(enums.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
+	s.Equal(enums.EventTypeDecisionTaskStarted, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

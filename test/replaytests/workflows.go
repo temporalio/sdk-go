@@ -24,9 +24,10 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/cadence/activity"
-	"go.uber.org/cadence/workflow"
 	"go.uber.org/zap"
+
+	"go.temporal.io/temporal/activity"
+	"go.temporal.io/temporal/workflow"
 )
 
 // ApplicationName is the task list for this sample
@@ -92,7 +93,7 @@ func Workflow2(ctx workflow.Context, name string) error {
 
 	workflow.GetVersion(ctx, "test-change", workflow.DefaultVersion, 1)
 
-	workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "testkey"})
+	_ = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "testkey"})
 
 	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 	if err != nil {

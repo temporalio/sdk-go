@@ -26,8 +26,8 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/temporalio/temporal-proto/enums"
 	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/.gen/go/shared"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/worker"
@@ -96,12 +96,12 @@ func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, 
 	return []string{"fail", "fail"}, nil
 }
 
-func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType shared.TimeoutType) ([]string, error) {
+func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enums.TimeoutType) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
 	switch timeoutType {
-	case shared.TimeoutTypeScheduleToClose:
+	case enums.TimeoutTypeScheduleToClose:
 		opts.ScheduleToCloseTimeout = time.Second
-	case shared.TimeoutTypeStartToClose:
+	case enums.TimeoutTypeStartToClose:
 		opts.StartToCloseTimeout = time.Second
 	}
 
@@ -152,7 +152,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if terr.TimeoutType() != shared.TimeoutTypeHeartbeat {
+	if terr.TimeoutType() != enums.TimeoutTypeHeartbeat {
 		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", terr.TimeoutType())
 	}
 
@@ -391,12 +391,12 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 	})
 
 	// Cause the workflow to block on sleep
-	workflow.Sleep(ctx, 10*time.Second)
+	_ = workflow.Sleep(ctx, 10*time.Second)
 
 	return []string{"toUpperWithDelay"}, nil
 }
 
-func (w *Workflows) SimplestWorkflow(ctx workflow.Context) (string, error) {
+func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 
@@ -428,7 +428,7 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	})
-	workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
+	_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
 	queryResult = signalData
 	return nil
 }

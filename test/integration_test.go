@@ -31,13 +31,17 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/worker"
-	"go.temporal.io/temporal/workflow"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"go.temporal.io/temporal"
+	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/internal/protobufutils"
+	"go.temporal.io/temporal/worker"
+	"go.temporal.io/temporal/workflow"
 )
 
 type IntegrationTestSuite struct {
@@ -93,7 +97,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	rpcClient, err := newRPCClient(ts.config.ServiceName, ts.config.ServiceAddr)
 	ts.NoError(err)
 	ts.rpcClient = rpcClient
-	ts.libClient = client.NewClient(ts.rpcClient.Interface, domainName, &client.Options{})
+	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceYARPCClient, domainName, &client.Options{})
 	ts.registerDomain()
 }
 
@@ -130,7 +134,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.worker = worker.New(ts.rpcClient.Interface, domainName, ts.taskListName, worker.Options{
+	ts.worker = worker.New(ts.rpcClient.WorkflowServiceYARPCClient, domainName, ts.taskListName, worker.Options{
 		DisableStickyExecution: ts.config.IsStickyOff,
 		Logger:                 logger,
 	})
@@ -175,7 +179,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 		"test-activity-retry-on-start2close-timeout",
 		ts.workflows.ActivityRetryOnTimeout,
 		&expected,
-		shared.TimeoutTypeStartToClose)
+		enums.TimeoutTypeStartToClose)
 
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -259,7 +263,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
-		QueryConsistencyLevel: shared.QueryConsistencyLevelStrong.Ptr(),
+		QueryConsistencyLevel: enums.QueryConsistencyLevelStrong,
 	})
 	ts.Nil(err)
 	ts.NotNil(value)
@@ -284,7 +288,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.Contains(gerr.Error(), "WorkflowExecutionAlreadyStartedError"))
+	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -301,7 +305,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.Contains(gerr.Error(), "WorkflowExecutionAlreadyStartedError"))
+	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -395,24 +399,23 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	queryErr, ok := err.(*shared.QueryFailedError)
-	ts.True(ok)
-	ts.Equal("query result size (3000000) exceeds limit (2000000)", queryErr.Message)
+	ts.True(protobufutils.GetCode(err) == codes.InvalidArgument)
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", protobufutils.GetMessage(err))
 	ts.Nil(value)
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
+	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceYARPCClient, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := client.Register(ctx, &shared.RegisterDomainRequest{
-		Name:                                   &name,
-		WorkflowExecutionRetentionPeriodInDays: &retention,
+	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
+		Name:                                   name,
+		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if _, ok := err.(*shared.DomainAlreadyExistsError); ok {
+		if protobufutils.GetCode(err) == codes.AlreadyExists {
 			return
 		}
 	}
@@ -423,7 +426,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*shared.EntityNotExistsError); ok {
+		if protobufutils.GetCode(err) == codes.NotFound {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {
@@ -450,7 +453,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.libClient.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, shared.HistoryEventFilterTypeAllEvent)
+		iter := ts.libClient.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

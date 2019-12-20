@@ -24,23 +24,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"github.com/uber-go/tally"
 	"io"
 	"sync"
+
+	"github.com/stretchr/testify/require"
+	"github.com/uber-go/tally"
 )
 
 func Test_Counter(t *testing.T) {
 	isReplay := true
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	scope.Counter("test-name").Inc(1)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 0, len(reporter.Counts()))
 
 	isReplay = false
 	scope, closer, reporter = NewMetricsScope(&isReplay)
 	scope.Counter("test-name").Inc(3)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 	require.Equal(t, int64(3), reporter.Counts()[0].Value())
 }
@@ -49,13 +50,13 @@ func Test_Gauge(t *testing.T) {
 	isReplay := true
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	scope.Gauge("test-name").Update(1)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 0, len(reporter.Gauges()))
 
 	isReplay = false
 	scope, closer, reporter = NewMetricsScope(&isReplay)
 	scope.Gauge("test-name").Update(3)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Gauges()))
 	require.Equal(t, float64(3), reporter.Gauges()[0].Value())
 }
@@ -66,7 +67,7 @@ func Test_Timer(t *testing.T) {
 	scope.Timer("test-name").Record(time.Second)
 	sw := scope.Timer("test-stopwatch").Start()
 	sw.Stop()
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 0, len(reporter.Timers()))
 
 	isReplay = false
@@ -74,7 +75,7 @@ func Test_Timer(t *testing.T) {
 	scope.Timer("test-name").Record(time.Second)
 	sw = scope.Timer("test-stopwatch").Start()
 	sw.Stop()
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 2, len(reporter.Timers()))
 	require.Equal(t, time.Second, reporter.Timers()[0].Value())
 }
@@ -85,7 +86,7 @@ func Test_Histogram(t *testing.T) {
 	valueBuckets := tally.MustMakeLinearValueBuckets(0, 10, 10)
 	scope.Histogram("test-hist-1", valueBuckets).RecordValue(5)
 	scope.Histogram("test-hist-2", valueBuckets).RecordValue(15)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 0, len(reporter.HistogramValueSamples()))
 	scope, closer, reporter = NewMetricsScope(&isReplay)
 	durationBuckets := tally.MustMakeLinearDurationBuckets(0, time.Hour, 10)
@@ -93,7 +94,7 @@ func Test_Histogram(t *testing.T) {
 	scope.Histogram("test-hist-2", durationBuckets).RecordDuration(time.Minute * 61)
 	sw := scope.Histogram("test-hist-3", durationBuckets).Start()
 	sw.Stop()
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 0, len(reporter.HistogramDurationSamples()))
 
 	isReplay = false
@@ -101,7 +102,7 @@ func Test_Histogram(t *testing.T) {
 	valueBuckets = tally.MustMakeLinearValueBuckets(0, 10, 10)
 	scope.Histogram("test-hist-1", valueBuckets).RecordValue(5)
 	scope.Histogram("test-hist-2", valueBuckets).RecordValue(15)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 2, len(reporter.HistogramValueSamples()))
 
 	scope, closer, reporter = NewMetricsScope(&isReplay)
@@ -110,7 +111,7 @@ func Test_Histogram(t *testing.T) {
 	scope.Histogram("test-hist-2", durationBuckets).RecordDuration(time.Minute * 61)
 	sw = scope.Histogram("test-hist-3", durationBuckets).Start()
 	sw.Stop()
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 3, len(reporter.HistogramDurationSamples()))
 }
 
@@ -123,7 +124,7 @@ func Test_ScopeCoverage(t *testing.T) {
 	subScope := scope.SubScope("test")
 	taggedScope := subScope.Tagged(make(map[string]string))
 	taggedScope.Counter("test-counter").Inc(1)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 }
 
@@ -131,7 +132,7 @@ func Test_TaggedScope(t *testing.T) {
 	taggedScope, closer, reporter := NewTaggedMetricsScope()
 	scope := taggedScope.GetTaggedScope("tag1", "val1")
 	scope.Counter("test-name").Inc(3)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 	require.Equal(t, int64(3), reporter.Counts()[0].Value())
 
@@ -144,9 +145,9 @@ func Test_TaggedScope(t *testing.T) {
 	taggedScope.Map = m
 	scope = taggedScope.GetTaggedScope("tag2", "val1")
 	scope.Counter("test-name").Inc(1)
-	closer2.Close()
+	_ = closer2.Close()
 	require.Equal(t, 0, len(reporter2.Counts()))
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 	require.Equal(t, int64(3), reporter.Counts()[0].Value())
 }
@@ -155,7 +156,7 @@ func Test_TaggedScope_WithMultiTags(t *testing.T) {
 	taggedScope, closer, reporter := newTaggedMetricsScope()
 	scope := taggedScope.GetTaggedScope("tag1", "val1", "tag2", "val2")
 	scope.Counter("test-name").Inc(3)
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.counts))
 	require.Equal(t, int64(3), reporter.counts[0].value)
 
@@ -168,9 +169,9 @@ func Test_TaggedScope_WithMultiTags(t *testing.T) {
 	taggedScope.Map = m
 	scope = taggedScope.GetTaggedScope("tag2", "val1", "tag3", "val3")
 	scope.Counter("test-name").Inc(1)
-	closer2.Close()
+	_ = closer2.Close()
 	require.Equal(t, 0, len(reporter2.counts))
-	closer.Close()
+	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.counts))
 	require.Equal(t, int64(3), reporter.counts[0].value)
 
@@ -262,7 +263,7 @@ func (r *capturingStatsReporter) ReportTimer(
 func (r *capturingStatsReporter) ReportHistogramValueSamples(
 	name string,
 	tags map[string]string,
-	buckets tally.Buckets,
+	_ tally.Buckets,
 	bucketLowerBound,
 	bucketUpperBound float64,
 	samples int64,
@@ -275,7 +276,7 @@ func (r *capturingStatsReporter) ReportHistogramValueSamples(
 func (r *capturingStatsReporter) ReportHistogramDurationSamples(
 	name string,
 	tags map[string]string,
-	buckets tally.Buckets,
+	_ tally.Buckets,
 	bucketLowerBound,
 	bucketUpperBound time.Duration,
 	samples int64,

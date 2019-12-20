@@ -24,32 +24,33 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.temporal.io/temporal/.gen/go/shared"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
 )
 
 func TestHeaderWriter(t *testing.T) {
 	tests := []struct {
 		name     string
-		initial  *shared.Header
-		expected *shared.Header
+		initial  *commonproto.Header
+		expected *commonproto.Header
 		vals     map[string][]byte
 	}{
 		{
 			"no values",
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{},
 			},
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{},
 			},
 			map[string][]byte{},
 		},
 		{
 			"add values",
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{},
 			},
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
@@ -62,12 +63,12 @@ func TestHeaderWriter(t *testing.T) {
 		},
 		{
 			"overwrite values",
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("unexpected"),
 				},
 			},
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
@@ -94,30 +95,30 @@ func TestHeaderWriter(t *testing.T) {
 func TestHeaderReader(t *testing.T) {
 	tests := []struct {
 		name    string
-		header  *shared.Header
+		header  *commonproto.Header
 		keys    map[string]struct{}
 		isError bool
 	}{
 		{
 			"valid values",
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
 				},
 			},
-			map[string]struct{}{"key1": struct{}{}, "key2": struct{}{}},
+			map[string]struct{}{"key1": {}, "key2": {}},
 			false,
 		},
 		{
 			"invalid values",
-			&shared.Header{
+			&commonproto.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
 				},
 			},
-			map[string]struct{}{"key2": struct{}{}},
+			map[string]struct{}{"key2": {}},
 			true,
 		},
 	}

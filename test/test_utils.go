@@ -24,9 +24,10 @@ import (
 	"os"
 	"strings"
 
-	"go.temporal.io/temporal/.gen/go/temporal/workflowserviceclient"
 	"go.uber.org/yarpc"
-	"go.uber.org/yarpc/transport/tchannel"
+	"go.uber.org/yarpc/transport/grpc"
+
+	"github.com/temporalio/temporal-proto/workflowservice"
 )
 
 // Config contains the integration test configuration
@@ -40,7 +41,7 @@ type Config struct {
 func newConfig() Config {
 	cfg := Config{
 		ServiceName: "cadence-frontend",
-		ServiceAddr: "127.0.0.1:7933",
+		ServiceAddr: "127.0.0.1:7233",
 		IsStickyOff: true,
 	}
 	if name := getEnvServiceName(); name != "" {
@@ -75,23 +76,19 @@ func getDebug() string {
 }
 
 type rpcClient struct {
-	workflowserviceclient.Interface
+	workflowservice.WorkflowServiceYARPCClient
 	dispatcher *yarpc.Dispatcher
 }
 
 func (c *rpcClient) Close() {
-	c.dispatcher.Stop()
+	_ = c.dispatcher.Stop()
 }
 
 // newRPCClient builds and returns a new rpc client that is able to
 // make calls to the localhost temporal-server container
 func newRPCClient(
 	serviceName string, serviceAddr string) (*rpcClient, error) {
-	transport, err := tchannel.NewTransport(tchannel.ServiceName("integration-test"))
-	if err != nil {
-		return nil, err
-	}
-	outbound := transport.NewSingleOutbound(serviceAddr)
+	outbound := grpc.NewTransport().NewSingleOutbound(serviceAddr)
 	dispatcher := yarpc.NewDispatcher(yarpc.Config{
 		Name: "integration-test",
 		Outbounds: yarpc.Outbounds{
@@ -103,6 +100,6 @@ func newRPCClient(
 	if err := dispatcher.Start(); err != nil {
 		return nil, err
 	}
-	client := workflowserviceclient.New(dispatcher.ClientConfig(serviceName))
-	return &rpcClient{Interface: client, dispatcher: dispatcher}, nil
+	client := workflowservice.NewWorkflowServiceYARPCClient(dispatcher.ClientConfig(serviceName))
+	return &rpcClient{WorkflowServiceYARPCClient: client, dispatcher: dispatcher}, nil
 }

@@ -30,12 +30,13 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/internal/common/backoff"
-	"go.temporal.io/temporal/internal/common/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 const (
@@ -92,7 +93,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
-		Execute(env workflowEnvironment, header *shared.Header, input []byte)
+		Execute(env workflowEnvironment, header *commonproto.Header, input []byte)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to workflowDefinition
 		OnDecisionTaskStarted()

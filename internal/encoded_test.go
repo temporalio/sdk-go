@@ -24,9 +24,10 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
@@ -41,7 +42,7 @@ func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, ar
 	err = dc.FromData(input, result...)
 	require.NoError(t, err, err)
 
-	targetArgs := []reflect.Value{}
+	var targetArgs []reflect.Value
 	for _, arg := range result {
 		targetArgs = append(targetArgs, reflect.ValueOf(arg).Elem())
 	}

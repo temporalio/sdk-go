@@ -25,7 +25,8 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	"go.temporal.io/temporal/.gen/go/shared"
+
+	"github.com/temporalio/temporal-proto/enums"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"
@@ -145,7 +146,7 @@ func (*emptyCtx) Err() error {
 	return nil
 }
 
-func (*emptyCtx) Value(key interface{}) interface{} {
+func (*emptyCtx) Value(_ interface{}) interface{} {
 	return nil
 }
 
@@ -175,7 +176,7 @@ var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
-var ErrDeadlineExceeded = NewTimeoutError(shared.TimeoutTypeScheduleToClose)
+var ErrDeadlineExceeded = NewTimeoutError(enums.TimeoutTypeScheduleToClose)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.

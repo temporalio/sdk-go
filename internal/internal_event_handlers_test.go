@@ -28,8 +28,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	s "go.temporal.io/temporal/.gen/go/shared"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
 )
 
 func TestReplayAwareLogger(t *testing.T) {
@@ -56,7 +57,7 @@ func TestReplayAwareLogger(t *testing.T) {
 	isReplay = true
 	logger.Info("replay2 info")
 
-	logger.Sync()
+	_ = logger.Sync()
 
 	byteContents, err := ioutil.ReadAll(temp)
 	require.NoError(t, err, "Couldn't read log contents from temp file.")
@@ -158,7 +159,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchAttr.IndexedFields))
 	var resp int
-	json.Unmarshal(searchAttr.IndexedFields["key"], &resp)
+	_ = json.Unmarshal(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
 }
 
@@ -186,37 +187,37 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 func Test_MergeSearchAttributes(t *testing.T) {
 	tests := []struct {
 		name     string
-		current  *s.SearchAttributes
-		upsert   *s.SearchAttributes
-		expected *s.SearchAttributes
+		current  *commonproto.SearchAttributes
+		upsert   *commonproto.SearchAttributes
+		expected *commonproto.SearchAttributes
 	}{
 		{
 			name:     "currentIsNil",
 			current:  nil,
-			upsert:   &s.SearchAttributes{},
+			upsert:   &commonproto.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name:     "currentIsEmpty",
-			current:  &s.SearchAttributes{IndexedFields: make(map[string][]byte)},
-			upsert:   &s.SearchAttributes{},
+			current:  &commonproto.SearchAttributes{IndexedFields: make(map[string][]byte)},
+			upsert:   &commonproto.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name: "normalMerge",
-			current: &s.SearchAttributes{
+			current: &commonproto.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":     []byte(`1`),
 					"CustomKeywordField": []byte(`keyword`),
 				},
 			},
-			upsert: &s.SearchAttributes{
+			upsert: &commonproto.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":  []byte(`2`),
 					"CustomBoolField": []byte(`true`),
 				},
 			},
-			expected: &s.SearchAttributes{
+			expected: &commonproto.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":     []byte(`2`),
 					"CustomKeywordField": []byte(`keyword`),

@@ -29,9 +29,12 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
-	m "go.temporal.io/temporal/.gen/go/shared"
-	"go.temporal.io/temporal/.gen/go/temporal/workflowservicetest"
 	"go.uber.org/zap"
+
+	commonproto "github.com/temporalio/temporal-proto/common"
+	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto/workflowservicemock"
 )
 
 const (
@@ -52,13 +55,13 @@ type (
 	InterfacesTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicetest.MockClient
+		service  *workflowservicemock.MockWorkflowServiceYARPCClient
 	}
 )
 
-func helloWorldWorkflowFunc(ctx Context, input []byte) error {
+func helloWorldWorkflowFunc(ctx Context, _ []byte) error {
 	queryResult := startingQueryValue
-	SetQueryHandler(ctx, queryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, queryType, func() (string, error) {
 		return queryResult, nil
 	})
 
@@ -85,11 +88,11 @@ func helloWorldWorkflowFunc(ctx Context, input []byte) error {
 
 func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 	queryResult := startingQueryValue
-	SetQueryHandler(ctx, queryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, queryType, func() (string, error) {
 		return queryResult, nil
 	})
 
-	SetQueryHandler(ctx, errQueryType, func() (string, error) {
+	_ = SetQueryHandler(ctx, errQueryType, func() (string, error) {
 		return "", errors.New(queryErr)
 	})
 
@@ -111,17 +114,17 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 	return nil
 }
 
-func binaryChecksumWorkflowFunc(ctx Context) ([]*string, error) {
-	var result []*string
+func binaryChecksumWorkflowFunc(ctx Context) ([]string, error) {
+	var result []string
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
-	Sleep(ctx, time.Hour)
+	_ = Sleep(ctx, time.Hour)
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
-	Sleep(ctx, time.Hour)
+	_ = Sleep(ctx, time.Hour)
 	result = append(result, GetWorkflowInfo(ctx).BinaryChecksum)
 	return result, nil
 }
 
-func helloWorldWorkflowCancelFunc(ctx Context, input []byte) error {
+func helloWorldWorkflowCancelFunc(ctx Context, _ []byte) error {
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{
 		TaskList:               "taskList",
@@ -142,7 +145,7 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	return ActivityType{Name: activityName}
 }
 
-func (ga greeterActivity) Execute(ctx context.Context, input []byte) ([]byte, error) {
+func (ga greeterActivity) Execute(context.Context, []byte) ([]byte, error) {
 	return []byte("World"), nil
 }
 
@@ -151,7 +154,7 @@ func (ga greeterActivity) GetFunction() interface{} {
 }
 
 // Greeter activity func
-func greeterActivityFunc(ctx context.Context, input []byte) ([]byte, error) {
+func greeterActivityFunc(context.Context, []byte) ([]byte, error) {
 	return []byte("Hello world"), nil
 }
 
@@ -162,7 +165,7 @@ func TestInterfacesTestSuite(t *testing.T) {
 
 func (s *InterfacesTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicetest.NewMockClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
 }
 
 func (s *InterfacesTestSuite) TearDownTest() {
@@ -180,27 +183,27 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Tracer:                    opentracing.NoopTracer{},
 	}
 
-	domainStatus := m.DomainStatusRegistered
-	domainDesc := &m.DescribeDomainResponse{
-		DomainInfo: &m.DomainInfo{
-			Name:   &domain,
-			Status: &domainStatus,
+	domainStatus := enums.DomainStatusRegistered
+	domainDesc := &workflowservice.DescribeDomainResponse{
+		DomainInfo: &commonproto.DomainInfo{
+			Name:   domain,
+			Status: domainStatus,
 		},
 	}
 
 	// mocks
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForActivityTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
-	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&m.StartWorkflowExecutionResponse{}, nil).AnyTimes()
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	registry := getGlobalRegistry()
 	// Launch worker.
 	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
-	workflowWorker.Start()
+	_ = workflowWorker.Start()
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
@@ -213,7 +216,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Register activity instances and launch the worker.
 	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
-	activityWorker.Start()
+	_ = activityWorker.Start()
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{

@@ -200,7 +200,7 @@ func (c *CapturingStatsReporter) ReportTimer(
 func (c *CapturingStatsReporter) ReportHistogramValueSamples(
 	name string,
 	tags map[string]string,
-	buckets tally.Buckets,
+	_ tally.Buckets,
 	bucketLowerBound,
 	bucketUpperBound float64,
 	samples int64,
@@ -214,7 +214,7 @@ func (c *CapturingStatsReporter) ReportHistogramValueSamples(
 func (c *CapturingStatsReporter) ReportHistogramDurationSamples(
 	name string,
 	tags map[string]string,
-	buckets tally.Buckets,
+	_ tally.Buckets,
 	bucketLowerBound,
 	bucketUpperBound time.Duration,
 	samples int64,
