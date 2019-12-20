@@ -1312,7 +1312,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	// mix no-mock and mock is not support
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithThriftTypes() {
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoTypes() {
 	var actualValues []string
 	retVal := &commonproto.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
 

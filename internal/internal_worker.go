@@ -23,11 +23,9 @@ package internal
 // All code in this file is private to the package.
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,7 +37,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -48,7 +45,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
-	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/protobufutils"
@@ -738,39 +734,6 @@ func (r *registry) getRegisteredActivities() []activity {
 	return activities
 }
 
-func isUseThriftEncoding(objs []interface{}) bool {
-	// NOTE: our criteria to use which encoder is simple if all the types are serializable using thrift then we use
-	// thrift encoder. For everything else we default to gob.
-
-	if len(objs) == 0 {
-		return false
-	}
-
-	for i := 0; i < len(objs); i++ {
-		if !isThriftType(objs[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func isUseThriftDecoding(objs []interface{}) bool {
-	// NOTE: our criteria to use which encoder is simple if all the types are de-serializable using thrift then we use
-	// thrift decoder. For everything else we default to gob.
-
-	if len(objs) == 0 {
-		return false
-	}
-
-	for i := 0; i < len(objs); i++ {
-		rVal := reflect.ValueOf(objs[i])
-		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {
-			return false
-		}
-	}
-	return true
-}
-
 func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
 	lookup := wt.Name
 	if alias, ok := r.getWorkflowAlias(lookup); ok {
@@ -1384,94 +1347,6 @@ func isInterfaceNil(i interface{}) bool {
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
-}
-
-// encoding is capable of encoding and decoding objects
-type encoding interface {
-	Marshal([]interface{}) ([]byte, error)
-	Unmarshal([]byte, []interface{}) error
-}
-
-// jsonEncoding encapsulates json encoding and decoding
-type jsonEncoding struct {
-}
-
-// Marshal encodes an array of object into bytes
-func (g jsonEncoding) Marshal(objs []interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	for i, obj := range objs {
-		if err := enc.Encode(obj); err != nil {
-			if err == io.EOF {
-				return nil, fmt.Errorf("missing argument at index %d of type %T", i, obj)
-			}
-			return nil, fmt.Errorf(
-				"unable to encode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-// Unmarshal decodes a byte array into the passed in objects
-func (g jsonEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	dec := json.NewDecoder(bytes.NewBuffer(data))
-	for i, obj := range objs {
-		if err := dec.Decode(obj); err != nil {
-			return fmt.Errorf(
-				"unable to decode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return nil
-}
-
-func isThriftType(v interface{}) bool {
-	// NOTE: Thrift serialization works only if the values are pointers.
-	// Thrift has a validation that it meets thift.TStruct which has Read/Write pointer receivers.
-
-	if reflect.ValueOf(v).Kind() != reflect.Ptr {
-		return false
-	}
-	t := reflect.TypeOf((*thrift.TStruct)(nil)).Elem()
-	return reflect.TypeOf(v).Implements(t)
-}
-
-// thriftEncoding encapsulates thrift serializer/de-serializer.
-type thriftEncoding struct{}
-
-// Marshal encodes an array of thrift into bytes
-func (g thriftEncoding) Marshal(objs []interface{}) ([]byte, error) {
-	var tlist []thrift.TStruct
-	for i := 0; i < len(objs); i++ {
-		if !isThriftType(objs[i]) {
-			return nil, fmt.Errorf("pointer to thrift.TStruct type is required for %v argument", i+1)
-		}
-		t := reflect.ValueOf(objs[i]).Interface().(thrift.TStruct)
-		tlist = append(tlist, t)
-	}
-	return common.TListSerialize(tlist)
-}
-
-// Unmarshal decodes an array of thrift into bytes
-func (g thriftEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	var tlist []thrift.TStruct
-	for i := 0; i < len(objs); i++ {
-		rVal := reflect.ValueOf(objs[i])
-		if rVal.Kind() != reflect.Ptr || !isThriftType(reflect.Indirect(rVal).Interface()) {
-			return fmt.Errorf("pointer to pointer thrift.TStruct type is required for %v argument", i+1)
-		}
-		t := reflect.New(rVal.Elem().Type().Elem()).Interface().(thrift.TStruct)
-		tlist = append(tlist, t)
-	}
-
-	if err := common.TListDeserialize(tlist, data); err != nil {
-		return err
-	}
-
-	for i := 0; i < len(tlist); i++ {
-		reflect.ValueOf(objs[i]).Elem().Set(reflect.ValueOf(tlist[i]))
-	}
-
-	return nil
 }
 
 func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
