@@ -21,6 +21,7 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"reflect"
@@ -31,7 +32,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"github.com/uber/tchannel-go/thrift"
 	"go.uber.org/yarpc"
 	"google.golang.org/grpc/codes"
 
@@ -68,7 +68,7 @@ type testCase struct {
 }
 
 func Test_Wrapper(t *testing.T) {
-	ctx, _ := thrift.NewContext(time.Minute)
+	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
 	tests := []testCase{
 		// one case for each service call
 		{"DeprecateDomain", []interface{}{ctx, &workflowservice.DeprecateDomainRequest{}}, []interface{}{&workflowservice.DeprecateDomainResponse{}, nil}, []string{CadenceRequest}},
