@@ -78,12 +78,7 @@ func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
 		return r[0].([]byte), nil
 	}
 
-	var encoder encoding
-	if isUseThriftEncoding(r) {
-		encoder = &thriftEncoding{}
-	} else {
-		encoder = &jsonEncoding{}
-	}
+	encoder := &jsonEncoding{}
 
 	data, err := encoder.Marshal(r)
 	if err != nil {
@@ -98,12 +93,7 @@ func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
 		return nil
 	}
 
-	var encoder encoding
-	if isUseThriftDecoding(to) {
-		encoder = &thriftEncoding{}
-	} else {
-		encoder = &jsonEncoding{}
-	}
+	encoder := &jsonEncoding{}
 
 	return encoder.Unmarshal(data, to)
 }
