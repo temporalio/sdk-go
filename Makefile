@@ -8,6 +8,13 @@ IMPORT_ROOT := go.temporal.io/temporal
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 
+PROTO_ROOT := proto
+PROTO_GEN := .gen/proto
+PROTO_REPO := github.com/temporalio/temporal-proto
+
+PROTO_DIRS := common enums errordetails workflowservice
+PROTO_SERVICES := workflowservice
+
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
@@ -15,7 +22,7 @@ INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
 INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 
 # Automatically gather all srcs
-ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e .gen/ -e .build/)
+ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e $(PROTO_GEN))
 
 UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
 INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)))
@@ -23,25 +30,17 @@ INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)
 # Files that needs to run lint. Excludes testify mocks.
 LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
-#================================= protobuf ===================================
-PROTO_ROOT := proto
-PROTO_DIRS = common enums errordetails workflowservice
-PROTO_SERVICES := workflowservice
-PROTO_GEN = .gen/proto
-
 $(PROTO_GEN):
 	mkdir -p $(PROTO_GEN)
+	cd $(PROTO_GEN) && go mod init $(PROTO_REPO)
 
 clean-proto:
-	rm -rf $(PROTO_GEN)
+	rm -rf $(PROTO_GEN)/*/
 
 update-proto-submodule:
-	git submodule update --remote $(PROTO_ROOT)
+	git submodule update --init --remote $(PROTO_ROOT)
 
-install-proto-submodule:
-	git submodule update --init $(PROTO_ROOT)
-
-protoc: $(PROTO_GEN)
+protoc:
 #   run protoc separately for each directory because of different package names
 	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
 	$(foreach PROTO_SERVICE,$(PROTO_SERVICES),protoc --proto_path=$(PROTO_ROOT) --yarpc-go_out=$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_SERVICE)/service.proto;)
@@ -51,12 +50,11 @@ PROTO_YARPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -na
 dir_no_slash = $(patsubst %/,%,$(dir $(1)))
 dirname = $(notdir $(call dir_no_slash,$(1)))
 
-proto-mock: $(PROTO_GEN)
+proto-mock: protoc
 	@echo "Generate proto mocks..."
 	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
 
-update-proto: clean-proto update-proto-submodule tools-install protoc proto-mock
-#==============================================================================
+proto: $(PROTO_GEN) clean-proto update-proto-submodule tools-install protoc proto-mock copyright
 
 tools-install:
 	GO111MODULE=off go get -u github.com/myitcv/gobin
@@ -70,8 +68,8 @@ tools-install:
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
 copyright $(BUILD)/copyright: $(ALL_SRC)
-	@mkdir -p $(BUILD)
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
+	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
 
 $(BUILD)/dummy:
