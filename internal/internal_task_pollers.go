@@ -380,12 +380,12 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				}
 			case *workflowservice.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
-					request.StickyAttributes = &s.StickyExecutionAttributes{
-						WorkerTaskList:                &s.TaskList{Name: common.StringPtr(getWorkerTaskList(wtp.stickyUUID))},
-						ScheduleToStartTimeoutSeconds: common.Int32Ptr(common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds())),
+					request.StickyAttributes = &commonproto.StickyExecutionAttributes{
+						WorkerTaskList:                &commonproto.TaskList{Name: getWorkerTaskList(wtp.stickyUUID)},
+						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
 				} else {
-					request.ReturnNewDecisionTask = common.BoolPtr(false)
+					request.ReturnNewDecisionTask = false
 				}
 				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt...)
 				if err1 != nil {
@@ -605,7 +605,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskListName = getWorkerTaskList(wtp.stickyUUID)
-			taskListKind = s.TaskListKindSticky
+			taskListKind = enums.TaskListKindSticky
 		} else {
 			wtp.pendingRegularPollCount++
 		}

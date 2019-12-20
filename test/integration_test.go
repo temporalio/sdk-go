@@ -263,7 +263,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
-		QueryConsistencyLevel: shared.QueryConsistencyLevelStrong.Ptr(),
+		QueryConsistencyLevel: enums.QueryConsistencyLevelStrong,
 	})
 	ts.Nil(err)
 	ts.NotNil(value)

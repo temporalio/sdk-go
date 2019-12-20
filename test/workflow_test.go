@@ -428,7 +428,7 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	})
-	workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
+	_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
 	queryResult = signalData
 	return nil
 }

@@ -216,7 +216,7 @@ func createTestEventDecisionTaskFailed(eventID int64, attr *commonproto.Decision
 	return &commonproto.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enums.EventTypeDecisionTaskFailed,
-		Attributes: &commonproto.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
+		Attributes: &commonproto.HistoryEvent_DecisionTaskFailedEventAttributes{DecisionTaskFailedEventAttributes: attr}}
 }
 
 func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *commonproto.SignalExternalWorkflowExecutionFailedEventAttributes) *commonproto.HistoryEvent {
@@ -224,7 +224,6 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *c
 		EventId:    eventID,
 		EventType:  enums.EventTypeSignalExternalWorkflowExecutionFailed,
 		Attributes: &commonproto.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
-	}
 }
 
 func createWorkflowTask(
@@ -606,18 +605,18 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 
 func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	taskList := "taskList"
-	testEvents := []*s.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
-		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskFailed(4, &s.DecisionTaskFailedEventAttributes{ScheduledEventId: common.Int64Ptr(2)}),
-		createTestEventDecisionTaskScheduled(5, &s.DecisionTaskScheduledEventAttributes{TaskList: &s.TaskList{Name: &taskList}}),
+		createTestEventDecisionTaskFailed(4, &commonproto.DecisionTaskFailedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskScheduled(5, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(6),
-		createTestEventDecisionTaskCompleted(7, &s.DecisionTaskCompletedEventAttributes{ScheduledEventId: common.Int64Ptr(5)}),
-		createTestEventActivityTaskScheduled(8, &s.ActivityTaskScheduledEventAttributes{
-			ActivityId:   common.StringPtr("0"),
-			ActivityType: &s.ActivityType{Name: common.StringPtr("pkg.Greeter_Activity")},
-			TaskList:     &s.TaskList{Name: &taskList},
+		createTestEventDecisionTaskCompleted(7, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskScheduled(8, &commonproto.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "0",
+			ActivityType: &commonproto.ActivityType{Name: "pkg.Greeter_Activity"},
+			TaskList:     &commonproto.TaskList{Name: taskList},
 		}),
 	}
 	params := workerExecutionParameters{
@@ -641,7 +640,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	for i, tc := range testCases {
 		taskHandler := newWorkflowTaskHandler(testDomain, params, nil, getGlobalRegistry())
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
-		task.StartedEventId = common.Int64Ptr(tc.startedEventID)
+		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in getWorkflowCache().
 		newWorkflowTaskWorkerInternal(taskHandler, t.service, testDomain, params, make(chan struct{}))
@@ -1103,14 +1102,14 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	)
 
 	decisionTaskStartedEvent := createTestEventDecisionTaskStarted(3)
-	decisionTaskStartedEvent.Timestamp = common.Int64Ptr(time.Now().UnixNano())
-	testEvents := []*s.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &s.WorkflowExecutionStartedEventAttributes{
+	decisionTaskStartedEvent.Timestamp = time.Now().UnixNano()
+	testEvents := []*commonproto.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			TaskStartToCloseTimeoutSeconds: common.Int32Ptr(backoffIntervalInSeconds),
-			TaskList:                       &s.TaskList{Name: &testWorkflowTaskTasklist}},
+			TaskStartToCloseTimeoutSeconds: backoffIntervalInSeconds,
+			TaskList:                       &commonproto.TaskList{Name: testWorkflowTaskTasklist}},
 		),
-		createTestEventDecisionTaskScheduled(2, &s.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
 		decisionTaskStartedEvent,
 	}
 
@@ -1154,7 +1153,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, &s.EntityNotExistsError{Message: "Decision task not found."}
+			return nil, protobufutils.NewErrorWithMessage(codes.NotFound, "Decision task not found.")
 		})
 	t.Nil(response)
 	t.Error(err)

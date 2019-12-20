@@ -61,7 +61,7 @@ func (a *Activities) Sleep(_ context.Context, delay time.Duration) error {
 	return nil
 }
 
-func LocalSleep(ctx context.Context, delay time.Duration) error {
+func LocalSleep(_ context.Context, delay time.Duration) error {
 	time.Sleep(delay)
 	return nil
 }
