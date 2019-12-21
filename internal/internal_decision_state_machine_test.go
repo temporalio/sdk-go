@@ -339,7 +339,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	// start child workflow
 	d := h.startChildWorkflowExecution(attributes)
 	// send decision
-	decisions := h.getDecisions(true)
+	_ = h.getDecisions(true)
 	// child workflow initiated
 	h.handleStartChildWorkflowExecutionInitiated(workflowID)
 	// child workflow started
@@ -350,7 +350,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	require.Equal(t, decisionStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
-	decisions = h.getDecisions(true)
+	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
 	require.Equal(t, enums.DecisionTypeRequestCancelExternalWorkflowExecution, decisions[0].GetDecisionType())

@@ -674,7 +674,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
 			metricsScope.Counter(metrics.StickyCacheMiss).Inc(1)
-			if history, err = resetHistory(task, historyIterator); err != nil {
+			if _, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
 		}
@@ -770,7 +770,7 @@ processWorkflowLoop:
 		waitLocalActivityLoop:
 			for {
 				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
-				delayDuration := startTime.Add(deadlineToTrigger).Sub(time.Now())
+				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
 				select {
 				case <-time.After(delayDuration):
 					// force complete, call the decision heartbeat function
@@ -1245,7 +1245,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
 			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) ||
-			(strictMode && bytes.Compare(eventAttributes.Input, decisionAttributes.Input) != 0) {
+			(strictMode && !bytes.Equal(eventAttributes.Input, decisionAttributes.Input)) {
 			return false
 		}
 
@@ -1304,7 +1304,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
 			decisionAttributes := d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-			if bytes.Compare(eventAttributes.Result, decisionAttributes.Result) != 0 {
+			if !bytes.Equal(eventAttributes.Result, decisionAttributes.Result) {
 				return false
 			}
 		}
@@ -1320,7 +1320,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
 
 			if eventAttributes.GetReason() != decisionAttributes.GetReason() ||
-				bytes.Compare(eventAttributes.Details, decisionAttributes.Details) != 0 {
+				!bytes.Equal(eventAttributes.Details, decisionAttributes.Details) {
 				return false
 			}
 		}
@@ -1373,7 +1373,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
 			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if bytes.Compare(eventAttributes.Details, decisionAttributes.Details) != 0 {
+			if !bytes.Equal(eventAttributes.Details, decisionAttributes.Details) {
 				return false
 			}
 		}
@@ -1518,7 +1518,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	if closeDecision != nil {
 		decisions = append(decisions, closeDecision)
-		elapsed := time.Now().Sub(workflowContext.workflowStartTime)
+		elapsed := time.Since(workflowContext.workflowStartTime)
 		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewDecision = false
 	}

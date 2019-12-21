@@ -362,7 +362,6 @@ func (f *futureImpl) Chain(future Future) {
 	f.value = val
 	f.err = err
 	f.ready = true
-	return
 }
 
 func (f *futureImpl) ChainFuture(future Future) {
@@ -764,7 +763,7 @@ func getStackTrace(coroutineName, status string, stackDepth int) string {
 
 func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 	stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
-	rawStack := fmt.Sprintf("%s", strings.TrimRightFunc(string(stack), unicode.IsSpace))
+	rawStack := strings.TrimRightFunc(string(stack), unicode.IsSpace)
 	if disableCleanStackTraces {
 		return rawStack
 	}

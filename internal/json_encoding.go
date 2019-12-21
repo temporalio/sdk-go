@@ -28,12 +28,6 @@ import (
 	"reflect"
 )
 
-// encoding is capable of encoding and decoding objects
-type encoding interface {
-	Marshal([]interface{}) ([]byte, error)
-	Unmarshal([]byte, []interface{}) error
-}
-
 // jsonEncoding encapsulates json encoding and decoding
 type jsonEncoding struct {
 }

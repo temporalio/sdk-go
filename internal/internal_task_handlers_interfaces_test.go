@@ -130,12 +130,12 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	taskHandler := newSampleActivityTaskHandler()
 	request, err := taskHandler.Execute(tasklist, response)
 	s.NoError(err)
-	switch request.(type) {
+	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		_, err = s.service.RespondActivityTaskCompleted(ctx, request.(*workflowservice.RespondActivityTaskCompletedRequest))
+		_, err = s.service.RespondActivityTaskCompleted(ctx, request)
 		s.NoError(err)
 	case *workflowservice.RespondActivityTaskFailedRequest: // shouldn't happen
-		_, err = s.service.RespondActivityTaskFailed(ctx, request.(*workflowservice.RespondActivityTaskFailedRequest))
+		_, err = s.service.RespondActivityTaskFailed(ctx, request)
 		s.NoError(err)
 	}
 }

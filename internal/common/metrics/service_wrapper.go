@@ -116,7 +116,7 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 }
 
 func (s *operationScope) handleError(err error) {
-	s.scope.Timer(CadenceLatency).Record(time.Now().Sub(s.startTime))
+	s.scope.Timer(CadenceLatency).Record(time.Since(s.startTime))
 	if err != nil {
 		errCode := protobufutils.GetCode(err)
 		if errCode == codes.NotFound || errCode == codes.InvalidArgument || errCode == codes.AlreadyExists {

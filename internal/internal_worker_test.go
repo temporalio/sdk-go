@@ -169,6 +169,9 @@ func testReplayWorkflowFromFileParent(ctx Context) error {
 	cwf := ExecuteChildWorkflow(ctx, testReplayWorkflowFromFile)
 	f1 := cwf.SignalChildWorkflow(ctx, "test-signal", "test-data")
 	err := f1.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
 	err = cwf.Get(ctx, &result)
 	if err != nil {
 		return err
