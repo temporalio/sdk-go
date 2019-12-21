@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239 // indirect
-	github.com/apache/thrift v0.0.0-20161221203622-b2a4d4ae21c7
+	github.com/apache/thrift v0.0.0-20161221203622-b2a4d4ae21c7 // indirect
 	github.com/bmizerany/perks v0.0.0-20141205001514-d9a9656a3a4b // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/crossdock/crossdock-go v0.0.0-20160816171116-049aabb0122b // indirect
@@ -28,14 +28,13 @@ require (
 	github.com/uber-go/tally v3.3.13+incompatible
 	github.com/uber/jaeger-client-go v2.15.0+incompatible
 	github.com/uber/jaeger-lib v1.5.0 // indirect
-	github.com/uber/tchannel-go v1.16.0
 	go.uber.org/atomic v1.5.0
 	go.uber.org/goleak v0.10.0
 	go.uber.org/yarpc v1.42.1
 	go.uber.org/zap v1.13.0
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
 	golang.org/x/time v0.0.0-20170927054726-6dc17368e09b
-	google.golang.org/grpc v1.25.1
+	google.golang.org/grpc v1.26.0
 )
 
 replace github.com/temporalio/temporal-proto => ./.gen/proto

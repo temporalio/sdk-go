@@ -8,6 +8,13 @@ IMPORT_ROOT := go.temporal.io/temporal
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 
+PROTO_ROOT := proto
+PROTO_GEN := .gen/proto
+PROTO_REPO := github.com/temporalio/temporal-proto
+
+PROTO_DIRS := common enums errordetails workflowservice
+PROTO_SERVICES := workflowservice
+
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
@@ -15,7 +22,7 @@ INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
 INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 
 # Automatically gather all srcs
-ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e .gen/ -e .build/)
+ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e $(PROTO_GEN))
 
 UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
 INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)))
@@ -23,67 +30,51 @@ INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)
 # Files that needs to run lint. Excludes testify mocks.
 LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
-#================================= protobuf ===================================
-PROTO_ROOT := .gen/proto
-PROTO_REPO := github.com/temporalio/temporal-proto
-# List only subdirectories with *.proto files (sort to remove duplicates).
-# Note: using "shell find" instead of "wildcard" because "wildcard" caches directory structure.
-PROTO_DIRS = $(sort $(dir $(shell find $(PROTO_ROOT) -name "*.proto")))
-PROTO_SERVICES := $(shell find $(PROTO_ROOT) -name "*service.proto")
-
-# Everything that deals with go modules (go.mod) needs to take dependency on this target.
-$(PROTO_ROOT)/go.mod:
-	cd $(PROTO_ROOT) && go mod init $(PROTO_REPO)
+$(PROTO_GEN):
+	mkdir -p $(PROTO_GEN)
+	cd $(PROTO_GEN) && go mod init $(PROTO_REPO)
 
 clean-proto:
-	$(foreach PROTO_DIR,$(PROTO_DIRS),rm -f $(PROTO_DIR)*.go;)
-	rm -rf $(PROTO_ROOT)/*mock
+	rm -rf $(PROTO_GEN)/*/
 
 update-proto-submodule:
-	git submodule update --remote $(PROTO_ROOT)
+	git submodule update --init --remote $(PROTO_ROOT)
 
-install-proto-submodule:
-	git submodule update --init $(PROTO_ROOT)
+proto-plugins:
+	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
+	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
 
 protoc:
 #   run protoc separately for each directory because of different package names
-	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_ROOT) $(PROTO_DIR)*.proto;)
-	$(foreach PROTO_SERVICE,$(PROTO_SERVICES),protoc --proto_path=$(PROTO_ROOT) --yarpc-go_out=$(PROTO_ROOT) $(PROTO_SERVICE);)
+	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
+	$(foreach PROTO_SERVICE,$(PROTO_SERVICES),protoc --proto_path=$(PROTO_ROOT) --yarpc-go_out=$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_SERVICE)/service.proto;)
 
 # All YARPC generated service files pathes relative to PROTO_ROOT
-PROTO_YARPC_SERVICES = $(patsubst $(PROTO_ROOT)/%,%,$(shell find $(PROTO_ROOT) -name "service.pb.yarpc.go"))
+PROTO_YARPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -name "service.pb.yarpc.go"))
 dir_no_slash = $(patsubst %/,%,$(dir $(1)))
 dirname = $(notdir $(call dir_no_slash,$(1)))
 
-proto-mock: $(PROTO_ROOT)/go.mod tools-install
+proto-mock: protoc gobin
 	@echo "Generate proto mocks..."
-	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_ROOT) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
+	gobin -mod=readonly github.com/golang/mock/mockgen
+	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
 
-update-proto: clean-proto update-proto-submodule tools-install protoc proto-mock
+proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
 
-proto: clean-proto install-proto-submodule tools-install protoc proto-mock
-#==============================================================================
-
-tools-install: $(PROTO_ROOT)/go.mod
+gobin:
 	GO111MODULE=off go get -u github.com/myitcv/gobin
-	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
-	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
-	GOOS= GOARCH= gobin -mod=readonly golang.org/x/lint/golint
-	GOOS= GOARCH= gobin -mod=readonly github.com/golang/mock/mockgen
-	GOOS= GOARCH= gobin -mod=readonly honnef.co/go/tools/cmd/staticcheck
-	GOOS= GOARCH= gobin -mod=readonly github.com/kisielk/errcheck
 
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
 copyright $(BUILD)/copyright: $(ALL_SRC)
-	@mkdir -p $(BUILD)
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
+	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
 
 $(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
-bins: $(ALL_SRC) proto $(BUILD)/copyright lint $(BUILD)/dummy
+bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
 
 unit_test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
@@ -134,7 +125,8 @@ define lint_if_present
 test -n "$1" && golint -set_exit_status $1
 endef
 
-lint: tools-install $(ALL_SRC)
+lint: gobin $(ALL_SRC)
+	gobin -mod=readonly golang.org/x/lint/golint
 	$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
@@ -146,14 +138,15 @@ lint: tools-install $(ALL_SRC)
 		exit 1; \
 	fi
 
-staticcheck: tools-install $(ALL_SRC)
-	staticcheck ./...
 
-errcheck: tools-install $(ALL_SRC)
-	errcheck ./...
+staticcheck: gobin $(ALL_SRC)
+	gobin -mod=readonly -run honnef.co/go/tools/cmd/staticcheck ./...
+
+errcheck: gobin $(ALL_SRC)
+	gobin -mod=readonly -run github.com/kisielk/errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)
 
-clean: clean-proto
+clean:
 	rm -rf $(BUILD)
