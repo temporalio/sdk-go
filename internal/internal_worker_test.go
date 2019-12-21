@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +43,6 @@ import (
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 func init() {
@@ -437,9 +437,9 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
 		domainErr  error
 		isErrFatal bool
 	}{
-		{protobufutils.NewError(codes.NotFound), true},
-		{protobufutils.NewError(codes.InvalidArgument), true},
-		{protobufutils.NewError(codes.Internal), false},
+		{status.New(codes.NotFound, "").Err(), true},
+		{status.New(codes.InvalidArgument, "").Err(), true},
+		{status.New(codes.Internal, "").Err(), false},
 		{errors.New("unknown"), false},
 	}
 

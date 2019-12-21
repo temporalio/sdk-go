@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/uber-go/tally"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 type (
@@ -117,8 +117,8 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 func (s *operationScope) handleError(err error) {
 	s.scope.Timer(CadenceLatency).Record(time.Since(s.startTime))
 	if err != nil {
-		errCode := protobufutils.GetCode(err)
-		if errCode == codes.NotFound || errCode == codes.InvalidArgument || errCode == codes.AlreadyExists {
+		st := status.Convert(err)
+		if st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument || st.Code() == codes.AlreadyExists {
 			s.scope.Counter(CadenceInvalidRequest).Inc(1)
 		} else {
 			s.scope.Counter(CadenceError).Inc(1)

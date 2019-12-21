@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
@@ -46,7 +47,6 @@ import (
 	"github.com/temporalio/temporal-proto/workflowservicemock"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -262,7 +262,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return protobufutils.NewError(codes.NotFound)
+			return status.New(codes.NotFound, "").Err()
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
@@ -347,13 +347,16 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 	}
 
@@ -1901,7 +1904,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 
 	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
 		if workflowHandle.handled {
-			return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID))
+			return status.New(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID)).Err()
 		}
 		workflowHandle.env.postCallback(func() {
 			workflowHandle.env.signalHandler(signalName, data)
@@ -1909,7 +1912,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 		return nil
 	}
 
-	return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID))
+	return status.New(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID)).Err()
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {

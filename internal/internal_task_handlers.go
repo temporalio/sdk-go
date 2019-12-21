@@ -34,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -46,7 +47,6 @@ import (
 	"go.temporal.io/temporal/internal/common/cache"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/common/util"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -961,10 +961,10 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		return false
 	}
 
-	backoff := getRetryBackoff(lar, time.Now())
-	if backoff > 0 && backoff <= w.GetDecisionTimeout() {
+	retryBackoff := getRetryBackoff(lar, time.Now())
+	if retryBackoff > 0 && retryBackoff <= w.GetDecisionTimeout() {
 		// we need a local retry
-		time.AfterFunc(backoff, func() {
+		time.AfterFunc(retryBackoff, func() {
 			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
 			// currently this is solved by changing eventHandler to an atomic.Value. Ideally, this retry timer should be
 			// part of the event loop for processing the workflow task.
@@ -994,7 +994,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	// timer fires. So here we will return false to indicate we don't need local retry anymore. However, we have to
 	// store the current attempt and backoff to the same LocalActivityResultMarker so the replay can do the right thing.
 	// The backoff timer will be created by workflow.ExecuteLocalActivity().
-	lar.backoff = backoff
+	lar.backoff = retryBackoff
 
 	return false
 }
@@ -1696,11 +1696,20 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
 		isActivityCancelled = true
-	} else if _, isDomainNotActiveFailure := protobufutils.GetFailure(err).(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || protobufutils.GetCode(err) == codes.NotFound {
-		// We will pass these through as cancellation for now but something we can change
-		// later when we have setter on cancel handler.
-		i.cancelHandler()
-		isActivityCancelled = true
+	} else {
+		st := status.Convert(err)
+		details := st.Details()
+		var failure interface{}
+		if len(details) > 0 {
+			failure = details[0]
+		}
+
+		if _, isDomainNotActiveFailure := failure.(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || st.Code() == codes.NotFound {
+			// We will pass these through as cancellation for now but something we can change
+			// later when we have setter on cancel handler.
+			i.cancelHandler()
+			isActivityCancelled = true
+		}
 	}
 
 	// We don't want to bubble temporary errors to the user.

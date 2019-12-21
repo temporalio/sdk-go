@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -39,7 +40,6 @@ import (
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/internal/protobufutils"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
 )
@@ -401,8 +401,9 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	ts.True(protobufutils.GetCode(err) == codes.InvalidArgument)
-	ts.Equal("query result size (3000000) exceeds limit (2000000)", protobufutils.GetMessage(err))
+	st := status.Convert(err)
+	ts.Equal(codes.InvalidArgument, st.Code())
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", st.Message())
 	ts.Nil(value)
 }
 
@@ -417,7 +418,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if protobufutils.GetCode(err) == codes.AlreadyExists {
+		if status.Convert(err).Code() == codes.AlreadyExists {
 			return
 		}
 	}
@@ -428,7 +429,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if protobufutils.GetCode(err) == codes.NotFound {
+		if status.Convert(err).Code() == codes.NotFound {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

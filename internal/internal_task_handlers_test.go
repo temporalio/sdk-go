@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -36,14 +37,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc/codes"
 
+	"go.uber.org/zap"
+
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/protobufutils"
-
-	"go.uber.org/zap"
 )
 
 const (
@@ -1153,7 +1153,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, protobufutils.NewErrorWithMessage(codes.NotFound, "Decision task not found.")
+			return nil, status.New(codes.NotFound, "Decision task not found.").Err()
 		})
 	t.Nil(response)
 	t.Error(err)
@@ -1186,7 +1186,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	entityNotExistsError := protobufutils.NewError(codes.NotFound)
+	entityNotExistsError := status.New(codes.NotFound, "").Err()
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
@@ -1199,14 +1199,16 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	t.Equal(codes.NotFound, protobufutils.GetCode(heartbeatErr), "heartbeatErr must have code NotFound.")
+	t.Equal(codes.NotFound, status.Convert(heartbeatErr).Code(), "heartbeatErr must have code NotFound.")
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	domainNotActiveError := protobufutils.NewErrorWithFailure(codes.InvalidArgument, "", &errordetails.DomainNotActiveFailure{})
+	st, _ := status.New(codes.InvalidArgument, "").WithDetails(&errordetails.DomainNotActiveFailure{})
+	domainNotActiveError := st.Err()
+
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, domainNotActiveError)
 
 	called := false
@@ -1222,7 +1224,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	_, isDomainNotActive := protobufutils.GetFailure(heartbeatErr).(*errordetails.DomainNotActiveFailure)
+	heartbeatSt := status.Convert(heartbeatErr)
+	details := heartbeatSt.Details()
+	var failure interface{}
+	if len(details) > 0 {
+		failure = details[0]
+	}
+	_, isDomainNotActive := failure.(*errordetails.DomainNotActiveFailure)
 	t.True(isDomainNotActive, "heartbeatErr failure must be DomainNotActiveFailure.")
 	t.True(called)
 }
