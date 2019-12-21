@@ -227,9 +227,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain string, logger *zap.Logger) error {
 	ctx := context.Background()
 	descDomainOp := func() error {
-		tchCtx, cancel, opt := newChannelContext(ctx)
+		tchCtx, cancel := newChannelContext(ctx)
 		defer cancel()
-		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt)
+		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain})
 		if err != nil {
 			if protobufutils.GetCode(err) == codes.NotFound {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))

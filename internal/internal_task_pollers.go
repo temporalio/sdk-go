@@ -32,7 +32,6 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
@@ -191,7 +190,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 	var result interface{}
 
 	doneC := make(chan struct{})
-	ctx, cancel, _ := newChannelContext(context.Background(), chanTimeout(pollTaskServiceTimeOut))
+	ctx, cancel := newChannelContext(context.Background(), chanTimeout(pollTaskServiceTimeOut))
 
 	go func() {
 		result, err = pollFunc(ctx)
@@ -314,10 +313,10 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 }
 
 func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
-	tchCtx, cancel, opt := newChannelContext(context.Background())
+	tchCtx, cancel := newChannelContext(context.Background())
 	defer cancel()
 	wtp.metricsScope.Counter(metrics.StickyCacheEvict).Inc(1)
-	if _, err := wtp.service.ResetStickyTaskList(tchCtx, rst.task, opt); err != nil {
+	if _, err := wtp.service.ResetStickyTaskList(tchCtx, rst.task); err != nil {
 		wtp.logger.Warn("ResetStickyTaskList failed",
 			zap.String(tagWorkflowID, rst.task.Execution.GetWorkflowId()),
 			zap.String(tagRunID, rst.task.Execution.GetRunId()),
@@ -360,7 +359,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	// Respond task completion.
 	err = backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel, opt := newChannelContext(ctx)
+			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
@@ -368,7 +367,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				// Only fail decision on first attempt, subsequent failure on the same decision task will timeout.
 				// This is to avoid spin on the failed decision task. Checking Attempt not nil for older server.
 				if task.GetAttempt() == 0 {
-					_, err1 = wtp.service.RespondDecisionTaskFailed(tchCtx, request, opt)
+					_, err1 = wtp.service.RespondDecisionTaskFailed(tchCtx, request)
 					if err1 != nil {
 						traceLog(func() {
 							wtp.logger.Debug("RespondDecisionTaskFailed failed.", zap.Error(err1))
@@ -384,14 +383,14 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				} else {
 					request.ReturnNewDecisionTask = false
 				}
-				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request, opt)
+				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
 					})
 				}
 			case *workflowservice.RespondQueryTaskCompletedRequest:
-				_, err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request, opt)
+				_, err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
 						wtp.logger.Debug("RespondQueryTaskCompleted failed.", zap.Error(err1))
@@ -633,7 +632,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	request := wtp.getNextPollRequest()
 	defer wtp.release(request.TaskList.GetKind())
 
-	response, err := wtp.service.PollForDecisionTask(ctx, request, grpc.Header(&headers))
+	response, err := wtp.service.PollForDecisionTask(ctx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
@@ -730,7 +729,7 @@ func newGetHistoryPageFunc(
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
 		err := backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
 				var err1 error
@@ -738,7 +737,7 @@ func newGetHistoryPageFunc(
 					Domain:        domain,
 					Execution:     execution,
 					NextPageToken: nextPageToken,
-				}, opt)
+				})
 				return err1
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 		if err != nil {
@@ -795,7 +794,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskListMetadata: &commonproto.TaskListMetadata{MaxTasksPerSecond: atp.activitiesPerSecond},
 	}
 
-	response, err := atp.service.PollForActivityTask(ctx, request, grpc.Header(&headers))
+	response, err := atp.service.PollForActivityTask(ctx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			atp.metricsScope.Counter(metrics.ActivityPollTransientFailedCounter).Inc(1)
@@ -891,28 +890,28 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCanceled(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskCanceled(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskFailed(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskFailed(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCompleted(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskCompleted(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
@@ -941,28 +940,28 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	case *workflowservice.RespondActivityTaskCanceledByIDRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCanceledByID(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskCanceledByID(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskFailedByIDRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskFailedByID(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskFailedByID(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskCompletedByIDRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				tchCtx, cancel, opt := newChannelContext(ctx)
+				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCompletedByID(tchCtx, request, opt)
+				_, err := service.RespondActivityTaskCompletedByID(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}

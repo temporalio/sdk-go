@@ -1863,11 +1863,11 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel, opt := newChannelContext(ctx)
+			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request, opt)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
@@ -1896,11 +1896,11 @@ func recordActivityHeartbeatByID(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIDResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel, opt := newChannelContext(ctx)
+			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request, opt)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
