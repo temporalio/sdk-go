@@ -123,7 +123,7 @@ func (task *addLicenseHeaderTask) handleFile(path string, fileInfo os.FileInfo, 
 
 	buf := make([]byte, len(licenseHeaderPrefix))
 	_, err = io.ReadFull(f, buf)
-	f.Close()
+	_ = f.Close()
 
 	if err != nil && !isEOF(err) {
 		return err

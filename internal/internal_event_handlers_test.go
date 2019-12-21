@@ -36,7 +36,7 @@ import (
 func TestReplayAwareLogger(t *testing.T) {
 	temp, err := ioutil.TempFile("", "temporal-client-test")
 	require.NoError(t, err, "Failed to create temp file.")
-	defer os.Remove(temp.Name())
+	defer func() { _ = os.Remove(temp.Name()) }()
 	config := zap.NewProductionConfig()
 	config.OutputPaths = []string{temp.Name()}
 	config.EncoderConfig.TimeKey = "" // no timestamps in tests
