@@ -1636,7 +1636,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	s.Equal("hello local_activity", laResult)
 }
 
-// This is flaky test. Rerun if failed.
+// Flaky test. Rerun if failed.
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
@@ -1692,7 +1692,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 
 	env.ExecuteWorkflow(workflowFn)
 	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount)
+	s.Equal(2, startedCount, "Flaky test. Rerun if failed.")
 	s.Equal(1, completedCount)
 	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())

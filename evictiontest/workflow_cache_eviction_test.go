@@ -99,9 +99,6 @@ func TestWorkersTestSuite(t *testing.T) {
 	suite.Run(t, new(CacheEvictionSuite))
 }
 
-// this is the mock for yarpcCallOptions, make sure length are the same
-var callOptions = []interface{}{gomock.Any(), gomock.Any(), gomock.Any()}
-
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *commonproto.WorkflowExecutionStartedEventAttributes) *commonproto.HistoryEvent {
 	return &commonproto.HistoryEvent{
 		EventId:    eventID,
@@ -154,23 +151,23 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	cacheSize := 5
 	internal.SetStickyWorkflowCacheSize(cacheSize)
 	// once for workflow worker because we disable activity worker
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).Times(1)
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
 	// feed our worker exactly *cacheSize* "legit" decision tasks
 	// these are handcrafted decision tasks that are not blatantly obviously mocks
 	// the goal is to trick our worker into thinking they are real so it
 	// actually goes along with processing these and puts their execution in the cache.
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(mockPollForDecisionTask).Times(cacheSize)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).DoAndReturn(mockPollForDecisionTask).Times(cacheSize)
 	// after *cacheSize* "legit" tasks are fed to our worker, start feeding our worker empty responses.
 	// these will get tossed away immediately after polled, but we still need them so gomock doesn't compain about unexpected calls.
 	// this is because our worker's poller doesn't stop, it keeps polling on the service client as long
 	// as Stop() is not called on the worker
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	// this gets called after polled decision tasks are processed, any number of times doesn't matter
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondDecisionTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondDecisionTaskCompletedResponse{}, nil).AnyTimes()
 	// this is the critical point of the test.
 	// ResetSticky should be called exactly once because our workflow cache evicts when full
 	// so if our worker puts *cacheSize* entries in the cache, it should evict exactly one
-	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(mockResetStickyTaskList).Times(1)
+	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskList).Times(1)
 
 	workflowWorker := internal.NewWorker(s.service, "test-domain", "tasklist", worker.Options{DisableActivityWorker: true})
 

@@ -1,7 +1,7 @@
-.PHONY: test bins clean cover cover_ci
+.PHONY: test bins clean cover cover_ci check errcheck staticcheck lint fmt
 
 # default target
-default: test
+default: check
 
 IMPORT_ROOT := go.temporal.io/temporal
 
@@ -126,7 +126,7 @@ endef
 
 lint: gobin $(ALL_SRC)
 	gobin -mod=readonly golang.org/x/lint/golint
-	$(foreach pkg,\
+	@$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
 	) test -z "$$ERR" || exit 1
@@ -136,7 +136,6 @@ lint: gobin $(ALL_SRC)
 		echo "$$OUTPUT"; \
 		exit 1; \
 	fi
-
 
 staticcheck: gobin $(ALL_SRC)
 	gobin -mod=readonly -run honnef.co/go/tools/cmd/staticcheck ./...
@@ -149,3 +148,5 @@ fmt:
 
 clean:
 	rm -rf $(BUILD)
+
+check: fmt lint errcheck staticcheck test
