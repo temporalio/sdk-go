@@ -37,7 +37,7 @@ type (
 	PollLayerInterfacesTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceYARPCClient
+		service  *workflowservicemock.MockWorkflowServiceClient
 	}
 )
 
@@ -89,7 +89,7 @@ func TestPollLayerInterfacesTestSuite(t *testing.T) {
 
 func (s *PollLayerInterfacesTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 }
 
 func (s *PollLayerInterfacesTestSuite) TearDownTest() {

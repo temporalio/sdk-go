@@ -32,7 +32,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
@@ -111,7 +111,7 @@ func Test_Wrapper(t *testing.T) {
 func runTest(
 	t *testing.T,
 	test testCase,
-	serviceFunc func(*testing.T) (*workflowservicemock.MockWorkflowServiceYARPCClient, workflowservice.WorkflowServiceYARPCClient, io.Closer, *CapturingStatsReporter),
+	serviceFunc func(*testing.T) (*workflowservicemock.MockWorkflowServiceClient, workflowservice.WorkflowServiceClient, io.Closer, *CapturingStatsReporter),
 	validationFunc func(*testing.T, *CapturingStatsReporter, string, []string),
 	name string,
 ) {
@@ -172,7 +172,7 @@ func runTest(
 			mockService.EXPECT().RespondQueryTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		}
 
-		callOption := yarpc.CallOption{}
+		callOption := grpc.EmptyCallOption{}
 		inputs := make([]reflect.Value, len(test.callArgs))
 		for i, arg := range test.callArgs {
 			inputs[i] = reflect.ValueOf(arg)
@@ -229,13 +229,13 @@ func makePromCompatible(name string) string {
 }
 
 func newService(t *testing.T) (
-	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
-	wrapperService workflowservice.WorkflowServiceYARPCClient,
+	mockService *workflowservicemock.MockWorkflowServiceClient,
+	wrapperService workflowservice.WorkflowServiceClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
@@ -243,13 +243,13 @@ func newService(t *testing.T) (
 }
 
 func newPromService(t *testing.T) (
-	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
-	wrapperService workflowservice.WorkflowServiceYARPCClient,
+	mockService *workflowservicemock.MockWorkflowServiceClient,
+	wrapperService workflowservice.WorkflowServiceClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := newPromScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)

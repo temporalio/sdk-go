@@ -35,8 +35,8 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
@@ -122,7 +122,7 @@ type (
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock         *mock.Mock
-		service      workflowservice.WorkflowServiceYARPCClient
+		service      workflowservice.WorkflowServiceClient
 		logger       *zap.Logger
 		metricsScope *metrics.TaggedScope
 		ctxProps     []ContextPropagator
@@ -252,9 +252,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 	// setup mock service
 	mockCtrl := gomock.NewController(&testReporter{logger: env.logger})
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) error {
+	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) error {
 		activityID := string(r.TaskToken)
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID)
@@ -276,13 +276,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		return nil
 	}
 
-	var callOptions []interface{}
-	for range yarpcCallOptions {
-		callOptions = append(callOptions, gomock.Any())
-	}
-	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}, nil)
-	em.Do(func(ctx context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+	em.Do(func(ctx context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
 		// TODO: The following will hit a data race in the gomock code where the Do() action is executed outside
 		// the lock and setting return value from inside the action is going to run into races.
 		// err := mockHeartbeatFn(ctx, r, opts)

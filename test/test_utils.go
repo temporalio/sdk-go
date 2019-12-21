@@ -24,8 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/yarpc"
-	"go.uber.org/yarpc/transport/grpc"
+	"google.golang.org/grpc"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
 )
@@ -76,30 +75,22 @@ func getDebug() string {
 }
 
 type rpcClient struct {
-	workflowservice.WorkflowServiceYARPCClient
-	dispatcher *yarpc.Dispatcher
+	workflowservice.WorkflowServiceClient
+	connectionCloser func() error
 }
 
 func (c *rpcClient) Close() {
-	_ = c.dispatcher.Stop()
+	_ = c.connectionCloser()
 }
 
 // newRPCClient builds and returns a new rpc client that is able to
 // make calls to the localhost temporal-server container
-func newRPCClient(
-	serviceName string, serviceAddr string) (*rpcClient, error) {
-	outbound := grpc.NewTransport().NewSingleOutbound(serviceAddr)
-	dispatcher := yarpc.NewDispatcher(yarpc.Config{
-		Name: "integration-test",
-		Outbounds: yarpc.Outbounds{
-			serviceName: {
-				Unary: outbound,
-			},
-		},
-	})
-	if err := dispatcher.Start(); err != nil {
+func newRPCClient(serviceName string, serviceAddr string) (*rpcClient, error) {
+	connection, err := grpc.Dial(serviceAddr, grpc.WithInsecure())
+	if err != nil {
 		return nil, err
 	}
-	client := workflowservice.NewWorkflowServiceYARPCClient(dispatcher.ClientConfig(serviceName))
-	return &rpcClient{WorkflowServiceYARPCClient: client, dispatcher: dispatcher}, nil
+
+	client := workflowservice.NewWorkflowServiceClient(connection)
+	return &rpcClient{WorkflowServiceClient: client, connectionCloser: func() error { return connection.Close() }}, nil
 }

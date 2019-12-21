@@ -97,7 +97,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	rpcClient, err := newRPCClient(ts.config.ServiceName, ts.config.ServiceAddr)
 	ts.NoError(err)
 	ts.rpcClient = rpcClient
-	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceYARPCClient, domainName, &client.Options{})
+	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
 	ts.registerDomain()
 }
 
@@ -134,7 +134,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.worker = worker.New(ts.rpcClient.WorkflowServiceYARPCClient, domainName, ts.taskListName, worker.Options{
+	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, worker.Options{
 		DisableStickyExecution: ts.config.IsStickyOff,
 		Logger:                 logger,
 	})
@@ -405,7 +405,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceYARPCClient, &client.Options{})
+	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName

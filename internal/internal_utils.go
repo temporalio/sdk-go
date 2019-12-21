@@ -33,7 +33,8 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/temporal-proto/enums"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -65,11 +66,14 @@ const (
 
 var (
 	// call header to cadence server
-	yarpcCallOptions = []yarpc.CallOption{
-		yarpc.WithHeader(libraryVersionHeaderName, LibraryVersion),
-		yarpc.WithHeader(featureVersionHeaderName, FeatureVersion),
-		yarpc.WithHeader(clientImplHeaderName, clientImplHeaderValue),
-	}
+	headers = metadata.New(map[string]string{
+		libraryVersionHeaderName: LibraryVersion,
+		featureVersionHeaderName: FeatureVersion,
+		clientImplHeaderName:     clientImplHeaderValue,
+		"rpc-caller":             "temporal-go-client",
+		"rpc-service":            "cadence-frontend",
+		"rpc-encoding":           "proto",
+	})
 )
 
 // ContextBuilder stores all Channel-specific parameters that will
@@ -100,7 +104,7 @@ func chanTimeout(timeout time.Duration) func(builder *contextBuilder) {
 }
 
 // newChannelContext - Get a rpc channel context
-func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc, []yarpc.CallOption) {
+func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc, grpc.CallOption) {
 	rpcTimeout := defaultRPCTimeout
 	if ctx != nil {
 		// Set rpc timeout less than context timeout to allow for retries when call gets lost
@@ -124,7 +128,7 @@ func newChannelContext(ctx context.Context, options ...func(builder *contextBuil
 	}
 	ctx, cancelFn := builder.Build()
 
-	return ctx, cancelFn, yarpcCallOptions
+	return ctx, cancelFn, grpc.Header(&headers)
 }
 
 // GetWorkerIdentity gets a default identity for the worker.

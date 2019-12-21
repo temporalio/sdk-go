@@ -79,7 +79,7 @@ type (
 	// task list names they might have to manage 'n' workers for 'n' task lists.
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     workflowservice.WorkflowServiceYARPCClient
+		workflowService     workflowservice.WorkflowServiceClient
 		domain              string
 		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
@@ -92,7 +92,7 @@ type (
 	// TODO: Worker doing heartbeating automatically while activity task is running
 	activityWorker struct {
 		executionParameters workerExecutionParameters
-		workflowService     workflowservice.WorkflowServiceYARPCClient
+		workflowService     workflowservice.WorkflowServiceClient
 		domain              string
 		poller              taskPoller
 		worker              *baseWorker
@@ -188,7 +188,7 @@ type (
 
 // newWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -224,12 +224,12 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyDomainExist does a DescribeDomain operation on the specified domain with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyDomainExist(client workflowservice.WorkflowServiceYARPCClient, domain string, logger *zap.Logger) error {
+func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain string, logger *zap.Logger) error {
 	ctx := context.Background()
 	descDomainOp := func() error {
 		tchCtx, cancel, opt := newChannelContext(ctx)
 		defer cancel()
-		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt...)
+		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain}, opt)
 		if err != nil {
 			if protobufutils.GetCode(err) == codes.NotFound {
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
@@ -254,7 +254,7 @@ func verifyDomainExist(client workflowservice.WorkflowServiceYARPCClient, domain
 }
 
 func newWorkflowWorkerInternal(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	ppMgr pressurePointMgr,
@@ -276,7 +276,7 @@ func newWorkflowWorkerInternal(
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	stopC chan struct{},
@@ -369,7 +369,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceYARPCClient,
+func newSessionWorker(service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
@@ -428,7 +428,7 @@ func (sw *sessionWorker) Stop() {
 }
 
 func newActivityWorker(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
@@ -451,7 +451,7 @@ func newActivityWorker(
 
 func newActivityTaskWorker(
 	taskHandler ActivityTaskHandler,
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	workerParams workerExecutionParameters,
 	sessionTokenBucket *sessionTokenBucket,
@@ -1176,7 +1176,7 @@ func (aw *AggregatedWorker) Stop() {
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func newAggregatedWorker(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	taskList string,
 	options WorkerOptions,

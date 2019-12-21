@@ -55,7 +55,7 @@ type (
 	InterfacesTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceYARPCClient
+		service  *workflowservicemock.MockWorkflowServiceClient
 	}
 )
 
@@ -165,7 +165,7 @@ func TestInterfacesTestSuite(t *testing.T) {
 
 func (s *InterfacesTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 }
 
 func (s *InterfacesTestSuite) TearDownTest() {
@@ -192,12 +192,12 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// mocks
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(domainDesc, nil).AnyTimes()
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
-	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).AnyTimes()
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	registry := getGlobalRegistry()
 	// Launch worker.

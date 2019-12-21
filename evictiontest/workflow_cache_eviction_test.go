@@ -38,8 +38,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/atomic"
-	"go.uber.org/yarpc"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
@@ -77,14 +77,14 @@ type (
 	CacheEvictionSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceYARPCClient
+		service  *workflowservicemock.MockWorkflowServiceClient
 	}
 )
 
 // Test suite.
 func (s *CacheEvictionSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 }
 
 func (s *CacheEvictionSuite) TearDownTest() {
@@ -126,7 +126,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 
 	var taskCounter atomic.Int32 // lambda variable to keep count
 	// mock that manufactures unique decision tasks
-	mockPollForDecisionTask := func(ctx context.Context, _PollRequest *workflowservice.PollForDecisionTaskRequest, opts ...yarpc.CallOption,
+	mockPollForDecisionTask := func(ctx context.Context, _PollRequest *workflowservice.PollForDecisionTaskRequest, opts ...grpc.CallOption,
 	) (success *workflowservice.PollForDecisionTaskResponse, err error) {
 		taskID := taskCounter.Inc()
 		workflowID := "testID" + strconv.Itoa(int(taskID))
@@ -145,7 +145,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	}
 
 	resetStickyAPICalled := make(chan struct{})
-	mockResetStickyTaskList := func(ctx context.Context, _ResetRequest *workflowservice.ResetStickyTaskListRequest, opts ...yarpc.CallOption,
+	mockResetStickyTaskList := func(ctx context.Context, _ResetRequest *workflowservice.ResetStickyTaskListRequest, opts ...grpc.CallOption,
 	) (success *workflowservice.ResetStickyTaskListResponse, err error) {
 		resetStickyAPICalled <- struct{}{}
 		return &workflowservice.ResetStickyTaskListResponse{}, nil

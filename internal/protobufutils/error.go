@@ -22,8 +22,7 @@ package protobufutils
 
 import (
 	"github.com/gogo/protobuf/proto"
-	"go.uber.org/yarpc/encoding/protobuf"
-	"go.uber.org/yarpc/yarpcerrors"
+	"github.com/gogo/status"
 	"google.golang.org/grpc/codes"
 )
 
@@ -34,12 +33,13 @@ func NewError(code codes.Code) error {
 
 // NewErrorWithMessage creates new error for protobuf with message.
 func NewErrorWithMessage(code codes.Code, message string) error {
-	return protobuf.NewError(yarpcerrors.Code(code), message)
+	return status.New(code, message).Err()
 }
 
 // NewErrorWithFailure creates new error for protobuf with message and failure details.
 func NewErrorWithFailure(code codes.Code, message string, failure proto.Message) error {
-	return protobuf.NewError(yarpcerrors.Code(code), message, protobuf.WithErrorDetails(failure))
+	st, _ := status.New(code, message).WithDetails(failure)
+	return st.Err()
 }
 
 // GetCode returns code for protobuf error.
@@ -48,7 +48,7 @@ func GetCode(err error) codes.Code {
 		return codes.OK
 	}
 
-	return codes.Code(yarpcerrors.FromError(err).Code())
+	return status.Convert(err).Code()
 }
 
 // GetMessage returns message for protobuf error.
@@ -57,12 +57,12 @@ func GetMessage(err error) string {
 		return ""
 	}
 
-	return yarpcerrors.FromError(err).Message()
+	return status.Convert(err).Message()
 }
 
 // GetFailure returns failure details for protobuf error.
 func GetFailure(err error) interface{} {
-	details := protobuf.GetErrorDetails(err)
+	details := status.Convert(err).Details()
 	if len(details) > 0 {
 		return details[0]
 	}

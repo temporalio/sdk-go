@@ -147,7 +147,7 @@ const (
 //               hosted by a single worker process
 //    options  - configure any worker specific options like logger, metrics, identity
 func New(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	taskList string,
 	options Options,
@@ -191,7 +191,7 @@ func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName s
 // ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is the only optional parameter. Defaults to the noop logger.
-func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, logger *zap.Logger, domain string, execution workflow.Execution) error {
+func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution workflow.Execution) error {
 	return internal.ReplayWorkflowExecution(ctx, service, logger, domain, execution)
 }
 

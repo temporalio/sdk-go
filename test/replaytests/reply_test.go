@@ -36,7 +36,7 @@ import (
 type replayTestSuite struct {
 	suite.Suite
 	mockCtrl *gomock.Controller
-	service  *workflowservicemock.MockWorkflowServiceYARPCClient
+	service  *workflowservicemock.MockWorkflowServiceClient
 }
 
 func TestReplayTestSuite(t *testing.T) {
@@ -46,7 +46,7 @@ func TestReplayTestSuite(t *testing.T) {
 
 func (s *replayTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 }
 
 func (s *replayTestSuite) TearDownTest() {

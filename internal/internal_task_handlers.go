@@ -136,7 +136,7 @@ type (
 	activityTaskHandlerImpl struct {
 		taskListName       string
 		identity           string
-		service            workflowservice.WorkflowServiceYARPCClient
+		service            workflowservice.WorkflowServiceClient
 		metricsScope       *metrics.TaggedScope
 		logger             *zap.Logger
 		userContext        context.Context
@@ -1581,7 +1581,7 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *commonproto.
 }
 
 func newActivityTaskHandler(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 	registry *registry,
 ) ActivityTaskHandler {
@@ -1589,7 +1589,7 @@ func newActivityTaskHandler(
 }
 
 func newActivityTaskHandlerWithCustomProvider(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 	registry *registry,
 	activityProvider activityProvider,
@@ -1613,7 +1613,7 @@ func newActivityTaskHandlerWithCustomProvider(
 type cadenceInvoker struct {
 	sync.Mutex
 	identity              string
-	service               workflowservice.WorkflowServiceYARPCClient
+	service               workflowservice.WorkflowServiceClient
 	taskToken             []byte
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
@@ -1728,7 +1728,7 @@ func (i *cadenceInvoker) GetClient(domain string, options *ClientOptions) Client
 func newServiceInvoker(
 	taskToken []byte,
 	identity string,
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	cancelHandler func(),
 	heartBeatTimeoutInSec int32,
 	workerStopChannel <-chan struct{},
@@ -1851,7 +1851,7 @@ func createNewDecision(decisionType enums.DecisionType) *commonproto.Decision {
 
 func recordActivityHeartbeat(
 	ctx context.Context,
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	identity string,
 	taskToken, details []byte,
 ) error {
@@ -1867,7 +1867,7 @@ func recordActivityHeartbeat(
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request, opt...)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request, opt)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
@@ -1880,7 +1880,7 @@ func recordActivityHeartbeat(
 
 func recordActivityHeartbeatByID(
 	ctx context.Context,
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	identity string,
 	domain, workflowID, runID, activityID string,
 	details []byte,
@@ -1900,7 +1900,7 @@ func recordActivityHeartbeatByID(
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request, opt...)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request, opt)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 

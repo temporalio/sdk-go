@@ -42,22 +42,21 @@ update-proto-submodule:
 
 proto-plugins:
 	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
-	GO111MODULE=off go get -u go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
+	GO111MODULE=off go get -u google.golang.org/grpc
 
 protoc:
 #   run protoc separately for each directory because of different package names
-	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
-	$(foreach PROTO_SERVICE,$(PROTO_SERVICES),protoc --proto_path=$(PROTO_ROOT) --yarpc-go_out=$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_SERVICE)/service.proto;)
+	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=plugins=grpc,paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
 
-# All YARPC generated service files pathes relative to PROTO_ROOT
-PROTO_YARPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -name "service.pb.yarpc.go"))
+# All gRPC generated service files pathes relative to PROTO_GEN
+PROTO_GRPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -name "service.pb.go"))
 dir_no_slash = $(patsubst %/,%,$(dir $(1)))
 dirname = $(notdir $(call dir_no_slash,$(1)))
 
 proto-mock: protoc gobin
 	@echo "Generate proto mocks..."
 	gobin -mod=readonly github.com/golang/mock/mockgen
-	@$(foreach PROTO_YARPC_SERVICE,$(PROTO_YARPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_YARPC_SERVICE))mock -source $(PROTO_YARPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_YARPC_SERVICE))mock/$(notdir $(PROTO_YARPC_SERVICE:go=mock.go)) )
+	@$(foreach PROTO_GRPC_SERVICE,$(PROTO_GRPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_GRPC_SERVICE))mock -source $(PROTO_GRPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_GRPC_SERVICE))mock/$(notdir $(PROTO_GRPC_SERVICE:go=mock.go)) )
 
 proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
 
