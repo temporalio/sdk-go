@@ -94,7 +94,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	rpcClient, err := newRPCClient(ts.config.ServiceName, ts.config.ServiceAddr)
+	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
 	ts.NoError(err)
 	ts.rpcClient = rpcClient
 	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
@@ -288,7 +288,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
+	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -305,7 +305,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
+	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -405,12 +405,12 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
+	domainClient := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err := domainClient.Register(ctx, &workflowservice.RegisterDomainRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})

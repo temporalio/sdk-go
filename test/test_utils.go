@@ -32,19 +32,14 @@ import (
 // Config contains the integration test configuration
 type Config struct {
 	ServiceAddr string
-	ServiceName string
 	IsStickyOff bool
 	Debug       bool
 }
 
 func newConfig() Config {
 	cfg := Config{
-		ServiceName: "cadence-frontend",
 		ServiceAddr: "127.0.0.1:7233",
 		IsStickyOff: true,
-	}
-	if name := getEnvServiceName(); name != "" {
-		cfg.ServiceName = name
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
@@ -56,10 +51,6 @@ func newConfig() Config {
 		cfg.Debug = debug == "true"
 	}
 	return cfg
-}
-
-func getEnvServiceName() string {
-	return strings.TrimSpace(os.Getenv("SERVICE_NAME"))
 }
 
 func getEnvServiceAddr() string {
@@ -85,7 +76,7 @@ func (c *rpcClient) Close() {
 
 // newRPCClient builds and returns a new rpc client that is able to
 // make calls to the localhost temporal-server container
-func newRPCClient(serviceName string, serviceAddr string) (*rpcClient, error) {
+func newRPCClient(serviceAddr string) (*rpcClient, error) {
 	connection, err := grpc.Dial(serviceAddr, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
