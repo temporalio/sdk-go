@@ -241,7 +241,7 @@ func IsReplayDomain(dn string) bool {
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
 func NewWorker(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	taskList string,
 	options WorkerOptions,
@@ -252,7 +252,7 @@ func NewWorker(
 // ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is the only optional parameter. Defaults to the noop logger.
-func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceYARPCClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
 	sharedExecution := &commonproto.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
@@ -280,7 +280,7 @@ func ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) err
 
 	testReporter := logger.Sugar()
 	controller := gomock.NewController(testReporter)
-	service := workflowservicemock.NewMockWorkflowServiceYARPCClient(controller)
+	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
 	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
@@ -311,12 +311,12 @@ func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName s
 
 	testReporter := logger.Sugar()
 	controller := gomock.NewController(testReporter)
-	service := workflowservicemock.NewMockWorkflowServiceYARPCClient(controller)
+	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
 	return replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
 
-func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceYARPCClient, domain string, history *commonproto.History) error {
+func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, domain string, history *commonproto.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {

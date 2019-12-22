@@ -483,7 +483,7 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceYARPCClient, domain string, options *ClientOptions) Client {
+func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -525,7 +525,7 @@ func NewClient(service workflowservice.WorkflowServiceYARPCClient, domain string
 }
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceYARPCClient, options *ClientOptions) DomainClient {
+func NewDomainClient(service workflowservice.WorkflowServiceClient, options *ClientOptions) DomainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")

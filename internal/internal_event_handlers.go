@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -41,7 +42,6 @@ import (
 	"github.com/temporalio/temporal-proto/errordetails"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -1159,9 +1159,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	err := protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
-
-	childWorkflow.handle(nil, err)
+	st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+	childWorkflow.handle(nil, st.Err())
 
 	return nil
 }

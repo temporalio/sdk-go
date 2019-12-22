@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -39,7 +40,6 @@ import (
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/internal/protobufutils"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
 )
@@ -94,10 +94,10 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	rpcClient, err := newRPCClient(ts.config.ServiceName, ts.config.ServiceAddr)
+	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
 	ts.NoError(err)
 	ts.rpcClient = rpcClient
-	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceYARPCClient, domainName, &client.Options{})
+	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
 	ts.registerDomain()
 }
 
@@ -134,7 +134,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.worker = worker.New(ts.rpcClient.WorkflowServiceYARPCClient, domainName, ts.taskListName, worker.Options{
+	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, worker.Options{
 		DisableStickyExecution: ts.config.IsStickyOff,
 		Logger:                 logger,
 	})
@@ -288,7 +288,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
+	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -305,7 +305,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "code:already-exists"))
+	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -358,22 +358,24 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.Equal("memoVal, searchAttrVal", result)
 }
 
+// Flaky test. Rerun if failed.
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0, "CloseTime is not greater than zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0, "CloseTime is not greater than zero but %d. Flaky test. Rerun if failed.", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
+// Flaky test. Rerun if failed.
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyAbandon, &childWorkflowID)
 	ts.NoError(err)
 	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0, "CloseTime is not zero but %d", resp.WorkflowExecutionInfo.GetCloseTime())
+	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0, "CloseTime is not zero but %d. Flaky test. Rerun if failed.", resp.WorkflowExecutionInfo.GetCloseTime())
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
@@ -399,23 +401,24 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	ts.True(protobufutils.GetCode(err) == codes.InvalidArgument)
-	ts.Equal("query result size (3000000) exceeds limit (2000000)", protobufutils.GetMessage(err))
+	st := status.Convert(err)
+	ts.Equal(codes.InvalidArgument, st.Code())
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", st.Message())
 	ts.Nil(value)
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceYARPCClient, &client.Options{})
+	domainClient := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err := domainClient.Register(ctx, &workflowservice.RegisterDomainRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if protobufutils.GetCode(err) == codes.AlreadyExists {
+		if status.Convert(err).Code() == codes.AlreadyExists {
 			return
 		}
 	}
@@ -426,7 +429,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if protobufutils.GetCode(err) == codes.NotFound {
+		if status.Convert(err).Code() == codes.NotFound {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

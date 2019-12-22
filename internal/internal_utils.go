@@ -33,7 +33,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/temporal-proto/enums"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -65,11 +65,15 @@ const (
 
 var (
 	// call header to cadence server
-	yarpcCallOptions = []yarpc.CallOption{
-		yarpc.WithHeader(libraryVersionHeaderName, LibraryVersion),
-		yarpc.WithHeader(featureVersionHeaderName, FeatureVersion),
-		yarpc.WithHeader(clientImplHeaderName, clientImplHeaderValue),
-	}
+	headers = metadata.New(map[string]string{
+		libraryVersionHeaderName: LibraryVersion,
+		featureVersionHeaderName: FeatureVersion,
+		clientImplHeaderName:     clientImplHeaderValue,
+		// TODO: remove these headers when server is vanilla gRPC (not YARPC)
+		"rpc-caller":   "temporal-go-client",
+		"rpc-service":  "cadence-frontend",
+		"rpc-encoding": "proto",
+	})
 )
 
 // ContextBuilder stores all Channel-specific parameters that will
@@ -89,7 +93,8 @@ func (cb *contextBuilder) Build() (context.Context, context.CancelFunc) {
 	if parent == nil {
 		parent = context.Background()
 	}
-	return context.WithTimeout(parent, cb.Timeout)
+	ctx := metadata.NewOutgoingContext(parent, headers)
+	return context.WithTimeout(ctx, cb.Timeout)
 }
 
 // sets the rpc timeout for a context
@@ -100,7 +105,7 @@ func chanTimeout(timeout time.Duration) func(builder *contextBuilder) {
 }
 
 // newChannelContext - Get a rpc channel context
-func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc, []yarpc.CallOption) {
+func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc) {
 	rpcTimeout := defaultRPCTimeout
 	if ctx != nil {
 		// Set rpc timeout less than context timeout to allow for retries when call gets lost
@@ -122,9 +127,8 @@ func newChannelContext(ctx context.Context, options ...func(builder *contextBuil
 	for _, opt := range options {
 		opt(builder)
 	}
-	ctx, cancelFn := builder.Build()
 
-	return ctx, cancelFn, yarpcCallOptions
+	return builder.Build()
 }
 
 // GetWorkerIdentity gets a default identity for the worker.

@@ -24,8 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/yarpc"
-	"go.uber.org/yarpc/transport/grpc"
+	"google.golang.org/grpc"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
 )
@@ -33,19 +32,14 @@ import (
 // Config contains the integration test configuration
 type Config struct {
 	ServiceAddr string
-	ServiceName string
 	IsStickyOff bool
 	Debug       bool
 }
 
 func newConfig() Config {
 	cfg := Config{
-		ServiceName: "cadence-frontend",
 		ServiceAddr: "127.0.0.1:7233",
 		IsStickyOff: true,
-	}
-	if name := getEnvServiceName(); name != "" {
-		cfg.ServiceName = name
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
@@ -57,10 +51,6 @@ func newConfig() Config {
 		cfg.Debug = debug == "true"
 	}
 	return cfg
-}
-
-func getEnvServiceName() string {
-	return strings.TrimSpace(os.Getenv("SERVICE_NAME"))
 }
 
 func getEnvServiceAddr() string {
@@ -76,30 +66,22 @@ func getDebug() string {
 }
 
 type rpcClient struct {
-	workflowservice.WorkflowServiceYARPCClient
-	dispatcher *yarpc.Dispatcher
+	workflowservice.WorkflowServiceClient
+	connectionCloser func() error
 }
 
 func (c *rpcClient) Close() {
-	_ = c.dispatcher.Stop()
+	_ = c.connectionCloser()
 }
 
 // newRPCClient builds and returns a new rpc client that is able to
 // make calls to the localhost temporal-server container
-func newRPCClient(
-	serviceName string, serviceAddr string) (*rpcClient, error) {
-	outbound := grpc.NewTransport().NewSingleOutbound(serviceAddr)
-	dispatcher := yarpc.NewDispatcher(yarpc.Config{
-		Name: "integration-test",
-		Outbounds: yarpc.Outbounds{
-			serviceName: {
-				Unary: outbound,
-			},
-		},
-	})
-	if err := dispatcher.Start(); err != nil {
+func newRPCClient(serviceAddr string) (*rpcClient, error) {
+	connection, err := grpc.Dial(serviceAddr, grpc.WithInsecure())
+	if err != nil {
 		return nil, err
 	}
-	client := workflowservice.NewWorkflowServiceYARPCClient(dispatcher.ClientConfig(serviceName))
-	return &rpcClient{WorkflowServiceYARPCClient: client, dispatcher: dispatcher}, nil
+
+	client := workflowservice.NewWorkflowServiceClient(connection)
+	return &rpcClient{WorkflowServiceClient: client, connectionCloser: func() error { return connection.Close() }}, nil
 }

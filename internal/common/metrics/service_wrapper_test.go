@@ -29,15 +29,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 var (
@@ -94,11 +94,11 @@ func Test_Wrapper(t *testing.T) {
 		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
 		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
 		// one case of invalid request
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, protobufutils.NewError(codes.NotFound)}, []string{CadenceRequest, CadenceInvalidRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, status.New(codes.NotFound, "").Err()}, []string{CadenceRequest, CadenceInvalidRequest}},
 		// one case of server error
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
-		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, protobufutils.NewError(codes.Internal)}, []string{CadenceRequest, CadenceError}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
+		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
 	}
 
 	// run each test twice - once with the regular scope, once with a sanitized metrics scope
@@ -111,7 +111,7 @@ func Test_Wrapper(t *testing.T) {
 func runTest(
 	t *testing.T,
 	test testCase,
-	serviceFunc func(*testing.T) (*workflowservicemock.MockWorkflowServiceYARPCClient, workflowservice.WorkflowServiceYARPCClient, io.Closer, *CapturingStatsReporter),
+	serviceFunc func(*testing.T) (*workflowservicemock.MockWorkflowServiceClient, workflowservice.WorkflowServiceClient, io.Closer, *CapturingStatsReporter),
 	validationFunc func(*testing.T, *CapturingStatsReporter, string, []string),
 	name string,
 ) {
@@ -172,7 +172,7 @@ func runTest(
 			mockService.EXPECT().RespondQueryTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(test.mockReturns...)
 		}
 
-		callOption := yarpc.CallOption{}
+		callOption := grpc.EmptyCallOption{}
 		inputs := make([]reflect.Value, len(test.callArgs))
 		for i, arg := range test.callArgs {
 			inputs[i] = reflect.ValueOf(arg)
@@ -229,13 +229,13 @@ func makePromCompatible(name string) string {
 }
 
 func newService(t *testing.T) (
-	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
-	wrapperService workflowservice.WorkflowServiceYARPCClient,
+	mockService *workflowservicemock.MockWorkflowServiceClient,
+	wrapperService workflowservice.WorkflowServiceClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := NewMetricsScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)
@@ -243,13 +243,13 @@ func newService(t *testing.T) (
 }
 
 func newPromService(t *testing.T) (
-	mockService *workflowservicemock.MockWorkflowServiceYARPCClient,
-	wrapperService workflowservice.WorkflowServiceYARPCClient,
+	mockService *workflowservicemock.MockWorkflowServiceClient,
+	wrapperService workflowservice.WorkflowServiceClient,
 	closer io.Closer,
 	reporter *CapturingStatsReporter,
 ) {
 	mockCtrl := gomock.NewController(t)
-	mockService = workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService = workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	isReplay := false
 	scope, closer, reporter := newPromScope(&isReplay)
 	wrapperService = NewWorkflowServiceWrapper(mockService, scope)

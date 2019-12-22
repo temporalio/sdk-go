@@ -25,19 +25,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 // ActivityTaskHandler never returns response
@@ -65,14 +65,14 @@ type (
 	WorkersTestSuite struct {
 		suite.Suite
 		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceYARPCClient
+		service  *workflowservicemock.MockWorkflowServiceClient
 	}
 )
 
 // Test suite.
 func (s *WorkersTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
-	s.service = workflowservicemock.NewMockWorkflowServiceYARPCClient(s.mockCtrl)
+	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 }
 
 func (s *WorkersTestSuite) TearDownTest() {
@@ -92,9 +92,9 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
@@ -118,9 +118,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testTaskList",
@@ -159,9 +159,9 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		WorkflowDomain: "domain",
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), callOptions...).Return(pats, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -199,8 +199,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -288,7 +288,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		createTestEventDecisionTaskStarted(11),
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonproto.WorkflowExecution{
@@ -303,11 +303,11 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		History:                &commonproto.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,
 	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {
@@ -424,7 +424,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		createTestEventDecisionTaskStarted(11),
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), callOptions...).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonproto.WorkflowExecution{
@@ -439,11 +439,11 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		History:                &commonproto.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&workflowservice.PollForDecisionTaskResponse{}, protobufutils.NewError(codes.Internal)).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...yarpc.CallOption,
+	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,
 	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {

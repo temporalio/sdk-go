@@ -24,8 +24,12 @@
 package workflowservice
 
 import (
+	context "context"
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
+	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 	math "math"
 )
 
@@ -108,4 +112,1686 @@ var fileDescriptor_6d5ecb190c8dcb99 = []byte{
 	0xa6, 0x42, 0x86, 0x31, 0x17, 0xf6, 0xbf, 0xef, 0xae, 0x5e, 0x06, 0xf6, 0x4a, 0x1e, 0x46, 0x4f,
 	0xac, 0x3e, 0xde, 0xfb, 0x37, 0x00, 0x00, 0xff, 0xff, 0x7a, 0xdd, 0x1f, 0x38, 0x7d, 0x14, 0x00,
 	0x00,
+}
+
+// Reference imports to suppress errors if they are not otherwise used.
+var _ context.Context
+var _ grpc.ClientConn
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the grpc package it is being compiled against.
+const _ = grpc.SupportPackageIsVersion4
+
+// WorkflowServiceClient is the client API for WorkflowService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
+type WorkflowServiceClient interface {
+	// RegisterDomain creates a new domain which can be used as a container for all resources.  Domain is a top level
+	// entity within Cadence, used as a container for all resources like workflow executions, task lists, etc.  Domain
+	// acts as a sandbox and provides isolation for all resources within the domain.  All resources belongs to exactly one
+	// domain.
+	RegisterDomain(ctx context.Context, in *RegisterDomainRequest, opts ...grpc.CallOption) (*RegisterDomainResponse, error)
+	// DescribeDomain returns the information and configuration for a registered domain.
+	DescribeDomain(ctx context.Context, in *DescribeDomainRequest, opts ...grpc.CallOption) (*DescribeDomainResponse, error)
+	// ListDomains returns the information and configuration for all domains.
+	ListDomains(ctx context.Context, in *ListDomainsRequest, opts ...grpc.CallOption) (*ListDomainsResponse, error)
+	// UpdateDomain is used to update the information and configuration for a registered domain.
+	UpdateDomain(ctx context.Context, in *UpdateDomainRequest, opts ...grpc.CallOption) (*UpdateDomainResponse, error)
+	// DeprecateDomain us used to update status of a registered domain to DEPRECATED.  Once the domain is deprecated
+	// it cannot be used to start new workflow executions.  Existing workflow executions will continue to run on
+	// deprecated domains.
+	DeprecateDomain(ctx context.Context, in *DeprecateDomainRequest, opts ...grpc.CallOption) (*DeprecateDomainResponse, error)
+	// StartWorkflowExecution starts a new long running workflow instance.  It will create the instance with
+	// 'WorkflowExecutionStarted' event in history and also schedule the first DecisionTask for the worker to make the
+	// first decision for this instance.  It will return 'WorkflowExecutionAlreadyStartedError', if an instance already
+	// exists with same workflowId.
+	StartWorkflowExecution(ctx context.Context, in *StartWorkflowExecutionRequest, opts ...grpc.CallOption) (*StartWorkflowExecutionResponse, error)
+	// GetWorkflowExecutionHistory returns the history of specified workflow execution.  It fails with 'EntityNotExistError' if specified workflow
+	// execution in unknown to the service.
+	GetWorkflowExecutionHistory(ctx context.Context, in *GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) (*GetWorkflowExecutionHistoryResponse, error)
+	// PollForDecisionTask is called by application worker to process DecisionTask from a specific task list.  A
+	// DecisionTask is dispatched to callers for active workflow executions, with pending decisions.
+	// Application is then expected to call 'RespondDecisionTaskCompleted' API when it is done processing the DecisionTask.
+	// It will also create a 'DecisionTaskStarted' event in the history for that session before handing off DecisionTask to
+	// application worker.
+	PollForDecisionTask(ctx context.Context, in *PollForDecisionTaskRequest, opts ...grpc.CallOption) (*PollForDecisionTaskResponse, error)
+	// RespondDecisionTaskCompleted is called by application worker to complete a DecisionTask handed as a result of
+	// 'PollForDecisionTask' API call.  Completing a DecisionTask will result in new events for the workflow execution and
+	// potentially new ActivityTask being created for corresponding decisions.  It will also create a DecisionTaskCompleted
+	// event in the history for that session.  Use the 'taskToken' provided as response of PollForDecisionTask API call
+	// for completing the DecisionTask.
+	// The response could contain a new decision task if there is one or if the request asking for one.
+	RespondDecisionTaskCompleted(ctx context.Context, in *RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption) (*RespondDecisionTaskCompletedResponse, error)
+	// RespondDecisionTaskFailed is called by application worker to indicate failure.  This results in
+	// DecisionTaskFailedEvent written to the history and a new DecisionTask created.  This API can be used by client to
+	// either clear sticky task list or report any panics during DecisionTask processing.  Cadence will only append first
+	// DecisionTaskFailed event to the history of workflow execution for consecutive failures.
+	RespondDecisionTaskFailed(ctx context.Context, in *RespondDecisionTaskFailedRequest, opts ...grpc.CallOption) (*RespondDecisionTaskFailedResponse, error)
+	// PollForActivityTask is called by application worker to process ActivityTask from a specific task list.  ActivityTask
+	// is dispatched to callers whenever a ScheduleTask decision is made for a workflow execution.
+	// Application is expected to call 'RespondActivityTaskCompleted' or 'RespondActivityTaskFailed' once it is done
+	// processing the task.
+	// Application also needs to call 'RecordActivityTaskHeartbeat' API within 'heartbeatTimeoutSeconds' interval to
+	// prevent the task from getting timed out.  An event 'ActivityTaskStarted' event is also written to workflow execution
+	// history before the ActivityTask is dispatched to application worker.
+	PollForActivityTask(ctx context.Context, in *PollForActivityTaskRequest, opts ...grpc.CallOption) (*PollForActivityTaskResponse, error)
+	// RecordActivityTaskHeartbeat is called by application worker while it is processing an ActivityTask.  If worker fails
+	// to heartbeat within 'heartbeatTimeoutSeconds' interval for the ActivityTask, then it will be marked as timedout and
+	// 'ActivityTaskTimedOut' event will be written to the workflow history.  Calling 'RecordActivityTaskHeartbeat' will
+	// fail with 'EntityNotExistsError' in such situations.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for heart beating.
+	RecordActivityTaskHeartbeat(ctx context.Context, in *RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) (*RecordActivityTaskHeartbeatResponse, error)
+	// RecordActivityTaskHeartbeatByID is called by application worker while it is processing an ActivityTask.  If worker fails
+	// to heartbeat within 'heartbeatTimeoutSeconds' interval for the ActivityTask, then it will be marked as timed out and
+	// 'ActivityTaskTimedOut' event will be written to the workflow history.  Calling 'RecordActivityTaskHeartbeatByID' will
+	// fail with 'EntityNotExistsError' in such situations.  Instead of using 'taskToken' like in RecordActivityTaskHeartbeat,
+	// use Domain, WorkflowID and ActivityID
+	RecordActivityTaskHeartbeatByID(ctx context.Context, in *RecordActivityTaskHeartbeatByIDRequest, opts ...grpc.CallOption) (*RecordActivityTaskHeartbeatByIDResponse, error)
+	// RespondActivityTaskCompleted is called by application worker when it is done processing an ActivityTask.  It will
+	// result in a new 'ActivityTaskCompleted' event being written to the workflow history and a new DecisionTask
+	// created for the workflow so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskCompleted(ctx context.Context, in *RespondActivityTaskCompletedRequest, opts ...grpc.CallOption) (*RespondActivityTaskCompletedResponse, error)
+	// RespondActivityTaskCompletedByID is called by application worker when it is done processing an ActivityTask.
+	// It will result in a new 'ActivityTaskCompleted' event being written to the workflow history and a new DecisionTask
+	// created for the workflow so new decisions could be made.  Similar to RespondActivityTaskCompleted but use Domain,
+	// WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskCompletedByID(ctx context.Context, in *RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskCompletedByIDResponse, error)
+	// RespondActivityTaskFailed is called by application worker when it is done processing an ActivityTask.  It will
+	// result in a new 'ActivityTaskFailed' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskFailed(ctx context.Context, in *RespondActivityTaskFailedRequest, opts ...grpc.CallOption) (*RespondActivityTaskFailedResponse, error)
+	// RespondActivityTaskFailedByID is called by application worker when it is done processing an ActivityTask.
+	// It will result in a new 'ActivityTaskFailed' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Similar to RespondActivityTaskFailed but use
+	// Domain, WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskFailedByID(ctx context.Context, in *RespondActivityTaskFailedByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskFailedByIDResponse, error)
+	// RespondActivityTaskCanceled is called by application worker when it is successfully canceled an ActivityTask.  It will
+	// result in a new 'ActivityTaskCanceled' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskCanceled(ctx context.Context, in *RespondActivityTaskCanceledRequest, opts ...grpc.CallOption) (*RespondActivityTaskCanceledResponse, error)
+	// RespondActivityTaskCanceledByID is called by application worker when it is successfully canceled an ActivityTask.
+	// It will result in a new 'ActivityTaskCanceled' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Similar to RespondActivityTaskCanceled but use
+	// Domain, WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskCanceledByID(ctx context.Context, in *RespondActivityTaskCanceledByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskCanceledByIDResponse, error)
+	// RequestCancelWorkflowExecution is called by application worker when it wants to request cancellation of a workflow instance.
+	// It will result in a new 'WorkflowExecutionCancelRequested' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made. It fails with 'EntityNotExistsError' if the workflow is not valid
+	// anymore due to completion or doesn't exist.
+	RequestCancelWorkflowExecution(ctx context.Context, in *RequestCancelWorkflowExecutionRequest, opts ...grpc.CallOption) (*RequestCancelWorkflowExecutionResponse, error)
+	// SignalWorkflowExecution is used to send a signal event to running workflow execution.  This results in
+	// WorkflowExecutionSignaled event recorded in the history and a decision task being created for the execution.
+	SignalWorkflowExecution(ctx context.Context, in *SignalWorkflowExecutionRequest, opts ...grpc.CallOption) (*SignalWorkflowExecutionResponse, error)
+	// SignalWithStartWorkflowExecution is used to ensure sending signal to a workflow.
+	// If the workflow is running, this results in WorkflowExecutionSignaled event being recorded in the history
+	// and a decision task being created for the execution.
+	// If the workflow is not running or not found, this results in WorkflowExecutionStarted and WorkflowExecutionSignaled
+	// events being recorded in history, and a decision task being created for the execution
+	SignalWithStartWorkflowExecution(ctx context.Context, in *SignalWithStartWorkflowExecutionRequest, opts ...grpc.CallOption) (*SignalWithStartWorkflowExecutionResponse, error)
+	// ResetWorkflowExecution reset an existing workflow execution to DecisionTaskCompleted event(exclusive).
+	// And it will immediately terminating the current execution instance.
+	ResetWorkflowExecution(ctx context.Context, in *ResetWorkflowExecutionRequest, opts ...grpc.CallOption) (*ResetWorkflowExecutionResponse, error)
+	// TerminateWorkflowExecution terminates an existing workflow execution by recording WorkflowExecutionTerminated event
+	// in the history and immediately terminating the execution instance.
+	TerminateWorkflowExecution(ctx context.Context, in *TerminateWorkflowExecutionRequest, opts ...grpc.CallOption) (*TerminateWorkflowExecutionResponse, error)
+	// ListOpenWorkflowExecutions is a visibility API to list the open executions in a specific domain.
+	ListOpenWorkflowExecutions(ctx context.Context, in *ListOpenWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListOpenWorkflowExecutionsResponse, error)
+	// ListClosedWorkflowExecutions is a visibility API to list the closed executions in a specific domain.
+	ListClosedWorkflowExecutions(ctx context.Context, in *ListClosedWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListClosedWorkflowExecutionsResponse, error)
+	// ListWorkflowExecutions is a visibility API to list workflow executions in a specific domain.
+	ListWorkflowExecutions(ctx context.Context, in *ListWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListWorkflowExecutionsResponse, error)
+	// ListArchivedWorkflowExecutions is a visibility API to list archived workflow executions in a specific domain.
+	ListArchivedWorkflowExecutions(ctx context.Context, in *ListArchivedWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListArchivedWorkflowExecutionsResponse, error)
+	// ScanWorkflowExecutions is a visibility API to list large amount of workflow executions in a specific domain without order.
+	ScanWorkflowExecutions(ctx context.Context, in *ScanWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ScanWorkflowExecutionsResponse, error)
+	// CountWorkflowExecutions is a visibility API to count of workflow executions in a specific domain.
+	CountWorkflowExecutions(ctx context.Context, in *CountWorkflowExecutionsRequest, opts ...grpc.CallOption) (*CountWorkflowExecutionsResponse, error)
+	// GetSearchAttributes is a visibility API to get all legal keys that could be used in list APIs
+	GetSearchAttributes(ctx context.Context, in *GetSearchAttributesRequest, opts ...grpc.CallOption) (*GetSearchAttributesResponse, error)
+	// RespondQueryTaskCompleted is called by application worker to complete a QueryTask (which is a DecisionTask for query)
+	// as a result of 'PollForDecisionTask' API call. Completing a QueryTask will unblock the client call to 'QueryWorkflow'
+	// API and return the query result to client as a response to 'QueryWorkflow' API call.
+	RespondQueryTaskCompleted(ctx context.Context, in *RespondQueryTaskCompletedRequest, opts ...grpc.CallOption) (*RespondQueryTaskCompletedResponse, error)
+	// ResetStickyTaskList resets the sticky task list related information in mutable state of a given workflow.
+	// Things cleared are:
+	// 1. StickyTaskList
+	// 2. StickyScheduleToStartTimeout
+	// 3. ClientLibraryVersion
+	// 4. ClientFeatureVersion
+	// 5. ClientImpl
+	ResetStickyTaskList(ctx context.Context, in *ResetStickyTaskListRequest, opts ...grpc.CallOption) (*ResetStickyTaskListResponse, error)
+	// QueryWorkflow returns query result for a specified workflow execution
+	QueryWorkflow(ctx context.Context, in *QueryWorkflowRequest, opts ...grpc.CallOption) (*QueryWorkflowResponse, error)
+	// DescribeWorkflowExecution returns information about the specified workflow execution.
+	DescribeWorkflowExecution(ctx context.Context, in *DescribeWorkflowExecutionRequest, opts ...grpc.CallOption) (*DescribeWorkflowExecutionResponse, error)
+	// DescribeTaskList returns information about the target task list, right now this API returns the
+	// pollers which polled this task list in last few minutes.
+	DescribeTaskList(ctx context.Context, in *DescribeTaskListRequest, opts ...grpc.CallOption) (*DescribeTaskListResponse, error)
+	// GetReplicationMessages returns new replication tasks since the read level provided in the token.
+	GetReplicationMessages(ctx context.Context, in *GetReplicationMessagesRequest, opts ...grpc.CallOption) (*GetReplicationMessagesResponse, error)
+	// GetDomainReplicationMessages returns new domain replication tasks since last retrieved task ID.
+	GetDomainReplicationMessages(ctx context.Context, in *GetDomainReplicationMessagesRequest, opts ...grpc.CallOption) (*GetDomainReplicationMessagesResponse, error)
+	// ReapplyEvents applies stale events to the current workflow and current run
+	ReapplyEvents(ctx context.Context, in *ReapplyEventsRequest, opts ...grpc.CallOption) (*ReapplyEventsResponse, error)
+}
+
+type workflowServiceClient struct {
+	cc *grpc.ClientConn
+}
+
+func NewWorkflowServiceClient(cc *grpc.ClientConn) WorkflowServiceClient {
+	return &workflowServiceClient{cc}
+}
+
+func (c *workflowServiceClient) RegisterDomain(ctx context.Context, in *RegisterDomainRequest, opts ...grpc.CallOption) (*RegisterDomainResponse, error) {
+	out := new(RegisterDomainResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RegisterDomain", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) DescribeDomain(ctx context.Context, in *DescribeDomainRequest, opts ...grpc.CallOption) (*DescribeDomainResponse, error) {
+	out := new(DescribeDomainResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/DescribeDomain", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListDomains(ctx context.Context, in *ListDomainsRequest, opts ...grpc.CallOption) (*ListDomainsResponse, error) {
+	out := new(ListDomainsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ListDomains", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) UpdateDomain(ctx context.Context, in *UpdateDomainRequest, opts ...grpc.CallOption) (*UpdateDomainResponse, error) {
+	out := new(UpdateDomainResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/UpdateDomain", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) DeprecateDomain(ctx context.Context, in *DeprecateDomainRequest, opts ...grpc.CallOption) (*DeprecateDomainResponse, error) {
+	out := new(DeprecateDomainResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/DeprecateDomain", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) StartWorkflowExecution(ctx context.Context, in *StartWorkflowExecutionRequest, opts ...grpc.CallOption) (*StartWorkflowExecutionResponse, error) {
+	out := new(StartWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/StartWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GetWorkflowExecutionHistory(ctx context.Context, in *GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) (*GetWorkflowExecutionHistoryResponse, error) {
+	out := new(GetWorkflowExecutionHistoryResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/GetWorkflowExecutionHistory", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) PollForDecisionTask(ctx context.Context, in *PollForDecisionTaskRequest, opts ...grpc.CallOption) (*PollForDecisionTaskResponse, error) {
+	out := new(PollForDecisionTaskResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/PollForDecisionTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondDecisionTaskCompleted(ctx context.Context, in *RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption) (*RespondDecisionTaskCompletedResponse, error) {
+	out := new(RespondDecisionTaskCompletedResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondDecisionTaskCompleted", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondDecisionTaskFailed(ctx context.Context, in *RespondDecisionTaskFailedRequest, opts ...grpc.CallOption) (*RespondDecisionTaskFailedResponse, error) {
+	out := new(RespondDecisionTaskFailedResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondDecisionTaskFailed", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) PollForActivityTask(ctx context.Context, in *PollForActivityTaskRequest, opts ...grpc.CallOption) (*PollForActivityTaskResponse, error) {
+	out := new(PollForActivityTaskResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/PollForActivityTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RecordActivityTaskHeartbeat(ctx context.Context, in *RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) (*RecordActivityTaskHeartbeatResponse, error) {
+	out := new(RecordActivityTaskHeartbeatResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RecordActivityTaskHeartbeat", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RecordActivityTaskHeartbeatByID(ctx context.Context, in *RecordActivityTaskHeartbeatByIDRequest, opts ...grpc.CallOption) (*RecordActivityTaskHeartbeatByIDResponse, error) {
+	out := new(RecordActivityTaskHeartbeatByIDResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RecordActivityTaskHeartbeatByID", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskCompleted(ctx context.Context, in *RespondActivityTaskCompletedRequest, opts ...grpc.CallOption) (*RespondActivityTaskCompletedResponse, error) {
+	out := new(RespondActivityTaskCompletedResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskCompleted", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskCompletedByID(ctx context.Context, in *RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskCompletedByIDResponse, error) {
+	out := new(RespondActivityTaskCompletedByIDResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskCompletedByID", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskFailed(ctx context.Context, in *RespondActivityTaskFailedRequest, opts ...grpc.CallOption) (*RespondActivityTaskFailedResponse, error) {
+	out := new(RespondActivityTaskFailedResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskFailed", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskFailedByID(ctx context.Context, in *RespondActivityTaskFailedByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskFailedByIDResponse, error) {
+	out := new(RespondActivityTaskFailedByIDResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskFailedByID", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskCanceled(ctx context.Context, in *RespondActivityTaskCanceledRequest, opts ...grpc.CallOption) (*RespondActivityTaskCanceledResponse, error) {
+	out := new(RespondActivityTaskCanceledResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskCanceled", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondActivityTaskCanceledByID(ctx context.Context, in *RespondActivityTaskCanceledByIDRequest, opts ...grpc.CallOption) (*RespondActivityTaskCanceledByIDResponse, error) {
+	out := new(RespondActivityTaskCanceledByIDResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondActivityTaskCanceledByID", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RequestCancelWorkflowExecution(ctx context.Context, in *RequestCancelWorkflowExecutionRequest, opts ...grpc.CallOption) (*RequestCancelWorkflowExecutionResponse, error) {
+	out := new(RequestCancelWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RequestCancelWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) SignalWorkflowExecution(ctx context.Context, in *SignalWorkflowExecutionRequest, opts ...grpc.CallOption) (*SignalWorkflowExecutionResponse, error) {
+	out := new(SignalWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/SignalWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) SignalWithStartWorkflowExecution(ctx context.Context, in *SignalWithStartWorkflowExecutionRequest, opts ...grpc.CallOption) (*SignalWithStartWorkflowExecutionResponse, error) {
+	out := new(SignalWithStartWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/SignalWithStartWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ResetWorkflowExecution(ctx context.Context, in *ResetWorkflowExecutionRequest, opts ...grpc.CallOption) (*ResetWorkflowExecutionResponse, error) {
+	out := new(ResetWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ResetWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) TerminateWorkflowExecution(ctx context.Context, in *TerminateWorkflowExecutionRequest, opts ...grpc.CallOption) (*TerminateWorkflowExecutionResponse, error) {
+	out := new(TerminateWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/TerminateWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListOpenWorkflowExecutions(ctx context.Context, in *ListOpenWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListOpenWorkflowExecutionsResponse, error) {
+	out := new(ListOpenWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ListOpenWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListClosedWorkflowExecutions(ctx context.Context, in *ListClosedWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListClosedWorkflowExecutionsResponse, error) {
+	out := new(ListClosedWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ListClosedWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListWorkflowExecutions(ctx context.Context, in *ListWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListWorkflowExecutionsResponse, error) {
+	out := new(ListWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ListWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ListArchivedWorkflowExecutions(ctx context.Context, in *ListArchivedWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ListArchivedWorkflowExecutionsResponse, error) {
+	out := new(ListArchivedWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ListArchivedWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ScanWorkflowExecutions(ctx context.Context, in *ScanWorkflowExecutionsRequest, opts ...grpc.CallOption) (*ScanWorkflowExecutionsResponse, error) {
+	out := new(ScanWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ScanWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) CountWorkflowExecutions(ctx context.Context, in *CountWorkflowExecutionsRequest, opts ...grpc.CallOption) (*CountWorkflowExecutionsResponse, error) {
+	out := new(CountWorkflowExecutionsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/CountWorkflowExecutions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GetSearchAttributes(ctx context.Context, in *GetSearchAttributesRequest, opts ...grpc.CallOption) (*GetSearchAttributesResponse, error) {
+	out := new(GetSearchAttributesResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/GetSearchAttributes", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) RespondQueryTaskCompleted(ctx context.Context, in *RespondQueryTaskCompletedRequest, opts ...grpc.CallOption) (*RespondQueryTaskCompletedResponse, error) {
+	out := new(RespondQueryTaskCompletedResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/RespondQueryTaskCompleted", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ResetStickyTaskList(ctx context.Context, in *ResetStickyTaskListRequest, opts ...grpc.CallOption) (*ResetStickyTaskListResponse, error) {
+	out := new(ResetStickyTaskListResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ResetStickyTaskList", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) QueryWorkflow(ctx context.Context, in *QueryWorkflowRequest, opts ...grpc.CallOption) (*QueryWorkflowResponse, error) {
+	out := new(QueryWorkflowResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/QueryWorkflow", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) DescribeWorkflowExecution(ctx context.Context, in *DescribeWorkflowExecutionRequest, opts ...grpc.CallOption) (*DescribeWorkflowExecutionResponse, error) {
+	out := new(DescribeWorkflowExecutionResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/DescribeWorkflowExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) DescribeTaskList(ctx context.Context, in *DescribeTaskListRequest, opts ...grpc.CallOption) (*DescribeTaskListResponse, error) {
+	out := new(DescribeTaskListResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/DescribeTaskList", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GetReplicationMessages(ctx context.Context, in *GetReplicationMessagesRequest, opts ...grpc.CallOption) (*GetReplicationMessagesResponse, error) {
+	out := new(GetReplicationMessagesResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/GetReplicationMessages", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) GetDomainReplicationMessages(ctx context.Context, in *GetDomainReplicationMessagesRequest, opts ...grpc.CallOption) (*GetDomainReplicationMessagesResponse, error) {
+	out := new(GetDomainReplicationMessagesResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/GetDomainReplicationMessages", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workflowServiceClient) ReapplyEvents(ctx context.Context, in *ReapplyEventsRequest, opts ...grpc.CallOption) (*ReapplyEventsResponse, error) {
+	out := new(ReapplyEventsResponse)
+	err := c.cc.Invoke(ctx, "/workflowservice.WorkflowService/ReapplyEvents", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// WorkflowServiceServer is the server API for WorkflowService service.
+type WorkflowServiceServer interface {
+	// RegisterDomain creates a new domain which can be used as a container for all resources.  Domain is a top level
+	// entity within Cadence, used as a container for all resources like workflow executions, task lists, etc.  Domain
+	// acts as a sandbox and provides isolation for all resources within the domain.  All resources belongs to exactly one
+	// domain.
+	RegisterDomain(context.Context, *RegisterDomainRequest) (*RegisterDomainResponse, error)
+	// DescribeDomain returns the information and configuration for a registered domain.
+	DescribeDomain(context.Context, *DescribeDomainRequest) (*DescribeDomainResponse, error)
+	// ListDomains returns the information and configuration for all domains.
+	ListDomains(context.Context, *ListDomainsRequest) (*ListDomainsResponse, error)
+	// UpdateDomain is used to update the information and configuration for a registered domain.
+	UpdateDomain(context.Context, *UpdateDomainRequest) (*UpdateDomainResponse, error)
+	// DeprecateDomain us used to update status of a registered domain to DEPRECATED.  Once the domain is deprecated
+	// it cannot be used to start new workflow executions.  Existing workflow executions will continue to run on
+	// deprecated domains.
+	DeprecateDomain(context.Context, *DeprecateDomainRequest) (*DeprecateDomainResponse, error)
+	// StartWorkflowExecution starts a new long running workflow instance.  It will create the instance with
+	// 'WorkflowExecutionStarted' event in history and also schedule the first DecisionTask for the worker to make the
+	// first decision for this instance.  It will return 'WorkflowExecutionAlreadyStartedError', if an instance already
+	// exists with same workflowId.
+	StartWorkflowExecution(context.Context, *StartWorkflowExecutionRequest) (*StartWorkflowExecutionResponse, error)
+	// GetWorkflowExecutionHistory returns the history of specified workflow execution.  It fails with 'EntityNotExistError' if specified workflow
+	// execution in unknown to the service.
+	GetWorkflowExecutionHistory(context.Context, *GetWorkflowExecutionHistoryRequest) (*GetWorkflowExecutionHistoryResponse, error)
+	// PollForDecisionTask is called by application worker to process DecisionTask from a specific task list.  A
+	// DecisionTask is dispatched to callers for active workflow executions, with pending decisions.
+	// Application is then expected to call 'RespondDecisionTaskCompleted' API when it is done processing the DecisionTask.
+	// It will also create a 'DecisionTaskStarted' event in the history for that session before handing off DecisionTask to
+	// application worker.
+	PollForDecisionTask(context.Context, *PollForDecisionTaskRequest) (*PollForDecisionTaskResponse, error)
+	// RespondDecisionTaskCompleted is called by application worker to complete a DecisionTask handed as a result of
+	// 'PollForDecisionTask' API call.  Completing a DecisionTask will result in new events for the workflow execution and
+	// potentially new ActivityTask being created for corresponding decisions.  It will also create a DecisionTaskCompleted
+	// event in the history for that session.  Use the 'taskToken' provided as response of PollForDecisionTask API call
+	// for completing the DecisionTask.
+	// The response could contain a new decision task if there is one or if the request asking for one.
+	RespondDecisionTaskCompleted(context.Context, *RespondDecisionTaskCompletedRequest) (*RespondDecisionTaskCompletedResponse, error)
+	// RespondDecisionTaskFailed is called by application worker to indicate failure.  This results in
+	// DecisionTaskFailedEvent written to the history and a new DecisionTask created.  This API can be used by client to
+	// either clear sticky task list or report any panics during DecisionTask processing.  Cadence will only append first
+	// DecisionTaskFailed event to the history of workflow execution for consecutive failures.
+	RespondDecisionTaskFailed(context.Context, *RespondDecisionTaskFailedRequest) (*RespondDecisionTaskFailedResponse, error)
+	// PollForActivityTask is called by application worker to process ActivityTask from a specific task list.  ActivityTask
+	// is dispatched to callers whenever a ScheduleTask decision is made for a workflow execution.
+	// Application is expected to call 'RespondActivityTaskCompleted' or 'RespondActivityTaskFailed' once it is done
+	// processing the task.
+	// Application also needs to call 'RecordActivityTaskHeartbeat' API within 'heartbeatTimeoutSeconds' interval to
+	// prevent the task from getting timed out.  An event 'ActivityTaskStarted' event is also written to workflow execution
+	// history before the ActivityTask is dispatched to application worker.
+	PollForActivityTask(context.Context, *PollForActivityTaskRequest) (*PollForActivityTaskResponse, error)
+	// RecordActivityTaskHeartbeat is called by application worker while it is processing an ActivityTask.  If worker fails
+	// to heartbeat within 'heartbeatTimeoutSeconds' interval for the ActivityTask, then it will be marked as timedout and
+	// 'ActivityTaskTimedOut' event will be written to the workflow history.  Calling 'RecordActivityTaskHeartbeat' will
+	// fail with 'EntityNotExistsError' in such situations.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for heart beating.
+	RecordActivityTaskHeartbeat(context.Context, *RecordActivityTaskHeartbeatRequest) (*RecordActivityTaskHeartbeatResponse, error)
+	// RecordActivityTaskHeartbeatByID is called by application worker while it is processing an ActivityTask.  If worker fails
+	// to heartbeat within 'heartbeatTimeoutSeconds' interval for the ActivityTask, then it will be marked as timed out and
+	// 'ActivityTaskTimedOut' event will be written to the workflow history.  Calling 'RecordActivityTaskHeartbeatByID' will
+	// fail with 'EntityNotExistsError' in such situations.  Instead of using 'taskToken' like in RecordActivityTaskHeartbeat,
+	// use Domain, WorkflowID and ActivityID
+	RecordActivityTaskHeartbeatByID(context.Context, *RecordActivityTaskHeartbeatByIDRequest) (*RecordActivityTaskHeartbeatByIDResponse, error)
+	// RespondActivityTaskCompleted is called by application worker when it is done processing an ActivityTask.  It will
+	// result in a new 'ActivityTaskCompleted' event being written to the workflow history and a new DecisionTask
+	// created for the workflow so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskCompleted(context.Context, *RespondActivityTaskCompletedRequest) (*RespondActivityTaskCompletedResponse, error)
+	// RespondActivityTaskCompletedByID is called by application worker when it is done processing an ActivityTask.
+	// It will result in a new 'ActivityTaskCompleted' event being written to the workflow history and a new DecisionTask
+	// created for the workflow so new decisions could be made.  Similar to RespondActivityTaskCompleted but use Domain,
+	// WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskCompletedByID(context.Context, *RespondActivityTaskCompletedByIDRequest) (*RespondActivityTaskCompletedByIDResponse, error)
+	// RespondActivityTaskFailed is called by application worker when it is done processing an ActivityTask.  It will
+	// result in a new 'ActivityTaskFailed' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskFailed(context.Context, *RespondActivityTaskFailedRequest) (*RespondActivityTaskFailedResponse, error)
+	// RespondActivityTaskFailedByID is called by application worker when it is done processing an ActivityTask.
+	// It will result in a new 'ActivityTaskFailed' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Similar to RespondActivityTaskFailed but use
+	// Domain, WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskFailedByID(context.Context, *RespondActivityTaskFailedByIDRequest) (*RespondActivityTaskFailedByIDResponse, error)
+	// RespondActivityTaskCanceled is called by application worker when it is successfully canceled an ActivityTask.  It will
+	// result in a new 'ActivityTaskCanceled' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Use the 'taskToken' provided as response of
+	// PollForActivityTask API call for completion. It fails with 'EntityNotExistsError' if the taskToken is not valid
+	// anymore due to activity timeout.
+	RespondActivityTaskCanceled(context.Context, *RespondActivityTaskCanceledRequest) (*RespondActivityTaskCanceledResponse, error)
+	// RespondActivityTaskCanceledByID is called by application worker when it is successfully canceled an ActivityTask.
+	// It will result in a new 'ActivityTaskCanceled' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made.  Similar to RespondActivityTaskCanceled but use
+	// Domain, WorkflowID and ActivityID instead of 'taskToken' for completion. It fails with 'EntityNotExistsError'
+	// if the these IDs are not valid anymore due to activity timeout.
+	RespondActivityTaskCanceledByID(context.Context, *RespondActivityTaskCanceledByIDRequest) (*RespondActivityTaskCanceledByIDResponse, error)
+	// RequestCancelWorkflowExecution is called by application worker when it wants to request cancellation of a workflow instance.
+	// It will result in a new 'WorkflowExecutionCancelRequested' event being written to the workflow history and a new DecisionTask
+	// created for the workflow instance so new decisions could be made. It fails with 'EntityNotExistsError' if the workflow is not valid
+	// anymore due to completion or doesn't exist.
+	RequestCancelWorkflowExecution(context.Context, *RequestCancelWorkflowExecutionRequest) (*RequestCancelWorkflowExecutionResponse, error)
+	// SignalWorkflowExecution is used to send a signal event to running workflow execution.  This results in
+	// WorkflowExecutionSignaled event recorded in the history and a decision task being created for the execution.
+	SignalWorkflowExecution(context.Context, *SignalWorkflowExecutionRequest) (*SignalWorkflowExecutionResponse, error)
+	// SignalWithStartWorkflowExecution is used to ensure sending signal to a workflow.
+	// If the workflow is running, this results in WorkflowExecutionSignaled event being recorded in the history
+	// and a decision task being created for the execution.
+	// If the workflow is not running or not found, this results in WorkflowExecutionStarted and WorkflowExecutionSignaled
+	// events being recorded in history, and a decision task being created for the execution
+	SignalWithStartWorkflowExecution(context.Context, *SignalWithStartWorkflowExecutionRequest) (*SignalWithStartWorkflowExecutionResponse, error)
+	// ResetWorkflowExecution reset an existing workflow execution to DecisionTaskCompleted event(exclusive).
+	// And it will immediately terminating the current execution instance.
+	ResetWorkflowExecution(context.Context, *ResetWorkflowExecutionRequest) (*ResetWorkflowExecutionResponse, error)
+	// TerminateWorkflowExecution terminates an existing workflow execution by recording WorkflowExecutionTerminated event
+	// in the history and immediately terminating the execution instance.
+	TerminateWorkflowExecution(context.Context, *TerminateWorkflowExecutionRequest) (*TerminateWorkflowExecutionResponse, error)
+	// ListOpenWorkflowExecutions is a visibility API to list the open executions in a specific domain.
+	ListOpenWorkflowExecutions(context.Context, *ListOpenWorkflowExecutionsRequest) (*ListOpenWorkflowExecutionsResponse, error)
+	// ListClosedWorkflowExecutions is a visibility API to list the closed executions in a specific domain.
+	ListClosedWorkflowExecutions(context.Context, *ListClosedWorkflowExecutionsRequest) (*ListClosedWorkflowExecutionsResponse, error)
+	// ListWorkflowExecutions is a visibility API to list workflow executions in a specific domain.
+	ListWorkflowExecutions(context.Context, *ListWorkflowExecutionsRequest) (*ListWorkflowExecutionsResponse, error)
+	// ListArchivedWorkflowExecutions is a visibility API to list archived workflow executions in a specific domain.
+	ListArchivedWorkflowExecutions(context.Context, *ListArchivedWorkflowExecutionsRequest) (*ListArchivedWorkflowExecutionsResponse, error)
+	// ScanWorkflowExecutions is a visibility API to list large amount of workflow executions in a specific domain without order.
+	ScanWorkflowExecutions(context.Context, *ScanWorkflowExecutionsRequest) (*ScanWorkflowExecutionsResponse, error)
+	// CountWorkflowExecutions is a visibility API to count of workflow executions in a specific domain.
+	CountWorkflowExecutions(context.Context, *CountWorkflowExecutionsRequest) (*CountWorkflowExecutionsResponse, error)
+	// GetSearchAttributes is a visibility API to get all legal keys that could be used in list APIs
+	GetSearchAttributes(context.Context, *GetSearchAttributesRequest) (*GetSearchAttributesResponse, error)
+	// RespondQueryTaskCompleted is called by application worker to complete a QueryTask (which is a DecisionTask for query)
+	// as a result of 'PollForDecisionTask' API call. Completing a QueryTask will unblock the client call to 'QueryWorkflow'
+	// API and return the query result to client as a response to 'QueryWorkflow' API call.
+	RespondQueryTaskCompleted(context.Context, *RespondQueryTaskCompletedRequest) (*RespondQueryTaskCompletedResponse, error)
+	// ResetStickyTaskList resets the sticky task list related information in mutable state of a given workflow.
+	// Things cleared are:
+	// 1. StickyTaskList
+	// 2. StickyScheduleToStartTimeout
+	// 3. ClientLibraryVersion
+	// 4. ClientFeatureVersion
+	// 5. ClientImpl
+	ResetStickyTaskList(context.Context, *ResetStickyTaskListRequest) (*ResetStickyTaskListResponse, error)
+	// QueryWorkflow returns query result for a specified workflow execution
+	QueryWorkflow(context.Context, *QueryWorkflowRequest) (*QueryWorkflowResponse, error)
+	// DescribeWorkflowExecution returns information about the specified workflow execution.
+	DescribeWorkflowExecution(context.Context, *DescribeWorkflowExecutionRequest) (*DescribeWorkflowExecutionResponse, error)
+	// DescribeTaskList returns information about the target task list, right now this API returns the
+	// pollers which polled this task list in last few minutes.
+	DescribeTaskList(context.Context, *DescribeTaskListRequest) (*DescribeTaskListResponse, error)
+	// GetReplicationMessages returns new replication tasks since the read level provided in the token.
+	GetReplicationMessages(context.Context, *GetReplicationMessagesRequest) (*GetReplicationMessagesResponse, error)
+	// GetDomainReplicationMessages returns new domain replication tasks since last retrieved task ID.
+	GetDomainReplicationMessages(context.Context, *GetDomainReplicationMessagesRequest) (*GetDomainReplicationMessagesResponse, error)
+	// ReapplyEvents applies stale events to the current workflow and current run
+	ReapplyEvents(context.Context, *ReapplyEventsRequest) (*ReapplyEventsResponse, error)
+}
+
+// UnimplementedWorkflowServiceServer can be embedded to have forward compatible implementations.
+type UnimplementedWorkflowServiceServer struct {
+}
+
+func (*UnimplementedWorkflowServiceServer) RegisterDomain(ctx context.Context, req *RegisterDomainRequest) (*RegisterDomainResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterDomain not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) DescribeDomain(ctx context.Context, req *DescribeDomainRequest) (*DescribeDomainResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeDomain not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ListDomains(ctx context.Context, req *ListDomainsRequest) (*ListDomainsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDomains not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) UpdateDomain(ctx context.Context, req *UpdateDomainRequest) (*UpdateDomainResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateDomain not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) DeprecateDomain(ctx context.Context, req *DeprecateDomainRequest) (*DeprecateDomainResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeprecateDomain not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) StartWorkflowExecution(ctx context.Context, req *StartWorkflowExecutionRequest) (*StartWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) GetWorkflowExecutionHistory(ctx context.Context, req *GetWorkflowExecutionHistoryRequest) (*GetWorkflowExecutionHistoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetWorkflowExecutionHistory not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) PollForDecisionTask(ctx context.Context, req *PollForDecisionTaskRequest) (*PollForDecisionTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PollForDecisionTask not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondDecisionTaskCompleted(ctx context.Context, req *RespondDecisionTaskCompletedRequest) (*RespondDecisionTaskCompletedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondDecisionTaskCompleted not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondDecisionTaskFailed(ctx context.Context, req *RespondDecisionTaskFailedRequest) (*RespondDecisionTaskFailedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondDecisionTaskFailed not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) PollForActivityTask(ctx context.Context, req *PollForActivityTaskRequest) (*PollForActivityTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PollForActivityTask not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RecordActivityTaskHeartbeat(ctx context.Context, req *RecordActivityTaskHeartbeatRequest) (*RecordActivityTaskHeartbeatResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordActivityTaskHeartbeat not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RecordActivityTaskHeartbeatByID(ctx context.Context, req *RecordActivityTaskHeartbeatByIDRequest) (*RecordActivityTaskHeartbeatByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordActivityTaskHeartbeatByID not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskCompleted(ctx context.Context, req *RespondActivityTaskCompletedRequest) (*RespondActivityTaskCompletedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskCompleted not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskCompletedByID(ctx context.Context, req *RespondActivityTaskCompletedByIDRequest) (*RespondActivityTaskCompletedByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskCompletedByID not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskFailed(ctx context.Context, req *RespondActivityTaskFailedRequest) (*RespondActivityTaskFailedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskFailed not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskFailedByID(ctx context.Context, req *RespondActivityTaskFailedByIDRequest) (*RespondActivityTaskFailedByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskFailedByID not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskCanceled(ctx context.Context, req *RespondActivityTaskCanceledRequest) (*RespondActivityTaskCanceledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskCanceled not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondActivityTaskCanceledByID(ctx context.Context, req *RespondActivityTaskCanceledByIDRequest) (*RespondActivityTaskCanceledByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondActivityTaskCanceledByID not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RequestCancelWorkflowExecution(ctx context.Context, req *RequestCancelWorkflowExecutionRequest) (*RequestCancelWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestCancelWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) SignalWorkflowExecution(ctx context.Context, req *SignalWorkflowExecutionRequest) (*SignalWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignalWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) SignalWithStartWorkflowExecution(ctx context.Context, req *SignalWithStartWorkflowExecutionRequest) (*SignalWithStartWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignalWithStartWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ResetWorkflowExecution(ctx context.Context, req *ResetWorkflowExecutionRequest) (*ResetWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) TerminateWorkflowExecution(ctx context.Context, req *TerminateWorkflowExecutionRequest) (*TerminateWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TerminateWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ListOpenWorkflowExecutions(ctx context.Context, req *ListOpenWorkflowExecutionsRequest) (*ListOpenWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOpenWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ListClosedWorkflowExecutions(ctx context.Context, req *ListClosedWorkflowExecutionsRequest) (*ListClosedWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListClosedWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ListWorkflowExecutions(ctx context.Context, req *ListWorkflowExecutionsRequest) (*ListWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ListArchivedWorkflowExecutions(ctx context.Context, req *ListArchivedWorkflowExecutionsRequest) (*ListArchivedWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListArchivedWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ScanWorkflowExecutions(ctx context.Context, req *ScanWorkflowExecutionsRequest) (*ScanWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScanWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) CountWorkflowExecutions(ctx context.Context, req *CountWorkflowExecutionsRequest) (*CountWorkflowExecutionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CountWorkflowExecutions not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) GetSearchAttributes(ctx context.Context, req *GetSearchAttributesRequest) (*GetSearchAttributesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSearchAttributes not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) RespondQueryTaskCompleted(ctx context.Context, req *RespondQueryTaskCompletedRequest) (*RespondQueryTaskCompletedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RespondQueryTaskCompleted not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ResetStickyTaskList(ctx context.Context, req *ResetStickyTaskListRequest) (*ResetStickyTaskListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetStickyTaskList not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) QueryWorkflow(ctx context.Context, req *QueryWorkflowRequest) (*QueryWorkflowResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryWorkflow not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) DescribeWorkflowExecution(ctx context.Context, req *DescribeWorkflowExecutionRequest) (*DescribeWorkflowExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeWorkflowExecution not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) DescribeTaskList(ctx context.Context, req *DescribeTaskListRequest) (*DescribeTaskListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeTaskList not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) GetReplicationMessages(ctx context.Context, req *GetReplicationMessagesRequest) (*GetReplicationMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReplicationMessages not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) GetDomainReplicationMessages(ctx context.Context, req *GetDomainReplicationMessagesRequest) (*GetDomainReplicationMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDomainReplicationMessages not implemented")
+}
+func (*UnimplementedWorkflowServiceServer) ReapplyEvents(ctx context.Context, req *ReapplyEventsRequest) (*ReapplyEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReapplyEvents not implemented")
+}
+
+func RegisterWorkflowServiceServer(s *grpc.Server, srv WorkflowServiceServer) {
+	s.RegisterService(&_WorkflowService_serviceDesc, srv)
+}
+
+func _WorkflowService_RegisterDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RegisterDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RegisterDomain",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RegisterDomain(ctx, req.(*RegisterDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_DescribeDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).DescribeDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/DescribeDomain",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).DescribeDomain(ctx, req.(*DescribeDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListDomains_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDomainsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListDomains(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ListDomains",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListDomains(ctx, req.(*ListDomainsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_UpdateDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).UpdateDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/UpdateDomain",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).UpdateDomain(ctx, req.(*UpdateDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_DeprecateDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeprecateDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).DeprecateDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/DeprecateDomain",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).DeprecateDomain(ctx, req.(*DeprecateDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_StartWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).StartWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/StartWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).StartWorkflowExecution(ctx, req.(*StartWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GetWorkflowExecutionHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWorkflowExecutionHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetWorkflowExecutionHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/GetWorkflowExecutionHistory",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetWorkflowExecutionHistory(ctx, req.(*GetWorkflowExecutionHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_PollForDecisionTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PollForDecisionTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).PollForDecisionTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/PollForDecisionTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).PollForDecisionTask(ctx, req.(*PollForDecisionTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondDecisionTaskCompleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondDecisionTaskCompletedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondDecisionTaskCompleted(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondDecisionTaskCompleted",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondDecisionTaskCompleted(ctx, req.(*RespondDecisionTaskCompletedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondDecisionTaskFailed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondDecisionTaskFailedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondDecisionTaskFailed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondDecisionTaskFailed",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondDecisionTaskFailed(ctx, req.(*RespondDecisionTaskFailedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_PollForActivityTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PollForActivityTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).PollForActivityTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/PollForActivityTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).PollForActivityTask(ctx, req.(*PollForActivityTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RecordActivityTaskHeartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordActivityTaskHeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RecordActivityTaskHeartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RecordActivityTaskHeartbeat",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RecordActivityTaskHeartbeat(ctx, req.(*RecordActivityTaskHeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RecordActivityTaskHeartbeatByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordActivityTaskHeartbeatByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RecordActivityTaskHeartbeatByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RecordActivityTaskHeartbeatByID",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RecordActivityTaskHeartbeatByID(ctx, req.(*RecordActivityTaskHeartbeatByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskCompleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskCompletedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCompleted(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskCompleted",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCompleted(ctx, req.(*RespondActivityTaskCompletedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskCompletedByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskCompletedByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCompletedByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskCompletedByID",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCompletedByID(ctx, req.(*RespondActivityTaskCompletedByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskFailed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskFailedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskFailed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskFailed",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskFailed(ctx, req.(*RespondActivityTaskFailedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskFailedByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskFailedByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskFailedByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskFailedByID",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskFailedByID(ctx, req.(*RespondActivityTaskFailedByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskCanceled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskCanceledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCanceled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskCanceled",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCanceled(ctx, req.(*RespondActivityTaskCanceledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondActivityTaskCanceledByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondActivityTaskCanceledByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCanceledByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondActivityTaskCanceledByID",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondActivityTaskCanceledByID(ctx, req.(*RespondActivityTaskCanceledByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RequestCancelWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestCancelWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RequestCancelWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RequestCancelWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RequestCancelWorkflowExecution(ctx, req.(*RequestCancelWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_SignalWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignalWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).SignalWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/SignalWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).SignalWorkflowExecution(ctx, req.(*SignalWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_SignalWithStartWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignalWithStartWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).SignalWithStartWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/SignalWithStartWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).SignalWithStartWorkflowExecution(ctx, req.(*SignalWithStartWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ResetWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ResetWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ResetWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ResetWorkflowExecution(ctx, req.(*ResetWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_TerminateWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminateWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).TerminateWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/TerminateWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).TerminateWorkflowExecution(ctx, req.(*TerminateWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListOpenWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOpenWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListOpenWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ListOpenWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListOpenWorkflowExecutions(ctx, req.(*ListOpenWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListClosedWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListClosedWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListClosedWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ListClosedWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListClosedWorkflowExecutions(ctx, req.(*ListClosedWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ListWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListWorkflowExecutions(ctx, req.(*ListWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ListArchivedWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListArchivedWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ListArchivedWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ListArchivedWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ListArchivedWorkflowExecutions(ctx, req.(*ListArchivedWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ScanWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScanWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ScanWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ScanWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ScanWorkflowExecutions(ctx, req.(*ScanWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_CountWorkflowExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CountWorkflowExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).CountWorkflowExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/CountWorkflowExecutions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).CountWorkflowExecutions(ctx, req.(*CountWorkflowExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GetSearchAttributes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSearchAttributesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetSearchAttributes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/GetSearchAttributes",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetSearchAttributes(ctx, req.(*GetSearchAttributesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_RespondQueryTaskCompleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RespondQueryTaskCompletedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).RespondQueryTaskCompleted(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/RespondQueryTaskCompleted",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).RespondQueryTaskCompleted(ctx, req.(*RespondQueryTaskCompletedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ResetStickyTaskList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetStickyTaskListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ResetStickyTaskList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ResetStickyTaskList",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ResetStickyTaskList(ctx, req.(*ResetStickyTaskListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_QueryWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryWorkflowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).QueryWorkflow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/QueryWorkflow",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).QueryWorkflow(ctx, req.(*QueryWorkflowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_DescribeWorkflowExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeWorkflowExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).DescribeWorkflowExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/DescribeWorkflowExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).DescribeWorkflowExecution(ctx, req.(*DescribeWorkflowExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_DescribeTaskList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeTaskListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).DescribeTaskList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/DescribeTaskList",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).DescribeTaskList(ctx, req.(*DescribeTaskListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GetReplicationMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReplicationMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetReplicationMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/GetReplicationMessages",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetReplicationMessages(ctx, req.(*GetReplicationMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_GetDomainReplicationMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDomainReplicationMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).GetDomainReplicationMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/GetDomainReplicationMessages",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).GetDomainReplicationMessages(ctx, req.(*GetDomainReplicationMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkflowService_ReapplyEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReapplyEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowServiceServer).ReapplyEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/workflowservice.WorkflowService/ReapplyEvents",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowServiceServer).ReapplyEvents(ctx, req.(*ReapplyEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+var _WorkflowService_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "workflowservice.WorkflowService",
+	HandlerType: (*WorkflowServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RegisterDomain",
+			Handler:    _WorkflowService_RegisterDomain_Handler,
+		},
+		{
+			MethodName: "DescribeDomain",
+			Handler:    _WorkflowService_DescribeDomain_Handler,
+		},
+		{
+			MethodName: "ListDomains",
+			Handler:    _WorkflowService_ListDomains_Handler,
+		},
+		{
+			MethodName: "UpdateDomain",
+			Handler:    _WorkflowService_UpdateDomain_Handler,
+		},
+		{
+			MethodName: "DeprecateDomain",
+			Handler:    _WorkflowService_DeprecateDomain_Handler,
+		},
+		{
+			MethodName: "StartWorkflowExecution",
+			Handler:    _WorkflowService_StartWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "GetWorkflowExecutionHistory",
+			Handler:    _WorkflowService_GetWorkflowExecutionHistory_Handler,
+		},
+		{
+			MethodName: "PollForDecisionTask",
+			Handler:    _WorkflowService_PollForDecisionTask_Handler,
+		},
+		{
+			MethodName: "RespondDecisionTaskCompleted",
+			Handler:    _WorkflowService_RespondDecisionTaskCompleted_Handler,
+		},
+		{
+			MethodName: "RespondDecisionTaskFailed",
+			Handler:    _WorkflowService_RespondDecisionTaskFailed_Handler,
+		},
+		{
+			MethodName: "PollForActivityTask",
+			Handler:    _WorkflowService_PollForActivityTask_Handler,
+		},
+		{
+			MethodName: "RecordActivityTaskHeartbeat",
+			Handler:    _WorkflowService_RecordActivityTaskHeartbeat_Handler,
+		},
+		{
+			MethodName: "RecordActivityTaskHeartbeatByID",
+			Handler:    _WorkflowService_RecordActivityTaskHeartbeatByID_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskCompleted",
+			Handler:    _WorkflowService_RespondActivityTaskCompleted_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskCompletedByID",
+			Handler:    _WorkflowService_RespondActivityTaskCompletedByID_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskFailed",
+			Handler:    _WorkflowService_RespondActivityTaskFailed_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskFailedByID",
+			Handler:    _WorkflowService_RespondActivityTaskFailedByID_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskCanceled",
+			Handler:    _WorkflowService_RespondActivityTaskCanceled_Handler,
+		},
+		{
+			MethodName: "RespondActivityTaskCanceledByID",
+			Handler:    _WorkflowService_RespondActivityTaskCanceledByID_Handler,
+		},
+		{
+			MethodName: "RequestCancelWorkflowExecution",
+			Handler:    _WorkflowService_RequestCancelWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "SignalWorkflowExecution",
+			Handler:    _WorkflowService_SignalWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "SignalWithStartWorkflowExecution",
+			Handler:    _WorkflowService_SignalWithStartWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "ResetWorkflowExecution",
+			Handler:    _WorkflowService_ResetWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "TerminateWorkflowExecution",
+			Handler:    _WorkflowService_TerminateWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "ListOpenWorkflowExecutions",
+			Handler:    _WorkflowService_ListOpenWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "ListClosedWorkflowExecutions",
+			Handler:    _WorkflowService_ListClosedWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "ListWorkflowExecutions",
+			Handler:    _WorkflowService_ListWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "ListArchivedWorkflowExecutions",
+			Handler:    _WorkflowService_ListArchivedWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "ScanWorkflowExecutions",
+			Handler:    _WorkflowService_ScanWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "CountWorkflowExecutions",
+			Handler:    _WorkflowService_CountWorkflowExecutions_Handler,
+		},
+		{
+			MethodName: "GetSearchAttributes",
+			Handler:    _WorkflowService_GetSearchAttributes_Handler,
+		},
+		{
+			MethodName: "RespondQueryTaskCompleted",
+			Handler:    _WorkflowService_RespondQueryTaskCompleted_Handler,
+		},
+		{
+			MethodName: "ResetStickyTaskList",
+			Handler:    _WorkflowService_ResetStickyTaskList_Handler,
+		},
+		{
+			MethodName: "QueryWorkflow",
+			Handler:    _WorkflowService_QueryWorkflow_Handler,
+		},
+		{
+			MethodName: "DescribeWorkflowExecution",
+			Handler:    _WorkflowService_DescribeWorkflowExecution_Handler,
+		},
+		{
+			MethodName: "DescribeTaskList",
+			Handler:    _WorkflowService_DescribeTaskList_Handler,
+		},
+		{
+			MethodName: "GetReplicationMessages",
+			Handler:    _WorkflowService_GetReplicationMessages_Handler,
+		},
+		{
+			MethodName: "GetDomainReplicationMessages",
+			Handler:    _WorkflowService_GetDomainReplicationMessages_Handler,
+		},
+		{
+			MethodName: "ReapplyEvents",
+			Handler:    _WorkflowService_ReapplyEvents_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "workflowservice/service.proto",
 }

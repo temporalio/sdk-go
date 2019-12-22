@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
@@ -37,7 +38,6 @@ import (
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/errordetails"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -1636,7 +1636,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	s.Equal("hello local_activity", laResult)
 }
 
-// This is flaky test. Rerun if failed.
+// Flaky test. Rerun if failed.
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
@@ -1692,7 +1692,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 
 	env.ExecuteWorkflow(workflowFn)
 	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount)
+	s.Equal(2, startedCount, "Flaky test. Rerun if failed.")
 	s.Equal(1, completedCount)
 	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())
@@ -2586,7 +2586,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 
 		err = f2.Get(ctx1, &result2)
 		s.Error(err)
-		_, isAlreadyStartedFailure := protobufutils.GetFailure(err).(*errordetails.WorkflowExecutionAlreadyStartedFailure)
+		st := status.Convert(err)
+		details := st.Details()
+		var failure interface{}
+		if len(details) > 0 {
+			failure = details[0]
+		}
+
+		_, isAlreadyStartedFailure := failure.(*errordetails.WorkflowExecutionAlreadyStartedFailure)
 		s.True(isAlreadyStartedFailure)
 
 		return result1 + " " + result2, nil

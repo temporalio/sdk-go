@@ -30,13 +30,14 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	"go.uber.org/yarpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	commonproto "github.com/temporalio/temporal-proto/common"
@@ -46,7 +47,6 @@ import (
 	"github.com/temporalio/temporal-proto/workflowservicemock"
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/protobufutils"
 )
 
 const (
@@ -122,7 +122,7 @@ type (
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
 		mock         *mock.Mock
-		service      workflowservice.WorkflowServiceYARPCClient
+		service      workflowservice.WorkflowServiceClient
 		logger       *zap.Logger
 		metricsScope *metrics.TaggedScope
 		ctxProps     []ContextPropagator
@@ -252,9 +252,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 
 	// setup mock service
 	mockCtrl := gomock.NewController(&testReporter{logger: env.logger})
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) error {
+	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) error {
 		activityID := string(r.TaskToken)
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID)
@@ -262,7 +262,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return protobufutils.NewError(codes.NotFound)
+			return status.New(codes.NotFound, "").Err()
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
@@ -276,13 +276,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		return nil
 	}
 
-	var callOptions []interface{}
-	for range yarpcCallOptions {
-		callOptions = append(callOptions, gomock.Any())
-	}
-	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).
+	em := mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}, nil)
-	em.Do(func(ctx context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...yarpc.CallOption) {
+	em.Do(func(ctx context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
 		// TODO: The following will hit a data race in the gomock code where the Do() action is executed outside
 		// the lock and setting return value from inside the action is going to run into races.
 		// err := mockHeartbeatFn(ctx, r, opts)
@@ -351,13 +347,16 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
-			return nil, protobufutils.NewErrorWithFailure(codes.AlreadyExists, "Workflow execution already started", &errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+			return nil, st.Err()
 		}
 	}
 
@@ -1905,7 +1904,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 
 	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
 		if workflowHandle.handled {
-			return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID))
+			return status.New(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID)).Err()
 		}
 		workflowHandle.env.postCallback(func() {
 			workflowHandle.env.signalHandler(signalName, data)
@@ -1913,7 +1912,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 		return nil
 	}
 
-	return protobufutils.NewErrorWithMessage(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID))
+	return status.New(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID)).Err()
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {

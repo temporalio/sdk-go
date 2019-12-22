@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -36,14 +37,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc/codes"
 
+	"go.uber.org/zap"
+
 	commonproto "github.com/temporalio/temporal-proto/common"
 	"github.com/temporalio/temporal-proto/enums"
 	"github.com/temporalio/temporal-proto/errordetails"
 	"github.com/temporalio/temporal-proto/workflowservice"
 	"github.com/temporalio/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/protobufutils"
-
-	"go.uber.org/zap"
 )
 
 const (
@@ -54,7 +54,7 @@ type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
 		logger  *zap.Logger
-		service *workflowservicemock.MockWorkflowServiceYARPCClient
+		service *workflowservicemock.MockWorkflowServiceClient
 	}
 )
 
@@ -1153,7 +1153,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, protobufutils.NewErrorWithMessage(codes.NotFound, "Decision task not found.")
+			return nil, status.New(codes.NotFound, "Decision task not found.").Err()
 		})
 	t.Nil(response)
 	t.Error(err)
@@ -1166,10 +1166,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(&heartbeatResponse, nil)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
 
 	cadenceInvoker := &cadenceInvoker{
 		identity:  "Test_Cadence_Invoker",
@@ -1184,10 +1184,10 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	entityNotExistsError := protobufutils.NewError(codes.NotFound)
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, entityNotExistsError)
+	entityNotExistsError := status.New(codes.NotFound, "").Err()
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
 
 	cadenceInvoker := newServiceInvoker(
 		nil,
@@ -1199,15 +1199,17 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	t.Equal(codes.NotFound, protobufutils.GetCode(heartbeatErr), "heartbeatErr must have code NotFound.")
+	t.Equal(codes.NotFound, status.Convert(heartbeatErr).Code(), "heartbeatErr must have code NotFound.")
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	domainNotActiveError := protobufutils.NewErrorWithFailure(codes.InvalidArgument, "", &errordetails.DomainNotActiveFailure{})
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), callOptions...).Return(nil, domainNotActiveError)
+	st, _ := status.New(codes.InvalidArgument, "").WithDetails(&errordetails.DomainNotActiveFailure{})
+	domainNotActiveError := st.Err()
+
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, domainNotActiveError)
 
 	called := false
 	cancelHandler := func() { called = true }
@@ -1222,7 +1224,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	_, isDomainNotActive := protobufutils.GetFailure(heartbeatErr).(*errordetails.DomainNotActiveFailure)
+	heartbeatSt := status.Convert(heartbeatErr)
+	details := heartbeatSt.Details()
+	var failure interface{}
+	if len(details) > 0 {
+		failure = details[0]
+	}
+	_, isDomainNotActive := failure.(*errordetails.DomainNotActiveFailure)
 	t.True(isDomainNotActive, "heartbeatErr failure must be DomainNotActiveFailure.")
 	t.True(called)
 }
@@ -1278,7 +1286,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	registry.addActivity(a.ActivityType().Name, a)
 
 	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	for i, d := range deadlineTests {
 		a.d = d.actWaitDuration
@@ -1332,7 +1340,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	registry.addActivityFn(a.ActivityType().Name, activityWithWorkerStop)
 
 	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceYARPCClient(mockCtrl)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	workerStopCh := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	wep := workerExecutionParameters{

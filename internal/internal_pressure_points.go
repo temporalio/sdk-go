@@ -58,7 +58,7 @@ type (
 
 // newWorkflowWorkerWithPressurePoints returns an instance of a workflow worker.
 func newWorkflowWorkerWithPressurePoints(
-	service workflowservice.WorkflowServiceYARPCClient,
+	service workflowservice.WorkflowServiceClient,
 	domain string,
 	params workerExecutionParameters,
 	pressurePoints map[string]map[string]string,
