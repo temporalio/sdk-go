@@ -398,3 +398,17 @@ func (w *workflowServiceMetricsWrapper) ReapplyEvents(ctx context.Context, reque
 	scope.handleError(err)
 	return result, err
 }
+
+func (w *workflowServiceMetricsWrapper) GetClusterInfo(ctx context.Context, request *workflowservice.GetClusterInfoRequest, opts ...grpc.CallOption) (*workflowservice.GetClusterInfoResponse, error) {
+	scope := w.getOperationScope(scopeNameReapplyEvents)
+	result, err := w.service.GetClusterInfo(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) ListTaskListPartitions(ctx context.Context, request *workflowservice.ListTaskListPartitionsRequest, opts ...grpc.CallOption) (*workflowservice.ListTaskListPartitionsResponse, error) {
+	scope := w.getOperationScope(scopeNameReapplyEvents)
+	result, err := w.service.ListTaskListPartitions(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
