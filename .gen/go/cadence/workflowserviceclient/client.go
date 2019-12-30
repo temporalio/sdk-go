@@ -66,6 +66,11 @@ type Interface interface {
 		opts ...yarpc.CallOption,
 	) (*shared.DescribeWorkflowExecutionResponse, error)
 
+	GetClusterInfo(
+		ctx context.Context,
+		opts ...yarpc.CallOption,
+	) (*shared.ClusterInfo, error)
+
 	GetSearchAttributes(
 		ctx context.Context,
 		opts ...yarpc.CallOption,
@@ -100,6 +105,12 @@ type Interface interface {
 		ListRequest *shared.ListOpenWorkflowExecutionsRequest,
 		opts ...yarpc.CallOption,
 	) (*shared.ListOpenWorkflowExecutionsResponse, error)
+
+	ListTaskListPartitions(
+		ctx context.Context,
+		Request *shared.ListTaskListPartitionsRequest,
+		opts ...yarpc.CallOption,
+	) (*shared.ListTaskListPartitionsResponse, error)
 
 	ListWorkflowExecutions(
 		ctx context.Context,
@@ -391,6 +402,28 @@ func (c client) DescribeWorkflowExecution(
 	return
 }
 
+func (c client) GetClusterInfo(
+	ctx context.Context,
+	opts ...yarpc.CallOption,
+) (success *shared.ClusterInfo, err error) {
+
+	args := cadence.WorkflowService_GetClusterInfo_Helper.Args()
+
+	var body wire.Value
+	body, err = c.c.Call(ctx, args, opts...)
+	if err != nil {
+		return
+	}
+
+	var result cadence.WorkflowService_GetClusterInfo_Result
+	if err = result.FromWire(body); err != nil {
+		return
+	}
+
+	success, err = cadence.WorkflowService_GetClusterInfo_Helper.UnwrapResponse(&result)
+	return
+}
+
 func (c client) GetSearchAttributes(
 	ctx context.Context,
 	opts ...yarpc.CallOption,
@@ -525,6 +558,29 @@ func (c client) ListOpenWorkflowExecutions(
 	}
 
 	success, err = cadence.WorkflowService_ListOpenWorkflowExecutions_Helper.UnwrapResponse(&result)
+	return
+}
+
+func (c client) ListTaskListPartitions(
+	ctx context.Context,
+	_Request *shared.ListTaskListPartitionsRequest,
+	opts ...yarpc.CallOption,
+) (success *shared.ListTaskListPartitionsResponse, err error) {
+
+	args := cadence.WorkflowService_ListTaskListPartitions_Helper.Args(_Request)
+
+	var body wire.Value
+	body, err = c.c.Call(ctx, args, opts...)
+	if err != nil {
+		return
+	}
+
+	var result cadence.WorkflowService_ListTaskListPartitions_Result
+	if err = result.FromWire(body); err != nil {
+		return
+	}
+
+	success, err = cadence.WorkflowService_ListTaskListPartitions_Helper.UnwrapResponse(&result)
 	return
 }
 

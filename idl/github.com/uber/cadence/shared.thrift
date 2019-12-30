@@ -1444,6 +1444,21 @@ struct DescribeTaskListResponse {
   20: optional TaskListStatus taskListStatus
 }
 
+struct ListTaskListPartitionsRequest {
+  10: optional string domain
+  20: optional TaskList taskList
+}
+
+struct TaskListPartitionMetadata {
+  10: optional string key
+  20: optional string ownerHostName
+}
+
+struct ListTaskListPartitionsResponse {
+  10: optional list<TaskListPartitionMetadata> activityTaskListPartitions
+  20: optional list<TaskListPartitionMetadata> decisionTaskListPartitions
+}
+
 struct TaskListStatus {
   10: optional i64 (js.type = "Long") backlogCountHint
   20: optional i64 (js.type = "Long") readLevel
@@ -1544,4 +1559,15 @@ struct HistoryBranch{
   10: optional string treeID
   20: optional string branchID
   30: optional list<HistoryBranchRange>  ancestors
+}
+
+// SupportedClientVersions contains the support versions for client library
+struct SupportedClientVersions{
+  10: optional string goSdk
+  20: optional string javaSdk
+}
+
+// ClusterInfo contains information about cadence cluster
+struct ClusterInfo{
+  10: optional SupportedClientVersions supportedClientVersions
 }

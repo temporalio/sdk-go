@@ -5408,6 +5408,116 @@ func (v *CloseShardRequest) GetShardID() (o int32) {
 	return
 }
 
+type ClusterInfo struct {
+	SupportedClientVersions *SupportedClientVersions `json:"supportedClientVersions,omitempty"`
+}
+
+// ToWire translates a ClusterInfo struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *ClusterInfo) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.SupportedClientVersions != nil {
+		w, err = v.SupportedClientVersions.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _SupportedClientVersions_Read(w wire.Value) (*SupportedClientVersions, error) {
+	var v SupportedClientVersions
+	err := v.FromWire(w)
+	return &v, err
+}
+
+// FromWire deserializes a ClusterInfo struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a ClusterInfo struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v ClusterInfo
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *ClusterInfo) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TStruct {
+				v.SupportedClientVersions, err = _SupportedClientVersions_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a ClusterInfo
+// struct.
+func (v *ClusterInfo) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	if v.SupportedClientVersions != nil {
+		fields[i] = fmt.Sprintf("SupportedClientVersions: %v", v.SupportedClientVersions)
+		i++
+	}
+
+	return fmt.Sprintf("ClusterInfo{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this ClusterInfo match the
+// provided ClusterInfo.
+//
+// This function performs a deep comparison.
+func (v *ClusterInfo) Equals(rhs *ClusterInfo) bool {
+	if !((v.SupportedClientVersions == nil && rhs.SupportedClientVersions == nil) || (v.SupportedClientVersions != nil && rhs.SupportedClientVersions != nil && v.SupportedClientVersions.Equals(rhs.SupportedClientVersions))) {
+		return false
+	}
+
+	return true
+}
+
 type ClusterReplicationConfiguration struct {
 	ClusterName *string `json:"clusterName,omitempty"`
 }
@@ -18777,6 +18887,342 @@ func (v *ListOpenWorkflowExecutionsResponse) Equals(rhs *ListOpenWorkflowExecuti
 		return false
 	}
 	if !((v.NextPageToken == nil && rhs.NextPageToken == nil) || (v.NextPageToken != nil && rhs.NextPageToken != nil && bytes.Equal(v.NextPageToken, rhs.NextPageToken))) {
+		return false
+	}
+
+	return true
+}
+
+type ListTaskListPartitionsRequest struct {
+	Domain   *string   `json:"domain,omitempty"`
+	TaskList *TaskList `json:"taskList,omitempty"`
+}
+
+// ToWire translates a ListTaskListPartitionsRequest struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *ListTaskListPartitionsRequest) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.TaskList != nil {
+		w, err = v.TaskList.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a ListTaskListPartitionsRequest struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a ListTaskListPartitionsRequest struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v ListTaskListPartitionsRequest
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *ListTaskListPartitionsRequest) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.Domain = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.TaskList, err = _TaskList_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a ListTaskListPartitionsRequest
+// struct.
+func (v *ListTaskListPartitionsRequest) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
+		i++
+	}
+	if v.TaskList != nil {
+		fields[i] = fmt.Sprintf("TaskList: %v", v.TaskList)
+		i++
+	}
+
+	return fmt.Sprintf("ListTaskListPartitionsRequest{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this ListTaskListPartitionsRequest match the
+// provided ListTaskListPartitionsRequest.
+//
+// This function performs a deep comparison.
+func (v *ListTaskListPartitionsRequest) Equals(rhs *ListTaskListPartitionsRequest) bool {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
+		return false
+	}
+	if !((v.TaskList == nil && rhs.TaskList == nil) || (v.TaskList != nil && rhs.TaskList != nil && v.TaskList.Equals(rhs.TaskList))) {
+		return false
+	}
+
+	return true
+}
+
+// GetDomain returns the value of Domain if it is set or its
+// zero value if it is unset.
+func (v *ListTaskListPartitionsRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
+	}
+
+	return
+}
+
+type ListTaskListPartitionsResponse struct {
+	ActivityTaskListPartitions []*TaskListPartitionMetadata `json:"activityTaskListPartitions,omitempty"`
+	DecisionTaskListPartitions []*TaskListPartitionMetadata `json:"decisionTaskListPartitions,omitempty"`
+}
+
+type _List_TaskListPartitionMetadata_ValueList []*TaskListPartitionMetadata
+
+func (v _List_TaskListPartitionMetadata_ValueList) ForEach(f func(wire.Value) error) error {
+	for i, x := range v {
+		if x == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", i)
+		}
+		w, err := x.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_TaskListPartitionMetadata_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_TaskListPartitionMetadata_ValueList) ValueType() wire.Type {
+	return wire.TStruct
+}
+
+func (_List_TaskListPartitionMetadata_ValueList) Close() {}
+
+// ToWire translates a ListTaskListPartitionsResponse struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *ListTaskListPartitionsResponse) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.ActivityTaskListPartitions != nil {
+		w, err = wire.NewValueList(_List_TaskListPartitionMetadata_ValueList(v.ActivityTaskListPartitions)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.DecisionTaskListPartitions != nil {
+		w, err = wire.NewValueList(_List_TaskListPartitionMetadata_ValueList(v.DecisionTaskListPartitions)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+func _TaskListPartitionMetadata_Read(w wire.Value) (*TaskListPartitionMetadata, error) {
+	var v TaskListPartitionMetadata
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _List_TaskListPartitionMetadata_Read(l wire.ValueList) ([]*TaskListPartitionMetadata, error) {
+	if l.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make([]*TaskListPartitionMetadata, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := _TaskListPartitionMetadata_Read(x)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
+}
+
+// FromWire deserializes a ListTaskListPartitionsResponse struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a ListTaskListPartitionsResponse struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v ListTaskListPartitionsResponse
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *ListTaskListPartitionsResponse) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TList {
+				v.ActivityTaskListPartitions, err = _List_TaskListPartitionMetadata_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TList {
+				v.DecisionTaskListPartitions, err = _List_TaskListPartitionMetadata_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a ListTaskListPartitionsResponse
+// struct.
+func (v *ListTaskListPartitionsResponse) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.ActivityTaskListPartitions != nil {
+		fields[i] = fmt.Sprintf("ActivityTaskListPartitions: %v", v.ActivityTaskListPartitions)
+		i++
+	}
+	if v.DecisionTaskListPartitions != nil {
+		fields[i] = fmt.Sprintf("DecisionTaskListPartitions: %v", v.DecisionTaskListPartitions)
+		i++
+	}
+
+	return fmt.Sprintf("ListTaskListPartitionsResponse{%v}", strings.Join(fields[:i], ", "))
+}
+
+func _List_TaskListPartitionMetadata_Equals(lhs, rhs []*TaskListPartitionMetadata) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !lv.Equals(rv) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Equals returns true if all the fields of this ListTaskListPartitionsResponse match the
+// provided ListTaskListPartitionsResponse.
+//
+// This function performs a deep comparison.
+func (v *ListTaskListPartitionsResponse) Equals(rhs *ListTaskListPartitionsResponse) bool {
+	if !((v.ActivityTaskListPartitions == nil && rhs.ActivityTaskListPartitions == nil) || (v.ActivityTaskListPartitions != nil && rhs.ActivityTaskListPartitions != nil && _List_TaskListPartitionMetadata_Equals(v.ActivityTaskListPartitions, rhs.ActivityTaskListPartitions))) {
+		return false
+	}
+	if !((v.DecisionTaskListPartitions == nil && rhs.DecisionTaskListPartitions == nil) || (v.DecisionTaskListPartitions != nil && rhs.DecisionTaskListPartitions != nil && _List_TaskListPartitionMetadata_Equals(v.DecisionTaskListPartitions, rhs.DecisionTaskListPartitions))) {
 		return false
 	}
 
@@ -35534,6 +35980,158 @@ func (v *StickyExecutionAttributes) GetScheduleToStartTimeoutSeconds() (o int32)
 	return
 }
 
+type SupportedClientVersions struct {
+	GoSdk   *string `json:"goSdk,omitempty"`
+	JavaSdk *string `json:"javaSdk,omitempty"`
+}
+
+// ToWire translates a SupportedClientVersions struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *SupportedClientVersions) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.GoSdk != nil {
+		w, err = wire.NewValueString(*(v.GoSdk)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.JavaSdk != nil {
+		w, err = wire.NewValueString(*(v.JavaSdk)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a SupportedClientVersions struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a SupportedClientVersions struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v SupportedClientVersions
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *SupportedClientVersions) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.GoSdk = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.JavaSdk = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a SupportedClientVersions
+// struct.
+func (v *SupportedClientVersions) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.GoSdk != nil {
+		fields[i] = fmt.Sprintf("GoSdk: %v", *(v.GoSdk))
+		i++
+	}
+	if v.JavaSdk != nil {
+		fields[i] = fmt.Sprintf("JavaSdk: %v", *(v.JavaSdk))
+		i++
+	}
+
+	return fmt.Sprintf("SupportedClientVersions{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this SupportedClientVersions match the
+// provided SupportedClientVersions.
+//
+// This function performs a deep comparison.
+func (v *SupportedClientVersions) Equals(rhs *SupportedClientVersions) bool {
+	if !_String_EqualsPtr(v.GoSdk, rhs.GoSdk) {
+		return false
+	}
+	if !_String_EqualsPtr(v.JavaSdk, rhs.JavaSdk) {
+		return false
+	}
+
+	return true
+}
+
+// GetGoSdk returns the value of GoSdk if it is set or its
+// zero value if it is unset.
+func (v *SupportedClientVersions) GetGoSdk() (o string) {
+	if v.GoSdk != nil {
+		return *v.GoSdk
+	}
+
+	return
+}
+
+// GetJavaSdk returns the value of JavaSdk if it is set or its
+// zero value if it is unset.
+func (v *SupportedClientVersions) GetJavaSdk() (o string) {
+	if v.JavaSdk != nil {
+		return *v.JavaSdk
+	}
+
+	return
+}
+
 type TaskIDBlock struct {
 	StartID *int64 `json:"startID,omitempty"`
 	EndID   *int64 `json:"endID,omitempty"`
@@ -36100,6 +36698,158 @@ func (v *TaskListMetadata) Equals(rhs *TaskListMetadata) bool {
 func (v *TaskListMetadata) GetMaxTasksPerSecond() (o float64) {
 	if v.MaxTasksPerSecond != nil {
 		return *v.MaxTasksPerSecond
+	}
+
+	return
+}
+
+type TaskListPartitionMetadata struct {
+	Key           *string `json:"key,omitempty"`
+	OwnerHostName *string `json:"ownerHostName,omitempty"`
+}
+
+// ToWire translates a TaskListPartitionMetadata struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *TaskListPartitionMetadata) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.Key != nil {
+		w, err = wire.NewValueString(*(v.Key)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.OwnerHostName != nil {
+		w, err = wire.NewValueString(*(v.OwnerHostName)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a TaskListPartitionMetadata struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a TaskListPartitionMetadata struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v TaskListPartitionMetadata
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *TaskListPartitionMetadata) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.Key = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.OwnerHostName = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a TaskListPartitionMetadata
+// struct.
+func (v *TaskListPartitionMetadata) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.Key != nil {
+		fields[i] = fmt.Sprintf("Key: %v", *(v.Key))
+		i++
+	}
+	if v.OwnerHostName != nil {
+		fields[i] = fmt.Sprintf("OwnerHostName: %v", *(v.OwnerHostName))
+		i++
+	}
+
+	return fmt.Sprintf("TaskListPartitionMetadata{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this TaskListPartitionMetadata match the
+// provided TaskListPartitionMetadata.
+//
+// This function performs a deep comparison.
+func (v *TaskListPartitionMetadata) Equals(rhs *TaskListPartitionMetadata) bool {
+	if !_String_EqualsPtr(v.Key, rhs.Key) {
+		return false
+	}
+	if !_String_EqualsPtr(v.OwnerHostName, rhs.OwnerHostName) {
+		return false
+	}
+
+	return true
+}
+
+// GetKey returns the value of Key if it is set or its
+// zero value if it is unset.
+func (v *TaskListPartitionMetadata) GetKey() (o string) {
+	if v.Key != nil {
+		return *v.Key
+	}
+
+	return
+}
+
+// GetOwnerHostName returns the value of OwnerHostName if it is set or its
+// zero value if it is unset.
+func (v *TaskListPartitionMetadata) GetOwnerHostName() (o string) {
+	if v.OwnerHostName != nil {
+		return *v.OwnerHostName
 	}
 
 	return

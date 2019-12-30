@@ -376,3 +376,17 @@ func (w *workflowServiceMetricsWrapper) GetSearchAttributes(ctx context.Context,
 	scope.handleError(err)
 	return result, err
 }
+
+func (w *workflowServiceMetricsWrapper) GetClusterInfo(ctx context.Context, opts ...yarpc.CallOption) (*shared.ClusterInfo, error) {
+	scope := w.getOperationScope(scopeNameGetSearchAttributes)
+	result, err := w.service.GetClusterInfo(ctx, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) ListTaskListPartitions(ctx context.Context, request *shared.ListTaskListPartitionsRequest, opts ...yarpc.CallOption) (*shared.ListTaskListPartitionsResponse, error) {
+	scope := w.getOperationScope(scopeNameGetSearchAttributes)
+	result, err := w.service.ListTaskListPartitions(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
