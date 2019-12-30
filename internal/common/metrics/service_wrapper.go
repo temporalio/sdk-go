@@ -87,6 +87,8 @@ const (
 	scopeNameGetReplicationMessages           = CadenceMetricsPrefix + "GetReplicationMessages"
 	scopeNameGetDomainReplicationMessages     = CadenceMetricsPrefix + "GetDomainReplicationMessages"
 	scopeNameReapplyEvents                    = CadenceMetricsPrefix + "ReapplyEvents"
+	scopeNameGetClusterInfo                   = CadenceMetricsPrefix + "GetClusterInfo"
+	scopeNameListTaskListPartitions           = CadenceMetricsPrefix + "ListTaskListPartitions"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -400,14 +402,14 @@ func (w *workflowServiceMetricsWrapper) ReapplyEvents(ctx context.Context, reque
 }
 
 func (w *workflowServiceMetricsWrapper) GetClusterInfo(ctx context.Context, request *workflowservice.GetClusterInfoRequest, opts ...grpc.CallOption) (*workflowservice.GetClusterInfoResponse, error) {
-	scope := w.getOperationScope(scopeNameReapplyEvents)
+	scope := w.getOperationScope(scopeNameGetClusterInfo)
 	result, err := w.service.GetClusterInfo(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
 func (w *workflowServiceMetricsWrapper) ListTaskListPartitions(ctx context.Context, request *workflowservice.ListTaskListPartitionsRequest, opts ...grpc.CallOption) (*workflowservice.ListTaskListPartitionsResponse, error) {
-	scope := w.getOperationScope(scopeNameReapplyEvents)
+	scope := w.getOperationScope(scopeNameListTaskListPartitions)
 	result, err := w.service.ListTaskListPartitions(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
