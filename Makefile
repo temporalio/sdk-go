@@ -1,4 +1,4 @@
-.PHONY: test bins clean cover cover_ci check errcheck staticcheck lint fmt
+.PHONY: test bins clean cover cover-ci check errcheck staticcheck lint fmt
 
 # default target
 default: check
@@ -17,9 +17,9 @@ PROTO_SERVICES := workflowservice
 
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
-UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
-INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
-INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
+UT_COVER_FILE := $(COVER_ROOT)/unit-test_cover.out
+INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integration-test-sticky-off_cover.out
+INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integration-test-sticky-on_cover.out
 
 # Automatically gather all srcs
 ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e $(PROTO_GEN))
@@ -58,7 +58,7 @@ proto-mock: protoc gobin
 	gobin -mod=readonly github.com/golang/mock/mockgen
 	@$(foreach PROTO_GRPC_SERVICE,$(PROTO_GRPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_GRPC_SERVICE))mock -source $(PROTO_GRPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_GRPC_SERVICE))mock/$(notdir $(PROTO_GRPC_SERVICE:go=mock.go)) )
 
-proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
+update-proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
 
 gobin:
 	GO111MODULE=off go get -u github.com/myitcv/gobin
@@ -75,7 +75,7 @@ $(BUILD)/dummy:
 
 bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
 
-unit_test: $(BUILD)/dummy
+unit-test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@echo "mode: atomic" > $(UT_COVER_FILE)
 	@for dir in $(UT_DIRS); do \
@@ -84,19 +84,19 @@ unit_test: $(BUILD)/dummy
 		cat $(COVER_ROOT)/"$$dir"/cover.out | grep -v "mode: atomic" >> $(UT_COVER_FILE); \
 	done;
 
-integ_test_sticky_off: $(BUILD)/dummy
+integration-test-sticky-off: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
 		STICKY_OFF=true go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_OFF_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-integ_test_sticky_on: $(BUILD)/dummy
+integration-test-sticky-on: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
 		STICKY_OFF=false go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-test: unit_test integ_test_sticky_off integ_test_sticky_on
+test: unit-test integration-test-sticky-off integration-test-sticky-on
 
 $(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_STICKY_OFF_COVER_FILE) $(INTEG_STICKY_ON_COVER_FILE)
 	@echo "mode: atomic" > $(COVER_ROOT)/cover.out
@@ -107,7 +107,7 @@ $(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_STICKY_OFF_COVER_FILE) $(INTEG
 cover: $(COVER_ROOT)/cover.out
 	go tool cover -html=$(COVER_ROOT)/cover.out;
 
-cover_ci: $(COVER_ROOT)/cover.out
+cover-ci: $(COVER_ROOT)/cover.out
 	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=buildkite || echo -e "\x1b[31mCoveralls failed\x1b[m";
 
 # golint fails to report many lint failures if it is only given a single file
