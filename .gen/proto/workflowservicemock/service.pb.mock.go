@@ -835,6 +835,46 @@ func (mr *MockWorkflowServiceClientMockRecorder) ReapplyEvents(ctx, in interface
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReapplyEvents", reflect.TypeOf((*MockWorkflowServiceClient)(nil).ReapplyEvents), varargs...)
 }
 
+// GetClusterInfo mocks base method
+func (m *MockWorkflowServiceClient) GetClusterInfo(ctx context.Context, in *workflowservice.GetClusterInfoRequest, opts ...grpc.CallOption) (*workflowservice.GetClusterInfoResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetClusterInfo", varargs...)
+	ret0, _ := ret[0].(*workflowservice.GetClusterInfoResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetClusterInfo indicates an expected call of GetClusterInfo
+func (mr *MockWorkflowServiceClientMockRecorder) GetClusterInfo(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClusterInfo", reflect.TypeOf((*MockWorkflowServiceClient)(nil).GetClusterInfo), varargs...)
+}
+
+// ListTaskListPartitions mocks base method
+func (m *MockWorkflowServiceClient) ListTaskListPartitions(ctx context.Context, in *workflowservice.ListTaskListPartitionsRequest, opts ...grpc.CallOption) (*workflowservice.ListTaskListPartitionsResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "ListTaskListPartitions", varargs...)
+	ret0, _ := ret[0].(*workflowservice.ListTaskListPartitionsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListTaskListPartitions indicates an expected call of ListTaskListPartitions
+func (mr *MockWorkflowServiceClientMockRecorder) ListTaskListPartitions(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTaskListPartitions", reflect.TypeOf((*MockWorkflowServiceClient)(nil).ListTaskListPartitions), varargs...)
+}
+
 // MockWorkflowServiceServer is a mock of WorkflowServiceServer interface
 type MockWorkflowServiceServer struct {
 	ctrl     *gomock.Controller
@@ -1441,4 +1481,34 @@ func (m *MockWorkflowServiceServer) ReapplyEvents(arg0 context.Context, arg1 *wo
 func (mr *MockWorkflowServiceServerMockRecorder) ReapplyEvents(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReapplyEvents", reflect.TypeOf((*MockWorkflowServiceServer)(nil).ReapplyEvents), arg0, arg1)
+}
+
+// GetClusterInfo mocks base method
+func (m *MockWorkflowServiceServer) GetClusterInfo(arg0 context.Context, arg1 *workflowservice.GetClusterInfoRequest) (*workflowservice.GetClusterInfoResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClusterInfo", arg0, arg1)
+	ret0, _ := ret[0].(*workflowservice.GetClusterInfoResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetClusterInfo indicates an expected call of GetClusterInfo
+func (mr *MockWorkflowServiceServerMockRecorder) GetClusterInfo(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClusterInfo", reflect.TypeOf((*MockWorkflowServiceServer)(nil).GetClusterInfo), arg0, arg1)
+}
+
+// ListTaskListPartitions mocks base method
+func (m *MockWorkflowServiceServer) ListTaskListPartitions(arg0 context.Context, arg1 *workflowservice.ListTaskListPartitionsRequest) (*workflowservice.ListTaskListPartitionsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListTaskListPartitions", arg0, arg1)
+	ret0, _ := ret[0].(*workflowservice.ListTaskListPartitionsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListTaskListPartitions indicates an expected call of ListTaskListPartitions
+func (mr *MockWorkflowServiceServerMockRecorder) ListTaskListPartitions(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTaskListPartitions", reflect.TypeOf((*MockWorkflowServiceServer)(nil).ListTaskListPartitions), arg0, arg1)
 }
