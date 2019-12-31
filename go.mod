@@ -13,7 +13,7 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
-	github.com/temporalio/temporal-proto v0.0.0-00010101000000-000000000000
+	github.com/temporalio/temporal-proto v0.0.0-20191230202114-293a8e53884a
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/tally v3.3.13+incompatible
 	github.com/uber/jaeger-client-go v2.15.0+incompatible
