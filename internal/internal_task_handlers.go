@@ -39,10 +39,11 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"github.com/temporalio/temporal-proto/enums"
-	"github.com/temporalio/temporal-proto/errordetails"
-	"github.com/temporalio/temporal-proto/workflowservice"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+	"github.com/temporalio/temporal-proto-go/enums"
+	"github.com/temporalio/temporal-proto-go/errordetails"
+	"github.com/temporalio/temporal-proto-go/workflowservice"
+
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/cache"
 	"go.temporal.io/temporal/internal/common/metrics"

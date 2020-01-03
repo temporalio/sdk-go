@@ -26,7 +26,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 
-	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto-go/enums"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"

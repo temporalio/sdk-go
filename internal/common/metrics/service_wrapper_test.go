@@ -36,8 +36,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	"github.com/temporalio/temporal-proto/workflowservice"
-	"github.com/temporalio/temporal-proto/workflowservicemock"
+	"github.com/temporalio/temporal-proto-go/workflowservice"
+	"github.com/temporalio/temporal-proto-go/workflowservicemock"
 )
 
 var (

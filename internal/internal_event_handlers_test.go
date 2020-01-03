@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
 )
 
 func TestReplayAwareLogger(t *testing.T) {

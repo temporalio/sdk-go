@@ -36,8 +36,9 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
-	"github.com/temporalio/temporal-proto/enums"
-	"github.com/temporalio/temporal-proto/workflowservice"
+	"github.com/temporalio/temporal-proto-go/enums"
+	"github.com/temporalio/temporal-proto-go/workflowservice"
+
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/worker"

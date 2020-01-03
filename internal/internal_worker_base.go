@@ -34,7 +34,8 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
 )

@@ -25,7 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
 )
 
 func TestHeaderWriter(t *testing.T) {

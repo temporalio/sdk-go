@@ -24,8 +24,9 @@ import (
 	"container/list"
 	"fmt"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"github.com/temporalio/temporal-proto/enums"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+	"github.com/temporalio/temporal-proto-go/enums"
+
 	"go.temporal.io/temporal/internal/common/util"
 )
 
