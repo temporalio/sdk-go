@@ -21,7 +21,8 @@
 package workflow
 
 import (
-	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto-go/enums"
+
 	"go.temporal.io/temporal/internal"
 )
 

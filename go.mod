@@ -3,7 +3,6 @@ module go.temporal.io/temporal
 go 1.12
 
 require (
-	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.1
 	github.com/gogo/status v1.1.0
@@ -13,11 +12,10 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
-	github.com/temporalio/temporal-proto v0.0.0-20191230202114-293a8e53884a
+	github.com/temporalio/temporal-proto-go v0.0.0-20200103184242-06c5b2472e15
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/tally v3.3.13+incompatible
 	github.com/uber/jaeger-client-go v2.15.0+incompatible
-	github.com/uber/jaeger-lib v1.5.0 // indirect
 	go.uber.org/atomic v1.5.0
 	go.uber.org/goleak v0.10.0
 	go.uber.org/zap v1.13.0
@@ -25,5 +23,3 @@ require (
 	golang.org/x/time v0.0.0-20170927054726-6dc17368e09b
 	google.golang.org/grpc v1.26.0
 )
-
-replace github.com/temporalio/temporal-proto => ./.gen/proto

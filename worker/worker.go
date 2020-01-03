@@ -26,8 +26,9 @@ import (
 
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"github.com/temporalio/temporal-proto/workflowservice"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+	"github.com/temporalio/temporal-proto-go/workflowservice"
+
 	"go.temporal.io/temporal/activity"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/workflow"

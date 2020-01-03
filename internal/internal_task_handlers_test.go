@@ -39,11 +39,11 @@ import (
 
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"github.com/temporalio/temporal-proto/enums"
-	"github.com/temporalio/temporal-proto/errordetails"
-	"github.com/temporalio/temporal-proto/workflowservice"
-	"github.com/temporalio/temporal-proto/workflowservicemock"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+	"github.com/temporalio/temporal-proto-go/enums"
+	"github.com/temporalio/temporal-proto-go/errordetails"
+	"github.com/temporalio/temporal-proto-go/workflowservice"
+	"github.com/temporalio/temporal-proto-go/workflowservicemock"
 )
 
 const (

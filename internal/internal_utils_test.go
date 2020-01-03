@@ -27,7 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto-go/enums"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {

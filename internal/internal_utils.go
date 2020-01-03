@@ -35,7 +35,8 @@ import (
 	"github.com/uber-go/tally"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto-go/enums"
+
 	"go.temporal.io/temporal/internal/common/metrics"
 )
 

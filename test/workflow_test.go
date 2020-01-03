@@ -26,7 +26,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/temporalio/temporal-proto/enums"
+	"github.com/temporalio/temporal-proto-go/enums"
+
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"

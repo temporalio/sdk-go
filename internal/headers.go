@@ -23,7 +23,7 @@ package internal
 import (
 	"context"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
 )
 
 // HeaderWriter is an interface to write information to cadence headers

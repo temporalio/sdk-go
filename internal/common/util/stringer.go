@@ -25,8 +25,8 @@ import (
 	"fmt"
 	"reflect"
 
-	commonproto "github.com/temporalio/temporal-proto/common"
-	"github.com/temporalio/temporal-proto/enums"
+	commonproto "github.com/temporalio/temporal-proto-go/common"
+	"github.com/temporalio/temporal-proto-go/enums"
 )
 
 func anyToString(d interface{}) string {

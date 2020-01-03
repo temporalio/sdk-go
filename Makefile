@@ -8,13 +8,6 @@ IMPORT_ROOT := go.temporal.io/temporal
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 
-PROTO_ROOT := proto
-PROTO_GEN := .gen/proto
-PROTO_REPO := github.com/temporalio/temporal-proto
-
-PROTO_DIRS := common enums errordetails workflowservice
-PROTO_SERVICES := workflowservice
-
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
@@ -22,43 +15,13 @@ INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integration_test_sticky_off_cover.o
 INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integration_test_sticky_on_cover.out
 
 # Automatically gather all srcs
-ALL_SRC :=  $(shell find . -name "*.go" | grep -v -e $(PROTO_GEN))
+ALL_SRC :=  $(shell find . -name "*.go")
 
 UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
 INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)))
 
 # Files that needs to run lint. Excludes testify mocks.
 LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
-
-$(PROTO_GEN):
-	mkdir -p $(PROTO_GEN)
-	cd $(PROTO_GEN) && go mod init $(PROTO_REPO)
-
-clean-proto:
-	rm -rf $(PROTO_GEN)/*/
-
-update-proto-submodule:
-	git submodule update --init --remote $(PROTO_ROOT)
-
-proto-plugins:
-	GO111MODULE=off go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
-	GO111MODULE=off go get -u google.golang.org/grpc
-
-protoc:
-#   run protoc separately for each directory because of different package names
-	$(foreach PROTO_DIR,$(PROTO_DIRS),protoc --proto_path=$(PROTO_ROOT) --gogoslick_out=plugins=grpc,paths=source_relative:$(PROTO_GEN) $(PROTO_ROOT)/$(PROTO_DIR)/*.proto;)
-
-# All gRPC generated service files pathes relative to PROTO_GEN
-PROTO_GRPC_SERVICES = $(patsubst $(PROTO_GEN)/%,%,$(shell find $(PROTO_GEN) -name "service.pb.go"))
-dir_no_slash = $(patsubst %/,%,$(dir $(1)))
-dirname = $(notdir $(call dir_no_slash,$(1)))
-
-proto-mock: protoc gobin
-	@echo "Generate proto mocks..."
-	gobin -mod=readonly github.com/golang/mock/mockgen
-	@$(foreach PROTO_GRPC_SERVICE,$(PROTO_GRPC_SERVICES),cd $(PROTO_GEN) && mockgen -package $(call dirname,$(PROTO_GRPC_SERVICE))mock -source $(PROTO_GRPC_SERVICE) -destination $(call dir_no_slash,$(PROTO_GRPC_SERVICE))mock/$(notdir $(PROTO_GRPC_SERVICE:go=mock.go)) )
-
-update-proto: $(PROTO_GEN) clean-proto update-proto-submodule proto-plugins protoc proto-mock copyright
 
 gobin:
 	GO111MODULE=off go get -u github.com/myitcv/gobin
