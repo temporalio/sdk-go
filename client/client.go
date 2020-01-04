@@ -26,8 +26,8 @@ package client
 import (
 	"context"
 
-	"github.com/temporalio/temporal-proto-go/enums"
-	"github.com/temporalio/temporal-proto-go/workflowservice"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"

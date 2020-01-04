@@ -29,8 +29,8 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	"github.com/temporalio/temporal-proto-go/enums"
-	"github.com/temporalio/temporal-proto-go/workflowservice"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )

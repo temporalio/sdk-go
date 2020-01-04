@@ -33,9 +33,9 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
-	"github.com/temporalio/temporal-proto-go/enums"
-	"github.com/temporalio/temporal-proto-go/workflowservice"
+	commonproto "go.temporal.io/temporal-proto/common"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"

@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/temporalio/temporal-proto-go/workflowservicemock"
+	"go.temporal.io/temporal-proto/workflowservicemock"
 
 	"go.temporal.io/temporal/worker"
 

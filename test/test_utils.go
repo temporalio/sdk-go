@@ -26,7 +26,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/temporalio/temporal-proto-go/workflowservice"
+	"go.temporal.io/temporal-proto/workflowservice"
 )
 
 // Config contains the integration test configuration
