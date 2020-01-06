@@ -25,8 +25,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
-	"github.com/temporalio/temporal-proto-go/enums"
+	commonproto "go.temporal.io/temporal-proto/common"
+	"go.temporal.io/temporal-proto/enums"
 )
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {

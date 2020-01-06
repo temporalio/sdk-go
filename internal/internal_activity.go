@@ -33,7 +33,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
+	commonproto "go.temporal.io/temporal-proto/common"
 )
 
 type (

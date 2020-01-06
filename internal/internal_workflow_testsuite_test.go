@@ -35,9 +35,9 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
-	"github.com/temporalio/temporal-proto-go/enums"
-	"github.com/temporalio/temporal-proto-go/errordetails"
+	commonproto "go.temporal.io/temporal-proto/common"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/errordetails"
 )
 
 type WorkflowTestSuiteUnitTest struct {

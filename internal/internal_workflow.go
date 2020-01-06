@@ -36,7 +36,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
+	commonproto "go.temporal.io/temporal-proto/common"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )

@@ -29,7 +29,7 @@ import (
 	jaeger_config "github.com/uber/jaeger-client-go/config"
 	"go.uber.org/zap"
 
-	commonproto "github.com/temporalio/temporal-proto-go/common"
+	commonproto "go.temporal.io/temporal-proto/common"
 )
 
 func TestTracingContextPropagator(t *testing.T) {
