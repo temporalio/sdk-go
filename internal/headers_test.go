@@ -28,6 +28,7 @@ import (
 )
 
 func TestHeaderWriter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		initial  *shared.Header
@@ -81,7 +82,9 @@ func TestHeaderWriter(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			writer := NewHeaderWriter(test.initial)
 			for key, val := range test.vals {
 				writer.Set(key, val)
@@ -92,6 +95,7 @@ func TestHeaderWriter(t *testing.T) {
 }
 
 func TestHeaderReader(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		header  *shared.Header
@@ -123,7 +127,9 @@ func TestHeaderReader(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			reader := NewHeaderReader(test.header)
 			err := reader.ForEachKey(func(key string, val []byte) error {
 				if _, ok := test.keys[key]; !ok {

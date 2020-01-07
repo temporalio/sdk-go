@@ -21,97 +21,69 @@
 package metrics
 
 import (
+	"io"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"io"
-	"sync"
 )
 
 func Test_Counter(t *testing.T) {
-	isReplay := true
-	scope, closer, reporter := NewMetricsScope(&isReplay)
-	scope.Counter("test-name").Inc(1)
-	closer.Close()
-	require.Equal(t, 0, len(reporter.Counts()))
-
-	isReplay = false
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	scope.Counter("test-name").Inc(3)
-	closer.Close()
-	require.Equal(t, 1, len(reporter.Counts()))
-	require.Equal(t, int64(3), reporter.Counts()[0].Value())
+	t.Parallel()
+	replayed, executed := withScope(t, func(scope tally.Scope) {
+		scope.Counter("test-name").Inc(3)
+	})
+	require.Equal(t, 0, len(replayed.Counts()))
+	require.Equal(t, 1, len(executed.Counts()))
+	require.Equal(t, int64(3), executed.Counts()[0].Value())
 }
 
 func Test_Gauge(t *testing.T) {
-	isReplay := true
-	scope, closer, reporter := NewMetricsScope(&isReplay)
-	scope.Gauge("test-name").Update(1)
-	closer.Close()
-	require.Equal(t, 0, len(reporter.Gauges()))
-
-	isReplay = false
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	scope.Gauge("test-name").Update(3)
-	closer.Close()
-	require.Equal(t, 1, len(reporter.Gauges()))
-	require.Equal(t, float64(3), reporter.Gauges()[0].Value())
+	t.Parallel()
+	replayed, executed := withScope(t, func(scope tally.Scope) {
+		scope.Gauge("test-name").Update(3)
+	})
+	require.Equal(t, 0, len(replayed.Gauges()))
+	require.Equal(t, 1, len(executed.Gauges()))
+	require.Equal(t, float64(3), executed.Gauges()[0].Value())
 }
 
 func Test_Timer(t *testing.T) {
-	isReplay := true
-	scope, closer, reporter := NewMetricsScope(&isReplay)
-	scope.Timer("test-name").Record(time.Second)
-	sw := scope.Timer("test-stopwatch").Start()
-	sw.Stop()
-	closer.Close()
-	require.Equal(t, 0, len(reporter.Timers()))
-
-	isReplay = false
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	scope.Timer("test-name").Record(time.Second)
-	sw = scope.Timer("test-stopwatch").Start()
-	sw.Stop()
-	closer.Close()
-	require.Equal(t, 2, len(reporter.Timers()))
-	require.Equal(t, time.Second, reporter.Timers()[0].Value())
+	t.Parallel()
+	replayed, executed := withScope(t, func(scope tally.Scope) {
+		scope.Timer("test-name").Record(time.Second)
+		scope.Timer("test-stopwatch").Start().Stop()
+	})
+	require.Equal(t, 0, len(replayed.Timers()))
+	require.Equal(t, 2, len(executed.Timers()))
+	require.Equal(t, time.Second, executed.Timers()[0].Value())
 }
 
 func Test_Histogram(t *testing.T) {
-	isReplay := true
-	scope, closer, reporter := NewMetricsScope(&isReplay)
-	valueBuckets := tally.MustMakeLinearValueBuckets(0, 10, 10)
-	scope.Histogram("test-hist-1", valueBuckets).RecordValue(5)
-	scope.Histogram("test-hist-2", valueBuckets).RecordValue(15)
-	closer.Close()
-	require.Equal(t, 0, len(reporter.HistogramValueSamples()))
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	durationBuckets := tally.MustMakeLinearDurationBuckets(0, time.Hour, 10)
-	scope.Histogram("test-hist-1", durationBuckets).RecordDuration(time.Minute)
-	scope.Histogram("test-hist-2", durationBuckets).RecordDuration(time.Minute * 61)
-	sw := scope.Histogram("test-hist-3", durationBuckets).Start()
-	sw.Stop()
-	closer.Close()
-	require.Equal(t, 0, len(reporter.HistogramDurationSamples()))
-
-	isReplay = false
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	valueBuckets = tally.MustMakeLinearValueBuckets(0, 10, 10)
-	scope.Histogram("test-hist-1", valueBuckets).RecordValue(5)
-	scope.Histogram("test-hist-2", valueBuckets).RecordValue(15)
-	closer.Close()
-	require.Equal(t, 2, len(reporter.HistogramValueSamples()))
-
-	scope, closer, reporter = NewMetricsScope(&isReplay)
-	durationBuckets = tally.MustMakeLinearDurationBuckets(0, time.Hour, 10)
-	scope.Histogram("test-hist-1", durationBuckets).RecordDuration(time.Minute)
-	scope.Histogram("test-hist-2", durationBuckets).RecordDuration(time.Minute * 61)
-	sw = scope.Histogram("test-hist-3", durationBuckets).Start()
-	sw.Stop()
-	closer.Close()
-	require.Equal(t, 3, len(reporter.HistogramDurationSamples()))
+	t.Parallel()
+	t.Run("values", func(t *testing.T) {
+		t.Parallel()
+		replayed, executed := withScope(t, func(scope tally.Scope) {
+			valueBuckets := tally.MustMakeLinearValueBuckets(0, 10, 10)
+			scope.Histogram("test-hist-1", valueBuckets).RecordValue(5)
+			scope.Histogram("test-hist-2", valueBuckets).RecordValue(15)
+		})
+		require.Equal(t, 0, len(replayed.HistogramValueSamples()))
+		require.Equal(t, 2, len(executed.HistogramValueSamples()))
+	})
+	t.Run("durations", func(t *testing.T) {
+		t.Parallel()
+		replayed, executed := withScope(t, func(scope tally.Scope) {
+			durationBuckets := tally.MustMakeLinearDurationBuckets(0, time.Hour, 10)
+			scope.Histogram("test-hist-1", durationBuckets).RecordDuration(time.Minute)
+			scope.Histogram("test-hist-2", durationBuckets).RecordDuration(time.Minute * 61)
+			scope.Histogram("test-hist-3", durationBuckets).Start().Stop()
+		})
+		require.Equal(t, 0, len(replayed.HistogramDurationSamples()))
+		require.Equal(t, 3, len(executed.HistogramDurationSamples()))
+	})
 }
 
 func Test_ScopeCoverage(t *testing.T) {
@@ -188,6 +160,25 @@ func newTaggedMetricsScope() (*TaggedScope, io.Closer, *capturingStatsReporter) 
 	isReplay := false
 	scope, closer, reporter := newMetricsScope(&isReplay)
 	return &TaggedScope{Scope: scope}, closer, reporter
+}
+
+// withScope runs your callback twice, once for "during replay" and once for "after replay" / "executing".
+// stats are captured, and the results are returned for your validation.
+func withScope(t *testing.T, cb func(scope tally.Scope)) (replayed *CapturingStatsReporter, executed *CapturingStatsReporter) {
+	replaying, executing := true, false
+
+	replayingScope, replayingCloser, replayed := NewMetricsScope(&replaying)
+	executingScope, executingCloser, executed := NewMetricsScope(&executing)
+
+	defer func() {
+		require.NoError(t, replayingCloser.Close())
+		require.NoError(t, executingCloser.Close())
+	}()
+
+	cb(replayingScope)
+	cb(executingScope)
+
+	return replayed, executed
 }
 
 // capturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
