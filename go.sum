@@ -125,6 +125,10 @@ github.com/uber/tchannel-go v1.16.0 h1:B7dirDs15/vJJYDeoHpv3xaEUjuRZ38Rvt1qq9g7p
 github.com/uber/tchannel-go v1.16.0/go.mod h1:Rrgz1eL8kMjW/nEzZos0t+Heq0O4LhnUJVA32OvWKHo=
 go.temporal.io/temporal-proto v0.0.0-20200104005919-6abdf3300ac7 h1:NdZxGjp9KcmERWIW4dbQPSCCWIthkV003/0l/J3fncQ=
 go.temporal.io/temporal-proto v0.0.0-20200104005919-6abdf3300ac7/go.mod h1:Hcd8jaNNn/g6w3+8vHvTz1QIuodcT1skcUYD6gYoA80=
+go.temporal.io/temporal-proto v0.0.0-20200107053726-299cdcf72382 h1:tOA1KOM04Lkv6Q872Wwe062j+YwwS2ZabcxANVMvZ+k=
+go.temporal.io/temporal-proto v0.0.0-20200107053726-299cdcf72382/go.mod h1:fRYT1yXdFOKzWiD8cz/mb3vZzGfxxudPprEWAHkl75o=
+go.temporal.io/temporal-proto v0.0.0-20200107064802-e86357094e91 h1:moMck7k3J4OVeqhvnVMxVt/VMAOsjHpiRci4E6q5uFg=
+go.temporal.io/temporal-proto v0.0.0-20200107064802-e86357094e91/go.mod h1:fRYT1yXdFOKzWiD8cz/mb3vZzGfxxudPprEWAHkl75o=
 go.uber.org/atomic v1.5.0/go.mod h1:sABNBOSYdrvTF6hTgEIbc7YasKWGhgEQZyfxyTvoXHQ=
 go.uber.org/dig v1.8.0/go.mod h1:X34SnWGr8Fyla9zQNO2GSO2D+TIuqB14OS8JhYocIyw=
 go.uber.org/fx v1.10.0/go.mod h1:vLRicqpG/qQEzno4SYU86iCwfT95EZza+Eba0ItuxqY=

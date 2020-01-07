@@ -1699,13 +1699,7 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 		isActivityCancelled = true
 	} else {
 		st := status.Convert(err)
-		details := st.Details()
-		var failure interface{}
-		if len(details) > 0 {
-			failure = details[0]
-		}
-
-		if _, isDomainNotActiveFailure := failure.(*errordetails.DomainNotActiveFailure); isDomainNotActiveFailure || st.Code() == codes.NotFound {
+		if errordetails.IsDomainNotActiveFailure(st) || st.Code() == codes.NotFound {
 			// We will pass these through as cancellation for now but something we can change
 			// later when we have setter on cancel handler.
 			i.cancelHandler()

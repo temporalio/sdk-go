@@ -2586,15 +2586,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 
 		err = f2.Get(ctx1, &result2)
 		s.Error(err)
-		st := status.Convert(err)
-		details := st.Details()
-		var failure interface{}
-		if len(details) > 0 {
-			failure = details[0]
-		}
-
-		_, isAlreadyStartedFailure := failure.(*errordetails.WorkflowExecutionAlreadyStartedFailure)
-		s.True(isAlreadyStartedFailure)
+		s.True(errordetails.IsWorkflowExecutionAlreadyStartedFailure(status.Convert(err)))
 
 		return result1 + " " + result2, nil
 	}

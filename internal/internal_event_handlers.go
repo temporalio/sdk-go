@@ -30,16 +30,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc/codes"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/errordetails"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -1160,7 +1157,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	st, _ := status.New(codes.AlreadyExists, "Workflow execution already started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{})
+	st := errordetails.BuildWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
 	childWorkflow.handle(nil, st.Err())
 
 	return nil
