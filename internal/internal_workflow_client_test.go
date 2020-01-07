@@ -352,7 +352,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
-	st := errordetails.BuildWorkflowExecutionAlreadyStartedStatus("Already Started", uuid.NewRandom().String(), runID)
+	st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Already Started", uuid.NewRandom().String(), runID)
 	alreadyStartedErr := st.Err()
 
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).

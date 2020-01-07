@@ -1157,7 +1157,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	st := errordetails.BuildWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
+	st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
 	childWorkflow.handle(nil, st.Err())
 
 	return nil

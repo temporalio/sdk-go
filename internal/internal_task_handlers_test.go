@@ -1206,7 +1206,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	st := errordetails.BuildDomainNotActiveStatus("Workflow execution already started", "", "", "")
+	st := errordetails.NewDomainNotActiveStatus("Workflow execution already started", "", "", "")
 	domainNotActiveError := st.Err()
 
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, domainNotActiveError)

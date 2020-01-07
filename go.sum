@@ -131,6 +131,8 @@ go.temporal.io/temporal-proto v0.0.0-20200107064802-e86357094e91 h1:moMck7k3J4OV
 go.temporal.io/temporal-proto v0.0.0-20200107064802-e86357094e91/go.mod h1:fRYT1yXdFOKzWiD8cz/mb3vZzGfxxudPprEWAHkl75o=
 go.temporal.io/temporal-proto v0.0.0-20200107070928-7cf537180e0b h1:K2rN36+NYmST2XzgKL1MASg3AgvKnvPz7efj04NyzCk=
 go.temporal.io/temporal-proto v0.0.0-20200107070928-7cf537180e0b/go.mod h1:fRYT1yXdFOKzWiD8cz/mb3vZzGfxxudPprEWAHkl75o=
+go.temporal.io/temporal-proto v0.0.0-20200107080218-07c36368bde5 h1:omiuLaDUPXC6/STFQ7myGcnwCFPBg0H0Phhi4ZRfHLI=
+go.temporal.io/temporal-proto v0.0.0-20200107080218-07c36368bde5/go.mod h1:fRYT1yXdFOKzWiD8cz/mb3vZzGfxxudPprEWAHkl75o=
 go.uber.org/atomic v1.5.0/go.mod h1:sABNBOSYdrvTF6hTgEIbc7YasKWGhgEQZyfxyTvoXHQ=
 go.uber.org/dig v1.8.0/go.mod h1:X34SnWGr8Fyla9zQNO2GSO2D+TIuqB14OS8JhYocIyw=
 go.uber.org/fx v1.10.0/go.mod h1:vLRicqpG/qQEzno4SYU86iCwfT95EZza+Eba0ItuxqY=
