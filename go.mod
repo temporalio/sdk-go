@@ -15,7 +15,7 @@ require (
 	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/tally v3.3.13+incompatible
 	github.com/uber/jaeger-client-go v2.15.0+incompatible
-	go.temporal.io/temporal-proto v0.0.0-20200107064802-e86357094e91
+	go.temporal.io/temporal-proto v0.0.0-20200107070928-7cf537180e0b
 	go.uber.org/atomic v1.5.0
 	go.uber.org/goleak v0.10.0
 	go.uber.org/zap v1.13.0
