@@ -217,8 +217,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.WorkflowExecutionAlreadyStartedError:
 			return true
 		case *shared.ServiceBusyError:
@@ -247,11 +245,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_StartWorkflowExecution_Result.BadRequestError")
 			}
 			return &WorkflowService_StartWorkflowExecution_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_StartWorkflowExecution_Result.InternalServiceError")
-			}
-			return &WorkflowService_StartWorkflowExecution_Result{InternalServiceError: e}, nil
 		case *shared.WorkflowExecutionAlreadyStartedError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_StartWorkflowExecution_Result.SessionAlreadyExistError")
@@ -289,10 +282,6 @@ func init() {
 	WorkflowService_StartWorkflowExecution_Helper.UnwrapResponse = func(result *WorkflowService_StartWorkflowExecution_Result) (success *shared.StartWorkflowExecutionResponse, err error) {
 		if result.BadRequestError != nil {
 			err = result.BadRequestError
-			return
-		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
 			return
 		}
 		if result.SessionAlreadyExistError != nil {
@@ -340,7 +329,6 @@ type WorkflowService_StartWorkflowExecution_Result struct {
 	// Value returned by StartWorkflowExecution after a successful execution.
 	Success                        *shared.StartWorkflowExecutionResponse       `json:"success,omitempty"`
 	BadRequestError                *shared.BadRequestError                      `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError                 `json:"internalServiceError,omitempty"`
 	SessionAlreadyExistError       *shared.WorkflowExecutionAlreadyStartedError `json:"sessionAlreadyExistError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError                     `json:"serviceBusyError,omitempty"`
 	DomainNotActiveError           *shared.DomainNotActiveError                 `json:"domainNotActiveError,omitempty"`
@@ -366,7 +354,7 @@ type WorkflowService_StartWorkflowExecution_Result struct {
 //   }
 func (v *WorkflowService_StartWorkflowExecution_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [9]wire.Field
+		fields [8]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -386,14 +374,6 @@ func (v *WorkflowService_StartWorkflowExecution_Result) ToWire() (wire.Value, er
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.SessionAlreadyExistError != nil {
@@ -490,14 +470,6 @@ func (v *WorkflowService_StartWorkflowExecution_Result) FromWire(w wire.Value) e
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.SessionAlreadyExistError, err = _WorkflowExecutionAlreadyStartedError_Read(field.Value)
@@ -556,9 +528,6 @@ func (v *WorkflowService_StartWorkflowExecution_Result) FromWire(w wire.Value) e
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.SessionAlreadyExistError != nil {
 		count++
 	}
@@ -591,7 +560,7 @@ func (v *WorkflowService_StartWorkflowExecution_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [9]string
+	var fields [8]string
 	i := 0
 	if v.Success != nil {
 		fields[i] = fmt.Sprintf("Success: %v", v.Success)
@@ -599,10 +568,6 @@ func (v *WorkflowService_StartWorkflowExecution_Result) String() string {
 	}
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.SessionAlreadyExistError != nil {
@@ -642,9 +607,6 @@ func (v *WorkflowService_StartWorkflowExecution_Result) Equals(rhs *WorkflowServ
 		return false
 	}
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.SessionAlreadyExistError == nil && rhs.SessionAlreadyExistError == nil) || (v.SessionAlreadyExistError != nil && rhs.SessionAlreadyExistError != nil && v.SessionAlreadyExistError.Equals(rhs.SessionAlreadyExistError))) {

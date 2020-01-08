@@ -218,8 +218,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.DomainAlreadyExistsError:
 			return true
 		case *shared.ServiceBusyError:
@@ -242,11 +240,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RegisterDomain_Result.BadRequestError")
 			}
 			return &WorkflowService_RegisterDomain_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RegisterDomain_Result.InternalServiceError")
-			}
-			return &WorkflowService_RegisterDomain_Result{InternalServiceError: e}, nil
 		case *shared.DomainAlreadyExistsError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RegisterDomain_Result.DomainExistsError")
@@ -271,10 +264,6 @@ func init() {
 			err = result.BadRequestError
 			return
 		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
-			return
-		}
 		if result.DomainExistsError != nil {
 			err = result.DomainExistsError
 			return
@@ -297,7 +286,6 @@ func init() {
 // The result of a RegisterDomain execution is sent and received over the wire as this struct.
 type WorkflowService_RegisterDomain_Result struct {
 	BadRequestError                *shared.BadRequestError                `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError           `json:"internalServiceError,omitempty"`
 	DomainExistsError              *shared.DomainAlreadyExistsError       `json:"domainExistsError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError               `json:"serviceBusyError,omitempty"`
 	ClientVersionNotSupportedError *shared.ClientVersionNotSupportedError `json:"clientVersionNotSupportedError,omitempty"`
@@ -320,7 +308,7 @@ type WorkflowService_RegisterDomain_Result struct {
 //   }
 func (v *WorkflowService_RegisterDomain_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [5]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -332,14 +320,6 @@ func (v *WorkflowService_RegisterDomain_Result) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.DomainExistsError != nil {
@@ -410,14 +390,6 @@ func (v *WorkflowService_RegisterDomain_Result) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.DomainExistsError, err = _DomainAlreadyExistsError_Read(field.Value)
@@ -449,9 +421,6 @@ func (v *WorkflowService_RegisterDomain_Result) FromWire(w wire.Value) error {
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.DomainExistsError != nil {
 		count++
 	}
@@ -475,14 +444,10 @@ func (v *WorkflowService_RegisterDomain_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [5]string
+	var fields [4]string
 	i := 0
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.DomainExistsError != nil {
@@ -507,9 +472,6 @@ func (v *WorkflowService_RegisterDomain_Result) String() string {
 // This function performs a deep comparison.
 func (v *WorkflowService_RegisterDomain_Result) Equals(rhs *WorkflowService_RegisterDomain_Result) bool {
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.DomainExistsError == nil && rhs.DomainExistsError == nil) || (v.DomainExistsError != nil && rhs.DomainExistsError != nil && v.DomainExistsError.Equals(rhs.DomainExistsError))) {

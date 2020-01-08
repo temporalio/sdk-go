@@ -217,8 +217,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.EntityNotExistsError:
 			return true
 		case *shared.ServiceBusyError:
@@ -247,11 +245,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_SignalWithStartWorkflowExecution_Result.BadRequestError")
 			}
 			return &WorkflowService_SignalWithStartWorkflowExecution_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_SignalWithStartWorkflowExecution_Result.InternalServiceError")
-			}
-			return &WorkflowService_SignalWithStartWorkflowExecution_Result{InternalServiceError: e}, nil
 		case *shared.EntityNotExistsError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_SignalWithStartWorkflowExecution_Result.EntityNotExistError")
@@ -289,10 +282,6 @@ func init() {
 	WorkflowService_SignalWithStartWorkflowExecution_Helper.UnwrapResponse = func(result *WorkflowService_SignalWithStartWorkflowExecution_Result) (success *shared.StartWorkflowExecutionResponse, err error) {
 		if result.BadRequestError != nil {
 			err = result.BadRequestError
-			return
-		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
 			return
 		}
 		if result.EntityNotExistError != nil {
@@ -340,7 +329,6 @@ type WorkflowService_SignalWithStartWorkflowExecution_Result struct {
 	// Value returned by SignalWithStartWorkflowExecution after a successful execution.
 	Success                        *shared.StartWorkflowExecutionResponse       `json:"success,omitempty"`
 	BadRequestError                *shared.BadRequestError                      `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError                 `json:"internalServiceError,omitempty"`
 	EntityNotExistError            *shared.EntityNotExistsError                 `json:"entityNotExistError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError                     `json:"serviceBusyError,omitempty"`
 	DomainNotActiveError           *shared.DomainNotActiveError                 `json:"domainNotActiveError,omitempty"`
@@ -366,7 +354,7 @@ type WorkflowService_SignalWithStartWorkflowExecution_Result struct {
 //   }
 func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [9]wire.Field
+		fields [8]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -386,14 +374,6 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) ToWire() (wire
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -502,14 +482,6 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) FromWire(w wir
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.EntityNotExistError, err = _EntityNotExistsError_Read(field.Value)
@@ -568,9 +540,6 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) FromWire(w wir
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.EntityNotExistError != nil {
 		count++
 	}
@@ -603,7 +572,7 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) String() strin
 		return "<nil>"
 	}
 
-	var fields [9]string
+	var fields [8]string
 	i := 0
 	if v.Success != nil {
 		fields[i] = fmt.Sprintf("Success: %v", v.Success)
@@ -611,10 +580,6 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) String() strin
 	}
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -654,9 +619,6 @@ func (v *WorkflowService_SignalWithStartWorkflowExecution_Result) Equals(rhs *Wo
 		return false
 	}
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.EntityNotExistError == nil && rhs.EntityNotExistError == nil) || (v.EntityNotExistError != nil && rhs.EntityNotExistError != nil && v.EntityNotExistError.Equals(rhs.EntityNotExistError))) {

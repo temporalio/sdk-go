@@ -298,6 +298,12 @@ func _ClusterInfo_Read(w wire.Value) (*shared.ClusterInfo, error) {
 	return &v, err
 }
 
+func _InternalServiceError_Read(w wire.Value) (*shared.InternalServiceError, error) {
+	var v shared.InternalServiceError
+	err := v.FromWire(w)
+	return &v, err
+}
+
 // FromWire deserializes a WorkflowService_GetClusterInfo_Result struct from its Thrift-level
 // representation. The Thrift-level representation may be obtained
 // from a ThriftRW protocol implementation.

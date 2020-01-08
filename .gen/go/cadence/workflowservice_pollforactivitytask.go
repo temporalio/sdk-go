@@ -217,8 +217,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.ServiceBusyError:
 			return true
 		case *shared.LimitExceededError:
@@ -245,11 +243,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_PollForActivityTask_Result.BadRequestError")
 			}
 			return &WorkflowService_PollForActivityTask_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_PollForActivityTask_Result.InternalServiceError")
-			}
-			return &WorkflowService_PollForActivityTask_Result{InternalServiceError: e}, nil
 		case *shared.ServiceBusyError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_PollForActivityTask_Result.ServiceBusyError")
@@ -282,10 +275,6 @@ func init() {
 	WorkflowService_PollForActivityTask_Helper.UnwrapResponse = func(result *WorkflowService_PollForActivityTask_Result) (success *shared.PollForActivityTaskResponse, err error) {
 		if result.BadRequestError != nil {
 			err = result.BadRequestError
-			return
-		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
 			return
 		}
 		if result.ServiceBusyError != nil {
@@ -329,7 +318,6 @@ type WorkflowService_PollForActivityTask_Result struct {
 	// Value returned by PollForActivityTask after a successful execution.
 	Success                        *shared.PollForActivityTaskResponse    `json:"success,omitempty"`
 	BadRequestError                *shared.BadRequestError                `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError           `json:"internalServiceError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError               `json:"serviceBusyError,omitempty"`
 	LimitExceededError             *shared.LimitExceededError             `json:"limitExceededError,omitempty"`
 	EntityNotExistError            *shared.EntityNotExistsError           `json:"entityNotExistError,omitempty"`
@@ -354,7 +342,7 @@ type WorkflowService_PollForActivityTask_Result struct {
 //   }
 func (v *WorkflowService_PollForActivityTask_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [8]wire.Field
+		fields [7]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -374,14 +362,6 @@ func (v *WorkflowService_PollForActivityTask_Result) ToWire() (wire.Value, error
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.ServiceBusyError != nil {
@@ -476,14 +456,6 @@ func (v *WorkflowService_PollForActivityTask_Result) FromWire(w wire.Value) erro
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.ServiceBusyError, err = _ServiceBusyError_Read(field.Value)
@@ -534,9 +506,6 @@ func (v *WorkflowService_PollForActivityTask_Result) FromWire(w wire.Value) erro
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.ServiceBusyError != nil {
 		count++
 	}
@@ -566,7 +535,7 @@ func (v *WorkflowService_PollForActivityTask_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [8]string
+	var fields [7]string
 	i := 0
 	if v.Success != nil {
 		fields[i] = fmt.Sprintf("Success: %v", v.Success)
@@ -574,10 +543,6 @@ func (v *WorkflowService_PollForActivityTask_Result) String() string {
 	}
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.ServiceBusyError != nil {
@@ -613,9 +578,6 @@ func (v *WorkflowService_PollForActivityTask_Result) Equals(rhs *WorkflowService
 		return false
 	}
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.ServiceBusyError == nil && rhs.ServiceBusyError == nil) || (v.ServiceBusyError != nil && rhs.ServiceBusyError != nil && v.ServiceBusyError.Equals(rhs.ServiceBusyError))) {

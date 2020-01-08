@@ -13,10 +13,10 @@ require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/fatih/structtag v1.0.0 // indirect
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
-	github.com/gogo/protobuf v1.2.1 // indirect
+	github.com/gogo/googleapis v1.3.1 // indirect
+	github.com/gogo/status v1.1.0 // indirect
 	github.com/golang/mock v1.1.1
 	github.com/jessevdk/go-flags v1.4.0 // indirect
-	github.com/kisielk/errcheck v1.2.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/opentracing/opentracing-go v1.0.2
@@ -46,9 +46,9 @@ require (
 	go.uber.org/goleak v0.10.0
 	go.uber.org/multierr v1.1.0 // indirect
 	go.uber.org/net/metrics v1.0.1 // indirect
-	go.uber.org/thriftrw v1.11.0
+	go.uber.org/thriftrw v1.20.2
 	go.uber.org/tools v0.0.0-20190430173459-422a61c266e1 // indirect
-	go.uber.org/yarpc v1.38.0
+	go.uber.org/yarpc v1.42.0
 	go.uber.org/zap v1.8.0
 	golang.org/x/lint v0.0.0-20190909230951-414d861bb4ac // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a

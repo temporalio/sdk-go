@@ -175,8 +175,6 @@ func init() {
 
 	WorkflowService_GetSearchAttributes_Helper.IsException = func(err error) bool {
 		switch err.(type) {
-		case *shared.InternalServiceError:
-			return true
 		case *shared.ServiceBusyError:
 			return true
 		case *shared.ClientVersionNotSupportedError:
@@ -192,11 +190,6 @@ func init() {
 		}
 
 		switch e := err.(type) {
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_GetSearchAttributes_Result.InternalServiceError")
-			}
-			return &WorkflowService_GetSearchAttributes_Result{InternalServiceError: e}, nil
 		case *shared.ServiceBusyError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_GetSearchAttributes_Result.ServiceBusyError")
@@ -212,10 +205,6 @@ func init() {
 		return nil, err
 	}
 	WorkflowService_GetSearchAttributes_Helper.UnwrapResponse = func(result *WorkflowService_GetSearchAttributes_Result) (success *shared.GetSearchAttributesResponse, err error) {
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
-			return
-		}
 		if result.ServiceBusyError != nil {
 			err = result.ServiceBusyError
 			return
@@ -244,7 +233,6 @@ func init() {
 type WorkflowService_GetSearchAttributes_Result struct {
 	// Value returned by GetSearchAttributes after a successful execution.
 	Success                        *shared.GetSearchAttributesResponse    `json:"success,omitempty"`
-	InternalServiceError           *shared.InternalServiceError           `json:"internalServiceError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError               `json:"serviceBusyError,omitempty"`
 	ClientVersionNotSupportedError *shared.ClientVersionNotSupportedError `json:"clientVersionNotSupportedError,omitempty"`
 }
@@ -266,7 +254,7 @@ type WorkflowService_GetSearchAttributes_Result struct {
 //   }
 func (v *WorkflowService_GetSearchAttributes_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [3]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -278,14 +266,6 @@ func (v *WorkflowService_GetSearchAttributes_Result) ToWire() (wire.Value, error
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 0, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 1, Value: w}
 		i++
 	}
 	if v.ServiceBusyError != nil {
@@ -348,14 +328,6 @@ func (v *WorkflowService_GetSearchAttributes_Result) FromWire(w wire.Value) erro
 				}
 
 			}
-		case 1:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 2:
 			if field.Value.Type() == wire.TStruct {
 				v.ServiceBusyError, err = _ServiceBusyError_Read(field.Value)
@@ -379,9 +351,6 @@ func (v *WorkflowService_GetSearchAttributes_Result) FromWire(w wire.Value) erro
 	if v.Success != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.ServiceBusyError != nil {
 		count++
 	}
@@ -402,14 +371,10 @@ func (v *WorkflowService_GetSearchAttributes_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [3]string
 	i := 0
 	if v.Success != nil {
 		fields[i] = fmt.Sprintf("Success: %v", v.Success)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.ServiceBusyError != nil {
@@ -430,9 +395,6 @@ func (v *WorkflowService_GetSearchAttributes_Result) String() string {
 // This function performs a deep comparison.
 func (v *WorkflowService_GetSearchAttributes_Result) Equals(rhs *WorkflowService_GetSearchAttributes_Result) bool {
 	if !((v.Success == nil && rhs.Success == nil) || (v.Success != nil && rhs.Success != nil && v.Success.Equals(rhs.Success))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.ServiceBusyError == nil && rhs.ServiceBusyError == nil) || (v.ServiceBusyError != nil && rhs.ServiceBusyError != nil && v.ServiceBusyError.Equals(rhs.ServiceBusyError))) {

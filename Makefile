@@ -1,11 +1,11 @@
-.PHONY: test bins clean cover cover_ci
+.PHONY: git-submodules test bins clean cover cover_ci
 
 # default target
 default: test
 
 IMPORT_ROOT := go.uber.org/cadence
 THRIFT_GENDIR := .gen/go
-THRIFTRW_SRC := idl/github.com/uber/cadence/cadence.thrift
+THRIFTRW_SRC := idls/thrift/cadence.thrift
 # one or more thriftrw-generated file(s), to create / depend on generated code
 THRIFTRW_OUT := $(THRIFT_GENDIR)/cadence/idl.go
 TEST_ARG ?= -v -race
@@ -85,6 +85,16 @@ $(THRIFTRW_OUT): $(THRIFTRW_SRC) $(BINS)/thriftrw $(BINS)/thriftrw-plugin-yarpc
 		        --pkg-prefix=$(IMPORT_ROOT)/$(THRIFT_GENDIR) \
 		        --out=$(THRIFT_GENDIR) $(source);)
 
+git-submodules:
+	git submodule update --init --recursive
+
+yarpc-install:
+	GO111MODULE=off go get -u github.com/myitcv/gobin
+	GOOS= GOARCH= gobin -mod=readonly go.uber.org/thriftrw
+	GOOS= GOARCH= gobin -mod=readonly go.uber.org/yarpc/encoding/thrift/thriftrw-plugin-yarpc
+
+thriftc: git-submodules yarpc-install $(THRIFTRW_OUT) copyright
+
 clean_thrift:
 	rm -rf .gen
 
@@ -98,8 +108,7 @@ copyright $(BUILD)/copyright: $(ALL_SRC)
 $(BUILD)/dummy:
 	go build -i -o $@ internal/cmd/dummy/dummy.go
 
-
-bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
+bins: thriftc $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
 
 unit_test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
@@ -118,7 +127,7 @@ integ_test_sticky_on: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	STICKY_OFF=false go test $(TEST_ARG) ./test -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./...
 
-test: unit_test integ_test_sticky_off integ_test_sticky_on
+test: thriftc unit_test integ_test_sticky_off integ_test_sticky_on
 
 $(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_STICKY_OFF_COVER_FILE) $(INTEG_STICKY_ON_COVER_FILE)
 	@echo "mode: atomic" > $(COVER_ROOT)/cover.out

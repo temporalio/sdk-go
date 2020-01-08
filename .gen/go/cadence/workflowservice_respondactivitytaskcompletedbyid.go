@@ -218,8 +218,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.EntityNotExistsError:
 			return true
 		case *shared.DomainNotActiveError:
@@ -246,11 +244,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RespondActivityTaskCompletedByID_Result.BadRequestError")
 			}
 			return &WorkflowService_RespondActivityTaskCompletedByID_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RespondActivityTaskCompletedByID_Result.InternalServiceError")
-			}
-			return &WorkflowService_RespondActivityTaskCompletedByID_Result{InternalServiceError: e}, nil
 		case *shared.EntityNotExistsError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_RespondActivityTaskCompletedByID_Result.EntityNotExistError")
@@ -285,10 +278,6 @@ func init() {
 			err = result.BadRequestError
 			return
 		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
-			return
-		}
 		if result.EntityNotExistError != nil {
 			err = result.EntityNotExistError
 			return
@@ -319,7 +308,6 @@ func init() {
 // The result of a RespondActivityTaskCompletedByID execution is sent and received over the wire as this struct.
 type WorkflowService_RespondActivityTaskCompletedByID_Result struct {
 	BadRequestError                *shared.BadRequestError                `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError           `json:"internalServiceError,omitempty"`
 	EntityNotExistError            *shared.EntityNotExistsError           `json:"entityNotExistError,omitempty"`
 	DomainNotActiveError           *shared.DomainNotActiveError           `json:"domainNotActiveError,omitempty"`
 	LimitExceededError             *shared.LimitExceededError             `json:"limitExceededError,omitempty"`
@@ -344,7 +332,7 @@ type WorkflowService_RespondActivityTaskCompletedByID_Result struct {
 //   }
 func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [7]wire.Field
+		fields [6]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -356,14 +344,6 @@ func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) ToWire() (wire
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -444,14 +424,6 @@ func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) FromWire(w wir
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.EntityNotExistError, err = _EntityNotExistsError_Read(field.Value)
@@ -499,9 +471,6 @@ func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) FromWire(w wir
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.EntityNotExistError != nil {
 		count++
 	}
@@ -531,14 +500,10 @@ func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) String() strin
 		return "<nil>"
 	}
 
-	var fields [7]string
+	var fields [6]string
 	i := 0
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -571,9 +536,6 @@ func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) String() strin
 // This function performs a deep comparison.
 func (v *WorkflowService_RespondActivityTaskCompletedByID_Result) Equals(rhs *WorkflowService_RespondActivityTaskCompletedByID_Result) bool {
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.EntityNotExistError == nil && rhs.EntityNotExistError == nil) || (v.EntityNotExistError != nil && rhs.EntityNotExistError != nil && v.EntityNotExistError.Equals(rhs.EntityNotExistError))) {

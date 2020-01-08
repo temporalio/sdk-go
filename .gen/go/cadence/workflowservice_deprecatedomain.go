@@ -218,8 +218,6 @@ func init() {
 		switch err.(type) {
 		case *shared.BadRequestError:
 			return true
-		case *shared.InternalServiceError:
-			return true
 		case *shared.EntityNotExistsError:
 			return true
 		case *shared.ServiceBusyError:
@@ -244,11 +242,6 @@ func init() {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_DeprecateDomain_Result.BadRequestError")
 			}
 			return &WorkflowService_DeprecateDomain_Result{BadRequestError: e}, nil
-		case *shared.InternalServiceError:
-			if e == nil {
-				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_DeprecateDomain_Result.InternalServiceError")
-			}
-			return &WorkflowService_DeprecateDomain_Result{InternalServiceError: e}, nil
 		case *shared.EntityNotExistsError:
 			if e == nil {
 				return nil, errors.New("WrapResponse received non-nil error type with nil value for WorkflowService_DeprecateDomain_Result.EntityNotExistError")
@@ -278,10 +271,6 @@ func init() {
 			err = result.BadRequestError
 			return
 		}
-		if result.InternalServiceError != nil {
-			err = result.InternalServiceError
-			return
-		}
 		if result.EntityNotExistError != nil {
 			err = result.EntityNotExistError
 			return
@@ -308,7 +297,6 @@ func init() {
 // The result of a DeprecateDomain execution is sent and received over the wire as this struct.
 type WorkflowService_DeprecateDomain_Result struct {
 	BadRequestError                *shared.BadRequestError                `json:"badRequestError,omitempty"`
-	InternalServiceError           *shared.InternalServiceError           `json:"internalServiceError,omitempty"`
 	EntityNotExistError            *shared.EntityNotExistsError           `json:"entityNotExistError,omitempty"`
 	ServiceBusyError               *shared.ServiceBusyError               `json:"serviceBusyError,omitempty"`
 	DomainNotActiveError           *shared.DomainNotActiveError           `json:"domainNotActiveError,omitempty"`
@@ -332,7 +320,7 @@ type WorkflowService_DeprecateDomain_Result struct {
 //   }
 func (v *WorkflowService_DeprecateDomain_Result) ToWire() (wire.Value, error) {
 	var (
-		fields [6]wire.Field
+		fields [5]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -344,14 +332,6 @@ func (v *WorkflowService_DeprecateDomain_Result) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 1, Value: w}
-		i++
-	}
-	if v.InternalServiceError != nil {
-		w, err = v.InternalServiceError.ToWire()
-		if err != nil {
-			return w, err
-		}
-		fields[i] = wire.Field{ID: 2, Value: w}
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -430,14 +410,6 @@ func (v *WorkflowService_DeprecateDomain_Result) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 2:
-			if field.Value.Type() == wire.TStruct {
-				v.InternalServiceError, err = _InternalServiceError_Read(field.Value)
-				if err != nil {
-					return err
-				}
-
-			}
 		case 3:
 			if field.Value.Type() == wire.TStruct {
 				v.EntityNotExistError, err = _EntityNotExistsError_Read(field.Value)
@@ -477,9 +449,6 @@ func (v *WorkflowService_DeprecateDomain_Result) FromWire(w wire.Value) error {
 	if v.BadRequestError != nil {
 		count++
 	}
-	if v.InternalServiceError != nil {
-		count++
-	}
 	if v.EntityNotExistError != nil {
 		count++
 	}
@@ -506,14 +475,10 @@ func (v *WorkflowService_DeprecateDomain_Result) String() string {
 		return "<nil>"
 	}
 
-	var fields [6]string
+	var fields [5]string
 	i := 0
 	if v.BadRequestError != nil {
 		fields[i] = fmt.Sprintf("BadRequestError: %v", v.BadRequestError)
-		i++
-	}
-	if v.InternalServiceError != nil {
-		fields[i] = fmt.Sprintf("InternalServiceError: %v", v.InternalServiceError)
 		i++
 	}
 	if v.EntityNotExistError != nil {
@@ -542,9 +507,6 @@ func (v *WorkflowService_DeprecateDomain_Result) String() string {
 // This function performs a deep comparison.
 func (v *WorkflowService_DeprecateDomain_Result) Equals(rhs *WorkflowService_DeprecateDomain_Result) bool {
 	if !((v.BadRequestError == nil && rhs.BadRequestError == nil) || (v.BadRequestError != nil && rhs.BadRequestError != nil && v.BadRequestError.Equals(rhs.BadRequestError))) {
-		return false
-	}
-	if !((v.InternalServiceError == nil && rhs.InternalServiceError == nil) || (v.InternalServiceError != nil && rhs.InternalServiceError != nil && v.InternalServiceError.Equals(rhs.InternalServiceError))) {
 		return false
 	}
 	if !((v.EntityNotExistError == nil && rhs.EntityNotExistError == nil) || (v.EntityNotExistError != nil && rhs.EntityNotExistError != nil && v.EntityNotExistError.Equals(rhs.EntityNotExistError))) {
