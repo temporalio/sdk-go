@@ -232,12 +232,11 @@ func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain stri
 		defer cancel()
 		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain})
 		if err != nil {
-			st := status.Convert(err)
-			if st.Code() == codes.NotFound {
+			switch status.Code(err) {
+			case codes.NotFound:
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
-			}
-			if st.Code() == codes.InvalidArgument {
+			case codes.InvalidArgument:
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}

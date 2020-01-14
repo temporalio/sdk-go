@@ -268,13 +268,7 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
 	if err != nil {
 		st := status.Convert(err)
-		details := st.Details()
-		var failure interface{}
-		if len(details) > 0 {
-			failure = details[0]
-		}
-
-		if failure, isExecutionAlreadyStartedFailure := failure.(*errordetails.WorkflowExecutionAlreadyStartedFailure); isExecutionAlreadyStartedFailure {
+		if failure, isExecutionAlreadyStartedFailure := errordetails.GetWorkflowExecutionAlreadyStartedFailure(st); isExecutionAlreadyStartedFailure {
 			runID = failure.RunId
 			workflowID = options.ID
 		} else {
