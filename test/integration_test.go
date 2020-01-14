@@ -419,7 +419,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if status.Convert(err).Code() == codes.AlreadyExists {
+		if status.Code(err) == codes.AlreadyExists {
 			return
 		}
 	}
@@ -430,7 +430,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if status.Convert(err).Code() == codes.NotFound {
+		if status.Code(err) == codes.NotFound {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {
