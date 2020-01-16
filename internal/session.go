@@ -60,10 +60,14 @@ type (
 	// ExecutionTimeout: required, no default
 	//     Specifies the maximum amount of time the session can run
 	// CreationTimeout: required, no default
-	//     Specfifies how long session creation can take before returning an error
+	//     Specifies how long session creation can take before returning an error
+	// HeartbeatTimeout: optional, default 20s
+	//     Specifies the heartbeat timeout. If heartbeat is not received by server
+	//     within the timeout, the session will be declared as failed
 	SessionOptions struct {
 		ExecutionTimeout time.Duration
 		CreationTimeout  time.Duration
+		HeartbeatTimeout time.Duration
 	}
 
 	recreateSessionParams struct {
@@ -117,7 +121,8 @@ const (
 
 	errTooManySessionsMsg string = "too many outstanding sessions"
 
-	sessionHeartBeatTimeout time.Duration = time.Second * 10
+	defaultSessionHeartBeatTimeout time.Duration = time.Second * 20
+	maxSessionHeartBeatInterval    time.Duration = time.Second * 10
 )
 
 var (
@@ -300,11 +305,15 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		},
 	}
 
+	heartbeatTimeout := defaultSessionHeartBeatTimeout
+	if options.HeartbeatTimeout != time.Duration(0) {
+		heartbeatTimeout = options.HeartbeatTimeout
+	}
 	ao := ActivityOptions{
 		TaskList:               creationTasklist,
 		ScheduleToStartTimeout: options.CreationTimeout,
 		StartToCloseTimeout:    options.ExecutionTimeout,
-		HeartbeatTimeout:       sessionHeartBeatTimeout,
+		HeartbeatTimeout:       heartbeatTimeout,
 	}
 	if retryable {
 		ao.RetryPolicy = retryPolicy
@@ -400,7 +409,11 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 	}
 
 	activityEnv := getActivityEnv(ctx)
-	ticker := time.NewTicker(activityEnv.heartbeatTimeout / 2)
+	heartbeatInterval := activityEnv.heartbeatTimeout / 3
+	if heartbeatInterval > maxSessionHeartBeatInterval {
+		heartbeatInterval = maxSessionHeartBeatInterval
+	}
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
 	for {

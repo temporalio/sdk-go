@@ -36,7 +36,10 @@ type (
 	// ExecutionTimeout: required, no default
 	//     Specifies the maximum amount of time the session can run
 	// CreationTimeout: required, no default
-	//     Specfifies how long session creation can take before returning an error
+	//     Specifies how long session creation can take before returning an error
+	// HeartbeatTimeout: optional, default 20s
+	//     Specifies the heartbeat timeout. If heartbeat is not received by server
+	//     within the timeout, the session will be declared as failed
 	SessionOptions = internal.SessionOptions
 )
 
