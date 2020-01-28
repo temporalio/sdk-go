@@ -91,12 +91,11 @@ func waitForTCP(timeout time.Duration, addr string) error {
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = newConfig()
-	ts.activities = &Activities{}
+	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
 	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
-	ts.Nil(err)
+	ts.NoError(err)
 	ts.rpcClient = rpcClient
 	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
 	ts.registerDomain()
@@ -140,6 +139,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution: ts.config.IsStickyOff,
 		Logger:                 logger,
 	})
+	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
 
@@ -382,6 +382,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
+	workflow.RegisterWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err = worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
