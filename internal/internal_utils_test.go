@@ -26,11 +26,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
 	"go.temporal.io/temporal-proto/enums"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
+	t.Parallel()
 	builder := &contextBuilder{Timeout: defaultRPCTimeout}
 
 	opt1 := chanTimeout(time.Minute)
@@ -40,6 +40,7 @@ func TestChannelBuilderOptions(t *testing.T) {
 }
 
 func TestNewValues(t *testing.T) {
+	t.Parallel()
 	var details []interface{}
 	heartbeatDetail := "status-report-to-workflow"
 	heartbeatDetail2 := 1
@@ -62,17 +63,19 @@ func TestNewValues(t *testing.T) {
 }
 
 func TestNewValue(t *testing.T) {
+	t.Parallel()
 	heartbeatDetail := "status-report-to-workflow"
 	data, err := encodeArg(nil, heartbeatDetail)
 	if err != nil {
 		panic(err)
 	}
 	var res string
-	_ = NewValue(data).Get(&res)
+	require.NoError(t, NewValue(data).Get(&res))
 	require.Equal(t, res, heartbeatDetail)
 }
 
 func TestGetErrorDetails_CustomError(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
@@ -92,6 +95,7 @@ func TestGetErrorDetails_CustomError(t *testing.T) {
 }
 
 func TestGetErrorDetails_CancelError(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
@@ -111,6 +115,7 @@ func TestGetErrorDetails_CancelError(t *testing.T) {
 }
 
 func TestGetErrorDetails_TimeoutError(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
@@ -130,6 +135,7 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 }
 
 func TestConstructError_TimeoutError(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)

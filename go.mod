@@ -12,11 +12,11 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
-	github.com/uber-go/atomic v1.4.0 // indirect
 	github.com/uber-go/tally v3.3.13+incompatible
-	github.com/uber/jaeger-client-go v2.15.0+incompatible
-	go.temporal.io/temporal-proto v0.0.0-20200107080218-07c36368bde5
-	go.uber.org/atomic v1.5.0
+	github.com/uber/jaeger-client-go v2.22.1+incompatible
+	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
+	go.temporal.io/temporal-proto v0.0.0-20200128005619-937eafde1622
+	go.uber.org/atomic v1.5.1
 	go.uber.org/goleak v0.10.0
 	go.uber.org/zap v1.13.0
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859

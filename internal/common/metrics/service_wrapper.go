@@ -84,11 +84,9 @@ const (
 	scopeNameDescribeWorkflowExecution        = CadenceMetricsPrefix + "DescribeWorkflowExecution"
 	scopeNameResetStickyTaskList              = CadenceMetricsPrefix + "ResetStickyTaskList"
 	scopeNameGetSearchAttributes              = CadenceMetricsPrefix + "GetSearchAttributes"
-	scopeNameGetReplicationMessages           = CadenceMetricsPrefix + "GetReplicationMessages"
-	scopeNameGetDomainReplicationMessages     = CadenceMetricsPrefix + "GetDomainReplicationMessages"
-	scopeNameReapplyEvents                    = CadenceMetricsPrefix + "ReapplyEvents"
-	scopeNameGetClusterInfo                   = CadenceMetricsPrefix + "GetClusterInfo"
 	scopeNameListTaskListPartitions           = CadenceMetricsPrefix + "ListTaskListPartitions"
+	scopeNameGetClusterInfo                   = CadenceMetricsPrefix + "GetClusterInfo"
+	scopeNameGetWorkflowExecutionRawHistory   = CadenceMetricsPrefix + "GetWorkflowExecutionRawHistory"
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
@@ -380,27 +378,6 @@ func (w *workflowServiceMetricsWrapper) GetSearchAttributes(ctx context.Context,
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) GetReplicationMessages(ctx context.Context, request *workflowservice.GetReplicationMessagesRequest, opts ...grpc.CallOption) (*workflowservice.GetReplicationMessagesResponse, error) {
-	scope := w.getOperationScope(scopeNameGetReplicationMessages)
-	result, err := w.service.GetReplicationMessages(ctx, request, opts...)
-	scope.handleError(err)
-	return result, err
-}
-
-func (w *workflowServiceMetricsWrapper) GetDomainReplicationMessages(ctx context.Context, request *workflowservice.GetDomainReplicationMessagesRequest, opts ...grpc.CallOption) (*workflowservice.GetDomainReplicationMessagesResponse, error) {
-	scope := w.getOperationScope(scopeNameGetDomainReplicationMessages)
-	result, err := w.service.GetDomainReplicationMessages(ctx, request, opts...)
-	scope.handleError(err)
-	return result, err
-}
-
-func (w *workflowServiceMetricsWrapper) ReapplyEvents(ctx context.Context, request *workflowservice.ReapplyEventsRequest, opts ...grpc.CallOption) (*workflowservice.ReapplyEventsResponse, error) {
-	scope := w.getOperationScope(scopeNameReapplyEvents)
-	result, err := w.service.ReapplyEvents(ctx, request, opts...)
-	scope.handleError(err)
-	return result, err
-}
-
 func (w *workflowServiceMetricsWrapper) GetClusterInfo(ctx context.Context, request *workflowservice.GetClusterInfoRequest, opts ...grpc.CallOption) (*workflowservice.GetClusterInfoResponse, error) {
 	scope := w.getOperationScope(scopeNameGetClusterInfo)
 	result, err := w.service.GetClusterInfo(ctx, request, opts...)
@@ -411,6 +388,13 @@ func (w *workflowServiceMetricsWrapper) GetClusterInfo(ctx context.Context, requ
 func (w *workflowServiceMetricsWrapper) ListTaskListPartitions(ctx context.Context, request *workflowservice.ListTaskListPartitionsRequest, opts ...grpc.CallOption) (*workflowservice.ListTaskListPartitionsResponse, error) {
 	scope := w.getOperationScope(scopeNameListTaskListPartitions)
 	result, err := w.service.ListTaskListPartitions(ctx, request, opts...)
+	scope.handleError(err)
+	return result, err
+}
+
+func (w *workflowServiceMetricsWrapper) GetWorkflowExecutionRawHistory(ctx context.Context, request *workflowservice.GetWorkflowExecutionRawHistoryRequest, opts ...grpc.CallOption) (*workflowservice.GetWorkflowExecutionRawHistoryResponse, error) {
+	scope := w.getOperationScope(scopeNameGetWorkflowExecutionRawHistory)
+	result, err := w.service.GetWorkflowExecutionRawHistory(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }

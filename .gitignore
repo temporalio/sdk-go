@@ -18,3 +18,4 @@ test.log
 .build
 .bins
 .DS_Store
+.gobincache

@@ -30,6 +30,7 @@ import (
 )
 
 func TestSetMemoOnStart(t *testing.T) {
+	t.Parallel()
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 
@@ -49,6 +50,7 @@ func TestSetMemoOnStart(t *testing.T) {
 }
 
 func TestSetSearchAttributesOnStart(t *testing.T) {
+	t.Parallel()
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 
@@ -92,6 +94,7 @@ func TestNoExplicitRegistrationRequired(t *testing.T) {
 }
 
 func TestUnregisteredActivity(t *testing.T) {
+	t.Parallel()
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 	workflow := func(ctx Context) error {

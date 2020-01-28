@@ -51,29 +51,35 @@ func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, ar
 	return retValues[0].Interface().(string)
 }
 
-func testDataConverterHelper(t *testing.T, dc DataConverter) {
-	f1 := func(ctx Context, r []byte) string {
-		return "result"
-	}
-	r1 := testDataConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
-	require.Equal(t, r1, "result")
-	// No parameters.
-	f2 := func() string {
-		return "empty-result"
-	}
-	r2 := testDataConverterFunction(t, dc, f2)
-	require.Equal(t, r2, "empty-result")
-	// Nil parameter.
-	f3 := func(r []byte) string {
-		return "nil-result"
-	}
-	r3 := testDataConverterFunction(t, dc, f3, []byte(""))
-	require.Equal(t, r3, "nil-result")
-}
-
 func TestDefaultDataConverter(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
-	testDataConverterHelper(t, dc)
+	t.Run("result", func(t *testing.T) {
+		t.Parallel()
+		f1 := func(ctx Context, r []byte) string {
+			return "result"
+		}
+		r1 := testDataConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
+		require.Equal(t, r1, "result")
+	})
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		// No parameters.
+		f2 := func() string {
+			return "empty-result"
+		}
+		r2 := testDataConverterFunction(t, dc, f2)
+		require.Equal(t, r2, "empty-result")
+	})
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		// Nil parameter.
+		f3 := func(r []byte) string {
+			return "nil-result"
+		}
+		r3 := testDataConverterFunction(t, dc, f3, []byte(""))
+		require.Equal(t, r3, "nil-result")
+	})
 }
 
 // testDataConverter implements encoded.DataConverter using gob
@@ -106,12 +112,8 @@ func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) er
 	return nil
 }
 
-func TestTestDataConverter(t *testing.T) {
-	dc := newTestDataConverter()
-	testDataConverterHelper(t, dc)
-}
-
 func TestDecodeArg(t *testing.T) {
+	t.Parallel()
 	dc := getDefaultDataConverter()
 
 	b, err := encodeArg(dc, testErrorDetails3)
