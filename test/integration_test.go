@@ -32,12 +32,11 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
-
-	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
@@ -92,11 +91,12 @@ func waitForTCP(timeout time.Duration, addr string) error {
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = newConfig()
-	ts.activities = newActivities()
+	ts.activities = &Activities{}
 	ts.workflows = &Workflows{}
+	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
 	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
-	ts.NoError(err)
+	ts.Nil(err)
 	ts.rpcClient = rpcClient
 	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
 	ts.registerDomain()
@@ -105,6 +105,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.rpcClient.Close()
+
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
 	max := time.After(time.Minute)
@@ -139,7 +140,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution: ts.config.IsStickyOff,
 		Logger:                 logger,
 	})
-	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
 
@@ -380,9 +380,9 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
-	logger, _ := zap.NewDevelopment()
-	workflow.RegisterWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err := worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
+	logger, err := zap.NewDevelopment()
+	ts.NoError(err)
+	err = worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 
@@ -409,12 +409,12 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	domainClient := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
+	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := domainClient.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})

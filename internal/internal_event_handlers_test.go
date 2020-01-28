@@ -22,28 +22,22 @@ package internal
 
 import (
 	"encoding/json"
-	"io/ioutil"
-	"os"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-
 	commonproto "go.temporal.io/temporal-proto/common"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestReplayAwareLogger(t *testing.T) {
-	temp, err := ioutil.TempFile("", "temporal-client-test")
-	require.NoError(t, err, "Failed to create temp file.")
-	defer func() { _ = os.Remove(temp.Name()) }()
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{temp.Name()}
-	config.EncoderConfig.TimeKey = "" // no timestamps in tests
+	t.Parallel()
+	core, observed := observer.New(zapcore.InfoLevel)
+	logger := zap.New(core, zap.Development())
 
 	isReplay, enableLoggingInReplay := false, false
-	logger, err := config.Build()
-	require.NoError(t, err, "Failed to create logger.")
 	logger = logger.WithOptions(zap.WrapCore(wrapLogger(&isReplay, &enableLoggingInReplay)))
 
 	logger.Info("normal info")
@@ -57,16 +51,15 @@ func TestReplayAwareLogger(t *testing.T) {
 	isReplay = true
 	logger.Info("replay2 info")
 
-	_ = logger.Sync()
-
-	byteContents, err := ioutil.ReadAll(temp)
-	require.NoError(t, err, "Couldn't read log contents from temp file.")
-	logs := string(byteContents)
-
-	require.True(t, strings.Contains(logs, "normal info"), "normal info should show")
-	require.False(t, strings.Contains(logs, "replay info"), "replay info should not show")
-	require.True(t, strings.Contains(logs, "normal2 info"), "normal2 info should show")
-	require.True(t, strings.Contains(logs, "replay2 info"), "replay2 info should show")
+	var messages []string
+	for _, log := range observed.AllUntimed() {
+		messages = append(messages, log.Message)
+	}
+	assert.Len(t, messages, 3) // ensures "replay info" wasn't just misspelled
+	assert.Contains(t, messages, "normal info")
+	assert.NotContains(t, messages, "replay info")
+	assert.Contains(t, messages, "normal2 info")
+	assert.Contains(t, messages, "replay2 info")
 }
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
@@ -86,6 +79,7 @@ func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 }
 
 func TestDecodedValue(t *testing.T) {
+	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		dataConverter: getDefaultDataConverter(),
 	}
@@ -93,6 +87,7 @@ func TestDecodedValue(t *testing.T) {
 }
 
 func TestDecodedValue_WithDataConverter(t *testing.T) {
+	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		dataConverter: newTestDataConverter(),
 	}
@@ -100,6 +95,7 @@ func TestDecodedValue_WithDataConverter(t *testing.T) {
 }
 
 func Test_DecodedValuePtr(t *testing.T) {
+	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		dataConverter: getDefaultDataConverter(),
 	}
@@ -119,6 +115,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 }
 
 func Test_DecodedValueNil(t *testing.T) {
+	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		dataConverter: getDefaultDataConverter(),
 	}
@@ -143,6 +140,7 @@ func Test_DecodedValueNil(t *testing.T) {
 }
 
 func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
+	t.Parallel()
 	_, err := validateAndSerializeSearchAttributes(nil)
 	require.EqualError(t, err, "search attributes is empty")
 
@@ -164,6 +162,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 }
 
 func Test_UpsertSearchAttributes(t *testing.T) {
+	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
@@ -185,6 +184,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 }
 
 func Test_MergeSearchAttributes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		current  *commonproto.SearchAttributes
@@ -228,7 +228,9 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			result := mergeSearchAttributes(test.current, test.upsert)
 			require.Equal(t, test.expected, result)
 		})
@@ -236,6 +238,7 @@ func Test_MergeSearchAttributes(t *testing.T) {
 }
 
 func Test_GetChangeVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		changeID string
@@ -256,7 +259,9 @@ func Test_GetChangeVersion(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			result := getChangeVersion(test.changeID, test.version)
 			require.Equal(t, test.expected, result)
 		})
@@ -264,6 +269,7 @@ func Test_GetChangeVersion(t *testing.T) {
 }
 
 func Test_GetChangeVersions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                   string
 		changeID               string
@@ -289,7 +295,9 @@ func Test_GetChangeVersions(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			result := getChangeVersions(test.changeID, test.version, test.existingChangeVersions)
 			require.Equal(t, test.expected, result)
 		})
@@ -297,6 +305,7 @@ func Test_GetChangeVersions(t *testing.T) {
 }
 
 func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
+	t.Parallel()
 	result := createSearchAttributesForChangeVersion("cid", 1, map[string]Version{})
 	val, ok := result["CadenceChangeVersion"]
 	require.True(t, ok, "Remember to update related key on server side")
