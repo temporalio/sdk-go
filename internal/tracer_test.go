@@ -80,6 +80,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
 	span := tracer.StartSpan("test-operation")
+	assert.NotNil(t, span.Context())
 	ctx := contextWithSpan(Background(), span.Context())
 	header := &shared.Header{
 		Fields: map[string][]byte{},
@@ -88,13 +89,17 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	err = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
 	require.NoError(t, err)
 
-	returnCtx := Background()
-	returnCtx, err = ctxProp.ExtractToWorkflow(returnCtx, NewHeaderReader(header))
+	returnCtx, err := ctxProp.ExtractToWorkflow(Background(), NewHeaderReader(header))
+	require.NoError(t, err)
+
+	returnCtx2, err := ctxProp.ExtractToWorkflow(Background(), NewHeaderReader(header))
 	require.NoError(t, err)
 
 	newSpanContext := spanFromContext(returnCtx)
 	assert.NotNil(t, newSpanContext)
-	assert.Equal(t, span.Context(), newSpanContext)
+	newSpanContext2 := spanFromContext(returnCtx2)
+	assert.NotNil(t, newSpanContext2)
+	assert.Equal(t, newSpanContext2, newSpanContext)
 }
 
 func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
