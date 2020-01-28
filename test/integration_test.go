@@ -381,6 +381,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	logger, err := zap.NewDevelopment()
+	ts.NoError(err)
 	err = worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }

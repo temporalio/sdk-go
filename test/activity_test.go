@@ -43,13 +43,6 @@ type Activities2 struct {
 
 var errFailOnPurpose = temporal.NewCustomError("failing-on-purpose")
 
-func newActivities() *Activities {
-	activities2 := &Activities2{}
-	result := &Activities{activities2: activities2}
-	activities2.impl = result
-	return result
-}
-
 func (a *Activities) RetryTimeoutStableErrorActivity() error {
 	time.Sleep(time.Second * 3)
 	return errFailOnPurpose
