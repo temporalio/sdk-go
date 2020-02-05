@@ -70,10 +70,6 @@ var (
 		libraryVersionHeaderName: LibraryVersion,
 		featureVersionHeaderName: FeatureVersion,
 		clientImplHeaderName:     clientImplHeaderValue,
-		// TODO: remove these headers when server is vanilla gRPC (not YARPC)
-		"rpc-caller":   "temporal-go-client",
-		"rpc-service":  "cadence-frontend",
-		"rpc-encoding": "proto",
 	})
 )
 
