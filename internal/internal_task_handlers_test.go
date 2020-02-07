@@ -1225,7 +1225,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
 	heartbeatSt := status.Convert(heartbeatErr)
-	isDomainNotActive := errordetails.IsDomainNotActiveFailure(heartbeatSt)
+	isDomainNotActive := errordetails.IsDomainNotActiveStatus(heartbeatSt)
 	t.True(isDomainNotActive, "heartbeatErr failure must be DomainNotActiveFailure.")
 	t.True(called)
 }
