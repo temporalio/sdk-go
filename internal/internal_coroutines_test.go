@@ -689,6 +689,42 @@ func TestPanic(t *testing.T) {
 	require.Contains(t, panicError.StackTrace(), "temporal/internal.TestPanic")
 }
 
+func TestAwait(t *testing.T) {
+	flag := false
+	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+		Await(ctx, func() bool { return flag })
+	})
+	err := d.ExecuteUntilAllBlocked()
+	require.NoError(t, err)
+	require.False(t, d.IsDone())
+	err = d.ExecuteUntilAllBlocked()
+	require.NoError(t, err)
+	require.False(t, d.IsDone())
+	flag = true
+	err = d.ExecuteUntilAllBlocked()
+	require.NoError(t, err)
+	require.True(t, d.IsDone())
+}
+
+func TestAwaitCancellation(t *testing.T) {
+	var awaitError error
+	ctx := createRootTestContext()
+	ctx, cancelHandler := WithCancel(ctx)
+	d, _ := newDispatcher(ctx, func(ctx Context) {
+		awaitError = Await(ctx, func() bool { return false })
+	})
+	err := d.ExecuteUntilAllBlocked()
+	require.NoError(t, err)
+	require.False(t, d.IsDone())
+	cancelHandler()
+	err = d.ExecuteUntilAllBlocked()
+	require.NoError(t, err)
+	require.True(t, d.IsDone())
+	require.Error(t, awaitError)
+	_, ok := awaitError.(*CanceledError)
+	require.True(t, ok)
+}
+
 func TestFutureSetValue(t *testing.T) {
 	var history []string
 	var f Future
