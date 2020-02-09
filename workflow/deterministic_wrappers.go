@@ -60,6 +60,20 @@ func Await(ctx Context, condition func() bool) error {
 	return internal.Await(ctx, condition)
 }
 
+// AwaitWithTimeout blocks the calling thread until condition() returns true
+// or blocking time exceeds the passed timeout value
+// Returns ok equals to false if timed out and err equals to
+// CanceledError if the ctx is canceled.
+// The following code is going to block until the captured count
+// variable is set to 5 or one hour passes.
+//
+// workflow.AwaitWithTimeout(ctx, time.Hour, func() bool {
+//   return count == 5
+// })
+func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
+	return internal.AwaitWithTimeout(ctx, timeout, condition)
+}
+
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
 	return internal.NewChannel(ctx)
