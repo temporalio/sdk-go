@@ -482,7 +482,12 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (Value, error) {
-	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter(), env.registry)
+	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
+	if err != nil {
+		panic(err)
+	}
+
+	input, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
@@ -1054,7 +1059,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	activityID := getStringID(env.nextID())
 	wOptions := augmentWorkerOptions(env.workerOptions)
 	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
-	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter, env.registry); at != nil {
+	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}

@@ -1109,28 +1109,15 @@ func TestActivityNilArgs(t *testing.T) {
 	}
 
 	args := []interface{}{nil, nil, nil}
-	_, input, err := getValidatedActivityFunction(activityFn, args, nil, getGlobalRegistry())
+	_, err := getValidatedActivityFunction(activityFn, args, getGlobalRegistry())
 	require.NoError(t, err)
 
-	reflectArgs, err := decodeArgs(nil, reflect.TypeOf(activityFn), input)
+	data, _ := encodeArgs(nil, args)
+	reflectArgs, err := decodeArgs(nil, reflect.TypeOf(activityFn), data)
 	require.NoError(t, err)
 
 	reflectResults := reflect.ValueOf(activityFn).Call(reflectArgs)
 	require.Equal(t, nilErr, reflectResults[0].Interface())
-}
-
-func TestActivityNilArgs_WithDataConverter(t *testing.T) {
-	nilErr := errors.New("nils")
-	activityFn := func(name string, idx int, strptr *string) error {
-		if name == "" && idx == 0 && strptr == nil {
-			return nilErr
-		}
-		return nil
-	}
-
-	args := []interface{}{nil, nil, nil}
-	_, _, err := getValidatedActivityFunction(activityFn, args, newTestDataConverter(), getGlobalRegistry())
-	require.Error(t, err) // testDataConverter cannot encode nil value
 }
 
 /*

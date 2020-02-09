@@ -233,6 +233,7 @@ type (
 
 const (
 	workflowEnvironmentContextKey = "workflowEnv"
+	workflowInterceptorContextKey = "workflowInterceptor"
 	workflowResultContextKey      = "workflowResult"
 	coroutinesContextKey          = "coroutines"
 	workflowEnvOptionsContextKey  = "wfEnvOptions"
@@ -261,6 +262,18 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 		panic("getWorkflowContext: Not a workflow context")
 	}
 	return wc.(workflowEnvironment)
+}
+
+type workflowContext struct {
+	env workflowEnvironment
+}
+
+func getWorkflowInterceptor(ctx Context) *workflowContext {
+	wc := ctx.Value(workflowInterceptorContextKey)
+	if wc == nil {
+		panic("getWorkflowInterceptor: Not a workflow context")
+	}
+	return wc.(*workflowContext)
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
@@ -390,6 +403,8 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 
 func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
+	rootCtx = WithValue(rootCtx, workflowInterceptorContextKey, &workflowContext{env: env})
+
 	var resultPtr *workflowResult
 	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
 

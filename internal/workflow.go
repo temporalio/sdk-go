@@ -372,11 +372,16 @@ func NewFuture(ctx Context) (Future, Settable) {
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	i := getWorkflowInterceptor(ctx)
+	return i.ExecuteActivity(ctx, activity, args...)
+}
+
+func (wc *workflowContext) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, activity)
-	activityType, input, err := getValidatedActivityFunction(activity, args, dataConverter, registry)
+	activityType, err := getValidatedActivityFunction(activity, args, registry)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -409,6 +414,11 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	// Retrieve headers from context to pass them on
 	header := getHeadersFromContext(ctx)
 
+	input, err := encodeArgs(dataConverter, args)
+	if err != nil {
+		panic(err)
+	}
+
 	params := executeActivityParams{
 		activityOptions: *options,
 		ActivityType:    *activityType,
@@ -430,7 +440,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	if cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if ctx.Err() == ErrCanceled {
-				getWorkflowEnvironment(ctx).RequestCancelActivity(a.activityID)
+				wc.env.RequestCancelActivity(a.activityID)
 			}
 			return false
 		}
