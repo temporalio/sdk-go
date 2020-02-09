@@ -2847,7 +2847,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
-	var result bool = true
-	env.GetWorkflowResult(&result)
+	result := true
+	_ = env.GetWorkflowResult(&result)
 	s.False(result)
 }

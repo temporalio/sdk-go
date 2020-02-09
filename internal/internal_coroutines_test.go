@@ -692,7 +692,7 @@ func TestPanic(t *testing.T) {
 func TestAwait(t *testing.T) {
 	flag := false
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
-		Await(ctx, func() bool { return flag })
+		_ = Await(ctx, func() bool { return flag })
 	})
 	err := d.ExecuteUntilAllBlocked()
 	require.NoError(t, err)

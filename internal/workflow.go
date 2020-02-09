@@ -282,8 +282,6 @@ func Await(ctx Context, condition func() bool) error {
 	return nil
 }
 
-var start time.Time = time.Now()
-
 // AwaitWithTimeout blocks the calling thread until condition() returns true
 // Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
