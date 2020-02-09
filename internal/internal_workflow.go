@@ -266,11 +266,16 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 
 type workflowContext struct {
 	activityInterceptor ActivityInterceptor
-	env workflowEnvironment
+	timeInterceptor     TimeInterceptor
+	env                 workflowEnvironment
 }
 
 func getActivityInterceptor(ctx Context) ActivityInterceptor {
 	return getWorkflowInterceptor(ctx).activityInterceptor
+}
+
+func getTimeInterceptor(ctx Context) TimeInterceptor {
+	return getWorkflowInterceptor(ctx).timeInterceptor
 }
 
 func getWorkflowInterceptor(ctx Context) *workflowContext {
@@ -429,7 +434,9 @@ func newWorkflowContext(env workflowEnvironment) Context {
 
 func NewWorkflowContext(env workflowEnvironment) *workflowContext {
 	result := &workflowContext{env: env}
+	//TODO: externally passed interceptors
 	result.activityInterceptor = result
+	result.timeInterceptor = result
 	return result
 }
 

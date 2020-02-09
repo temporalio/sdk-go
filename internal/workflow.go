@@ -23,6 +23,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"go.temporal.io/temporal/internal/common/backoff"
 	"strings"
 	"time"
 
@@ -751,7 +752,7 @@ func (wc *workflowContext) Now(ctx Context) time.Time {
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func NewTimer(ctx Context, d time.Duration) Future {
-	i := getWorkflowInterceptor(ctx)
+	i := getTimeInterceptor(ctx)
 	return i.NewTimer(ctx, d)
 }
 
@@ -796,7 +797,7 @@ func (wc *workflowContext) NewTimer(ctx Context, d time.Duration) Future {
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
-	i := getWorkflowInterceptor(ctx)
+	i := getTimeInterceptor(ctx)
 	return i.Sleep(ctx, d)
 }
 
@@ -1348,4 +1349,108 @@ func (wc *workflowContext) GetLastCompletionResult(ctx Context, d ...interface{}
 
 	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
+}
+
+// WithActivityOptions adds all options to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithActivityOptions(ctx Context, options ActivityOptions) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	eap := getActivityOptions(ctx1)
+
+	eap.TaskListName = options.TaskList
+	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
+	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
+	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
+	eap.WaitForCancellation = options.WaitForCancellation
+	eap.ActivityID = options.ActivityID
+	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
+	return ctx1
+}
+
+// WithLocalActivityOptions adds local activity options to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
+	ctx1 := setLocalActivityParametersIfNotExist(ctx)
+	opts := getLocalActivityOptions(ctx1)
+
+	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	opts.RetryPolicy = options.RetryPolicy
+	return ctx1
+}
+
+// WithTaskList adds a task list to the copy of the context.
+func WithTaskList(ctx Context, name string) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).TaskListName = name
+	return ctx1
+}
+
+// WithScheduleToCloseTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	return ctx1
+}
+
+// WithScheduleToStartTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	return ctx1
+}
+
+// WithStartToCloseTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	return ctx1
+}
+
+// WithHeartbeatTimeout adds a timeout to the copy of the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	return ctx1
+}
+
+// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
+func WithWaitForCancellation(ctx Context, wait bool) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).WaitForCancellation = wait
+	return ctx1
+}
+
+// WithRetryPolicy adds retry policy to the copy of the context
+func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).RetryPolicy = convertRetryPolicy(&retryPolicy)
+	return ctx1
+}
+
+func convertRetryPolicy(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+	if retryPolicy.BackoffCoefficient == 0 {
+		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
+	}
+	return &commonproto.RetryPolicy{
+		MaximumIntervalInSeconds:    common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
+		InitialIntervalInSeconds:    common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
+		BackoffCoefficient:          retryPolicy.BackoffCoefficient,
+		MaximumAttempts:             retryPolicy.MaximumAttempts,
+		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
+		ExpirationIntervalInSeconds: common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds()),
+	}
 }
