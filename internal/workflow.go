@@ -282,6 +282,28 @@ func Await(ctx Context, condition func() bool) error {
 	return nil
 }
 
+// AwaitWithTimeout blocks the calling thread until condition() returns true
+// Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
+func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
+	state := getState(ctx)
+	defer state.unblocked()
+	timer := NewTimer(ctx, timeout)
+	for !condition() {
+		doneCh := ctx.Done()
+		// TODO: Consider always returning a channel
+		if doneCh != nil {
+			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
+				return false, NewCanceledError("AwaitWithTimeout context cancelled")
+			}
+		}
+		if timer.IsReady() {
+			return false, nil
+		}
+		state.yield("AwaitWithTimeout")
+	}
+	return true, nil
+}
+
 // NewChannel create new Channel instance
 func NewChannel(ctx Context) Channel {
 	state := getState(ctx)
