@@ -265,7 +265,12 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 }
 
 type workflowContext struct {
+	activityInterceptor ActivityInterceptor
 	env workflowEnvironment
+}
+
+func getActivityInterceptor(ctx Context) ActivityInterceptor {
+	return getWorkflowInterceptor(ctx).activityInterceptor
 }
 
 func getWorkflowInterceptor(ctx Context) *workflowContext {
@@ -403,7 +408,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 
 func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
-	rootCtx = WithValue(rootCtx, workflowInterceptorContextKey, &workflowContext{env: env})
+	rootCtx = WithValue(rootCtx, workflowInterceptorContextKey, NewWorkflowContext(env))
 
 	var resultPtr *workflowResult
 	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
@@ -420,6 +425,12 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	getActivityOptions(rootCtx).OriginalTaskListName = wInfo.TaskListName
 
 	return rootCtx
+}
+
+func NewWorkflowContext(env workflowEnvironment) *workflowContext {
+	result := &workflowContext{env: env}
+	result.activityInterceptor = result
+	return result
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {

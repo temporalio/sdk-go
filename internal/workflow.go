@@ -372,7 +372,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getWorkflowInterceptor(ctx)
+	i := getActivityInterceptor(ctx)
 	return i.ExecuteActivity(ctx, activity, args...)
 }
 
@@ -484,7 +484,7 @@ func (wc *workflowContext) ExecuteActivity(ctx Context, activity interface{}, ar
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getWorkflowInterceptor(ctx)
+	i := getActivityInterceptor(ctx)
 	return i.ExecuteLocalActivity(ctx, activity, args...)
 }
 
