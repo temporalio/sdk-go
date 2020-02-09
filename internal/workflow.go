@@ -484,6 +484,11 @@ func (wc *workflowContext) ExecuteActivity(ctx Context, activity interface{}, ar
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	i := getWorkflowInterceptor(ctx)
+	return i.ExecuteLocalActivity(ctx, activity, args...)
+}
+
+func (wc *workflowContext) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	future, settable := newDecodeFuture(ctx, activity)
 
 	if err := validateFunctionArgs(activity, args, false); err != nil {
