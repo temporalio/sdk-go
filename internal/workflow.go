@@ -707,30 +707,30 @@ type WorkflowInfo struct {
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	i := getWorkflowInterceptor(ctx)
-	return i.GetWorkflowInfo()
+	return i.GetWorkflowInfo(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetWorkflowInfo() *WorkflowInfo {
+func (wc *workflowEnvironmentInterceptor) GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
 }
 
 // GetLogger returns a logger to be used in workflow's context
 func GetLogger(ctx Context) *zap.Logger {
 	i := getWorkflowInterceptor(ctx)
-	return i.GetLogger()
+	return i.GetLogger(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetLogger() *zap.Logger {
+func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) *zap.Logger {
 	return wc.env.GetLogger()
 }
 
 // GetMetricsScope returns a metrics scope to be used in workflow's context
 func GetMetricsScope(ctx Context) tally.Scope {
 	i := getWorkflowInterceptor(ctx)
-	return i.GetMetricsScope()
+	return i.GetMetricsScope(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetMetricsScope() tally.Scope {
+func (wc *workflowEnvironmentInterceptor) GetMetricsScope(ctx Context) tally.Scope {
 	return wc.env.GetMetricsScope()
 }
 
@@ -738,10 +738,10 @@ func (wc *workflowEnvironmentInterceptor) GetMetricsScope() tally.Scope {
 // The workflow needs to use this Now() to get the wall clock time instead of the Go lang library one.
 func Now(ctx Context) time.Time {
 	i := getWorkflowInterceptor(ctx)
-	return i.Now()
+	return i.Now(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) Now() time.Time {
+func (wc *workflowEnvironmentInterceptor) Now(ctx Context) time.Time {
 	return wc.env.Now()
 }
 
@@ -934,10 +934,10 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 // This is only supported when using ElasticSearch.
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	i := getWorkflowInterceptor(ctx)
-	return i.UpsertSearchAttributes(attributes)
+	return i.UpsertSearchAttributes(ctx, attributes)
 }
 
-func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(attributes map[string]interface{}) error {
+func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	if _, ok := attributes[CadenceChangeVersion]; ok {
 		return errors.New("CadenceChangeVersion is a reserved key that cannot be set, please use other key")
 	}
@@ -1203,10 +1203,10 @@ const CadenceChangeVersion = "CadenceChangeVersion"
 //  }
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	i := getWorkflowInterceptor(ctx)
-	return i.GetVersion(changeID, minSupported, maxSupported)
+	return i.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetVersion(changeID string, minSupported, maxSupported Version) Version {
+func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return wc.env.GetVersion(changeID, minSupported, maxSupported)
 }
 
@@ -1275,10 +1275,10 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType
 // workflow causes decision task to fail and cadence server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
 	i := getWorkflowInterceptor(ctx)
-	return i.IsReplaying()
+	return i.IsReplaying(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) IsReplaying() bool {
+func (wc *workflowEnvironmentInterceptor) IsReplaying(ctx Context) bool {
 	return wc.env.IsReplaying()
 }
 
@@ -1289,11 +1289,11 @@ func (wc *workflowEnvironmentInterceptor) IsReplaying() bool {
 // This HasLastCompletionResult() checks if there is such data available passing down from previous successful run.
 func HasLastCompletionResult(ctx Context) bool {
 	i := getWorkflowInterceptor(ctx)
-	return i.HasLastCompletionResult()
+	return i.HasLastCompletionResult(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult() bool {
-	info := wc.GetWorkflowInfo()
+func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult(ctx Context) bool {
+	info := wc.GetWorkflowInfo(ctx)
 	return len(info.lastCompletionResult) > 0
 }
 
@@ -1308,7 +1308,7 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 }
 
 func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d ...interface{}) error {
-	info := wc.GetWorkflowInfo()
+	info := wc.GetWorkflowInfo(ctx)
 	if len(info.lastCompletionResult) == 0 {
 		return ErrNoData
 	}
