@@ -232,11 +232,11 @@ type (
 )
 
 const (
-	workflowEnvironmentContextKey = "workflowEnv"
-	workflowInterceptorContextKey = "workflowInterceptor"
-	workflowResultContextKey      = "workflowResult"
-	coroutinesContextKey          = "coroutines"
-	workflowEnvOptionsContextKey  = "wfEnvOptions"
+	workflowEnvironmentContextKey  = "workflowEnv"
+	workflowInterceptorsContextKey = "workflowInterceptor"
+	workflowResultContextKey       = "workflowResult"
+	coroutinesContextKey           = "coroutines"
+	workflowEnvOptionsContextKey   = "wfEnvOptions"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -264,26 +264,17 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 	return wc.(workflowEnvironment)
 }
 
-type workflowContext struct {
-	activityInterceptor ActivityInterceptor
-	timeInterceptor     TimeInterceptor
-	env                 workflowEnvironment
+type workflowInterceptors struct {
+	interceptor WorkflowInterceptor
+	env         workflowEnvironment
 }
 
-func getActivityInterceptor(ctx Context) ActivityInterceptor {
-	return getWorkflowInterceptor(ctx).activityInterceptor
-}
-
-func getTimeInterceptor(ctx Context) TimeInterceptor {
-	return getWorkflowInterceptor(ctx).timeInterceptor
-}
-
-func getWorkflowInterceptor(ctx Context) *workflowContext {
-	wc := ctx.Value(workflowInterceptorContextKey)
+func getWorkflowInterceptor(ctx Context) WorkflowInterceptor {
+	wc := ctx.Value(workflowInterceptorsContextKey)
 	if wc == nil {
 		panic("getWorkflowInterceptor: Not a workflow context")
 	}
-	return wc.(*workflowContext)
+	return wc.(*workflowInterceptors)
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
@@ -413,7 +404,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 
 func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
-	rootCtx = WithValue(rootCtx, workflowInterceptorContextKey, NewWorkflowContext(env))
+	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, newWorkflowInterceptors(env))
 
 	var resultPtr *workflowResult
 	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
@@ -432,11 +423,10 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	return rootCtx
 }
 
-func NewWorkflowContext(env workflowEnvironment) *workflowContext {
-	result := &workflowContext{env: env}
+func newWorkflowInterceptors(env workflowEnvironment) *workflowInterceptors {
+	result := &workflowInterceptors{env: env}
 	//TODO: externally passed interceptors
-	result.activityInterceptor = result
-	result.timeInterceptor = result
+	result.interceptor = result
 	return result
 }
 

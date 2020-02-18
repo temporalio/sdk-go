@@ -373,11 +373,11 @@ func NewFuture(ctx Context) (Future, Settable) {
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getActivityInterceptor(ctx)
+	i := getWorkflowInterceptor(ctx)
 	return i.ExecuteActivity(ctx, activity, args...)
 }
 
-func (wc *workflowContext) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func (wc *workflowInterceptors) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	// Validate type and its arguments.
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
@@ -485,11 +485,11 @@ func (wc *workflowContext) ExecuteActivity(ctx Context, activity interface{}, ar
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getActivityInterceptor(ctx)
+	i := getWorkflowInterceptor(ctx)
 	return i.ExecuteLocalActivity(ctx, activity, args...)
 }
 
-func (wc *workflowContext) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func (wc *workflowInterceptors) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	future, settable := newDecodeFuture(ctx, activity)
 
 	if err := validateFunctionArgs(activity, args, false); err != nil {
@@ -599,7 +599,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	return i.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
-func (wc *workflowContext) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+func (wc *workflowInterceptors) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflow)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &childWorkflowFutureImpl{
@@ -710,7 +710,7 @@ func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return i.GetWorkflowInfo(ctx)
 }
 
-func (wc *workflowContext) GetWorkflowInfo(ctx Context) *WorkflowInfo {
+func (wc *workflowInterceptors) GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return getWorkflowEnvironment(ctx).WorkflowInfo()
 }
 
@@ -720,7 +720,7 @@ func GetLogger(ctx Context) *zap.Logger {
 	return i.GetLogger(ctx)
 }
 
-func (wc *workflowContext) GetLogger(ctx Context) *zap.Logger {
+func (wc *workflowInterceptors) GetLogger(ctx Context) *zap.Logger {
 	return getWorkflowEnvironment(ctx).GetLogger()
 }
 
@@ -730,7 +730,7 @@ func GetMetricsScope(ctx Context) tally.Scope {
 	return i.GetMetricsScope(ctx)
 }
 
-func (wc *workflowContext) GetMetricsScope(ctx Context) tally.Scope {
+func (wc *workflowInterceptors) GetMetricsScope(ctx Context) tally.Scope {
 	return getWorkflowEnvironment(ctx).GetMetricsScope()
 }
 
@@ -741,7 +741,7 @@ func Now(ctx Context) time.Time {
 	return i.Now(ctx)
 }
 
-func (wc *workflowContext) Now(ctx Context) time.Time {
+func (wc *workflowInterceptors) Now(ctx Context) time.Time {
 	return getWorkflowEnvironment(ctx).Now()
 }
 
@@ -752,11 +752,11 @@ func (wc *workflowContext) Now(ctx Context) time.Time {
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func NewTimer(ctx Context, d time.Duration) Future {
-	i := getTimeInterceptor(ctx)
+	i := getWorkflowInterceptor(ctx)
 	return i.NewTimer(ctx, d)
 }
 
-func (wc *workflowContext) NewTimer(ctx Context, d time.Duration) Future {
+func (wc *workflowInterceptors) NewTimer(ctx Context, d time.Duration) Future {
 	future, settable := NewFuture(ctx)
 	if d <= 0 {
 		settable.Set(true, nil)
@@ -797,11 +797,11 @@ func (wc *workflowContext) NewTimer(ctx Context, d time.Duration) Future {
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
-	i := getTimeInterceptor(ctx)
+	i := getWorkflowInterceptor(ctx)
 	return i.Sleep(ctx, d)
 }
 
-func (wc *workflowContext) Sleep(ctx Context, d time.Duration) (err error) {
+func (wc *workflowInterceptors) Sleep(ctx Context, d time.Duration) (err error) {
 	t := NewTimer(ctx, d)
 	err = t.Get(ctx, nil)
 	return
@@ -820,7 +820,7 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	return i.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
-func (wc *workflowContext) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
+func (wc *workflowInterceptors) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
@@ -862,7 +862,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
-func (wc *workflowContext) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+func (wc *workflowInterceptors) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	const childWorkflowOnly = false // this means we are not limited to child workflow
 	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
 }
@@ -936,7 +936,7 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 	return i.UpsertSearchAttributes(ctx, attributes)
 }
 
-func (wc *workflowContext) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+func (wc *workflowInterceptors) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	if _, ok := attributes[CadenceChangeVersion]; ok {
 		return errors.New("CadenceChangeVersion is a reserved key that cannot be set, please use other key")
 	}
@@ -947,11 +947,6 @@ func (wc *workflowContext) UpsertSearchAttributes(ctx Context, attributes map[st
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithChildWorkflowOptions(ctx, cwo)
-}
-
-func (wc *workflowContext) WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
 	wfOptions.domain = cwo.Domain
@@ -972,11 +967,6 @@ func (wc *workflowContext) WithChildWorkflowOptions(ctx Context, cwo ChildWorkfl
 
 // WithWorkflowDomain adds a domain to the context.
 func WithWorkflowDomain(ctx Context, name string) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithWorkflowDomain(ctx, name)
-}
-
-func (wc *workflowContext) WithWorkflowDomain(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).domain = name
 	return ctx1
@@ -984,11 +974,6 @@ func (wc *workflowContext) WithWorkflowDomain(ctx Context, name string) Context 
 
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithWorkflowTaskList(ctx, name)
-}
-
-func (wc *workflowContext) WithWorkflowTaskList(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskListName = name
 	return ctx1
@@ -996,11 +981,6 @@ func (wc *workflowContext) WithWorkflowTaskList(ctx Context, name string) Contex
 
 // WithWorkflowID adds a workflowID to the context.
 func WithWorkflowID(ctx Context, workflowID string) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithWorkflowID(ctx, workflowID)
-}
-
-func (wc *workflowContext) WithWorkflowID(ctx Context, workflowID string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).workflowID = workflowID
 	return ctx1
@@ -1010,11 +990,6 @@ func (wc *workflowContext) WithWorkflowID(ctx Context, workflowID string) Contex
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithExecutionStartToCloseTimeout(ctx, d)
-}
-
-func (wc *workflowContext) WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
@@ -1024,11 +999,6 @@ func (wc *workflowContext) WithExecutionStartToCloseTimeout(ctx Context, d time.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithWorkflowTaskStartToCloseTimeout(ctx, d)
-}
-
-func (wc *workflowContext) WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
@@ -1036,11 +1006,6 @@ func (wc *workflowContext) WithWorkflowTaskStartToCloseTimeout(ctx Context, d ti
 
 // WithDataConverter adds DataConverter to the context.
 func WithDataConverter(ctx Context, dc DataConverter) Context {
-	i := getWorkflowInterceptor(ctx)
-	return i.WithDataConverter(ctx, dc)
-}
-
-func (wc *workflowContext) WithDataConverter(ctx Context, dc DataConverter) Context {
 	if dc == nil {
 		panic("data converter is nil for WithDataConverter")
 	}
@@ -1062,7 +1027,7 @@ func GetSignalChannel(ctx Context, signalName string) Channel {
 	return i.GetSignalChannel(ctx, signalName)
 }
 
-func (wc *workflowContext) GetSignalChannel(ctx Context, signalName string) Channel {
+func (wc *workflowInterceptors) GetSignalChannel(ctx Context, signalName string) Channel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
@@ -1127,7 +1092,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 	return i.SideEffect(ctx, f)
 }
 
-func (wc *workflowContext) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
+func (wc *workflowInterceptors) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() ([]byte, error) {
@@ -1165,7 +1130,7 @@ func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, 
 	return i.MutableSideEffect(ctx, id, f, equals)
 }
 
-func (wc *workflowContext) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
+func (wc *workflowInterceptors) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
 	wrapperFunc := func() interface{} {
 		return f(ctx)
 	}
@@ -1240,7 +1205,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 	return i.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
-func (wc *workflowContext) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
+func (wc *workflowInterceptors) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return getWorkflowEnvironment(ctx).GetVersion(changeID, minSupported, maxSupported)
 }
 
@@ -1287,7 +1252,7 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
-func (wc *workflowContext) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+func (wc *workflowInterceptors) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	if strings.HasPrefix(queryType, "__") {
 		return errors.New("queryType starts with '__' is reserved for internal use")
 	}
@@ -1312,7 +1277,7 @@ func IsReplaying(ctx Context) bool {
 	return i.IsReplaying(ctx)
 }
 
-func (wc *workflowContext) IsReplaying(ctx Context) bool {
+func (wc *workflowInterceptors) IsReplaying(ctx Context) bool {
 	return getWorkflowEnvironment(ctx).IsReplaying()
 }
 
@@ -1326,7 +1291,7 @@ func HasLastCompletionResult(ctx Context) bool {
 	return i.HasLastCompletionResult(ctx)
 }
 
-func (wc *workflowContext) HasLastCompletionResult(ctx Context) bool {
+func (wc *workflowInterceptors) HasLastCompletionResult(ctx Context) bool {
 	info := GetWorkflowInfo(ctx)
 	return len(info.lastCompletionResult) > 0
 }
@@ -1341,7 +1306,7 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return i.GetLastCompletionResult(ctx, d...)
 }
 
-func (wc *workflowContext) GetLastCompletionResult(ctx Context, d ...interface{}) error {
+func (wc *workflowInterceptors) GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	info := GetWorkflowInfo(ctx)
 	if len(info.lastCompletionResult) == 0 {
 		return ErrNoData
