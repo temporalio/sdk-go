@@ -38,21 +38,21 @@ type WorkflowInterceptor interface {
 	ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
 	ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture
-	GetWorkflowInfo(ctx Context) *WorkflowInfo
-	GetLogger(ctx Context) *zap.Logger
-	GetMetricsScope(ctx Context) tally.Scope
-	Now(ctx Context) time.Time
+	GetWorkflowInfo() *WorkflowInfo
+	GetLogger() *zap.Logger
+	GetMetricsScope() tally.Scope
+	Now() time.Time
 	NewTimer(ctx Context, d time.Duration) Future
 	Sleep(ctx Context, d time.Duration) (err error)
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
-	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
+	UpsertSearchAttributes(attributes map[string]interface{}) error
 	GetSignalChannel(ctx Context, signalName string) Channel
 	SideEffect(ctx Context, f func(ctx Context) interface{}) Value
 	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value
-	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
+	GetVersion(changeID string, minSupported, maxSupported Version) Version
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
-	IsReplaying(ctx Context) bool
-	HasLastCompletionResult(ctx Context) bool
+	IsReplaying() bool
+	HasLastCompletionResult() bool
 	GetLastCompletionResult(ctx Context, d ...interface{}) error
 }

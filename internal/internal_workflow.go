@@ -264,9 +264,8 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 	return wc.(workflowEnvironment)
 }
 
-type workflowInterceptors struct {
-	interceptor WorkflowInterceptor
-	env         workflowEnvironment
+type workflowEnvironmentInterceptor struct {
+	env workflowEnvironment
 }
 
 func getWorkflowInterceptor(ctx Context) WorkflowInterceptor {
@@ -274,7 +273,7 @@ func getWorkflowInterceptor(ctx Context) WorkflowInterceptor {
 	if wc == nil {
 		panic("getWorkflowInterceptor: Not a workflow context")
 	}
-	return wc.(*workflowInterceptors)
+	return wc.(WorkflowInterceptor)
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
@@ -404,7 +403,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 
 func newWorkflowContext(env workflowEnvironment) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
-	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, newWorkflowInterceptors(env))
+	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, newWorkflowInterceptors(env, []WorkflowInterceptorFactory{}))
 
 	var resultPtr *workflowResult
 	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
@@ -423,10 +422,12 @@ func newWorkflowContext(env workflowEnvironment) Context {
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env workflowEnvironment) *workflowInterceptors {
-	result := &workflowInterceptors{env: env}
+func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterceptorFactory) WorkflowInterceptor {
+	var result WorkflowInterceptor = &workflowEnvironmentInterceptor{env: env}
+	for i := len(factories) - 1; i >= 0; i-- {
+		result = factories[i].NewInterceptor(result)
+	}
 	//TODO: externally passed interceptors
-	result.interceptor = result
 	return result
 }
 
