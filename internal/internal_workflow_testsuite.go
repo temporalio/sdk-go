@@ -1271,6 +1271,10 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 	return a.activityExecutor.ExecuteWithActualArgs(ctx, inputArgs)
 }
 
+func (w *workflowExecutorWrapper) WorkflowType() string {
+	return w.name
+}
+
 // Execute executes the workflow code.
 func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []byte, err error) {
 	env := w.env
@@ -1290,8 +1294,9 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
+	interceptors := newWorkflowInterceptors(env, []WorkflowInterceptorFactory{})
 	// make a copy of the context for getMockReturn() call to avoid race condition
-	ctxCopy := newWorkflowContext(w.env)
+	ctxCopy := newWorkflowContext(w.env, interceptors)
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process

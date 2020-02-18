@@ -94,6 +94,7 @@ type (
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.
 	workflow interface {
 		Execute(ctx Context, input []byte) (result []byte, err error)
+		WorkflowType() string
 	}
 
 	sendCallback struct {
@@ -401,9 +402,9 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func newWorkflowContext(env workflowEnvironment) Context {
+func newWorkflowContext(env workflowEnvironment, interceptors WorkflowInterceptor) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
-	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, newWorkflowInterceptors(env, []WorkflowInterceptorFactory{}))
+	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, interceptors)
 
 	var resultPtr *workflowResult
 	rootCtx = WithValue(rootCtx, workflowResultContextKey, &resultPtr)
@@ -432,7 +433,8 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {
-	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env), func(ctx Context) {
+	interceptors := newWorkflowInterceptors(env, []WorkflowInterceptorFactory{})
+	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors), func(ctx Context) {
 		r := &workflowResult{}
 
 		// We want to execute the user workflow definition from the first decision task started,

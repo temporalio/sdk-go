@@ -920,6 +920,10 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 	return validateFunctionAndGetResults(we.fn, retValues, dataConverter)
 }
 
+func (we *workflowExecutor) WorkflowType() string {
+	return we.name
+}
+
 // Wrapper to execute activity functions.
 type activityExecutor struct {
 	name string
