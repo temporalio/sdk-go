@@ -522,11 +522,20 @@ func (aw *activityWorker) Stop() {
 
 type registry struct {
 	sync.Mutex
-	workflowFuncMap  map[string]interface{}
-	workflowAliasMap map[string]string
-	activityFuncMap  map[string]activity
-	activityAliasMap map[string]string
-	next             *registry // Allows to chain registries
+	workflowFuncMap      map[string]interface{}
+	workflowAliasMap     map[string]string
+	activityFuncMap      map[string]activity
+	activityAliasMap     map[string]string
+	next                 *registry // Allows to chain registries
+	workflowInterceptors []WorkflowInterceptorFactory
+}
+
+func (r *registry) WorkflowInterceptors() []WorkflowInterceptorFactory {
+	return r.workflowInterceptors
+}
+
+func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptorFactory) {
+	r.workflowInterceptors = workflowInterceptors
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
@@ -745,8 +754,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	wd := &workflowExecutor{name: lookup, fn: wf}
+	wd := &workflowExecutor{name: lookup, fn: wf, interceptors: r.getInterceptors()}
 	return newSyncWorkflowDefinition(wd), nil
+}
+
+func (r *registry) getInterceptors() []WorkflowInterceptorFactory {
+	return r.workflowInterceptors
 }
 
 // Validate function parameters.
@@ -890,8 +903,9 @@ func getGlobalRegistry() *registry {
 
 // Wrapper to execute workflow functions.
 type workflowExecutor struct {
-	name string
-	fn   interface{}
+	name         string
+	fn           interface{}
+	interceptors []WorkflowInterceptorFactory
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
@@ -1034,6 +1048,11 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	aw.registry.RegisterActivityWithOptions(a, options)
+}
+
+// SetWorkflowInterceptors registers workflow interceptor factories with the AggregatedWorker
+func (aw *AggregatedWorker) SetWorkflowInterceptors(factories []WorkflowInterceptorFactory) {
+	aw.registry.SetWorkflowInterceptors(factories)
 }
 
 // Start starts the worker in a non-blocking fashion

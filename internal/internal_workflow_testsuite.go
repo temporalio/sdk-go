@@ -108,6 +108,7 @@ type (
 		fn            interface{}
 		isWorkflow    bool
 		dataConverter DataConverter
+		interceptors  []WorkflowInterceptorFactory
 	}
 
 	taskListSpecificActivity struct {
@@ -472,7 +473,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
-		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
+		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf, interceptors: env.registry.WorkflowInterceptors()},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
@@ -1289,7 +1290,8 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		env.runningCount++
 	}
 
-	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true, dataConverter: env.GetDataConverter()}
+	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true,
+		dataConverter: env.GetDataConverter(), interceptors: env.registry.WorkflowInterceptors()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
@@ -1621,6 +1623,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{
 	env.registry.RegisterWorkflowWithOptions(w, options)
 }
 
+func (env *testWorkflowEnvironmentImpl) SetWorkflowInterceptors(interceptors []WorkflowInterceptorFactory) {
+	env.registry.SetWorkflowInterceptors(interceptors)
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
 	env.registry.RegisterActivity(a)
 }
@@ -1807,7 +1813,7 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	args := []interface{}{changeID, minSupported, maxSupported}
 	// below call will panic if mock is not properly setup.
 	mockRet := env.mock.MethodCalled(mockMethod, args...)
-	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
+	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion, interceptors: env.registry.WorkflowInterceptors()}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
 		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
