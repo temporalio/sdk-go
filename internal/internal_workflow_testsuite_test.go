@@ -30,14 +30,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
 
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -2586,7 +2585,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 
 		err = f2.Get(ctx1, &result2)
 		s.Error(err)
-		s.True(errordetails.IsWorkflowExecutionAlreadyStartedStatus(status.Convert(err)))
+		s.IsType(&serviceerror.WorkflowExecutionAlreadyStarted{}, err)
 
 		return result1 + " " + result2, nil
 	}

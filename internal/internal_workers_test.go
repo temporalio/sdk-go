@@ -30,14 +30,15 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+
+	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 // ActivityTaskHandler never returns response
@@ -106,7 +107,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
+		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
@@ -132,7 +133,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	registry := getGlobalRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
 	activityWorker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, registry, nil,
+		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, overrides, registry, nil,
 	)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
@@ -181,7 +182,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	registry := getGlobalRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
 	worker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, registry, nil,
+		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, overrides, registry, nil,
 	)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
@@ -200,7 +201,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.Error(codes.Internal, "")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -209,7 +210,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
+		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
@@ -304,7 +305,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.Error(codes.Internal, "")).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,
@@ -440,7 +441,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.New(codes.Internal, "").Err()).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.Error(codes.Internal, "")).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,

@@ -35,14 +35,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 func init() {
@@ -437,9 +436,9 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
 		domainErr  error
 		isErrFatal bool
 	}{
-		{status.New(codes.NotFound, "").Err(), true},
-		{status.New(codes.InvalidArgument, "").Err(), true},
-		{status.New(codes.Internal, "").Err(), false},
+		{status.Error(codes.NotFound, ""), true},
+		{status.Error(codes.InvalidArgument, ""), true},
+		{status.Error(codes.Internal, ""), false},
 		{errors.New("unknown"), false},
 	}
 

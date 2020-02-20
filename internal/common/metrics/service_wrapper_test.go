@@ -29,15 +29,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -94,11 +92,11 @@ func Test_Wrapper(t *testing.T) {
 		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
 		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
 		// one case of invalid request
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, status.New(codes.NotFound, "").Err()}, []string{CadenceRequest, CadenceInvalidRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewNotFound("")}, []string{CadenceRequest, CadenceInvalidRequest}},
 		// one case of server error
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
-		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, status.New(codes.Internal, "").Err()}, []string{CadenceRequest, CadenceError}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
+		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
 	}
 
 	// run each test twice - once with the regular scope, once with a sanitized metrics scope

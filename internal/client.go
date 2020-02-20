@@ -33,6 +33,7 @@ import (
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -514,7 +515,7 @@ func NewClient(service workflowservice.WorkflowServiceClient, domain string, opt
 		tracer = opentracing.NoopTracer{}
 	}
 	return &workflowClient{
-		workflowService:    metrics.NewWorkflowServiceWrapper(service, metricScope),
+		workflowService:    metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
 		domain:             domain,
 		registry:           newRegistry(getGlobalRegistry()),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
@@ -539,7 +540,7 @@ func NewDomainClient(service workflowservice.WorkflowServiceClient, options *Cli
 	}
 	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 	return &domainClient{
-		workflowService: metrics.NewWorkflowServiceWrapper(service, metricScope),
+		workflowService: metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
 		metricsScope:    metricScope,
 		identity:        identity,
 	}

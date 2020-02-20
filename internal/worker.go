@@ -40,6 +40,8 @@ import (
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
+
+	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 type (
@@ -361,7 +363,7 @@ func replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowS
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
 		domain:        ReplayDomainName,
-		service:       service,
+		service:       rpc.NewWorkflowServiceErrorWrapper(service),
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
 	}

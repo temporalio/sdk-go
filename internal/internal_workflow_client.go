@@ -28,14 +28,13 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	"go.temporal.io/temporal-proto/serviceerror"
 
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
@@ -267,9 +266,8 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	var workflowID string
 	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
 	if err != nil {
-		st := status.Convert(err)
-		if failure, isExecutionAlreadyStartedFailure := errordetails.GetWorkflowExecutionAlreadyStartedFailure(st); isExecutionAlreadyStartedFailure {
-			runID = failure.RunId
+		if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
+			runID = e.RunId
 			workflowID = options.ID
 		} else {
 			return nil, err
