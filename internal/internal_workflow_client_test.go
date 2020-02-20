@@ -41,7 +41,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -150,7 +149,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
 	s.wfClient = &workflowClient{
-		workflowService: rpc.NewWorkflowServiceErrorWrapper(s.workflowServiceClient),
+		workflowService: s.workflowServiceClient,
 		domain:          domain,
 	}
 }
@@ -254,7 +253,7 @@ func (s *historyEventIteratorSuite) TestIterator_Error() {
 	s.NotNil(event)
 	s.Nil(err)
 
-	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(nil, status.Error(codes.NotFound, "")).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(nil, serviceerror.NewNotFound("")).Times(1)
 
 	s.True(iter.HasNext())
 	event, err = iter.Next()

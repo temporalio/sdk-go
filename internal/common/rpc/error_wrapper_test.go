@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func TestErrorWrapper_NotFound(t *testing.T) {
+func TestErrorWrapper_SimpleError(t *testing.T) {
 	require := require.New(t)
 	wrapper := NewWorkflowServiceErrorWrapper(workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t)))
 
@@ -23,7 +23,7 @@ func TestErrorWrapper_NotFound(t *testing.T) {
 	require.Equal("Something not found", svcerr.Error())
 }
 
-func TestErrorWrapper_WorkflowExecutionAlreadyStarted(t *testing.T) {
+func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	require := require.New(t)
 	wrapper := NewWorkflowServiceErrorWrapper(workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t)))
 

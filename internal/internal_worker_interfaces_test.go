@@ -35,8 +35,6 @@ import (
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
-
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -203,7 +201,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	registry := getGlobalRegistry()
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(rpc.NewWorkflowServiceErrorWrapper(s.service), domain, workflowExecutionParameters, nil, registry)
+	workflowWorker := newWorkflowWorker(s.service, domain, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
 	_ = workflowWorker.Start()
 
@@ -216,7 +214,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker(rpc.NewWorkflowServiceErrorWrapper(s.service), domain, activityExecutionParameters, nil, registry, nil)
+	activityWorker := newActivityWorker(s.service, domain, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
 	_ = activityWorker.Start()
 

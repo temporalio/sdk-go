@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal-proto/serviceerror"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	commonproto "go.temporal.io/temporal-proto/common"
@@ -1671,9 +1672,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	var startedCount, completedCount, canceledCount int
+	var startedCount, completedCount, canceledCount atomic.Int32
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount++
+		startedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
@@ -1682,18 +1683,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount++
+		completedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount++
+		canceledCount.Inc()
 	})
 
 	env.ExecuteWorkflow(workflowFn)
 	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount, "Flaky test. Rerun if failed.")
-	s.Equal(1, completedCount)
-	s.Equal(1, canceledCount)
+	s.EqualValues(2, startedCount.Load())
+	s.EqualValues(1, completedCount.Load())
+	s.EqualValues(1, canceledCount.Load())
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string

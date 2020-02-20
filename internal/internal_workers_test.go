@@ -32,13 +32,12 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 // ActivityTaskHandler never returns response
@@ -107,12 +106,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, nil, overrides, getGlobalRegistry(),
+		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
-	s.Nil(ctx.Err())
+	s.NoError(ctx.Err())
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
@@ -133,7 +132,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	registry := getGlobalRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
 	activityWorker := newActivityWorker(
-		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, overrides, registry, nil,
+		s.service, domain, executionParameters, overrides, registry, nil,
 	)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
@@ -182,7 +181,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	registry := getGlobalRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
 	worker := newActivityWorker(
-		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, overrides, registry, nil,
+		s.service, domain, executionParameters, overrides, registry, nil,
 	)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
@@ -201,7 +200,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	domain := "testDomain"
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, status.Error(codes.Internal, "")).AnyTimes()
+	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
 		TaskList:                  "testDecisionTaskList",
@@ -210,7 +209,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
-		rpc.NewWorkflowServiceErrorWrapper(s.service), domain, executionParameters, nil, overrides, getGlobalRegistry(),
+		s.service, domain, executionParameters, nil, overrides, getGlobalRegistry(),
 	)
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()

@@ -47,7 +47,6 @@ import (
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -1533,7 +1532,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(rpc.NewWorkflowServiceErrorWrapper(env.service), params, registry, getActivity)
+	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, registry, getActivity)
 	return taskHandler
 }
 
