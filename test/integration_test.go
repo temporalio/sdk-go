@@ -362,6 +362,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.NoError(err)
 	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
 	ts.Equal("memoVal, searchAttrVal", result)
+	ts.Equal([]string{"ExecuteChildWorkflow"}, ts.tracer.instances[0].trace)
 }
 
 // Flaky test. Rerun if failed.
@@ -514,4 +515,9 @@ type tracingInterceptor struct {
 func (t *tracingInterceptor) ExecuteActivity(ctx workflow.Context, activity interface{}, args ...interface{}) workflow.Future {
 	t.trace = append(t.trace, "ExecuteActivity")
 	return t.Next.ExecuteActivity(ctx, activity, args...)
+}
+
+func (t *tracingInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflow interface{}, args ...interface{}) workflow.ChildWorkflowFuture {
+	t.trace = append(t.trace, "ExecuteChildWorkflow")
+	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
