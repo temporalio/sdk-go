@@ -433,7 +433,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {
-	interceptors := newWorkflowInterceptors(env, []WorkflowInterceptorFactory{})
+	interceptors := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors), func(ctx Context) {
 		r := &workflowResult{}
 

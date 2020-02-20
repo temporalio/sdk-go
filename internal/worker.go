@@ -197,6 +197,10 @@ type (
 		// default: 1000
 		MaxConcurrentSessionExecutionSize int
 
+		// Optional: Specifies factories used to instantiate workflow interceptor chain
+		// The chain is instantiated per each replay of a workflow execution
+		WorkflowInterceptorChainFactories []WorkflowInterceptorFactory
+
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator

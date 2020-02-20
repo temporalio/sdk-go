@@ -56,3 +56,89 @@ type WorkflowInterceptor interface {
 	HasLastCompletionResult(ctx Context) bool
 	GetLastCompletionResult(ctx Context, d ...interface{}) error
 }
+
+var _ WorkflowInterceptor = (*WorkflowInterceptorBase)(nil)
+
+type WorkflowInterceptorBase struct {
+	next WorkflowInterceptor
+}
+
+func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	return t.next.ExecuteActivity(ctx, activity, args...)
+}
+
+func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	return t.next.ExecuteLocalActivity(ctx, activity, args...)
+}
+
+func (t *WorkflowInterceptorBase) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+	return t.next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
+}
+
+func (t *WorkflowInterceptorBase) GetWorkflowInfo(ctx Context) *WorkflowInfo {
+	return t.next.GetWorkflowInfo(ctx)
+}
+
+func (t *WorkflowInterceptorBase) GetLogger(ctx Context) *zap.Logger {
+	return t.next.GetLogger(ctx)
+}
+
+func (t *WorkflowInterceptorBase) GetMetricsScope(ctx Context) tally.Scope {
+	return t.next.GetMetricsScope(ctx)
+}
+
+func (t *WorkflowInterceptorBase) Now(ctx Context) time.Time {
+	return t.next.Now(ctx)
+}
+
+func (t *WorkflowInterceptorBase) NewTimer(ctx Context, d time.Duration) Future {
+	return t.next.NewTimer(ctx, d)
+}
+
+func (t *WorkflowInterceptorBase) Sleep(ctx Context, d time.Duration) (err error) {
+	return t.next.Sleep(ctx, d)
+}
+
+func (t *WorkflowInterceptorBase) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
+	return t.next.RequestCancelExternalWorkflow(ctx, workflowID, runID)
+}
+
+func (t *WorkflowInterceptorBase) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+	return t.next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
+}
+
+func (t *WorkflowInterceptorBase) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+	return t.next.UpsertSearchAttributes(ctx, attributes)
+}
+
+func (t *WorkflowInterceptorBase) GetSignalChannel(ctx Context, signalName string) Channel {
+	return t.next.GetSignalChannel(ctx, signalName)
+}
+
+func (t *WorkflowInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
+	return t.next.SideEffect(ctx, f)
+}
+
+func (t *WorkflowInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
+	return t.next.MutableSideEffect(ctx, id, f, equals)
+}
+
+func (t *WorkflowInterceptorBase) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
+	return t.next.GetVersion(ctx, changeID, minSupported, maxSupported)
+}
+
+func (t *WorkflowInterceptorBase) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	return t.next.SetQueryHandler(ctx, queryType, handler)
+}
+
+func (t *WorkflowInterceptorBase) IsReplaying(ctx Context) bool {
+	return t.next.IsReplaying(ctx)
+}
+
+func (t *WorkflowInterceptorBase) HasLastCompletionResult(ctx Context) bool {
+	return t.next.HasLastCompletionResult(ctx)
+}
+
+func (t *WorkflowInterceptorBase) GetLastCompletionResult(ctx Context, d ...interface{}) error {
+	return t.next.GetLastCompletionResult(ctx, d...)
+}

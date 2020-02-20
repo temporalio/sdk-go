@@ -390,6 +390,7 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if len(options.ContextPropagators) > 0 {
 		env.workerOptions.ContextPropagators = options.ContextPropagators
 	}
+	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
@@ -1291,14 +1292,13 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	}
 
 	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true,
-		dataConverter: env.GetDataConverter(), interceptors: env.registry.WorkflowInterceptors()}
+		dataConverter: env.GetDataConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
-	interceptors := newWorkflowInterceptors(env, []WorkflowInterceptorFactory{})
 	// make a copy of the context for getMockReturn() call to avoid race condition
-	ctxCopy := newWorkflowContext(w.env, interceptors)
+	ctxCopy := newWorkflowContext(w.env, nil)
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
@@ -1621,10 +1621,6 @@ func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w interface{}) {
 
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	env.registry.RegisterWorkflowWithOptions(w, options)
-}
-
-func (env *testWorkflowEnvironmentImpl) SetWorkflowInterceptors(interceptors []WorkflowInterceptorFactory) {
-	env.registry.SetWorkflowInterceptors(interceptors)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {

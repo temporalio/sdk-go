@@ -212,11 +212,6 @@ func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, opt
 	t.impl.RegisterActivityWithOptions(a, options)
 }
 
-// SetWorkflowInterceptors workflow registers workflow interceptor factories with the TestWorkflowEnvironment
-func (t *TestWorkflowEnvironment) SetWorkflowInterceptors(interceptors []WorkflowInterceptorFactory) {
-	t.impl.SetWorkflowInterceptors(interceptors)
-}
-
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (t *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {

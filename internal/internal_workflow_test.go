@@ -203,6 +203,8 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 			panic(fmt.Sprintf("Unexpected activityID: %v", activityID))
 		}
 	}).Twice()
+	tracer := tracingInterceptorFactory{}
+	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptorFactory{&tracer}})
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -210,6 +212,9 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	var result string
 	_ = env.GetWorkflowResult(&result)
 	s.Equal("Hello Flow!", result)
+	s.Equal(1, len(tracer.instances))
+	trace := tracer.instances[len(tracer.instances)-1].trace
+	s.Equal([]string{"ExecuteActivity", "ExecuteActivity"}, trace)
 }
 
 func TestWorkflowPanic(t *testing.T) {
@@ -1180,4 +1185,30 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	var total int
 	_ = env.GetWorkflowResult(&total)
 	s.Equal(n, total)
+}
+
+var _ WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
+
+type tracingInterceptorFactory struct {
+	instances []*tracingInterceptor
+}
+
+func (t *tracingInterceptorFactory) NewInterceptor(next WorkflowInterceptor) WorkflowInterceptor {
+	result := &tracingInterceptor{
+		WorkflowInterceptorBase: WorkflowInterceptorBase{next: next},
+	}
+	t.instances = append(t.instances, result)
+	return result
+}
+
+var _ WorkflowInterceptor = (*tracingInterceptor)(nil)
+
+type tracingInterceptor struct {
+	WorkflowInterceptorBase
+	trace []string
+}
+
+func (t *tracingInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+	t.trace = append(t.trace, "ExecuteActivity")
+	return t.next.ExecuteActivity(ctx, activity, args...)
 }

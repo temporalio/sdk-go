@@ -1050,11 +1050,6 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
-// SetWorkflowInterceptors registers workflow interceptor factories with the AggregatedWorker
-func (aw *AggregatedWorker) SetWorkflowInterceptors(factories []WorkflowInterceptorFactory) {
-	aw.registry.SetWorkflowInterceptors(factories)
-}
-
 // Start starts the worker in a non-blocking fashion
 func (aw *AggregatedWorker) Start() error {
 	if err := initBinaryChecksum(); err != nil {
@@ -1251,6 +1246,8 @@ func newAggregatedWorker(
 
 	// worker specific registry
 	registry := newRegistry(getGlobalRegistry())
+	registry.SetWorkflowInterceptors(wOptions.WorkflowInterceptorChainFactories)
+
 	// workflow factory.
 	var workflowWorker *workflowWorker
 	if !wOptions.DisableWorkflowWorker {
