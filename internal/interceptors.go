@@ -60,85 +60,85 @@ type WorkflowInterceptor interface {
 var _ WorkflowInterceptor = (*WorkflowInterceptorBase)(nil)
 
 type WorkflowInterceptorBase struct {
-	next WorkflowInterceptor
+	Next WorkflowInterceptor
 }
 
 func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	return t.next.ExecuteActivity(ctx, activity, args...)
+	return t.Next.ExecuteActivity(ctx, activity, args...)
 }
 
 func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	return t.next.ExecuteLocalActivity(ctx, activity, args...)
+	return t.Next.ExecuteLocalActivity(ctx, activity, args...)
 }
 
 func (t *WorkflowInterceptorBase) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
-	return t.next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
+	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
 func (t *WorkflowInterceptorBase) GetWorkflowInfo(ctx Context) *WorkflowInfo {
-	return t.next.GetWorkflowInfo(ctx)
+	return t.Next.GetWorkflowInfo(ctx)
 }
 
 func (t *WorkflowInterceptorBase) GetLogger(ctx Context) *zap.Logger {
-	return t.next.GetLogger(ctx)
+	return t.Next.GetLogger(ctx)
 }
 
 func (t *WorkflowInterceptorBase) GetMetricsScope(ctx Context) tally.Scope {
-	return t.next.GetMetricsScope(ctx)
+	return t.Next.GetMetricsScope(ctx)
 }
 
 func (t *WorkflowInterceptorBase) Now(ctx Context) time.Time {
-	return t.next.Now(ctx)
+	return t.Next.Now(ctx)
 }
 
 func (t *WorkflowInterceptorBase) NewTimer(ctx Context, d time.Duration) Future {
-	return t.next.NewTimer(ctx, d)
+	return t.Next.NewTimer(ctx, d)
 }
 
 func (t *WorkflowInterceptorBase) Sleep(ctx Context, d time.Duration) (err error) {
-	return t.next.Sleep(ctx, d)
+	return t.Next.Sleep(ctx, d)
 }
 
 func (t *WorkflowInterceptorBase) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
-	return t.next.RequestCancelExternalWorkflow(ctx, workflowID, runID)
+	return t.Next.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
 func (t *WorkflowInterceptorBase) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
-	return t.next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
+	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
 func (t *WorkflowInterceptorBase) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
-	return t.next.UpsertSearchAttributes(ctx, attributes)
+	return t.Next.UpsertSearchAttributes(ctx, attributes)
 }
 
 func (t *WorkflowInterceptorBase) GetSignalChannel(ctx Context, signalName string) Channel {
-	return t.next.GetSignalChannel(ctx, signalName)
+	return t.Next.GetSignalChannel(ctx, signalName)
 }
 
 func (t *WorkflowInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
-	return t.next.SideEffect(ctx, f)
+	return t.Next.SideEffect(ctx, f)
 }
 
 func (t *WorkflowInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
-	return t.next.MutableSideEffect(ctx, id, f, equals)
+	return t.Next.MutableSideEffect(ctx, id, f, equals)
 }
 
 func (t *WorkflowInterceptorBase) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
-	return t.next.GetVersion(ctx, changeID, minSupported, maxSupported)
+	return t.Next.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
 func (t *WorkflowInterceptorBase) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	return t.next.SetQueryHandler(ctx, queryType, handler)
+	return t.Next.SetQueryHandler(ctx, queryType, handler)
 }
 
 func (t *WorkflowInterceptorBase) IsReplaying(ctx Context) bool {
-	return t.next.IsReplaying(ctx)
+	return t.Next.IsReplaying(ctx)
 }
 
 func (t *WorkflowInterceptorBase) HasLastCompletionResult(ctx Context) bool {
-	return t.next.HasLastCompletionResult(ctx)
+	return t.Next.HasLastCompletionResult(ctx)
 }
 
 func (t *WorkflowInterceptorBase) GetLastCompletionResult(ctx Context, d ...interface{}) error {
-	return t.next.GetLastCompletionResult(ctx, d...)
+	return t.Next.GetLastCompletionResult(ctx, d...)
 }

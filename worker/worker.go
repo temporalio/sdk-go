@@ -128,7 +128,8 @@ type (
 	WorkflowInterceptorFactory = internal.WorkflowInterceptorFactory
 
 	// WorkflowInterceptor intercepts calls from workflow code.
-	WorkflowInterceptor = internal.WorkflowInterceptor
+	WorkflowInterceptor     = internal.WorkflowInterceptor
+	WorkflowInterceptorBase = internal.WorkflowInterceptorBase
 )
 
 const (

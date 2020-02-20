@@ -55,6 +55,7 @@ type IntegrationTestSuite struct {
 	worker       worker.Worker
 	seq          int64
 	taskListName string
+	tracer       tracingInterceptorFactory
 }
 
 const (
@@ -135,10 +136,13 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, worker.Options{
-		DisableStickyExecution: ts.config.IsStickyOff,
-		Logger:                 logger,
-	})
+	ts.tracer = tracingInterceptorFactory{}
+	options := worker.Options{
+		DisableStickyExecution:            ts.config.IsStickyOff,
+		Logger:                            logger,
+		WorkflowInterceptorChainFactories: []worker.WorkflowInterceptorFactory{&ts.tracer},
+	}
+	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -152,6 +156,7 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+	ts.Equal([]string{"ExecuteActivity"}, ts.tracer.instances[0].trace)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -483,4 +488,30 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
+}
+
+var _ worker.WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
+
+type tracingInterceptorFactory struct {
+	instances []*tracingInterceptor
+}
+
+func (t *tracingInterceptorFactory) NewInterceptor(next worker.WorkflowInterceptor) worker.WorkflowInterceptor {
+	result := &tracingInterceptor{
+		WorkflowInterceptorBase: worker.WorkflowInterceptorBase{Next: next},
+	}
+	t.instances = append(t.instances, result)
+	return result
+}
+
+var _ worker.WorkflowInterceptor = (*tracingInterceptor)(nil)
+
+type tracingInterceptor struct {
+	worker.WorkflowInterceptorBase
+	trace []string
+}
+
+func (t *tracingInterceptor) ExecuteActivity(ctx workflow.Context, activity interface{}, args ...interface{}) workflow.Future {
+	t.trace = append(t.trace, "ExecuteActivity")
+	return t.Next.ExecuteActivity(ctx, activity, args...)
 }

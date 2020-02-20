@@ -1195,7 +1195,7 @@ type tracingInterceptorFactory struct {
 
 func (t *tracingInterceptorFactory) NewInterceptor(next WorkflowInterceptor) WorkflowInterceptor {
 	result := &tracingInterceptor{
-		WorkflowInterceptorBase: WorkflowInterceptorBase{next: next},
+		WorkflowInterceptorBase: WorkflowInterceptorBase{Next: next},
 	}
 	t.instances = append(t.instances, result)
 	return result
@@ -1210,5 +1210,5 @@ type tracingInterceptor struct {
 
 func (t *tracingInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	t.trace = append(t.trace, "ExecuteActivity")
-	return t.next.ExecuteActivity(ctx, activity, args...)
+	return t.Next.ExecuteActivity(ctx, activity, args...)
 }
