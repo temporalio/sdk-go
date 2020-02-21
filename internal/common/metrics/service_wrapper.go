@@ -25,12 +25,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/uber-go/tally"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"google.golang.org/grpc"
 )
 
 type (
@@ -89,8 +87,12 @@ const (
 	scopeNameGetWorkflowExecutionRawHistory   = CadenceMetricsPrefix + "GetWorkflowExecutionRawHistory"
 )
 
+var (
+	_ workflowservice.WorkflowServiceClient = (*workflowServiceMetricsWrapper)(nil)
+)
+
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
-func NewWorkflowServiceWrapper(service workflowservice.WorkflowServiceClient, scope tally.Scope) workflowservice.WorkflowServiceClient {
+func NewWorkflowServiceWrapper(service workflowservice.WorkflowServiceClient, scope tally.Scope) *workflowServiceMetricsWrapper {
 	return &workflowServiceMetricsWrapper{service: service, scope: scope, childScopes: make(map[string]tally.Scope)}
 }
 
@@ -117,10 +119,14 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 func (s *operationScope) handleError(err error) {
 	s.scope.Timer(CadenceLatency).Record(time.Since(s.startTime))
 	if err != nil {
-		st := status.Convert(err)
-		if st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument || st.Code() == codes.AlreadyExists {
+		switch err.(type) {
+		case *serviceerror.NotFound,
+			*serviceerror.InvalidArgument,
+			*serviceerror.DomainAlreadyExists,
+			*serviceerror.WorkflowExecutionAlreadyStarted,
+			*serviceerror.QueryFailed:
 			s.scope.Counter(CadenceInvalidRequest).Inc(1)
-		} else {
+		default:
 			s.scope.Counter(CadenceError).Inc(1)
 		}
 	}

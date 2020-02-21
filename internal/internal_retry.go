@@ -26,8 +26,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/gogo/status"
-	"google.golang.org/grpc/codes"
+	"go.temporal.io/temporal-proto/serviceerror"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 )
@@ -65,8 +64,14 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 
 func isServiceTransientError(err error) bool {
 	// Retrying by default so it covers all transport errors.
-	st := status.Convert(err)
-	if st.Code() == codes.InvalidArgument || st.Code() == codes.NotFound || st.Code() == codes.AlreadyExists {
+	switch err.(type) {
+	case *serviceerror.InvalidArgument,
+		*serviceerror.NotFound,
+		*serviceerror.WorkflowExecutionAlreadyStarted,
+		*serviceerror.DomainAlreadyExists,
+		*serviceerror.QueryFailed,
+		*serviceerror.DomainNotActive,
+		*serviceerror.CancellationAlreadyRequested:
 		return false
 	}
 
@@ -74,8 +79,7 @@ func isServiceTransientError(err error) bool {
 		return false
 	}
 
-	// s.InternalServiceError
-	// s.ServiceBusyError
-	// s.LimitExceededError
+	// serviceerror.Internal
+	// serviceerror.ResourceExhausted
 	return true
 }

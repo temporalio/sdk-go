@@ -25,12 +25,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -75,7 +74,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 		logger:         getLogger()})
 
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, status.New(codes.Internal, "").Err()).
+		Return(nil, serviceerror.NewInternal("")).
 		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
 			fmt.Println("MOCK RecordActivityTaskHeartbeat executed")
 		}).AnyTimes()
@@ -106,7 +105,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 		logger:         getLogger()})
 
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, status.New(codes.NotFound, "").Err()).Times(1)
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, serviceerror.NewNotFound("")).Times(1)
 
 	RecordActivityHeartbeat(ctx, "testDetails")
 	<-ctx.Done()

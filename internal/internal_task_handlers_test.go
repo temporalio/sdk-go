@@ -29,19 +29,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/grpc/codes"
-
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
 
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 )
@@ -1153,7 +1150,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, status.New(codes.NotFound, "Decision task not found.").Err()
+			return nil, serviceerror.NewNotFound("Decision task not found.")
 		})
 	t.Nil(response)
 	t.Error(err)
@@ -1179,15 +1176,14 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 
-	t.Nil(heartbeatErr)
+	t.NoError(heartbeatErr)
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	entityNotExistsError := status.New(codes.NotFound, "").Err()
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, entityNotExistsError)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	cadenceInvoker := newServiceInvoker(
 		nil,
@@ -1199,17 +1195,14 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	t.Equal(codes.NotFound, status.Code(heartbeatErr), "heartbeatErr must have code NotFound.")
+	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	st := errordetails.NewDomainNotActiveStatus("Workflow execution already started", "", "", "")
-	domainNotActiveError := st.Err()
-
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, domainNotActiveError)
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewDomainNotActive("Domain is not active", "", "", ""))
 
 	called := false
 	cancelHandler := func() { called = true }
@@ -1224,9 +1217,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 
 	heartbeatErr := cadenceInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	heartbeatSt := status.Convert(heartbeatErr)
-	isDomainNotActive := errordetails.IsDomainNotActiveStatus(heartbeatSt)
-	t.True(isDomainNotActive, "heartbeatErr failure must be DomainNotActiveFailure.")
+	t.IsType(&serviceerror.DomainNotActive{}, heartbeatErr, "heartbeatErr must be of type DomainNotActive.")
 	t.True(called)
 }
 

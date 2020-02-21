@@ -29,22 +29,20 @@
 package evictiontest
 
 import (
-	"testing"
-
 	"strconv"
+	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/atomic"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.uber.org/atomic"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/worker"
