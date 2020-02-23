@@ -371,7 +371,7 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandler_WithDataConverter() {
 // testSampleWorkflow
 func sampleWorkflowExecute(ctx Context, input []byte) (result []byte, err error) {
 	ExecuteActivity(ctx, testActivityByteArgs, input)
-	ExecuteActivity(ctx, testActivityMultipleArgs, 2, "test", true)
+	ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true)
 	return []byte("Done"), nil
 }
 
@@ -382,7 +382,7 @@ func testActivityByteArgs(context.Context, []byte) ([]byte, error) {
 }
 
 // test testActivityMultipleArgs
-func testActivityMultipleArgs(context.Context, int, string, bool) ([]byte, error) {
+func testActivityMultipleArgs(context.Context, int, []string, bool) ([]byte, error) {
 	fmt.Println("Executing Activity2")
 	return nil, nil
 }
@@ -689,7 +689,7 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, testActivityByteArgs, input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, "test", true).Get(ctx, nil)
+	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
 	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
@@ -755,7 +755,7 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, "go.temporal.io/temporal/internal.testActivityByteArgs", input).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
+	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, []string{"test"}, true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
 	err = ExecuteActivity(ctx, "go.temporal.io/temporal/internal.testActivityNoResult", 2, "test").Get(ctx, nil)

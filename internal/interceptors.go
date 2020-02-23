@@ -35,6 +35,9 @@ type WorkflowInterceptorFactory interface {
 
 // WorkflowInterceptor is an interface that can be implemented to intercept calls done by the workflow code.
 type WorkflowInterceptor interface {
+	//ExecuteWorkflow(ctx Context, args ...interface{}) []interface{}
+	//GetWorkflowFunctionSignature() (argTypes []reflect.Type, resultTypes []reflect.Type)
+
 	ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
 	ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture
@@ -59,86 +62,107 @@ type WorkflowInterceptor interface {
 
 var _ WorkflowInterceptor = (*WorkflowInterceptorBase)(nil)
 
+// WorkflowInterceptorBase is a helper type that can simplify creation of WorkflowInterceptors
 type WorkflowInterceptorBase struct {
 	Next WorkflowInterceptor
 }
 
+// ExecuteActivity forwards to t.Next
 func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	return t.Next.ExecuteActivity(ctx, activity, args...)
 }
 
+// ExecuteLocalActivity forwards to t.Next
 func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	return t.Next.ExecuteLocalActivity(ctx, activity, args...)
 }
 
+// ExecuteChildWorkflow forwards to t.Next
 func (t *WorkflowInterceptorBase) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
+// GetWorkflowInfo forwards to t.Next
 func (t *WorkflowInterceptorBase) GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	return t.Next.GetWorkflowInfo(ctx)
 }
 
+// GetLogger forwards to t.Next
 func (t *WorkflowInterceptorBase) GetLogger(ctx Context) *zap.Logger {
 	return t.Next.GetLogger(ctx)
 }
 
+// GetMetricsScope forwards to t.Next
 func (t *WorkflowInterceptorBase) GetMetricsScope(ctx Context) tally.Scope {
 	return t.Next.GetMetricsScope(ctx)
 }
 
+// Now forwards to t.Next
 func (t *WorkflowInterceptorBase) Now(ctx Context) time.Time {
 	return t.Next.Now(ctx)
 }
 
+// NewTimer forwards to t.Next
 func (t *WorkflowInterceptorBase) NewTimer(ctx Context, d time.Duration) Future {
 	return t.Next.NewTimer(ctx, d)
 }
 
+// Sleep forwards to t.Next
 func (t *WorkflowInterceptorBase) Sleep(ctx Context, d time.Duration) (err error) {
 	return t.Next.Sleep(ctx, d)
 }
 
+// RequestCancelExternalWorkflow forwards to t.Next
 func (t *WorkflowInterceptorBase) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	return t.Next.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// SignalExternalWorkflow forwards to t.Next
 func (t *WorkflowInterceptorBase) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+// UpsertSearchAttributes forwards to t.Next
 func (t *WorkflowInterceptorBase) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	return t.Next.UpsertSearchAttributes(ctx, attributes)
 }
 
+// GetSignalChannel forwards to t.Next
 func (t *WorkflowInterceptorBase) GetSignalChannel(ctx Context, signalName string) Channel {
 	return t.Next.GetSignalChannel(ctx, signalName)
 }
 
+// SideEffect forwards to t.Next
 func (t *WorkflowInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 	return t.Next.SideEffect(ctx, f)
 }
 
+// MutableSideEffect forwards to t.Next
 func (t *WorkflowInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
 	return t.Next.MutableSideEffect(ctx, id, f, equals)
 }
 
+// GetVersion forwards to t.Next
 func (t *WorkflowInterceptorBase) GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	return t.Next.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
+// SetQueryHandler forwards to t.Next
 func (t *WorkflowInterceptorBase) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return t.Next.SetQueryHandler(ctx, queryType, handler)
 }
 
+// IsReplaying forwards to t.Next
 func (t *WorkflowInterceptorBase) IsReplaying(ctx Context) bool {
 	return t.Next.IsReplaying(ctx)
 }
 
+// HasLastCompletionResult forwards to t.Next
 func (t *WorkflowInterceptorBase) HasLastCompletionResult(ctx Context) bool {
 	return t.Next.HasLastCompletionResult(ctx)
 }
 
+// GetLastCompletionResult forwards to t.Next
 func (t *WorkflowInterceptorBase) GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return t.Next.GetLastCompletionResult(ctx, d...)
 }

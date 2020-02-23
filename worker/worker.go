@@ -128,7 +128,10 @@ type (
 	WorkflowInterceptorFactory = internal.WorkflowInterceptorFactory
 
 	// WorkflowInterceptor intercepts calls from workflow code.
-	WorkflowInterceptor     = internal.WorkflowInterceptor
+	WorkflowInterceptor = internal.WorkflowInterceptor
+
+	// WorkflowInterceptorBase is a noop implementation of WorkflowInterceptor that just forwards requests
+	// to the next link in an interceptor chain. To be used as base implementation of interceptors.
 	WorkflowInterceptorBase = internal.WorkflowInterceptorBase
 )
 

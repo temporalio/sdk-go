@@ -811,10 +811,20 @@ func encodeArgs(dc DataConverter, args []interface{}) ([]byte, error) {
 
 // decode multiple arguments(arguments to a function).
 func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+	r, err := decodeArgsToValues(dc, fnType, data)
+	if err != nil {
+		return
+	}
+	for i := 0; i < len(r); i++ {
+		result = append(result, reflect.ValueOf(r[i]).Elem())
+	}
+	return
+}
+
+func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data []byte) (result []interface{}, err error) {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
-	var r []interface{}
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -822,14 +832,11 @@ argsLoop:
 			continue argsLoop
 		}
 		arg := reflect.New(argT).Interface()
-		r = append(r, arg)
+		result = append(result, arg)
 	}
-	err = dc.FromData(data, r...)
+	err = dc.FromData(data, result...)
 	if err != nil {
 		return
-	}
-	for i := 0; i < len(r); i++ {
-		result = append(result, reflect.ValueOf(r[i]).Elem())
 	}
 	return
 }
@@ -908,18 +915,45 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
-	fnType := reflect.TypeOf(we.fn)
-	// Workflow context.
+func (we *workflowExecutor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
 	args := []reflect.Value{reflect.ValueOf(ctx)}
+	for _, arg := range inputArgs {
+		// []byte arguments are not serialized
+		switch arg.(type) {
+		case []byte:
+			args = append(args, reflect.ValueOf(arg))
+		default:
+			args = append(args, reflect.ValueOf(arg).Elem())
+		}
+	}
+	fnValue := reflect.ValueOf(we.fn)
+	retValues := fnValue.Call(args)
+	for _, r := range retValues {
+		results = append(results, r.Interface())
+	}
+	return
+}
 
+func (we *workflowExecutor) GetWorkflowFunctionSignature() (argTypes []reflect.Type, resultTypes []reflect.Type) {
+	fnType := reflect.TypeOf(we.fn)
+	for i := 0; i < fnType.NumIn(); i++ {
+		argTypes = append(argTypes, fnType.In(i))
+	}
+	for i := 0; i < fnType.NumOut(); i++ {
+		resultTypes = append(resultTypes, fnType.Out(i))
+	}
+	return
+}
+
+func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
+	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
-	if fnType.NumIn() > 1 && isTypeByteSlice(fnType.In(1)) {
-		// 0 - is workflow context.
-		// 1 ... input types.
-		args = append(args, reflect.ValueOf(input))
+	fnType := reflect.TypeOf(we.fn)
+	if fnType.NumIn() == 2 && isTypeByteSlice(fnType.In(1)) {
+		// Do not deserialize input if workflow has a single byte slice argument (besides ctx)
+		args = append(args, input)
 	} else {
-		decoded, err := decodeArgs(dataConverter, fnType, input)
+		decoded, err := decodeArgsToValues(dataConverter, fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"unable to decode the workflow function input bytes with error: %v, function name: %v",
@@ -927,11 +961,8 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 		}
 		args = append(args, decoded...)
 	}
-
-	// Invoke the workflow with arguments.
-	fnValue := reflect.ValueOf(we.fn)
-	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(we.fn, retValues, dataConverter)
+	results := we.ExecuteWorkflow(ctx, args...)
+	return serializeResults(we.fn, results, dataConverter)
 }
 
 func (we *workflowExecutor) WorkflowType() string {
