@@ -275,7 +275,9 @@ func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
 }
 
 type workflowEnvironmentInterceptor struct {
-	env workflowEnvironment
+	env                  workflowEnvironment
+	interceptorChainHead WorkflowInterceptor
+	fn                   interface{}
 }
 
 func getWorkflowInterceptor(ctx Context) WorkflowInterceptor {
@@ -439,6 +441,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	for i := len(factories) - 1; i >= 0; i-- {
 		interceptor = factories[i].NewInterceptor(interceptor)
 	}
+	envInterceptor.interceptorChainHead = interceptor
 	return interceptor, envInterceptor
 }
 

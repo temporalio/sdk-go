@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"go.temporal.io/temporal/internal/common/backoff"
+	"reflect"
 	"strings"
 	"time"
 
@@ -347,6 +348,25 @@ func GoNamed(ctx Context, name string, f func(ctx Context)) {
 func NewFuture(ctx Context) (Future, Settable) {
 	impl := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	return impl, impl
+}
+
+func (we *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
+	args := []reflect.Value{reflect.ValueOf(ctx)}
+	for _, arg := range inputArgs {
+		// []byte arguments are not serialized
+		switch arg.(type) {
+		case []byte:
+			args = append(args, reflect.ValueOf(arg))
+		default:
+			args = append(args, reflect.ValueOf(arg).Elem())
+		}
+	}
+	fnValue := reflect.ValueOf(we.fn)
+	retValues := fnValue.Call(args)
+	for _, r := range retValues {
+		results = append(results, r.Interface())
+	}
+	return
 }
 
 // ExecuteActivity requests activity execution in the context of a workflow.

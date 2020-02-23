@@ -961,7 +961,9 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 		}
 		args = append(args, decoded...)
 	}
-	results := we.ExecuteWorkflow(ctx, args...)
+	envInterceptor := getEnvInterceptor(ctx)
+	envInterceptor.fn = we.fn
+	results := envInterceptor.interceptorChainHead.ExecuteWorkflow(ctx, args...)
 	return serializeResults(we.fn, results, dataConverter)
 }
 
