@@ -37,18 +37,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	"go.temporal.io/temporal-proto/serviceerror"
+	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc/codes"
-
-	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -232,11 +231,11 @@ func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain stri
 		defer cancel()
 		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain})
 		if err != nil {
-			switch status.Code(err) {
-			case codes.NotFound:
+			switch err.(type) {
+			case *serviceerror.NotFound:
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
-			case codes.InvalidArgument:
+			case *serviceerror.InvalidArgument:
 				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
 				return err
 			}
@@ -1254,7 +1253,7 @@ func newAggregatedWorker(
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
-	service = metrics.NewWorkflowServiceWrapper(service, workerParams.MetricsScope)
+	service = metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), workerParams.MetricsScope)
 
 	processTestTags(&wOptions, &workerParams)
 

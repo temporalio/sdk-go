@@ -28,15 +28,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
@@ -294,7 +293,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
+	ts.Equal("Workflow execution already started", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -311,7 +310,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	ts.Error(err)
 	gerr, ok := err.(*workflow.GenericError)
 	ts.True(ok)
-	ts.True(strings.HasPrefix(gerr.Error(), "rpc error: code = AlreadyExists"), "Error message is %q and does not have \"rpc error: code = AlreadyExists\" prefix", gerr.Error())
+	ts.Equal("Workflow execution already started", gerr.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -409,9 +408,8 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	st := status.Convert(err)
-	ts.Equal(codes.InvalidArgument, st.Code())
-	ts.Equal("query result size (3000000) exceeds limit (2000000)", st.Message())
+	ts.IsType(&serviceerror.InvalidArgument{}, err)
+	ts.Equal("query result size (3000000) exceeds limit (2000000)", err.Error())
 	ts.Nil(value)
 }
 
@@ -426,7 +424,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
+		if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
 			return
 		}
 	}
@@ -437,7 +435,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if status.Code(err) == codes.NotFound {
+		if _, ok := err.(*serviceerror.NotFound); ok {
 			time.Sleep(domainCacheRefreshInterval)
 			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

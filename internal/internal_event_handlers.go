@@ -34,7 +34,7 @@ import (
 	"github.com/uber-go/tally"
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -1157,8 +1157,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
-	childWorkflow.handle(nil, st.Err())
+	err := serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+	childWorkflow.handle(nil, err)
 
 	return nil
 }

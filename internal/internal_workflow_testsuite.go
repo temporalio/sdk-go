@@ -36,15 +36,14 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
+	commonproto "go.temporal.io/temporal-proto/common"
+	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/serviceerror"
+	"go.temporal.io/temporal-proto/workflowservice"
+	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -264,7 +263,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return status.New(codes.NotFound, "").Err()
+			return status.Error(codes.NotFound, "")
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
@@ -349,16 +348,13 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
-			return nil, st.Err()
+			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
 		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
-			st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
-			return nil, st.Err()
+			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
 		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
-			st := errordetails.NewWorkflowExecutionAlreadyStartedStatus("Workflow execution already started", "", "")
-			return nil, st.Err()
+			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
 	}
 
@@ -1917,7 +1913,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 
 	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
 		if workflowHandle.handled {
-			return status.New(codes.NotFound, fmt.Sprintf("Workflow %v already completed", workflowID)).Err()
+			return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v already completed", workflowID))
 		}
 		workflowHandle.env.postCallback(func() {
 			workflowHandle.env.signalHandler(signalName, data)
@@ -1925,7 +1921,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 		return nil
 	}
 
-	return status.New(codes.NotFound, fmt.Sprintf("Workflow %v not exists", workflowID)).Err()
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {

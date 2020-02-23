@@ -34,15 +34,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
-	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/cache"
@@ -1693,18 +1690,17 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 
 	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
-	if _, ok := err.(*CanceledError); ok {
+	switch err.(type) {
+	case *CanceledError:
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
 		isActivityCancelled = true
-	} else {
-		st := status.Convert(err)
-		if errordetails.IsDomainNotActiveStatus(st) || st.Code() == codes.NotFound {
-			// We will pass these through as cancellation for now but something we can change
-			// later when we have setter on cancel handler.
-			i.cancelHandler()
-			isActivityCancelled = true
-		}
+
+	case *serviceerror.NotFound, *serviceerror.DomainNotActive:
+		// We will pass these through as cancellation for now but something we can change
+		// later when we have setter on cancel handler.
+		i.cancelHandler()
+		isActivityCancelled = true
 	}
 
 	// We don't want to bubble temporary errors to the user.
