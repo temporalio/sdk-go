@@ -35,7 +35,7 @@ type WorkflowInterceptorFactory interface {
 
 // WorkflowInterceptor is an interface that can be implemented to intercept calls done by the workflow code.
 type WorkflowInterceptor interface {
-	//ExecuteWorkflow(ctx Context, args ...interface{}) []interface{}
+	ExecuteWorkflow(ctx Context, args ...interface{}) []interface{}
 	//GetWorkflowFunctionSignature() (argTypes []reflect.Type, resultTypes []reflect.Type)
 
 	ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
@@ -65,6 +65,11 @@ var _ WorkflowInterceptor = (*WorkflowInterceptorBase)(nil)
 // WorkflowInterceptorBase is a helper type that can simplify creation of WorkflowInterceptors
 type WorkflowInterceptorBase struct {
 	Next WorkflowInterceptor
+}
+
+// ExecuteWorkflow forwards to t.Next
+func (t *WorkflowInterceptorBase) ExecuteWorkflow(ctx Context, args ...interface{}) []interface{} {
+	return t.Next.ExecuteWorkflow(ctx, args...)
 }
 
 // ExecuteActivity forwards to t.Next

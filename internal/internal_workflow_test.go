@@ -214,7 +214,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	s.Equal("Hello Flow!", result)
 	s.Equal(1, len(tracer.instances))
 	trace := tracer.instances[len(tracer.instances)-1].trace
-	s.Equal([]string{"ExecuteActivity", "ExecuteActivity"}, trace)
+	s.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, trace)
 }
 
 func TestWorkflowPanic(t *testing.T) {
@@ -1211,4 +1211,11 @@ type tracingInterceptor struct {
 func (t *tracingInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	t.trace = append(t.trace, "ExecuteActivity")
 	return t.Next.ExecuteActivity(ctx, activity, args...)
+}
+
+func (t *tracingInterceptor) ExecuteWorkflow(ctx Context, args ...interface{}) []interface{} {
+	t.trace = append(t.trace, "ExecuteWorkflow begin")
+	result := t.Next.ExecuteWorkflow(ctx, args...)
+	t.trace = append(t.trace, "ExecuteWorkflow end")
+	return result
 }

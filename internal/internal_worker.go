@@ -915,25 +915,6 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
-	args := []reflect.Value{reflect.ValueOf(ctx)}
-	for _, arg := range inputArgs {
-		// []byte arguments are not serialized
-		switch arg.(type) {
-		case []byte:
-			args = append(args, reflect.ValueOf(arg))
-		default:
-			args = append(args, reflect.ValueOf(arg).Elem())
-		}
-	}
-	fnValue := reflect.ValueOf(we.fn)
-	retValues := fnValue.Call(args)
-	for _, r := range retValues {
-		results = append(results, r.Interface())
-	}
-	return
-}
-
 func (we *workflowExecutor) GetWorkflowFunctionSignature() (argTypes []reflect.Type, resultTypes []reflect.Type) {
 	fnType := reflect.TypeOf(we.fn)
 	for i := 0; i < fnType.NumIn(); i++ {

@@ -350,7 +350,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return impl, impl
 }
 
-func (we *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
+func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
 	args := []reflect.Value{reflect.ValueOf(ctx)}
 	for _, arg := range inputArgs {
 		// []byte arguments are not serialized
@@ -361,7 +361,7 @@ func (we *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs
 			args = append(args, reflect.ValueOf(arg).Elem())
 		}
 	}
-	fnValue := reflect.ValueOf(we.fn)
+	fnValue := reflect.ValueOf(wc.fn)
 	retValues := fnValue.Call(args)
 	for _, r := range retValues {
 		results = append(results, r.Interface())
