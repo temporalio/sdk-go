@@ -233,11 +233,12 @@ type (
 )
 
 const (
-	workflowEnvironmentContextKey  = "workflowEnv"
-	workflowInterceptorsContextKey = "workflowInterceptor"
-	workflowResultContextKey       = "workflowResult"
-	coroutinesContextKey           = "coroutines"
-	workflowEnvOptionsContextKey   = "wfEnvOptions"
+	workflowEnvironmentContextKey    = "workflowEnv"
+	workflowInterceptorsContextKey   = "workflowInterceptor"
+	workflowEnvInterceptorContextKey = "envInterceptor"
+	workflowResultContextKey         = "workflowResult"
+	coroutinesContextKey             = "coroutines"
+	workflowEnvOptionsContextKey     = "wfEnvOptions"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -263,6 +264,14 @@ func getWorkflowEnvironment(ctx Context) workflowEnvironment {
 		panic("getWorkflowContext: Not a workflow context")
 	}
 	return wc.(workflowEnvironment)
+}
+
+func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
+	wc := ctx.Value(workflowEnvInterceptorContextKey)
+	if wc == nil {
+		panic("getWorkflowContext: Not a workflow context")
+	}
+	return wc.(*workflowEnvironmentInterceptor)
 }
 
 type workflowEnvironmentInterceptor struct {
@@ -402,8 +411,9 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func newWorkflowContext(env workflowEnvironment, interceptors WorkflowInterceptor) Context {
+func newWorkflowContext(env workflowEnvironment, interceptors WorkflowInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
+	rootCtx = WithValue(rootCtx, workflowEnvInterceptorContextKey, envInterceptor)
 	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, interceptors)
 
 	var resultPtr *workflowResult
@@ -423,18 +433,18 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterceptorFactory) WorkflowInterceptor {
-	var result WorkflowInterceptor = &workflowEnvironmentInterceptor{env: env}
+func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterceptorFactory) (WorkflowInterceptor, *workflowEnvironmentInterceptor) {
+	envInterceptor := &workflowEnvironmentInterceptor{env: env}
+	var interceptor WorkflowInterceptor = envInterceptor
 	for i := len(factories) - 1; i >= 0; i-- {
-		result = factories[i].NewInterceptor(result)
+		interceptor = factories[i].NewInterceptor(interceptor)
 	}
-	//TODO: externally passed interceptors
-	return result
+	return interceptor, envInterceptor
 }
 
 func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {
-	interceptors := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
-	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors), func(ctx Context) {
+	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
+	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}
 
 		// We want to execute the user workflow definition from the first decision task started,

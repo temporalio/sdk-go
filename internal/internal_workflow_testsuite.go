@@ -1298,7 +1298,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
 	// make a copy of the context for getMockReturn() call to avoid race condition
-	ctxCopy := newWorkflowContext(w.env, nil)
+	ctxCopy := newWorkflowContext(w.env, nil, nil)
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
