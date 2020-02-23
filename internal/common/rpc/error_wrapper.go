@@ -40,7 +40,7 @@ var (
 )
 
 // NewWorkflowServiceErrorWrapper creates a new wrapper to WorkflowService that will convert gRPC status errors to service errors.
-func NewWorkflowServiceErrorWrapper(service workflowservice.WorkflowServiceClient) *workflowServiceErrorWrapper {
+func NewWorkflowServiceErrorWrapper(service workflowservice.WorkflowServiceClient) workflowservice.WorkflowServiceClient {
 	return &workflowServiceErrorWrapper{service: service}
 }
 

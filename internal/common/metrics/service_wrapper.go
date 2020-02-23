@@ -92,7 +92,7 @@ var (
 )
 
 // NewWorkflowServiceWrapper creates a new wrapper to WorkflowService that will emit metrics for each service call.
-func NewWorkflowServiceWrapper(service workflowservice.WorkflowServiceClient, scope tally.Scope) *workflowServiceMetricsWrapper {
+func NewWorkflowServiceWrapper(service workflowservice.WorkflowServiceClient, scope tally.Scope) workflowservice.WorkflowServiceClient {
 	return &workflowServiceMetricsWrapper{service: service, scope: scope, childScopes: make(map[string]tally.Scope)}
 }
 
