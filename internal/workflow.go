@@ -23,17 +23,15 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"go.temporal.io/temporal/internal/common/backoff"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-
 	commonproto "go.temporal.io/temporal-proto/common"
-
 	"go.temporal.io/temporal/internal/common"
+	"go.temporal.io/temporal/internal/common/backoff"
+	"go.uber.org/zap"
 )
 
 var (

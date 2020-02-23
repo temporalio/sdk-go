@@ -914,17 +914,6 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) GetWorkflowFunctionSignature() (argTypes []reflect.Type, resultTypes []reflect.Type) {
-	fnType := reflect.TypeOf(we.fn)
-	for i := 0; i < fnType.NumIn(); i++ {
-		argTypes = append(argTypes, fnType.In(i))
-	}
-	for i := 0; i < fnType.NumOut(); i++ {
-		resultTypes = append(resultTypes, fnType.Out(i))
-	}
-	return
-}
-
 func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter

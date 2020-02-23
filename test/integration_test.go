@@ -517,3 +517,10 @@ func (t *tracingInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWor
 	t.trace = append(t.trace, "ExecuteChildWorkflow")
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
+
+func (t *tracingInterceptor) ExecuteWorkflow(ctx workflow.Context, args ...interface{}) []interface{} {
+	t.trace = append(t.trace, "ExecuteWorkflow begin")
+	result := t.Next.ExecuteWorkflow(ctx, args...)
+	t.trace = append(t.trace, "ExecuteWorkflow end")
+	return result
+}
