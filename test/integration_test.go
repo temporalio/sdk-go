@@ -155,7 +155,9 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	ts.Equal([]string{"ExecuteActivity"}, ts.tracer.instances[0].trace)
+	traces := ts.tracer.instances
+	lastTrace := traces[len(traces) - 1]
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, lastTrace.trace)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
