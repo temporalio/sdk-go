@@ -6,7 +6,7 @@ import (
 	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal-proto/errordetails"
+	"go.temporal.io/temporal-proto/failure"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"google.golang.org/grpc/codes"
@@ -27,7 +27,7 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	require := require.New(t)
 	wrapper := NewWorkflowServiceErrorWrapper(workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t)))
 
-	st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{
+	st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&failure.WorkflowExecutionAlreadyStarted{
 		StartRequestId: "srId",
 		RunId:          "rId",
 	})

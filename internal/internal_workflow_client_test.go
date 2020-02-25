@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/errordetails"
+	"go.temporal.io/temporal-proto/failure"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -351,7 +351,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
 	st, err := status.New(codes.AlreadyExists, "Already Started").
-		WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{RunId: runID})
+		WithDetails(&failure.WorkflowExecutionAlreadyStarted{RunId: runID})
 	s.NoError(err)
 
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
