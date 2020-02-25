@@ -194,7 +194,20 @@ type (
 	}
 )
 
-func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironmentImpl {
+func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *registry) *testWorkflowEnvironmentImpl {
+	var r *registry
+	if parentRegistry == nil {
+		r = newRegistry()
+		r.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name: sessionCreationActivityName,
+		})
+		r.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name: sessionCompletionActivityName,
+		})
+	} else {
+		r = parentRegistry
+	}
+
 	env := &testWorkflowEnvironmentImpl{
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
 			testSuite:                  s,
@@ -226,7 +239,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			ExecutionStartToCloseTimeoutSeconds: 1,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
-		registry: newRegistry(getGlobalRegistry()),
+		registry: r,
 
 		changeVersions: make(map[string]Version),
 		openSessions:   make(map[string]*SessionInfo),
@@ -317,7 +330,7 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
-	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite)
+	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
 	childEnv.parentEnv = env
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
@@ -470,7 +483,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
-		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf, interceptors: env.registry.WorkflowInterceptors()},
+		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.WorkflowInterceptors()},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
@@ -1270,7 +1283,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 }
 
 func (w *workflowExecutorWrapper) WorkflowType() string {
-	return w.name
+	return w.workflowType
 }
 
 // Execute executes the workflow code.
@@ -1287,7 +1300,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		env.runningCount++
 	}
 
-	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true,
+	m := &mockWrapper{env: env, name: w.workflowType, fn: w.fn, isWorkflow: true,
 		dataConverter: env.GetDataConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
@@ -1469,7 +1482,7 @@ func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Ar
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		// we found a mock function that matches to actual function, so call that mockFn
 		if m.isWorkflow {
-			executor := &workflowExecutor{name: fnName, fn: mockFn}
+			executor := &workflowExecutor{workflowType: fnName, fn: mockFn}
 			return executor.Execute(ctx.(Context), input)
 		}
 		executor := &activityExecutor{name: fnName, fn: mockFn}

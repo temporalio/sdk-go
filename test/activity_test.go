@@ -126,7 +126,7 @@ func (a *Activities) GetMemoAndSearchAttr(_ context.Context, memo, searchAttr st
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration
-	activity.RegisterWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
+	worker.RegisterActivityWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
 	// Check prefix
-	activity.RegisterWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
+	worker.RegisterActivityWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 }

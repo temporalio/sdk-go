@@ -156,7 +156,7 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	traces := ts.tracer.instances
-	lastTrace := traces[len(traces) - 1]
+	lastTrace := traces[len(traces)-1]
 	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, lastTrace.trace)
 }
 
@@ -389,8 +389,8 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	workflow.RegisterWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err = worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
+	ts.worker.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err = ts.worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 
@@ -425,10 +425,10 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
-		return
-	}
-	ts.NoError(err)
+	//if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
+	//	return
+	//}
+	//ts.NoError(err)
 	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on temporal-server
 	// bellow is used to guarantee domain is ready
 	var dummyReturn string
@@ -520,9 +520,9 @@ func (t *tracingInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWor
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
-func (t *tracingInterceptor) ExecuteWorkflow(ctx workflow.Context, args ...interface{}) []interface{} {
+func (t *tracingInterceptor) ExecuteWorkflow(ctx workflow.Context, workflowType string, args ...interface{}) []interface{} {
 	t.trace = append(t.trace, "ExecuteWorkflow begin")
-	result := t.Next.ExecuteWorkflow(ctx, args...)
+	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
 	return result
 }

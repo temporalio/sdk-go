@@ -134,7 +134,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		ret := &workflowservice.PollForDecisionTaskResponse{
 			TaskToken:              make([]byte, 5),
 			WorkflowExecution:      &commonproto.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
-			WorkflowType:           &commonproto.WorkflowType{Name: "go.temporal.io/temporal/evictiontest.testReplayWorkflow"},
+			WorkflowType:           &commonproto.WorkflowType{Name: "testReplayWorkflow"},
 			History:                &commonproto.History{Events: testEvents},
 			PreviousStartedEventId: 5}
 		return ret, nil

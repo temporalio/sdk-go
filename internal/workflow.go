@@ -229,40 +229,6 @@ type RegisterWorkflowOptions struct {
 	DisableAlreadyRegisteredCheck bool
 }
 
-// RegisterWorkflow - registers a workflow function with the framework.
-// The public form is: workflow.Register(...)
-// A workflow takes a cadence context and input and returns a (result, error) or just error.
-// Examples:
-//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if workflowFunc doesn't comply with the expected format.
-func RegisterWorkflow(workflowFunc interface{}) {
-	RegisterWorkflowWithOptions(workflowFunc, RegisterWorkflowOptions{})
-}
-
-// RegisterWorkflowWithOptions registers the workflow function with options.
-// The public form is: workflow.RegisterWithOptions(...)
-// The user can use options to provide an external name for the workflow or leave it empty if no
-// external name is required. This can be used as
-//  workflow.RegisterWithOptions(sampleWorkflow, RegisterWorkflowOptions{})
-//  workflow.RegisterWithOptions(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
-// A workflow takes a cadence context and input and returns a (result, error) or just error.
-// Examples:
-//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if workflowFunc doesn't comply with the expected format or tries to register the same workflow
-// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
-func RegisterWorkflowWithOptions(workflowFunc interface{}, opts RegisterWorkflowOptions) {
-	registry := getGlobalRegistry()
-	registry.RegisterWorkflowWithOptions(workflowFunc, opts)
-}
-
 // Await blocks the calling thread until condition() returns true
 // Returns CanceledError if the ctx is canceled.
 func Await(ctx Context, condition func() bool) error {
@@ -370,7 +336,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return impl, impl
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs ...interface{}) (results []interface{}) {
+func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowType string, inputArgs ...interface{}) (results []interface{}) {
 	args := []reflect.Value{reflect.ValueOf(ctx)}
 	for _, arg := range inputArgs {
 		// []byte arguments are not serialized
@@ -414,7 +380,14 @@ func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, inputArgs
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	i := getWorkflowInterceptor(ctx)
-	return i.ExecuteActivity(ctx, activity, args...)
+	future, settable := newDecodeFuture(ctx, activity)
+	registry := getRegistryFromWorkflowContext(ctx)
+	activityType, err := getValidatedActivityFunction(activity, args, registry)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+	return i.ExecuteActivity(ctx, activityType.Name, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {

@@ -31,15 +31,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func init() {
-	RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-		Name: sessionCreationActivityName,
-	})
-	RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-		Name: sessionCompletionActivityName,
-	})
-}
-
 type (
 	// SessionInfo contains information of a created session. For now, exported
 	// fields are SessionID and HostName.

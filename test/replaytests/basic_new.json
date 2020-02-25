@@ -8,7 +8,7 @@
       "taskId": 22020168,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "go.temporal.io/temporal/test/replaytests.Workflow"
+          "name": "Workflow"
         },
         "taskList": {
           "name": "helloWorldGroup"

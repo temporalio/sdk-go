@@ -43,40 +43,11 @@ type WorkflowUnitTest struct {
 }
 
 func (s *WorkflowUnitTest) SetupSuite() {
-	RegisterWorkflow(worldWorkflow)
-	RegisterWorkflow(helloWorldActivityWorkflow)
-	RegisterWorkflow(testClockWorkflow)
-	RegisterWorkflow(greetingsWorkflow)
-	RegisterWorkflow(continueAsNewWorkflowTest)
-	RegisterWorkflow(cancelWorkflowTest)
-	RegisterWorkflow(cancelWorkflowAfterActivityTest)
-	RegisterWorkflow(signalWorkflowTest)
-	RegisterWorkflow(receiveCorruptSignalWorkflowTest)
-	RegisterWorkflow(receiveAsyncCorruptSignalWorkflowTest)
-	RegisterWorkflow(receiveWithSelectorCorruptSignalWorkflowTest)
-	RegisterWorkflow(splitJoinActivityWorkflow)
-	RegisterWorkflow(returnPanicWorkflow)
-	RegisterWorkflow(activityOptionsWorkflow)
-	RegisterWorkflow(receiveAsyncCorruptSignalOnClosedChannelWorkflowTest)
-	RegisterWorkflow(receiveCorruptSignalOnClosedChannelWorkflowTest)
-	RegisterWorkflow(bufferedChanWorkflowTest)
-	RegisterWorkflow(bufferedChanWithSelectorWorkflowTest)
-	RegisterWorkflow(closeChannelTest)
-	RegisterWorkflow(closeChannelInSelectTest)
-	RegisterWorkflow(getMemoTest)
-	RegisterWorkflow(sleepWorkflow)
-
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
 		HeartbeatTimeout:       20 * time.Second,
 	}
-
-	RegisterActivity(testAct)
-	RegisterActivity(helloWorldAct)
-	RegisterActivity(getGreetingActivity)
-	RegisterActivity(getNameActivity)
-	RegisterActivity(sayGreetingActivity)
 }
 
 func TestWorkflowUnitTest(t *testing.T) {
@@ -128,6 +99,7 @@ func (s *WorkflowUnitTest) Test_SingleActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 	ctx := context.WithValue(context.Background(), unitTestKey, s)
 	env.SetWorkerOptions(WorkerOptions{BackgroundActivityContext: ctx})
+	env.RegisterActivity(helloWorldAct)
 	env.ExecuteWorkflow(helloWorldActivityWorkflow, "Hello")
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -205,6 +177,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	}).Twice()
 	tracer := tracingInterceptorFactory{}
 	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptorFactory{&tracer}})
+	env.RegisterActivity(testAct)
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -214,13 +187,19 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	s.Equal("Hello Flow!", result)
 	s.Equal(1, len(tracer.instances))
 	trace := tracer.instances[len(tracer.instances)-1].trace
-	s.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, trace)
+	s.Equal([]string{
+		"ExecuteWorkflow splitJoinActivityWorkflow begin",
+		"ExecuteActivity",
+		"ExecuteActivity",
+		"ExecuteWorkflow splitJoinActivityWorkflow end",
+	}, trace)
 }
 
 func TestWorkflowPanic(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	ts.SetLogger(zap.NewNop()) // this test simulate panic, use nop logger to avoid logging noise
 	env := ts.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testAct)
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NotNil(t, env.GetWorkflowError())
@@ -305,7 +284,7 @@ func TestTimerWorkflow(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	w := &testTimerWorkflow{t: t}
-	RegisterWorkflow(w.Execute)
+	env.RegisterWorkflow(w.Execute)
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -355,8 +334,9 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, _ []byte) (result []by
 func TestActivityCancellation(t *testing.T) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testAct)
 	w := &testActivityCancelWorkflow{t: t}
-	RegisterWorkflow(w.Execute)
+	env.RegisterWorkflow(w.Execute)
 	env.ExecuteWorkflow(w.Execute, []byte{1, 2})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -412,7 +392,12 @@ func greetingsWorkflow(ctx Context) (result string, err error) {
 
 func (s *WorkflowUnitTest) Test_ExternalExampleWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(getGreetingActivity)
+	env.RegisterActivity(getNameActivity)
+	env.RegisterActivity(sayGreetingActivity)
+
 	env.ExecuteWorkflow(greetingsWorkflow)
+
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
@@ -1125,7 +1110,7 @@ func waitGroupNegativeCounterPanicsWorkflowTest(ctx Context) (int, error) {
 
 func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
+	env.RegisterWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
 	env.ExecuteWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 
@@ -1136,7 +1121,8 @@ func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTest() {
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
+	env.RegisterWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
+	env.RegisterWorkflow(sleepWorkflow)
 	env.ExecuteWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 
@@ -1147,7 +1133,8 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTe
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(waitGroupMultipleWaitsWorkflowTest)
+	env.RegisterWorkflow(waitGroupMultipleWaitsWorkflowTest)
+	env.RegisterWorkflow(sleepWorkflow)
 	env.ExecuteWorkflow(waitGroupMultipleWaitsWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -1159,7 +1146,8 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {
 
 func (s *WorkflowUnitTest) Test_WaitGroupWaitForMWorkflowTest() {
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(waitGroupWaitForMWorkflowTest)
+	env.RegisterWorkflow(waitGroupWaitForMWorkflowTest)
+	env.RegisterWorkflow(sleepWorkflow)
 
 	n := 10
 	m := 5
@@ -1174,7 +1162,8 @@ func (s *WorkflowUnitTest) Test_WaitGroupWaitForMWorkflowTest() {
 
 func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(waitGroupWorkflowTest)
+	env.RegisterWorkflow(waitGroupWorkflowTest)
+	env.RegisterWorkflow(sleepWorkflow)
 
 	n := 10
 	env.ExecuteWorkflow(waitGroupWorkflowTest, n)
@@ -1213,9 +1202,9 @@ func (t *tracingInterceptor) ExecuteActivity(ctx Context, activity interface{}, 
 	return t.Next.ExecuteActivity(ctx, activity, args...)
 }
 
-func (t *tracingInterceptor) ExecuteWorkflow(ctx Context, args ...interface{}) []interface{} {
-	t.trace = append(t.trace, "ExecuteWorkflow begin")
-	result := t.Next.ExecuteWorkflow(ctx, args...)
-	t.trace = append(t.trace, "ExecuteWorkflow end")
+func (t *tracingInterceptor) ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{} {
+	t.trace = append(t.trace, "ExecuteWorkflow "+workflowType+" begin")
+	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
+	t.trace = append(t.trace, "ExecuteWorkflow "+workflowType+" end")
 	return result
 }
