@@ -155,9 +155,7 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	traces := ts.tracer.instances
-	lastTrace := traces[len(traces)-1]
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, lastTrace.trace)
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, ts.tracer.GetTrace())
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -363,7 +361,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.NoError(err)
 	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
 	ts.Equal("memoVal, searchAttrVal", result)
-	ts.Equal([]string{"ExecuteChildWorkflow"}, ts.tracer.instances[0].trace)
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace())
 }
 
 // Flaky test. Rerun if failed.
@@ -389,8 +387,9 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.worker.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err = ts.worker.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err = replayer.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 
@@ -429,6 +428,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 	//	return
 	//}
 	//ts.NoError(err)
+	fmt.Println(err)
 	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on temporal-server
 	// bellow is used to guarantee domain is ready
 	var dummyReturn string
@@ -495,6 +495,10 @@ type tracingInterceptorFactory struct {
 	instances []*tracingInterceptor
 }
 
+func (t *tracingInterceptorFactory) GetTrace() []string {
+	traces := t.instances[len(t.instances)-1]
+	return traces.trace
+}
 func (t *tracingInterceptorFactory) NewInterceptor(next worker.WorkflowInterceptor) worker.WorkflowInterceptor {
 	result := &tracingInterceptor{
 		WorkflowInterceptorBase: worker.WorkflowInterceptorBase{Next: next},

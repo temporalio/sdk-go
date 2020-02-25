@@ -60,11 +60,11 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 	var err error
 
 	for _, testFile := range testFiles {
-		w := worker.New(nil, "foo", "bar", worker.Options{})
-		w.RegisterWorkflow(Workflow)
-		w.RegisterWorkflow(Workflow2)
+		replayer := worker.NewWorkflowReplayer()
+		replayer.RegisterWorkflow(Workflow)
+		replayer.RegisterWorkflow(Workflow2)
 
-		err = w.ReplayWorkflowHistoryFromJSONFile(logger, testFile)
+		err = replayer.ReplayWorkflowHistoryFromJSONFile(logger, testFile)
 		require.NoError(s.T(), err)
 	}
 }

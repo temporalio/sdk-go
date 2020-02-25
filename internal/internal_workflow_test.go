@@ -586,8 +586,9 @@ func receiveCorruptSignalOnClosedChannelWorkflowTest(ctx Context) ([]message, er
 	var result []message
 	var m message
 	ch.Close()
-	ch.Receive(ctx, &m)
-	result = append(result, m)
+	more := ch.Receive(ctx, &m)
+
+	result = append(result, message{Value: fmt.Sprintf("%v", more)})
 	return result, nil
 }
 
@@ -750,13 +751,14 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_Receive_S
 		env.SignalWorkflow("channelExpectingTypeMessage", "wrong")
 	}, time.Second)
 
-	env.ExecuteWorkflow(receiveAsyncCorruptSignalOnClosedChannelWorkflowTest)
+	env.ExecuteWorkflow(receiveCorruptSignalOnClosedChannelWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 
 	var result []message
 	_ = env.GetWorkflowResult(&result)
-	s.EqualValues(0, len(result))
+	s.EqualValues(1, len(result))
+	s.Equal("false", result[0].Value)
 }
 
 func closeChannelTest(ctx Context) error {

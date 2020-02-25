@@ -254,9 +254,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 
 	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflow)
-	err := worker.ReplayWorkflowHistory(logger, history)
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err := replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -285,9 +285,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflowLocalActivity)
-	err := worker.ReplayWorkflowHistory(logger, history)
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
+	err := replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -317,9 +317,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflow)
-	err := worker.ReplayWorkflowHistory(logger, history)
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err := replayer.ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
 }
 
@@ -349,25 +349,25 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 
 	history := &commonproto.History{Events: testEvents}
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflow)
-	err := worker.ReplayWorkflowHistory(logger, history)
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err := replayer.ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFileParent() {
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflowFromFileParent)
-	err := worker.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/parentWF.json")
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowFromFileParent)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/parentWF.json")
 	require.NoError(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 	logger := getLogger()
-	worker := newAggregatedWorker(nil, "foo", "bar", WorkerOptions{})
-	worker.RegisterWorkflow(testReplayWorkflowFromFile)
-	err := worker.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/sampleHistory.json")
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowFromFile)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/sampleHistory.json")
 	require.NoError(s.T(), err)
 }
 

@@ -869,8 +869,6 @@ func isTypeByteSlice(inType reflect.Type) bool {
 	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
 }
 
-var once sync.Once
-
 func newRegistry() *registry {
 	return &registry{
 		workflowFuncMap:  make(map[string]interface{}),
@@ -1166,10 +1164,30 @@ func (aw *AggregatedWorker) Stop() {
 	aw.logger.Info("Stopped Worker")
 }
 
+// WorkflowReplayer is used to replay workflow code from an event history
+type WorkflowReplayer struct {
+	registry *registry
+}
+
+// NewWorkflowReplayer creates an instance of the WorkflowReplayer
+func NewWorkflowReplayer() *WorkflowReplayer {
+	return &WorkflowReplayer{registry: newRegistry()}
+}
+
+// RegisterWorkflow registers workflow function to replay
+func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
+	aw.registry.RegisterWorkflow(w)
+}
+
+// RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
+func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
 // ReplayWorkflowHistory executes a single decision task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *AggregatedWorker) ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -1184,7 +1202,7 @@ func (aw *AggregatedWorker) ReplayWorkflowHistory(logger *zap.Logger, history *c
 // ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *AggregatedWorker) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
 	return aw.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
 }
 
@@ -1192,7 +1210,7 @@ func (aw *AggregatedWorker) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *AggregatedWorker) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
+func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
 
 	if err != nil {
@@ -1210,7 +1228,8 @@ func (aw *AggregatedWorker) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap
 	return aw.replayWorkflowHistory(logger, service, ReplayDomainName, history)
 }
 
-func (aw *AggregatedWorker) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+// ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
+func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
 	sharedExecution := &commonproto.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
@@ -1227,7 +1246,7 @@ func (aw *AggregatedWorker) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, domain, hResponse.History)
 }
 
-func (aw *AggregatedWorker) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, domain string, history *commonproto.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, domain string, history *commonproto.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {

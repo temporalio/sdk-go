@@ -48,17 +48,6 @@ import (
 	"go.temporal.io/temporal/worker"
 )
 
-func init() {
-	// this is an arbitrary workflow we use for this test
-	// NOTE: a simple helloworld that doesn't execute an activity
-	// won't work because the workflow will simply just complete
-	// and won't stay in the cache.
-	// for this test, we need a workflow that "blocks" either by
-	// running an activity or waiting on a timer so that its execution
-	// context sticks around in the cache.
-	internal.RegisterWorkflow(testReplayWorkflow)
-}
-
 func testReplayWorkflow(ctx internal.Context) error {
 	ao := internal.ActivityOptions{
 		ScheduleToStartTimeout: time.Second,
@@ -169,6 +158,14 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskList).Times(1)
 
 	workflowWorker := internal.NewWorker(s.service, "test-domain", "tasklist", worker.Options{DisableActivityWorker: true})
+	// this is an arbitrary workflow we use for this test
+	// NOTE: a simple helloworld that doesn't execute an activity
+	// won't work because the workflow will simply just complete
+	// and won't stay in the cache.
+	// for this test, we need a workflow that "blocks" either by
+	// running an activity or waiting on a timer so that its execution
+	// context sticks around in the cache.
+	workflowWorker.RegisterWorkflow(testReplayWorkflow)
 
 	_ = workflowWorker.Start()
 
