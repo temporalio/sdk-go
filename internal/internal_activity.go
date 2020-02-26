@@ -282,7 +282,7 @@ func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) er
 	return nil
 }
 
-func getValidatedActivityFunction(f interface{}, args []interface{}, dataConverter DataConverter, registry *registry) (*ActivityType, []byte, error) {
+func getValidatedActivityFunction(f interface{}, args []interface{}, registry *registry) (*ActivityType, error) {
 	fnName := ""
 	fType := reflect.TypeOf(f)
 	switch getKind(fType) {
@@ -291,7 +291,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, dataConvert
 
 	case reflect.Func:
 		if err := validateFunctionArgs(f, args, false); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		fnName = getFunctionName(f)
 		if alias, ok := registry.getActivityAlias(fnName); ok {
@@ -299,15 +299,11 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, dataConvert
 		}
 
 	default:
-		return nil, nil, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"invalid type 'f' parameter provided, it can be either activity function or name of the activity: %v", f)
 	}
 
-	input, err := encodeArgs(dataConverter, args)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &ActivityType{Name: fnName}, input, nil
+	return &ActivityType{Name: fnName}, nil
 }
 
 func getKind(fType reflect.Type) reflect.Kind {
@@ -323,10 +319,10 @@ func isActivityContext(inType reflect.Type) bool {
 }
 
 func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) ([]byte, error) {
-	fnName := getFunctionName(f)
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
+		fnName := getFunctionName(f)
 		return nil, fmt.Errorf(
 			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
 			fnName, resultSize)
@@ -358,6 +354,39 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 			errValue)
 	}
 	return result, errInterface
+}
+
+func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result []byte, err error) {
+	// results contain all results including error
+	resultSize := len(results)
+
+	if resultSize < 1 || resultSize > 2 {
+		fnName := getFunctionName(f)
+		err = fmt.Errorf(
+			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
+			fnName, resultSize)
+		return
+	}
+	if resultSize > 1 {
+		retValue := results[0]
+		if retValue != nil {
+			result, err = encodeArg(dataConverter, retValue)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	errResult := results[resultSize-1]
+	if errResult != nil {
+		var ok bool
+		err, ok = errResult.(error)
+		if !ok {
+			err = fmt.Errorf(
+				"failed to serialize error result as it is not of error interface: %v",
+				errResult)
+		}
+	}
+	return
 }
 
 func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interface{}, dataConverter DataConverter) error {

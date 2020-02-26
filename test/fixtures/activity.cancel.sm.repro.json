@@ -7,7 +7,7 @@
       "version": -24,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "go.temporal.io/temporal/test.(*Workflows).ActivityCancelRepro-fm"
+          "name": "ActivityCancelRepro-fm"
         },
         "taskList": {
           "name": "tl-1"

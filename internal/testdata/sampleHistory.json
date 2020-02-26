@@ -6,7 +6,7 @@
       "eventType": "EventTypeWorkflowExecutionStarted",
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "go.temporal.io/temporal/internal.testReplayWorkflowFromFile"
+          "name": "testReplayWorkflowFromFile"
         },
         "taskList": {
           "name": "taskList1"
@@ -55,7 +55,7 @@
       "activityTaskScheduledEventAttributes": {
         "activityId": "0",
         "activityType": {
-          "name": "go.temporal.io/temporal/internal.testActivityMultipleArgs"
+          "name": "testActivityMultipleArgs"
         },
         "taskList": {
           "name": "taskList1"

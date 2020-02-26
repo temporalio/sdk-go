@@ -74,12 +74,5 @@ func isServiceTransientError(err error) bool {
 		*serviceerror.CancellationAlreadyRequested:
 		return false
 	}
-
-	if err == errShutdown {
-		return false
-	}
-
-	// serviceerror.Internal
-	// serviceerror.ResourceExhausted
-	return true
+	return err != errShutdown
 }

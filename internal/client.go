@@ -517,7 +517,7 @@ func NewClient(service workflowservice.WorkflowServiceClient, domain string, opt
 	return &workflowClient{
 		workflowService:    metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
 		domain:             domain,
-		registry:           newRegistry(getGlobalRegistry()),
+		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
 		identity:           identity,
 		dataConverter:      dataConverter,
