@@ -30,7 +30,7 @@ import "go.uber.org/zap"
 type WorkflowInterceptorFactory interface {
 	// NewInterceptor creates an interceptor instance. The created instance must delegate every call to
 	// the next parameter for workflow code function correctly.
-	NewInterceptor(next WorkflowInterceptor) WorkflowInterceptor
+	NewInterceptor(info *WorkflowInfo, next WorkflowInterceptor) WorkflowInterceptor
 }
 
 // WorkflowInterceptor is an interface that can be implemented to intercept calls to the workflow function
@@ -47,7 +47,7 @@ type WorkflowInterceptor interface {
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
-	ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future
+	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture
 	GetWorkflowInfo(ctx Context) *WorkflowInfo
 	GetLogger(ctx Context) *zap.Logger
@@ -86,8 +86,8 @@ func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activityType stri
 }
 
 // ExecuteLocalActivity forwards to t.Next
-func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	return t.Next.ExecuteLocalActivity(ctx, activity, args...)
+func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+	return t.Next.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
 // ExecuteChildWorkflow forwards to t.Next

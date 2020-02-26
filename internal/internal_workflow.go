@@ -235,6 +235,7 @@ type (
 const (
 	workflowEnvironmentContextKey    = "workflowEnv"
 	workflowInterceptorsContextKey   = "workflowInterceptor"
+	localActivityFnContextKey        = "localActivityFn"
 	workflowEnvInterceptorContextKey = "envInterceptor"
 	workflowResultContextKey         = "workflowResult"
 	coroutinesContextKey             = "coroutines"
@@ -439,7 +440,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	envInterceptor := &workflowEnvironmentInterceptor{env: env}
 	var interceptor WorkflowInterceptor = envInterceptor
 	for i := len(factories) - 1; i >= 0; i-- {
-		interceptor = factories[i].NewInterceptor(interceptor)
+		interceptor = factories[i].NewInterceptor(env.WorkflowInfo(), interceptor)
 	}
 	envInterceptor.interceptorChainHead = interceptor
 	return interceptor, envInterceptor

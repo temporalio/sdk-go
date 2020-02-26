@@ -499,13 +499,20 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	i := getWorkflowInterceptor(ctx)
-	return i.ExecuteLocalActivity(ctx, activity, args...)
+	activityType := lastPartOfName(getFunctionName(activity))
+	ctx = WithValue(ctx, localActivityFnContextKey, activity)
+	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	future, settable := newDecodeFuture(ctx, activity)
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+	activityFn := ctx.Value(localActivityFnContextKey)
+	if activityFn == nil {
+		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
+	}
 
-	if err := validateFunctionArgs(activity, args, false); err != nil {
+	future, settable := newDecodeFuture(ctx, activityFn)
+
+	if err := validateFunctionArgs(activityFn, args, false); err != nil {
 		settable.Set(nil, err)
 		return future
 	}
@@ -514,11 +521,10 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 		settable.Set(nil, err)
 		return future
 	}
-
 	params := &executeLocalActivityParams{
 		localActivityOptions: *options,
-		ActivityFn:           activity,
-		ActivityType:         lastPartOfName(getFunctionName(activity)),
+		ActivityFn:           activityFn,
+		ActivityType:         activityType,
 		InputArgs:            args,
 		WorkflowInfo:         GetWorkflowInfo(ctx),
 		DataConverter:        getDataConverterFromWorkflowContext(ctx),

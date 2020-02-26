@@ -1184,7 +1184,7 @@ type tracingInterceptorFactory struct {
 	instances []*tracingInterceptor
 }
 
-func (t *tracingInterceptorFactory) NewInterceptor(next WorkflowInterceptor) WorkflowInterceptor {
+func (t *tracingInterceptorFactory) NewInterceptor(info *WorkflowInfo, next WorkflowInterceptor) WorkflowInterceptor {
 	result := &tracingInterceptor{
 		WorkflowInterceptorBase: WorkflowInterceptorBase{Next: next},
 	}

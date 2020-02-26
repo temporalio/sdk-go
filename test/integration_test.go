@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,7 +55,7 @@ type IntegrationTestSuite struct {
 	worker       worker.Worker
 	seq          int64
 	taskListName string
-	tracer       tracingInterceptorFactory
+	tracer       *tracingInterceptorFactory
 }
 
 const (
@@ -135,11 +136,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
-	ts.tracer = tracingInterceptorFactory{}
+	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
-		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{&ts.tracer},
+		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
 	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
@@ -155,7 +156,10 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"}, ts.tracer.GetTrace())
+	// See https://grokbase.com/p/gg/golang-nuts/153jjj8dgg/go-nuts-fm-suffix-in-function-name-what-does-it-mean
+	// for explanation of -fm postfix.
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("Basic-fm"))
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -361,7 +365,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.NoError(err)
 	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
 	ts.Equal("memoVal, searchAttrVal", result)
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace())
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess-fm"))
 }
 
 // Flaky test. Rerun if failed.
@@ -492,18 +496,30 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 var _ interceptors.WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
 
 type tracingInterceptorFactory struct {
-	instances []*tracingInterceptor
+	sync.Mutex
+	// key is workflow id
+	instances map[string]*tracingInterceptor
 }
 
-func (t *tracingInterceptorFactory) GetTrace() []string {
-	traces := t.instances[len(t.instances)-1]
-	return traces.trace
+func newtracingInterceptorFactory() *tracingInterceptorFactory {
+	return &tracingInterceptorFactory{instances: make(map[string]*tracingInterceptor)}
 }
-func (t *tracingInterceptorFactory) NewInterceptor(next interceptors.WorkflowInterceptor) interceptors.WorkflowInterceptor {
+
+func (t *tracingInterceptorFactory) GetTrace(workflowType string) []string {
+	t.Mutex.Lock()
+	defer t.Mutex.Unlock()
+	if i, ok := t.instances[workflowType]; ok {
+		return i.trace
+	}
+	panic(fmt.Sprintf("Unknown workflowType %v, known types: %v", workflowType, t.instances))
+}
+func (t *tracingInterceptorFactory) NewInterceptor(info *workflow.Info, next interceptors.WorkflowInterceptor) interceptors.WorkflowInterceptor {
+	t.Mutex.Lock()
+	defer t.Mutex.Unlock()
 	result := &tracingInterceptor{
 		WorkflowInterceptorBase: interceptors.WorkflowInterceptorBase{Next: next},
 	}
-	t.instances = append(t.instances, result)
+	t.instances[info.WorkflowType.Name] = result
 	return result
 }
 
