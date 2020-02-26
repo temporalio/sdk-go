@@ -31,16 +31,16 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/temporal"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
-	"go.uber.org/goleak"
-	"go.uber.org/zap"
-
-	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/interceptors"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
+	"go.uber.org/goleak"
+	"go.uber.org/zap"
 )
 
 type IntegrationTestSuite struct {
@@ -139,7 +139,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
-		WorkflowInterceptorChainFactories: []worker.WorkflowInterceptorFactory{&ts.tracer},
+		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{&ts.tracer},
 	}
 	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
@@ -489,7 +489,7 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
-var _ worker.WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
+var _ interceptors.WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
 
 type tracingInterceptorFactory struct {
 	instances []*tracingInterceptor
@@ -499,18 +499,18 @@ func (t *tracingInterceptorFactory) GetTrace() []string {
 	traces := t.instances[len(t.instances)-1]
 	return traces.trace
 }
-func (t *tracingInterceptorFactory) NewInterceptor(next worker.WorkflowInterceptor) worker.WorkflowInterceptor {
+func (t *tracingInterceptorFactory) NewInterceptor(next interceptors.WorkflowInterceptor) interceptors.WorkflowInterceptor {
 	result := &tracingInterceptor{
-		WorkflowInterceptorBase: worker.WorkflowInterceptorBase{Next: next},
+		WorkflowInterceptorBase: interceptors.WorkflowInterceptorBase{Next: next},
 	}
 	t.instances = append(t.instances, result)
 	return result
 }
 
-var _ worker.WorkflowInterceptor = (*tracingInterceptor)(nil)
+var _ interceptors.WorkflowInterceptor = (*tracingInterceptor)(nil)
 
 type tracingInterceptor struct {
-	worker.WorkflowInterceptorBase
+	interceptors.WorkflowInterceptorBase
 	trace []string
 }
 

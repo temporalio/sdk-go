@@ -162,16 +162,6 @@ type (
 	// NonDeterministicWorkflowPolicy is an enum for configuring how client's decision task handler deals with
 	// mismatched history events (presumably arising from non-deterministic workflow definitions).
 	NonDeterministicWorkflowPolicy = internal.NonDeterministicWorkflowPolicy
-
-	// WorkflowInterceptorFactory is used to create a single interceptor in a workflow interceptor chain
-	WorkflowInterceptorFactory = internal.WorkflowInterceptorFactory
-
-	// WorkflowInterceptor intercepts calls from workflow code.
-	WorkflowInterceptor = internal.WorkflowInterceptor
-
-	// WorkflowInterceptorBase is a noop implementation of WorkflowInterceptor that just forwards requests
-	// to the next link in an interceptor chain. To be used as base implementation of interceptors.
-	WorkflowInterceptorBase = internal.WorkflowInterceptorBase
 )
 
 const (
