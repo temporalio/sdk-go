@@ -1282,10 +1282,6 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 	return a.activityExecutor.ExecuteWithActualArgs(ctx, inputArgs)
 }
 
-func (w *workflowExecutorWrapper) WorkflowType() string {
-	return w.workflowType
-}
-
 // Execute executes the workflow code.
 func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []byte, err error) {
 	env := w.env

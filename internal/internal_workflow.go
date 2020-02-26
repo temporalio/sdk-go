@@ -94,7 +94,6 @@ type (
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.
 	workflow interface {
 		Execute(ctx Context, input []byte) (result []byte, err error)
-		WorkflowType() string
 	}
 
 	sendCallback struct {

@@ -907,10 +907,6 @@ func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
 	return serializeResults(we.fn, results, dataConverter)
 }
 
-func (we *workflowExecutor) WorkflowType() string {
-	return we.workflowType
-}
-
 // Wrapper to execute activity functions.
 type activityExecutor struct {
 	name string
