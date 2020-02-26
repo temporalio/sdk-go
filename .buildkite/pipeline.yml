@@ -15,7 +15,7 @@ steps:
     agents:
       queue: "default"
       docker: "*"
-    command: "make integ_test_sticky_off"
+    command: "make integration-test-sticky-off"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
