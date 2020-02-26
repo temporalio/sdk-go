@@ -3,7 +3,7 @@ steps:
     agents:
       queue: "default"
       docker: "*"
-    command: "make unit_test"
+    command: "make unit-test"
     artifact_paths:
       - ".build/coverage/*.out"
     plugins:
@@ -24,13 +24,13 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: integ-test
-          config: docker/buildkite/docker-compose.yml 
+          config: docker/buildkite/docker-compose.yml
 
   - label: ":golang: integration-test-sticky-on"
     agents:
       queue: "default"
       docker: "*"
-    command: "make integ_test_sticky_on"
+    command: "make integration-test-sticky-on"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
