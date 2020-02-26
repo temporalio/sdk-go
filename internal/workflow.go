@@ -390,12 +390,12 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	return i.ExecuteActivity(ctx, activityType.Name, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
 	// Validate type and its arguments.
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
-	future, settable := newDecodeFuture(ctx, activity)
-	activityType, err := getValidatedActivityFunction(activity, args, registry)
+	future, settable := newDecodeFuture(ctx, typeName)
+	activityType, err := getValidatedActivityFunction(typeName, args, registry)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -410,7 +410,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, activity 
 
 	// Validate session state.
 	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
-		isCreationActivity := isSessionCreationActivity(activity)
+		isCreationActivity := isSessionCreationActivity(typeName)
 		if sessionInfo.sessionState == sessionStateFailed && !isCreationActivity {
 			settable.Set(nil, ErrSessionFailed)
 			return future

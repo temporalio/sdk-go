@@ -46,7 +46,7 @@ type WorkflowInterceptor interface {
 	// workflowType argument is for information purposes only and should not be mutated.
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 
-	ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
+	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture
 	GetWorkflowInfo(ctx Context) *WorkflowInfo
@@ -81,8 +81,8 @@ func (t *WorkflowInterceptorBase) ExecuteWorkflow(ctx Context, workflowType stri
 }
 
 // ExecuteActivity forwards to t.Next
-func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	return t.Next.ExecuteActivity(ctx, activity, args...)
+func (t *WorkflowInterceptorBase) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
+	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
 // ExecuteLocalActivity forwards to t.Next

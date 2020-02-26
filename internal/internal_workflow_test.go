@@ -1199,9 +1199,9 @@ type tracingInterceptor struct {
 	trace []string
 }
 
-func (t *tracingInterceptor) ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func (t *tracingInterceptor) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
 	t.trace = append(t.trace, "ExecuteActivity")
-	return t.Next.ExecuteActivity(ctx, activity, args...)
+	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
 func (t *tracingInterceptor) ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{} {
