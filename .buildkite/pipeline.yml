@@ -24,7 +24,7 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: integ-test
-          config: docker/buildkite/docker-compose.yml
+          config: docker/buildkite/docker-compose.yml 
 
   - label: ":golang: integration-test-sticky-on"
     agents:
