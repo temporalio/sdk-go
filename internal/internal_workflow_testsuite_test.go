@@ -33,7 +33,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal-proto/serviceerror"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	commonproto "go.temporal.io/temporal-proto/common"
@@ -1643,7 +1642,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	}
 
 	cancelledLocalActivityFn := func() error {
-		time.Sleep(time.Second)
+		// It will be cancelled anyway.
+		time.Sleep(time.Hour)
 		return nil
 	}
 
@@ -1654,11 +1654,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
-		NewSelector(ctx).AddFuture(f, func(f Future) {
-			cancel()
-		}).AddFuture(f2, func(f Future) {
+		NewSelector(ctx).
+			AddFuture(f, func(f Future) {
+				cancel()
+			}).
+			AddFuture(f2, func(f Future) {
 
-		}).Select(ctx)
+			}).
+			Select(ctx)
 
 		err2 := f2.Get(ctx, nil)
 		if _, ok := err2.(*CanceledError); !ok {
@@ -1672,9 +1675,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	RegisterWorkflow(workflowFn)
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	var startedCount, completedCount, canceledCount atomic.Int32
+	var startedCount, completedCount, canceledCount int
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount.Inc()
+		startedCount++
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
@@ -1683,18 +1686,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount.Inc()
+		completedCount++
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount.Inc()
+		canceledCount++
 	})
 
 	env.ExecuteWorkflow(workflowFn)
 	env.AssertExpectations(s.T())
-	s.EqualValues(2, startedCount.Load())
-	s.EqualValues(1, completedCount.Load())
-	s.EqualValues(1, canceledCount.Load())
+	s.Equal(2, startedCount)
+	s.Equal(1, completedCount)
+	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
@@ -2575,7 +2578,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
 			WorkflowID:                   "Test_ChildWorkflowAlreadyRunning",
 			ExecutionStartToCloseTimeout: time.Minute,
-			//WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicate,
+			// WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicate,
 		})
 
 		var result1, result2 string
