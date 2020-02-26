@@ -22,8 +22,8 @@ services:
         aliases:
           - statsd
 
-  cadence:
-    image: ubercadence/server:master-auto-setup
+  temporal:
+    image: temporalio/temporal:master-auto-setup
     ports:
       - "7933:7933"
       - "7934:7934"
@@ -39,7 +39,7 @@ services:
     networks:
       services-network:
         aliases:
-          - cadence
+          - temporal
 
   integ-test:
     build:
@@ -49,7 +49,7 @@ services:
       - "SERVICE_ADDR=cadence:7933"
       - "GO111MODULE=on"
     depends_on:
-      - cadence
+      - temporal
     volumes:
       - ../../:/go/src/go.temporal.io/temporal
     networks:
