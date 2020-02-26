@@ -451,7 +451,7 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 
 func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivityTask) (result *localActivityResult) {
 	workflowType := task.params.WorkflowInfo.WorkflowType.Name
-	activityType := getFunctionName(task.params.ActivityFn)
+	activityType := task.params.ActivityType
 	metricsScope := getMetricsScopeForLocalActivity(lath.metricsScope, workflowType, activityType)
 
 	metricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)

@@ -209,6 +209,9 @@ func (t *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
 
 // RegisterWorkflowWithOptions registers workflow implementation with the TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	if len(t.ExpectedCalls) > 0 {
+		panic("RegisterWorkflow calls cannot follow mock related ones like OnWorkflow or similar")
+	}
 	t.impl.RegisterWorkflowWithOptions(w, options)
 }
 
@@ -219,6 +222,9 @@ func (t *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
 
 // RegisterActivityWithOptions registers activity implementation with TestWorkflowEnvironment
 func (t *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	if len(t.ExpectedCalls) > 0 {
+		panic("RegisterActivity calls cannot follow mock related ones like OnActivity or similar")
+	}
 	t.impl.RegisterActivityWithOptions(a, options)
 }
 
@@ -250,10 +256,7 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 		if err := validateFnFormat(fnType, false); err != nil {
 			panic(err)
 		}
-		fnName := getFunctionName(activity)
-		if alias, ok := t.impl.registry.getActivityAlias(fnName); ok {
-			fnName = alias
-		}
+		fnName := getActivityFunctionName(t.impl.registry, activity)
 		call = t.Mock.On(fnName, args...)
 
 	case reflect.String:
@@ -293,7 +296,7 @@ func (t *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 		if err := validateFnFormat(fnType, true); err != nil {
 			panic(err)
 		}
-		fnName := getFunctionName(workflow)
+		fnName := getWorkflowFunctionName(t.impl.registry, workflow)
 		if alias, ok := t.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}

@@ -164,6 +164,7 @@ func returnPanicWorkflow(_ Context) (err error) {
 
 func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(testAct, RegisterActivityOptions{Name: "testActivityWithOptions"})
 	env.OnActivity(testAct, mock.Anything).Return(func(ctx context.Context) (string, error) {
 		activityID := GetActivityInfo(ctx).ActivityID
 		switch activityID {
@@ -177,7 +178,6 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	}).Twice()
 	tracer := tracingInterceptorFactory{}
 	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptorFactory{&tracer}})
-	env.RegisterActivity(testAct)
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -189,8 +189,8 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 	trace := tracer.instances[len(tracer.instances)-1].trace
 	s.Equal([]string{
 		"ExecuteWorkflow splitJoinActivityWorkflow begin",
-		"ExecuteActivity",
-		"ExecuteActivity",
+		"ExecuteActivity testActivityWithOptions",
+		"ExecuteActivity testActivityWithOptions",
 		"ExecuteWorkflow splitJoinActivityWorkflow end",
 	}, trace)
 }
@@ -1200,7 +1200,7 @@ type tracingInterceptor struct {
 }
 
 func (t *tracingInterceptor) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
-	t.trace = append(t.trace, "ExecuteActivity")
+	t.trace = append(t.trace, "ExecuteActivity "+activityType)
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 

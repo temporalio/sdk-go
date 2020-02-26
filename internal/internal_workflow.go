@@ -1118,7 +1118,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, registry *registry) (*WorkflowType, []byte, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, []byte, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1129,10 +1129,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 		if err := validateFunctionArgs(workflowFunc, args, true); err != nil {
 			return nil, nil, err
 		}
-		fnName = getFunctionName(workflowFunc)
-		if alias, ok := registry.getWorkflowAlias(fnName); ok {
-			fnName = alias
-		}
+		fnName = getWorkflowFunctionName(r, workflowFunc)
 
 	default:
 		return nil, nil, fmt.Errorf(

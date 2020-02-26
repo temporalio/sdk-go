@@ -380,14 +380,9 @@ func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowT
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	i := getWorkflowInterceptor(ctx)
-	future, settable := newDecodeFuture(ctx, activity)
 	registry := getRegistryFromWorkflowContext(ctx)
-	activityType, err := getValidatedActivityFunction(activity, args, registry)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
-	}
-	return i.ExecuteActivity(ctx, activityType.Name, args...)
+	activityType := getActivityFunctionName(registry, activity)
+	return i.ExecuteActivity(ctx, activityType, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
@@ -499,7 +494,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	i := getWorkflowInterceptor(ctx)
-	activityType := lastPartOfName(getFunctionName(activity))
+	env := getWorkflowEnvironment(ctx)
+	activityType := getActivityFunctionName(env.GetRegistry(), activity)
 	ctx = WithValue(ctx, localActivityFnContextKey, activity)
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
@@ -615,11 +611,13 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	i := getWorkflowInterceptor(ctx)
-	return i.ExecuteChildWorkflow(ctx, childWorkflow, args...)
+	env := getWorkflowEnvironment(ctx)
+	workflowType := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	return i.ExecuteChildWorkflow(ctx, workflowType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
-	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflow)
+func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture {
+	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflowType)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &childWorkflowFutureImpl{
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
@@ -628,7 +626,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
 	dc := workflowOptionsFromCtx.dataConverter
 	env := getWorkflowEnvironment(ctx)
-	wfType, input, err := getValidatedWorkflowFunction(childWorkflow, args, dc, env.GetRegistry())
+	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)

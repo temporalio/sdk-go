@@ -408,7 +408,7 @@ func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
 	for _, activityFn := range activityFns {
-		fnName := getFunctionName(activityFn)
+		fnName := getActivityFunctionName(env.registry, activityFn)
 		taskListActivity, ok := env.taskListSpecificActivities[fnName]
 		if !ok {
 			taskListActivity = &taskListSpecificActivity{fn: activityFn, taskLists: make(map[string]struct{})}
@@ -1069,7 +1069,7 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonproto.RetryPolicy, attempt i
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := getStringID(env.nextID())
 	wOptions := augmentWorkerOptions(env.workerOptions)
-	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
+	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
 	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
@@ -1111,7 +1111,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", zap.String(tagActivityID, activityID))
 		return
 	}
-	activityInfo := env.getActivityInfo(activityID, getFunctionName(task.params.ActivityFn))
+	activityInfo := env.getActivityInfo(activityID, getActivityFunctionName(env.registry, task.params.ActivityFn))
 	env.logger.Debug("RequestCancelLocalActivity", zap.String(tagActivityID, activityID))
 	delete(env.localActivities, activityID)
 	env.postCallback(func() {
@@ -1183,7 +1183,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
 	activityID := result.task.activityID
-	activityType := getFunctionName(result.task.params.ActivityFn)
+	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
 	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, string(result.result)),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
 

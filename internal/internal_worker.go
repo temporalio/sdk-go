@@ -1552,6 +1552,22 @@ func getFunctionName(i interface{}) string {
 	return elements[len(elements)-1]
 }
 
+func getActivityFunctionName(r *registry, i interface{}) string {
+	result := getFunctionName(i)
+	if alias, ok := r.getActivityAlias(result); ok {
+		result = alias
+	}
+	return result
+}
+
+func getWorkflowFunctionName(r *registry, i interface{}) string {
+	result := getFunctionName(i)
+	if alias, ok := r.getWorkflowAlias(result); ok {
+		result = alias
+	}
+	return result
+}
+
 func isInterfaceNil(i interface{}) bool {
 	return i == nil || reflect.ValueOf(i).IsNil()
 }

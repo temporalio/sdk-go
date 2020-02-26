@@ -48,7 +48,7 @@ type WorkflowInterceptor interface {
 
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
-	ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture
+	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture
 	GetWorkflowInfo(ctx Context) *WorkflowInfo
 	GetLogger(ctx Context) *zap.Logger
 	GetMetricsScope(ctx Context) tally.Scope
@@ -91,8 +91,8 @@ func (t *WorkflowInterceptorBase) ExecuteLocalActivity(ctx Context, activityType
 }
 
 // ExecuteChildWorkflow forwards to t.Next
-func (t *WorkflowInterceptorBase) ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
-	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
+func (t *WorkflowInterceptorBase) ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture {
+	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
 
 // GetWorkflowInfo forwards to t.Next

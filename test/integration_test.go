@@ -535,9 +535,9 @@ func (t *tracingInterceptor) ExecuteActivity(ctx workflow.Context, activityType 
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
-func (t *tracingInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflow interface{}, args ...interface{}) workflow.ChildWorkflowFuture {
+func (t *tracingInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflowType string, args ...interface{}) workflow.ChildWorkflowFuture {
 	t.trace = append(t.trace, "ExecuteChildWorkflow")
-	return t.Next.ExecuteChildWorkflow(ctx, childWorkflow, args...)
+	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
 
 func (t *tracingInterceptor) ExecuteWorkflow(ctx workflow.Context, workflowType string, args ...interface{}) []interface{} {
