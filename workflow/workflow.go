@@ -52,36 +52,6 @@ type (
 	Info = internal.WorkflowInfo
 )
 
-// Register - registers a workflow function with the framework.
-// A workflow takes a workflow context and input and returns a (result, error) or just error.
-// Examples:
-//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if workflowFunc doesn't comply with the expected format.
-func Register(workflowFunc interface{}) {
-	internal.RegisterWorkflow(workflowFunc)
-}
-
-// RegisterWithOptions registers the workflow function with options
-// The user can use options to provide an external name for the workflow or leave it empty if no
-// external name is required. This can be used as
-//  client.RegisterWorkflow(sampleWorkflow, RegisterOptions{})
-//  client.RegisterWorkflow(sampleWorkflow, RegisterOptions{Name: "foo"})
-// A workflow takes a workflow context and input and returns a (result, error) or just error.
-// Examples:
-//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
-//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if workflowFunc doesn't comply with the expected format.
-func RegisterWithOptions(workflowFunc interface{}, opts RegisterOptions) {
-	internal.RegisterWorkflowWithOptions(workflowFunc, opts)
-}
-
 // ExecuteActivity requests activity execution in the context of a workflow.
 // Context can be used to pass the settings for this activity.
 // For example: task list that this need to be routed, timeouts that need to be configured.

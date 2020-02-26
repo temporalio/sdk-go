@@ -23,11 +23,9 @@ package worker
 
 import (
 	"context"
-
-	"go.uber.org/zap"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/activity"
 	"go.temporal.io/temporal/internal"
@@ -117,6 +115,47 @@ type (
 		Stop()
 	}
 
+	// WorkflowReplayer supports replaying a workflow from its event history.
+	// Use for troubleshooting and backwards compatibility unit tests.
+	// For example if a workflow failed in production then its history can be downloaded through UI or CLI
+	// and replayed in a debugger as many times as necessary.
+	// Use this class to create unit tests that check if workflow changes are backwards compatible.
+	// It is important to maintain backwards compatibility through use of workflow.GetVersion
+	// to ensure that new deployments are not going to break open workflows.
+	WorkflowReplayer interface {
+
+		// RegisterWorkflow registers workflow that is going to be replayed
+		RegisterWorkflow(w interface{})
+
+		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
+		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+
+		// ReplayWorkflowHistory executes a single decision task for the given json history file.
+		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+		// The logger is an optional parameter. Defaults to the noop logger.
+		ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error
+
+		// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
+		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+		// The logger is an optional parameter. Defaults to the noop logger.
+		ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error
+
+		// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
+		// lastEventID(inclusive), downloaded from the cli.
+		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
+		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+		// The logger is an optional parameter. Defaults to the noop logger.
+		ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error
+
+		// ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
+		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+		// The logger is the only optional parameter. Defaults to the noop logger.
+		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution workflow.Execution) error
+	}
+
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
@@ -156,44 +195,16 @@ func New(
 	return internal.NewWorker(service, domain, taskList, options)
 }
 
+// NewWorkflowReplayer creates a WorkflowReplayer instance.
+func NewWorkflowReplayer() WorkflowReplayer {
+	return internal.NewWorkflowReplayer()
+}
+
 // EnableVerboseLogging enable or disable verbose logging of internal Cadence library components.
 // Most customers don't need this feature, unless advised by the Cadence team member.
 // Also there is no guarantee that this API is not going to change.
 func EnableVerboseLogging(enable bool) {
 	internal.EnableVerboseLogging(enable)
-}
-
-// ReplayWorkflowHistory executes a single decision task for the given json history file.
-// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
-// The logger is an optional parameter. Defaults to the noop logger.
-func ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
-	return internal.ReplayWorkflowHistory(logger, history)
-}
-
-// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
-// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
-// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
-// The logger is an optional parameter. Defaults to the noop logger.
-func ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
-	return internal.ReplayWorkflowHistoryFromJSONFile(logger, jsonfileName)
-}
-
-// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
-//// lastEventID(inclusive), downloaded from the cli.
-// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
-// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
-// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
-// The logger is an optional parameter. Defaults to the noop logger.
-func ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
-	return internal.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, lastEventID)
-}
-
-// ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
-// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
-// The logger is the only optional parameter. Defaults to the noop logger.
-func ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution workflow.Execution) error {
-	return internal.ReplayWorkflowExecution(ctx, service, logger, domain, execution)
 }
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity

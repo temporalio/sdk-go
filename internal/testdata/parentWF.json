@@ -8,7 +8,7 @@
       "taskId": 50331648,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "go.temporal.io/temporal/internal.testReplayWorkflowFromFileParent"
+          "name": "testReplayWorkflowFromFileParent"
         },
         "taskList": {
           "name": "childWorkflowGroup"
@@ -72,7 +72,7 @@
         "domain": "samples-domain",
         "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
         "workflowType": {
-          "name": "go.temporal.io/temporal/internal.testReplayWorkflowFromFile"
+          "name": "testReplayWorkflowFromFile"
         },
         "taskList": {
           "name": "childWorkflowGroup"

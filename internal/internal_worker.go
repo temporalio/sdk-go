@@ -23,12 +23,14 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"runtime"
@@ -37,17 +39,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	commonproto "go.temporal.io/temporal-proto/common"
+	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
+	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/common/rpc"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -521,11 +527,19 @@ func (aw *activityWorker) Stop() {
 
 type registry struct {
 	sync.Mutex
-	workflowFuncMap  map[string]interface{}
-	workflowAliasMap map[string]string
-	activityFuncMap  map[string]activity
-	activityAliasMap map[string]string
-	next             *registry // Allows to chain registries
+	workflowFuncMap      map[string]interface{}
+	workflowAliasMap     map[string]string
+	activityFuncMap      map[string]activity
+	activityAliasMap     map[string]string
+	workflowInterceptors []WorkflowInterceptorFactory
+}
+
+func (r *registry) WorkflowInterceptors() []WorkflowInterceptorFactory {
+	return r.workflowInterceptors
+}
+
+func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptorFactory) {
+	r.workflowInterceptors = workflowInterceptors
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
@@ -634,43 +648,34 @@ func (r *registry) addWorkflowAlias(fnName string, alias string) {
 }
 
 func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
-	r.Lock() // do not defer for Unlock to call next.getWorkflowAlias without lock
+	r.Lock()
+	defer r.Unlock()
 	alias, ok := r.workflowAliasMap[fnName]
-	if !ok && r.next != nil {
-		r.Unlock()
-		return r.next.getWorkflowAlias(fnName)
-	}
-	r.Unlock()
 	return alias, ok
 }
 
 func (r *registry) addWorkflowFn(fnName string, wf interface{}) {
 	r.Lock()
 	defer r.Unlock()
+	if r.workflowFuncMap == nil {
+		panic("nil workflowFuncMap: registry must be created with newRegistry")
+	}
 	r.workflowFuncMap[fnName] = wf
 }
 
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
-	r.Lock() // do not defer for Unlock to call next.getWorkflowFn without lock
+	r.Lock()
+	defer r.Unlock()
 	fn, ok := r.workflowFuncMap[fnName]
-	if !ok && r.next != nil {
-		r.Unlock()
-		return r.next.getWorkflowFn(fnName)
-	}
-	r.Unlock()
 	return fn, ok
 }
 
 func (r *registry) getRegisteredWorkflowTypes() []string {
-	r.Lock() // do not defer for Unlock to call next.getRegisteredWorkflowTypes without lock
+	r.Lock()
+	defer r.Unlock()
 	var result []string
 	for t := range r.workflowFuncMap {
 		result = append(result, t)
-	}
-	r.Unlock()
-	if r.next != nil {
-		nextTypes := r.next.getRegisteredWorkflowTypes()
-		result = append(result, nextTypes...)
 	}
 	return result
 }
@@ -682,13 +687,9 @@ func (r *registry) addActivityAlias(fnName string, alias string) {
 }
 
 func (r *registry) getActivityAlias(fnName string) (string, bool) {
-	r.Lock() // do not defer for Unlock to call next.getActivityAlias without lock
+	r.Lock()
+	defer r.Unlock()
 	alias, ok := r.activityAliasMap[fnName]
-	if !ok && r.next != nil {
-		r.Unlock()
-		return r.next.getActivityAlias(fnName)
-	}
-	r.Unlock()
 	return alias, ok
 }
 
@@ -703,13 +704,9 @@ func (r *registry) addActivityFn(fnName string, af interface{}) {
 }
 
 func (r *registry) getActivity(fnName string) (activity, bool) {
-	r.Lock() // do not defer for Unlock to call next.getActivity without lock
+	r.Lock()
+	defer r.Unlock()
 	a, ok := r.activityFuncMap[fnName]
-	if !ok && r.next != nil {
-		r.Unlock()
-		return r.next.getActivity(fnName)
-	}
-	r.Unlock()
 	return a, ok
 }
 
@@ -721,15 +718,11 @@ func (r *registry) getActivityFn(fnName string) (interface{}, bool) {
 }
 
 func (r *registry) getRegisteredActivities() []activity {
-	r.Lock() // do not defer for Unlock to call next.getRegisteredActivities without lock
+	r.Lock()
+	defer r.Unlock()
 	activities := make([]activity, 0, len(r.activityFuncMap))
 	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
-	}
-	r.Unlock()
-	if r.next != nil {
-		nextActivities := r.next.getRegisteredActivities()
-		activities = append(activities, nextActivities...)
 	}
 	return activities
 }
@@ -744,8 +737,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	wd := &workflowExecutor{name: lookup, fn: wf}
+	wd := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.getInterceptors()}
 	return newSyncWorkflowDefinition(wd), nil
+}
+
+func (r *registry) getInterceptors() []WorkflowInterceptorFactory {
+	return r.workflowInterceptors
 }
 
 // Validate function parameters.
@@ -797,10 +794,20 @@ func encodeArgs(dc DataConverter, args []interface{}) ([]byte, error) {
 
 // decode multiple arguments(arguments to a function).
 func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+	r, err := decodeArgsToValues(dc, fnType, data)
+	if err != nil {
+		return
+	}
+	for i := 0; i < len(r); i++ {
+		result = append(result, reflect.ValueOf(r[i]).Elem())
+	}
+	return
+}
+
+func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data []byte) (result []interface{}, err error) {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
-	var r []interface{}
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -808,14 +815,11 @@ argsLoop:
 			continue argsLoop
 		}
 		arg := reflect.New(argT).Interface()
-		r = append(r, arg)
+		result = append(result, arg)
 	}
-	err = dc.FromData(data, r...)
+	err = dc.FromData(data, result...)
 	if err != nil {
 		return
-	}
-	for i := 0; i < len(r); i++ {
-		result = append(result, reflect.ValueOf(r[i]).Elem())
 	}
 	return
 }
@@ -865,58 +869,42 @@ func isTypeByteSlice(inType reflect.Type) bool {
 	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
 }
 
-var once sync.Once
-
-// Singleton to hold the host registration details.
-var thImpl *registry
-
-func newRegistry(next *registry) *registry {
+func newRegistry() *registry {
 	return &registry{
 		workflowFuncMap:  make(map[string]interface{}),
 		workflowAliasMap: make(map[string]string),
 		activityFuncMap:  make(map[string]activity),
 		activityAliasMap: make(map[string]string),
-		next:             next,
 	}
-}
-
-func getGlobalRegistry() *registry {
-	once.Do(func() {
-		thImpl = newRegistry(nil)
-	})
-	return thImpl
 }
 
 // Wrapper to execute workflow functions.
 type workflowExecutor struct {
-	name string
-	fn   interface{}
+	workflowType string
+	fn           interface{}
+	interceptors []WorkflowInterceptorFactory
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
-	fnType := reflect.TypeOf(we.fn)
-	// Workflow context.
-	args := []reflect.Value{reflect.ValueOf(ctx)}
-
+	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
-	if fnType.NumIn() > 1 && isTypeByteSlice(fnType.In(1)) {
-		// 0 - is workflow context.
-		// 1 ... input types.
-		args = append(args, reflect.ValueOf(input))
+	fnType := reflect.TypeOf(we.fn)
+	if fnType.NumIn() == 2 && isTypeByteSlice(fnType.In(1)) {
+		// Do not deserialize input if workflow has a single byte slice argument (besides ctx)
+		args = append(args, input)
 	} else {
-		decoded, err := decodeArgs(dataConverter, fnType, input)
+		decoded, err := decodeArgsToValues(dataConverter, fnType, input)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"unable to decode the workflow function input bytes with error: %v, function name: %v",
-				err, we.name)
+				err, we.workflowType)
 		}
 		args = append(args, decoded...)
 	}
-
-	// Invoke the workflow with arguments.
-	fnValue := reflect.ValueOf(we.fn)
-	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(we.fn, retValues, dataConverter)
+	envInterceptor := getEnvInterceptor(ctx)
+	envInterceptor.fn = we.fn
+	results := envInterceptor.interceptorChainHead.ExecuteWorkflow(ctx, we.workflowType, args...)
+	return serializeResults(we.fn, results, dataConverter)
 }
 
 // Wrapper to execute activity functions.
@@ -1172,6 +1160,211 @@ func (aw *AggregatedWorker) Stop() {
 	aw.logger.Info("Stopped Worker")
 }
 
+// WorkflowReplayer is used to replay workflow code from an event history
+type WorkflowReplayer struct {
+	registry *registry
+}
+
+// NewWorkflowReplayer creates an instance of the WorkflowReplayer
+func NewWorkflowReplayer() *WorkflowReplayer {
+	return &WorkflowReplayer{registry: newRegistry()}
+}
+
+// RegisterWorkflow registers workflow function to replay
+func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
+	aw.registry.RegisterWorkflow(w)
+}
+
+// RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
+func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// ReplayWorkflowHistory executes a single decision task for the given history.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	testReporter := logger.Sugar()
+	controller := gomock.NewController(testReporter)
+	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
+
+	return aw.replayWorkflowHistory(logger, service, ReplayDomainName, history)
+}
+
+// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
+	return aw.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
+}
+
+// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the given json history file upto provided
+// lastEventID(inclusive).
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
+	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
+
+	if err != nil {
+		return err
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	testReporter := logger.Sugar()
+	controller := gomock.NewController(testReporter)
+	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
+
+	return aw.replayWorkflowHistory(logger, service, ReplayDomainName, history)
+}
+
+// ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
+func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+	sharedExecution := &commonproto.WorkflowExecution{
+		RunId:      execution.RunID,
+		WorkflowId: execution.ID,
+	}
+	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
+		Domain:    domain,
+		Execution: sharedExecution,
+	}
+	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
+	if err != nil {
+		return err
+	}
+
+	return aw.replayWorkflowHistory(logger, service, domain, hResponse.History)
+}
+
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, domain string, history *commonproto.History) error {
+	taskList := "ReplayTaskList"
+	events := history.Events
+	if events == nil {
+		return errors.New("empty events")
+	}
+	if len(events) < 3 {
+		return errors.New("at least 3 events expected in the history")
+	}
+	first := events[0]
+	if first.GetEventType() != enums.EventTypeWorkflowExecutionStarted {
+		return errors.New("first event is not WorkflowExecutionStarted")
+	}
+	last := events[len(events)-1]
+
+	attr := first.GetWorkflowExecutionStartedEventAttributes()
+	if attr == nil {
+		return errors.New("corrupted WorkflowExecutionStarted")
+	}
+	workflowType := attr.WorkflowType
+	execution := &commonproto.WorkflowExecution{
+		RunId:      uuid.NewRandom().String(),
+		WorkflowId: "ReplayId",
+	}
+	if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
+		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
+	}
+
+	task := &workflowservice.PollForDecisionTaskResponse{
+		Attempt:                0,
+		TaskToken:              []byte("ReplayTaskToken"),
+		WorkflowType:           workflowType,
+		WorkflowExecution:      execution,
+		History:                history,
+		PreviousStartedEventId: math.MaxInt64,
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	metricScope := tally.NoopScope
+	iterator := &historyIteratorImpl{
+		nextPageToken: task.NextPageToken,
+		execution:     task.WorkflowExecution,
+		domain:        ReplayDomainName,
+		service:       rpc.NewWorkflowServiceErrorWrapper(service),
+		metricsScope:  metricScope,
+		maxEventID:    task.GetStartedEventId(),
+	}
+	params := workerExecutionParameters{
+		TaskList: taskList,
+		Identity: "replayID",
+		Logger:   logger,
+	}
+	taskHandler := newWorkflowTaskHandler(domain, params, nil, aw.registry)
+	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
+	if err != nil {
+		return err
+	}
+
+	if last.GetEventType() != enums.EventTypeWorkflowExecutionCompleted && last.GetEventType() != enums.EventTypeWorkflowExecutionContinuedAsNew {
+		return nil
+	}
+	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
+	if resp != nil {
+		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
+		if ok {
+			for _, d := range completeReq.Decisions {
+				if d.GetDecisionType() == enums.DecisionTypeContinueAsNewWorkflowExecution {
+					if last.GetEventType() == enums.EventTypeWorkflowExecutionContinuedAsNew {
+						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
+						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
+						if bytes.Equal(inputA, inputB) {
+							return nil
+						}
+					}
+				}
+				if d.GetDecisionType() == enums.DecisionTypeCompleteWorkflowExecution {
+					if last.GetEventType() == enums.EventTypeWorkflowExecutionCompleted {
+						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
+						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
+						if bytes.Equal(resultA, resultB) {
+							return nil
+						}
+					}
+				}
+			}
+		}
+	}
+	return err
+}
+
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonproto.History, error) {
+	reader, err := os.Open(jsonfileName)
+	if err != nil {
+		return nil, err
+	}
+
+	var deserializedHistory commonproto.History
+	err = jsonpb.Unmarshal(reader, &deserializedHistory)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if lastEventID <= 0 {
+		return &deserializedHistory, nil
+	}
+
+	// Caller is potentially asking for subset of history instead of all history events
+	var events []*commonproto.HistoryEvent
+	for _, event := range deserializedHistory.Events {
+		events = append(events, event)
+		if event.GetEventId() == lastEventID {
+			// Copy history upto last event (inclusive)
+			break
+		}
+	}
+	history := &commonproto.History{Events: events}
+
+	return history, nil
+}
+
 // AggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
@@ -1226,7 +1419,9 @@ func newAggregatedWorker(
 	processTestTags(&wOptions, &workerParams)
 
 	// worker specific registry
-	registry := newRegistry(getGlobalRegistry())
+	registry := newRegistry()
+	registry.SetWorkflowInterceptors(wOptions.WorkflowInterceptorChainFactories)
+
 	// workflow factory.
 	var workflowWorker *workflowWorker
 	if !wOptions.DisableWorkflowWorker {
@@ -1274,6 +1469,13 @@ func newAggregatedWorker(
 			registry,
 			wOptions.MaxConcurrentSessionExecutionSize,
 		)
+		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name: sessionCreationActivityName,
+		})
+		registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name: sessionCompletionActivityName,
+		})
+
 	}
 
 	return &AggregatedWorker{
@@ -1338,7 +1540,28 @@ func isError(inType reflect.Type) bool {
 }
 
 func getFunctionName(i interface{}) string {
-	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	fullName, ok := i.(string)
+	if !ok {
+		fullName = runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	}
+	elements := strings.Split(fullName, ".")
+	return elements[len(elements)-1]
+}
+
+func getActivityFunctionName(r *registry, i interface{}) string {
+	result := getFunctionName(i)
+	if alias, ok := r.getActivityAlias(result); ok {
+		result = alias
+	}
+	return result
+}
+
+func getWorkflowFunctionName(r *registry, i interface{}) string {
+	result := getFunctionName(i)
+	if alias, ok := r.getWorkflowAlias(result); ok {
+		result = alias
+	}
+	return result
 }
 
 func isInterfaceNil(i interface{}) bool {

@@ -107,6 +107,7 @@ type (
 		fn            interface{}
 		isWorkflow    bool
 		dataConverter DataConverter
+		interceptors  []WorkflowInterceptorFactory
 	}
 
 	taskListSpecificActivity struct {
@@ -193,7 +194,20 @@ type (
 	}
 )
 
-func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironmentImpl {
+func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *registry) *testWorkflowEnvironmentImpl {
+	var r *registry
+	if parentRegistry == nil {
+		r = newRegistry()
+		r.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name: sessionCreationActivityName,
+		})
+		r.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name: sessionCompletionActivityName,
+		})
+	} else {
+		r = parentRegistry
+	}
+
 	env := &testWorkflowEnvironmentImpl{
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
 			testSuite:                  s,
@@ -225,7 +239,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite) *testWorkflowEnvironme
 			ExecutionStartToCloseTimeoutSeconds: 1,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
-		registry: newRegistry(getGlobalRegistry()),
+		registry: r,
 
 		changeVersions: make(map[string]Version),
 		openSessions:   make(map[string]*SessionInfo),
@@ -316,7 +330,7 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
-	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite)
+	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
 	childEnv.parentEnv = env
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
@@ -385,6 +399,7 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if len(options.ContextPropagators) > 0 {
 		env.workerOptions.ContextPropagators = options.ContextPropagators
 	}
+	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
@@ -393,7 +408,7 @@ func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
 	for _, activityFn := range activityFns {
-		fnName := getFunctionName(activityFn)
+		fnName := getActivityFunctionName(env.registry, activityFn)
 		taskListActivity, ok := env.taskListSpecificActivities[fnName]
 		if !ok {
 			taskListActivity = &taskListSpecificActivity{fn: activityFn, taskLists: make(map[string]struct{})}
@@ -468,7 +483,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
-		workflowExecutor: &workflowExecutor{name: wt.Name, fn: wf},
+		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.WorkflowInterceptors()},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
@@ -478,7 +493,12 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (Value, error) {
-	activityType, input, err := getValidatedActivityFunction(activityFn, args, env.GetDataConverter(), env.registry)
+	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
+	if err != nil {
+		panic(err)
+	}
+
+	input, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
@@ -1049,8 +1069,8 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonproto.RetryPolicy, attempt i
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := getStringID(env.nextID())
 	wOptions := augmentWorkerOptions(env.workerOptions)
-	ae := &activityExecutor{name: getFunctionName(params.ActivityFn), fn: params.ActivityFn}
-	if at, _, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, wOptions.DataConverter, env.registry); at != nil {
+	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
+	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
@@ -1091,7 +1111,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", zap.String(tagActivityID, activityID))
 		return
 	}
-	activityInfo := env.getActivityInfo(activityID, getFunctionName(task.params.ActivityFn))
+	activityInfo := env.getActivityInfo(activityID, getActivityFunctionName(env.registry, task.params.ActivityFn))
 	env.logger.Debug("RequestCancelLocalActivity", zap.String(tagActivityID, activityID))
 	delete(env.localActivities, activityID)
 	env.postCallback(func() {
@@ -1163,7 +1183,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
 	activityID := result.task.activityID
-	activityType := getFunctionName(result.task.params.ActivityFn)
+	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
 	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, string(result.result)),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
 
@@ -1276,13 +1296,14 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 		env.runningCount++
 	}
 
-	m := &mockWrapper{env: env, name: w.name, fn: w.fn, isWorkflow: true, dataConverter: env.GetDataConverter()}
+	m := &mockWrapper{env: env, name: w.workflowType, fn: w.fn, isWorkflow: true,
+		dataConverter: env.GetDataConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
 	// make a copy of the context for getMockReturn() call to avoid race condition
-	ctxCopy := newWorkflowContext(w.env)
+	ctxCopy := newWorkflowContext(w.env, nil, nil)
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
@@ -1457,7 +1478,7 @@ func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Ar
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		// we found a mock function that matches to actual function, so call that mockFn
 		if m.isWorkflow {
-			executor := &workflowExecutor{name: fnName, fn: mockFn}
+			executor := &workflowExecutor{workflowType: fnName, fn: mockFn}
 			return executor.Execute(ctx.(Context), input)
 		}
 		executor := &activityExecutor{name: fnName, fn: mockFn}
@@ -1793,7 +1814,7 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	args := []interface{}{changeID, minSupported, maxSupported}
 	// below call will panic if mock is not properly setup.
 	mockRet := env.mock.MethodCalled(mockMethod, args...)
-	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
+	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion, interceptors: env.registry.WorkflowInterceptors()}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
 		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)

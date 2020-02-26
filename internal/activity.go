@@ -29,11 +29,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/workflowservice"
-
-	"go.temporal.io/temporal/internal/common"
-	"go.temporal.io/temporal/internal/common/backoff"
 )
 
 type (
@@ -122,61 +118,6 @@ type (
 		RetryPolicy *RetryPolicy
 	}
 )
-
-// RegisterActivity - register an activity function or a pointer to a structure with the framework.
-// The public form is: activity.Register(...)
-// An activity function takes a context and input and returns a (result, error) or just error.
-//
-// And activity struct is a structure with all its exported methods treated as activities. The default
-// name of each activity is the <structure name>_<>method name>. Use RegisterActivityWithOptions to override the
-// "<structure name>_" prefix.
-//
-// Examples:
-//	func sampleActivity(ctx context.Context, input []byte) (result []byte, err error)
-//	func sampleActivity(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error)
-//	func sampleActivity(ctx context.Context) (err error)
-//	func sampleActivity() (result string, err error)
-//	func sampleActivity(arg1 bool) (result int, err error)
-//	func sampleActivity(arg1 bool) (err error)
-//
-//  type Activities struct {
-//     // fields
-//  }
-//  func (a *Activities) SampleActivity1(ctx context.Context, arg1 int, arg2 string) (result *customerStruct, err error) {
-//    ...
-//  }
-//
-//  func (a *Activities) SampleActivity2(ctx context.Context, arg1 int, arg2 *customerStruct) (result string, err error) {
-//    ...
-//  }
-//
-// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-// This method calls panic if activityFunc doesn't comply with the expected format.
-func RegisterActivity(activityFunc interface{}) {
-	RegisterActivityWithOptions(activityFunc, RegisterActivityOptions{})
-}
-
-// RegisterActivityWithOptions registers the activity function or struct pointer with options.
-// The public form is: activity.RegisterWithOptions(...)
-// The user can use options to provide an external name for the activity or leave it empty if no
-// external name is required. This can be used as
-//  activity.RegisterWithOptions(barActivity, RegisterActivityOptions{})
-//  activity.RegisterWithOptions(barActivity, RegisterActivityOptions{Name: "barExternal"})
-// When registering the structure that implements activities the name is used as a prefix that is
-// prepended to the activity method name.
-//  activity.RegisterWithOptions(&Activities{ ... }, RegisterActivityOptions{Name: "MyActivities_"})
-// To override each name of activities defined through a structure register the methods one by one:
-// activities := &Activities{ ... }
-// activity.RegisterWithOptions(activities.SampleActivity1, RegisterActivityOptions{Name: "Sample1"})
-// activity.RegisterWithOptions(activities.SampleActivity2, RegisterActivityOptions{Name: "Sample2"})
-// See RegisterActivity function for more info.
-// The othe use of options is to disable duplicated activity registration check
-// which might be useful for integration tests.
-// activity.RegisterWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
-func RegisterActivityWithOptions(activityFunc interface{}, opts RegisterActivityOptions) {
-	registry := getGlobalRegistry()
-	registry.RegisterActivityWithOptions(activityFunc, opts)
-}
 
 // GetActivityInfo returns information about currently executing activity.
 func GetActivityInfo(ctx context.Context) ActivityInfo {
@@ -340,108 +281,4 @@ func WithActivityTask(
 		contextPropagators: contextPropagators,
 		tracer:             tracer,
 	})
-}
-
-// WithActivityOptions adds all options to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithActivityOptions(ctx Context, options ActivityOptions) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	eap := getActivityOptions(ctx1)
-
-	eap.TaskListName = options.TaskList
-	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
-	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
-	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
-	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
-	eap.WaitForCancellation = options.WaitForCancellation
-	eap.ActivityID = options.ActivityID
-	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
-	return ctx1
-}
-
-// WithLocalActivityOptions adds local activity options to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
-	ctx1 := setLocalActivityParametersIfNotExist(ctx)
-	opts := getLocalActivityOptions(ctx1)
-
-	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
-	opts.RetryPolicy = options.RetryPolicy
-	return ctx1
-}
-
-// WithTaskList adds a task list to the copy of the context.
-func WithTaskList(ctx Context, name string) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).TaskListName = name
-	return ctx1
-}
-
-// WithScheduleToCloseTimeout adds a timeout to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
-	return ctx1
-}
-
-// WithScheduleToStartTimeout adds a timeout to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = common.Int32Ceil(d.Seconds())
-	return ctx1
-}
-
-// WithStartToCloseTimeout adds a timeout to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
-	return ctx1
-}
-
-// WithHeartbeatTimeout adds a timeout to the copy of the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = common.Int32Ceil(d.Seconds())
-	return ctx1
-}
-
-// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
-func WithWaitForCancellation(ctx Context, wait bool) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).WaitForCancellation = wait
-	return ctx1
-}
-
-// WithRetryPolicy adds retry policy to the copy of the context
-func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
-	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).RetryPolicy = convertRetryPolicy(&retryPolicy)
-	return ctx1
-}
-
-func convertRetryPolicy(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
-	if retryPolicy == nil {
-		return nil
-	}
-	if retryPolicy.BackoffCoefficient == 0 {
-		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
-	}
-	return &commonproto.RetryPolicy{
-		MaximumIntervalInSeconds:    common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
-		InitialIntervalInSeconds:    common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
-		BackoffCoefficient:          retryPolicy.BackoffCoefficient,
-		MaximumAttempts:             retryPolicy.MaximumAttempts,
-		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
-		ExpirationIntervalInSeconds: common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds()),
-	}
 }

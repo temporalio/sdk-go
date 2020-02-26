@@ -33,12 +33,6 @@ import (
 // ApplicationName is the task list for this sample
 const ApplicationName = "helloWorldGroup"
 
-func init() {
-	workflow.Register(Workflow)
-	workflow.Register(Workflow2)
-	activity.Register(helloworldActivity)
-}
-
 // Workflow workflow decider
 func Workflow(ctx workflow.Context, name string) error {
 	ao := workflow.ActivityOptions{

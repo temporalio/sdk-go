@@ -8,6 +8,7 @@ require (
 	github.com/gogo/protobuf v1.3.1
 	github.com/gogo/status v1.1.0
 	github.com/golang/mock v1.4.0
+	github.com/golang/protobuf v1.3.3
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pborman/uuid v0.0.0-20160209185913-a97ce2ca70fa
 	github.com/robfig/cron v1.2.0

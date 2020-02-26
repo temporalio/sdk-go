@@ -18,7 +18,7 @@ func TestErrorWrapper_SimpleError(t *testing.T) {
 
 	st := status.Error(codes.NotFound, "Something not found")
 
-	svcerr := wrapper.convertError(st)
+	svcerr := wrapper.(*workflowServiceErrorWrapper).convertError(st)
 	require.IsType(&serviceerror.NotFound{}, svcerr)
 	require.Equal("Something not found", svcerr.Error())
 }
@@ -32,7 +32,7 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 		RunId:          "rId",
 	})
 
-	svcerr := wrapper.convertError(st.Err())
+	svcerr := wrapper.(*workflowServiceErrorWrapper).convertError(st.Err())
 	require.IsType(&serviceerror.WorkflowExecutionAlreadyStarted{}, svcerr)
 	require.Equal("Something started", svcerr.Error())
 	weasErr := svcerr.(*serviceerror.WorkflowExecutionAlreadyStarted)
