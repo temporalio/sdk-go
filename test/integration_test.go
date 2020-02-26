@@ -413,7 +413,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
-	ts.IsType(&serviceerror.InvalidArgument{}, err)
+	ts.IsType(&serviceerror.QueryFailed{}, err)
 	ts.Equal("query result size (3000000) exceeds limit (2000000)", err.Error())
 	ts.Nil(value)
 }
