@@ -532,7 +532,12 @@ func (m *mockPollForActivityTaskRequest) Matches(x interface{}) bool {
 	if !ok {
 		return false
 	}
-	return v.TaskListMetadata.MaxTasksPerSecond == m.tps
+
+	if v.TaskListMetadata != nil && v.TaskListMetadata.MaxTasksPerSecond != nil {
+		return v.TaskListMetadata.MaxTasksPerSecond.GetValue() == m.tps
+	}
+
+	return false
 }
 
 func (m *mockPollForActivityTaskRequest) String() string {
