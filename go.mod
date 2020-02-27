@@ -8,7 +8,6 @@ require (
 	github.com/gogo/protobuf v1.3.1
 	github.com/gogo/status v1.1.0
 	github.com/golang/mock v1.4.0
-	github.com/golang/protobuf v1.3.3
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/pborman/uuid v0.0.0-20160209185913-a97ce2ca70fa
 	github.com/robfig/cron v1.2.0
@@ -17,7 +16,7 @@ require (
 	github.com/uber-go/tally v3.3.13+incompatible
 	github.com/uber/jaeger-client-go v2.22.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.temporal.io/temporal-proto v0.0.0-20200226200948-5ae12b6c2375
+	go.temporal.io/temporal-proto v0.0.0-20200227032650-9eb438e10526
 	go.uber.org/atomic v1.5.1
 	go.uber.org/goleak v0.10.0
 	go.uber.org/multierr v1.4.0 // indirect

@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
@@ -792,7 +793,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		Domain:           atp.domain,
 		TaskList:         &commonproto.TaskList{Name: atp.taskListName},
 		Identity:         atp.identity,
-		TaskListMetadata: &commonproto.TaskListMetadata{MaxTasksPerSecond: atp.activitiesPerSecond},
+		TaskListMetadata: &commonproto.TaskListMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
 	response, err := atp.service.PollForActivityTask(ctx, request)

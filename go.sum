@@ -72,8 +72,8 @@ github.com/uber/jaeger-client-go v2.22.1+incompatible h1:NHcubEkVbahf9t3p75TOCR8
 github.com/uber/jaeger-client-go v2.22.1+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.2.0+incompatible h1:MxZXOiR2JuoANZ3J6DE/U0kSFv/eJ/GfSYVCjK7dyaw=
 github.com/uber/jaeger-lib v2.2.0+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
-go.temporal.io/temporal-proto v0.0.0-20200226200948-5ae12b6c2375 h1:aYWevExACgRKBaF5+nsS4Idp038559wRgc6sjNmUjqw=
-go.temporal.io/temporal-proto v0.0.0-20200226200948-5ae12b6c2375/go.mod h1:SszgPhzKZvtDenZxaN68OKKj1RD1uVmDOHUn1RnTctk=
+go.temporal.io/temporal-proto v0.0.0-20200227032650-9eb438e10526 h1:K5oP7JEX/PNjjvfXrdGF0w7XUtIGfonoUcetiEqXoI0=
+go.temporal.io/temporal-proto v0.0.0-20200227032650-9eb438e10526/go.mod h1:SszgPhzKZvtDenZxaN68OKKj1RD1uVmDOHUn1RnTctk=
 go.uber.org/atomic v1.5.0 h1:OI5t8sDa1Or+q8AeE+yKeB/SDYioSHAgcVljj9JIETY=
 go.uber.org/atomic v1.5.0/go.mod h1:sABNBOSYdrvTF6hTgEIbc7YasKWGhgEQZyfxyTvoXHQ=
 go.uber.org/atomic v1.5.1 h1:rsqfU5vBkVknbhUGbAUwQKR2H4ItV8tjJ+6kJX4cxHM=
