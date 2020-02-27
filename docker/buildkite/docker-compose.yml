@@ -22,13 +22,13 @@ services:
         aliases:
           - statsd
 
-  cadence:
-    image: ubercadence/server:master-auto-setup
+  temporal:
+    image: temporalio/temporal:master-auto-setup
     ports:
-      - "7933:7933"
-      - "7934:7934"
-      - "7935:7935"
-      - "7939:7939"
+      - "7233:7233"
+      - "7234:7234"
+      - "7235:7235"
+      - "7239:7239"
     environment:
       - "CASSANDRA_SEEDS=cassandra"
       - "STATSD_ENDPOINT=statsd:8125"
@@ -39,17 +39,17 @@ services:
     networks:
       services-network:
         aliases:
-          - cadence
+          - temporal
 
   integ-test:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
     environment:
-      - "SERVICE_ADDR=cadence:7933"
+      - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
     depends_on:
-      - cadence
+      - temporal
     volumes:
       - ../../:/go/src/go.temporal.io/temporal
     networks:

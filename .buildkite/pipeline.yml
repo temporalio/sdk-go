@@ -1,43 +1,43 @@
 steps:
   - label: ":golang: unit-test"
     agents:
-      queue: "workers"
+      queue: "default"
       docker: "*"
-    command: "make unit_test"
+    command: "make unit-test"
     artifact_paths:
       - ".build/coverage/*.out"
     plugins:
-      - docker-compose#v3.0.0:
+      - docker-compose#v3.1.0:
           run: unit-test
           config: docker/buildkite/docker-compose.yml
 
   - label: ":golang: integration-test-sticky-off"
     agents:
-      queue: "workers"
+      queue: "default"
       docker: "*"
-    command: "make integ_test_sticky_off"
+    command: "make integration-test-sticky-off"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
       automatic:
         limit: 1
     plugins:
-      - docker-compose#v3.0.0:
+      - docker-compose#v3.1.0:
           run: integ-test
           config: docker/buildkite/docker-compose.yml
 
   - label: ":golang: integration-test-sticky-on"
     agents:
-      queue: "workers"
+      queue: "default"
       docker: "*"
-    command: "make integ_test_sticky_on"
+    command: "make integration-test-sticky-on"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
       automatic:
         limit: 1
     plugins:
-      - docker-compose#v3.0.0:
+      - docker-compose#v3.1.0:
           run: integ-test
           config: docker/buildkite/docker-compose.yml
 
@@ -45,10 +45,10 @@ steps:
 
   - label: ":golang: code-coverage"
     agents:
-      queue: "workers"
+      queue: "default"
       docker: "*"
     command: ".buildkite/scripts/gocov.sh"
     plugins:
-      - docker-compose#v3.0.0:
+      - docker-compose#v3.1.0:
           run: coverage-report
           config: docker/buildkite/docker-compose.yml
