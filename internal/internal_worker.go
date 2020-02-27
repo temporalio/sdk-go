@@ -1540,10 +1540,10 @@ func isError(inType reflect.Type) bool {
 }
 
 func getFunctionName(i interface{}) string {
-	fullName, ok := i.(string)
-	if !ok {
-		fullName = runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	if fullName, ok := i.(string); ok {
+		return fullName
 	}
+	fullName := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 	elements := strings.Split(fullName, ".")
 	return elements[len(elements)-1]
 }
