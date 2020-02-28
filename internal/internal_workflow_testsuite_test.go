@@ -1587,25 +1587,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 	s.NoError(env.GetWorkflowError())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
-	// TODO (madhu): Add this back once test workflow environment is able to handle panics gracefully
-	// Right now, the panic happens in a different goroutine and there is no way to catch it
-	s.T().Skip()
-	workflowFn := func(ctx Context) error {
-		ctx = WithActivityOptions(ctx, s.activityOptions)
-		var result string
-		fut := ExecuteActivity(ctx, getFunctionName(testActivityHello), "friendly_name")
-		err := fut.Get(ctx, &result)
-		return err
-	}
-
-	env := s.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(workflowFn)
-	env.ExecuteWorkflow(workflowFn)
-	s.False(env.IsWorkflowCompleted())
-	s.Contains(env.GetWorkflowError().Error(), "unable to find activityType")
-}
-
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowUnknownName() {
 	defer func() {
 		if r := recover(); r != nil {

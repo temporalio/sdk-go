@@ -428,11 +428,10 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	//if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
-	//	return
-	//}
-	//ts.NoError(err)
-	fmt.Println(err)
+	if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
+		return
+	}
+	ts.NoError(err)
 	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on temporal-server
 	// bellow is used to guarantee domain is ready
 	var dummyReturn string

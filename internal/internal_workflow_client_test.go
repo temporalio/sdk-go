@@ -947,7 +947,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
-	_, _ = s.client.StartWorkflow(context.Background(), options, wf)
+	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
 func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr() {
