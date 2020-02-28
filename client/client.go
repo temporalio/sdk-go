@@ -18,9 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package client contains functions to create Cadence clients used to communicate to Cadence service.
-//
-// Use these to perform CRUD on domains and start or query workflow executions.
+// Package client is used by external programs to communicate with Temporal service.
+// NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
 package client
 
 import (
@@ -72,19 +71,6 @@ type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
-		// StartWorkflow starts a workflow execution
-		// The user can use this to start using a function or workflow type name.
-		// Either by
-		//     StartWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
-		//     or
-		//     StartWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
-		// The errors it can return:
-		//	- EntityNotExistsError, if domain does not exists
-		//	- BadRequestError
-		//	- WorkflowExecutionAlreadyStartedError
-		//	- InternalServiceError
-		StartWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*workflow.Execution, error)
-
 		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
 		// The user can use this to start using a function or workflow type name.
 		// Either by
@@ -96,7 +82,8 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		//
-		// WorkflowRun has 2 methods:
+		// WorkflowRun has 3 methods:
+		//  - GetWorkflowID() string: which return the started workflow ID
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
@@ -149,16 +136,18 @@ type (
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (*workflow.Execution, error)
 
-		// CancelWorkflow cancels a workflow in execution
+		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
+		// returned by the workflow.Context.Done() of the workflow that is target of the request.
 		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		// - runID can be default(empty string). if empty string then it will pick the currently running execution of that workflow ID.
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
-		// TerminateWorkflow terminates a workflow execution.
+		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
+		// letting the workflow to perform any cleanup
 		// workflowID is required, other parameters are optional.
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.

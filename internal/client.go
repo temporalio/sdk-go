@@ -50,21 +50,6 @@ type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
-		// StartWorkflow starts a workflow execution
-		// The user can use this to start using a function or workflow type name.
-		// Either by
-		//     StartWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
-		//     or
-		//     StartWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
-		// The errors it can return:
-		//	- EntityNotExistsError, if domain does not exists
-		//	- BadRequestError
-		//	- WorkflowExecutionAlreadyStartedError
-		//	- InternalServiceError
-		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-		// subjected to change in the future.
-		StartWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WorkflowExecution, error)
-
 		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
 		// The user can use this to start using a function or workflow type name.
 		// Either by
