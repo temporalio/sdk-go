@@ -1111,16 +1111,8 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", zap.String(tagActivityID, activityID))
 		return
 	}
-	activityInfo := env.getActivityInfo(activityID, getActivityFunctionName(env.registry, task.params.ActivityFn))
 	env.logger.Debug("RequestCancelLocalActivity", zap.String(tagActivityID, activityID))
-	delete(env.localActivities, activityID)
-	env.postCallback(func() {
-		lar := &localActivityResultWrapper{err: ErrCanceled, backoff: noRetryBackoff}
-		task.callback(lar)
-		if env.onLocalActivityCanceledListener != nil {
-			env.onLocalActivityCanceledListener(activityInfo)
-		}
-	}, true)
+	task.cancel()
 }
 
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string,
@@ -1194,22 +1186,31 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 			zap.String(tagActivityID, activityID))
 		return
 	}
-
 	delete(env.localActivities, activityID)
+	// If error is present do not return value
+	if result.err != nil && len(result.result) > 0 {
+		result.result = nil
+	}
+	// Always return CancelledError for cancelled tasks
+	if task.canceled {
+		if _, ok := result.err.(*CanceledError); !ok {
+			result.err = NewCanceledError()
+			result.result = nil
+		}
+	}
 	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
 	if result.task.retryPolicy != nil && result.err != nil {
 		lar.backoff = getRetryBackoff(result, env.Now())
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
-	if env.onLocalActivityCompletedListener != nil {
-		if result.err != nil {
-			env.onLocalActivityCompletedListener(activityInfo, nil, result.err)
-		} else {
-			env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
+	if _, ok := result.err.(*CanceledError); ok {
+		if env.onLocalActivityCanceledListener != nil {
+			env.onLocalActivityCanceledListener(activityInfo)
 		}
+	} else if env.onLocalActivityCompletedListener != nil {
+		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
 	}
-
 	env.startDecisionTask()
 }
 

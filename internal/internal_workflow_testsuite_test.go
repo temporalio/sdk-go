@@ -1694,13 +1694,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 
 // Flaky test. Rerun if failed.
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
+	var localActivityFnCancelled bool
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
 	}
 
-	cancelledLocalActivityFn := func() error {
-		// It will be cancelled anyway.
-		time.Sleep(time.Hour)
+	cancelledLocalActivityFn := func(ctx context.Context) error {
+		<-ctx.Done()
+		localActivityFnCancelled = true
 		return nil
 	}
 
@@ -1761,6 +1762,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	err := env.GetWorkflowResult(&result)
 	s.NoError(err)
 	s.Equal("hello mock", result)
+	s.True(localActivityFnCancelled)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
