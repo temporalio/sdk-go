@@ -1692,7 +1692,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	s.Equal("hello local_activity", laResult)
 }
 
-// Flaky test. Rerun if failed.
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCancelled bool
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
