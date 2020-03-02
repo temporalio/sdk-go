@@ -308,10 +308,6 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workf
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 20*time.Second)
-	err = workflow.Sleep(ctx, 5*time.Second)
-	if err != nil {
-		return "", err
-	}
 	var childWE internal.WorkflowExecution
 	err = ft.GetChildWorkflowExecution().Get(ctx, &childWE)
 	return childWE.ID, err
@@ -320,15 +316,11 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workf
 func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
 		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 30 * time.Second,
+		ExecutionStartToCloseTimeout: 10 * time.Second,
 		ParentClosePolicy:            client.ParentClosePolicyAbandon,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
-	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 20*time.Second)
-	err = workflow.Sleep(ctx, 5*time.Second)
-	if err != nil {
-		return "", err
-	}
+	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 5*time.Second)
 	var childWE internal.WorkflowExecution
 	err = ft.GetChildWorkflowExecution().Get(ctx, &childWE)
 	return childWE.ID, err
@@ -486,7 +478,11 @@ func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result stri
 }
 
 func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 5 * time.Second,
+		ScheduleToCloseTimeout: 5*time.Second + d,
+		StartToCloseTimeout:    time.Second + d,
+	})
 	return workflow.ExecuteActivity(ctx, "Activities_Sleep", d).Get(ctx, nil)
 }
 

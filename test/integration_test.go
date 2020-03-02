@@ -368,24 +368,37 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess-fm"))
 }
 
-// Flaky test. Rerun if failed.
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
-	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
-	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() > 0, "CloseTime is not greater than zero but %d. Flaky test. Rerun if failed.", resp.WorkflowExecutionInfo.GetCloseTime())
+	for {
+		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		ts.NoError(err)
+		info := resp.WorkflowExecutionInfo
+		if info.GetCloseTime() > 0 {
+			ts.Equal(enums.WorkflowExecutionCloseStatusTerminated, info.GetCloseStatus(), info)
+			break
+		}
+		time.Sleep(time.Millisecond * 500)
+	}
 }
 
-// Flaky test. Rerun if failed.
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	var childWorkflowID string
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyAbandon, &childWorkflowID)
 	ts.NoError(err)
-	resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
-	ts.NoError(err)
-	ts.True(resp.WorkflowExecutionInfo.GetCloseTime() == 0, "CloseTime is not zero but %d. Flaky test. Rerun if failed.", resp.WorkflowExecutionInfo.GetCloseTime())
+
+	for {
+		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		ts.NoError(err)
+		info := resp.WorkflowExecutionInfo
+		if info.GetCloseTime() > 0 {
+			ts.Equal(enums.WorkflowExecutionCloseStatusCompleted, info.GetCloseStatus(), info)
+			break
+		}
+		time.Sleep(time.Millisecond * 500)
+	}
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
