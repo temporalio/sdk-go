@@ -456,16 +456,16 @@ const (
 )
 
 const (
+	// WorkflowIDReusePolicyAllowDuplicate allow start a workflow execution using
+	// the same workflow ID, when workflow not running.
+	WorkflowIDReusePolicyAllowDuplicate WorkflowIDReusePolicy = iota
+
 	// WorkflowIDReusePolicyAllowDuplicateFailedOnly allow start a workflow execution
 	// when workflow not running, and the last execution close state is in
-	// [terminated, cancelled, timeouted, failed].
-	WorkflowIDReusePolicyAllowDuplicateFailedOnly WorkflowIDReusePolicy = iota
+	// [terminated, cancelled, timed out, failed].
+	WorkflowIDReusePolicyAllowDuplicateFailedOnly
 
-	// WorkflowIDReusePolicyAllowDuplicate allow start a workflow execution using
-	// the same workflow ID,when workflow not running.
-	WorkflowIDReusePolicyAllowDuplicate
-
-	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all
+	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all.
 	WorkflowIDReusePolicyRejectDuplicate
 )
 
