@@ -46,45 +46,45 @@ type (
 )
 
 const (
-	scopeNameDeprecateDomain                  = CadenceMetricsPrefix + "DeprecateDomain"
-	scopeNameDescribeDomain                   = CadenceMetricsPrefix + "DescribeDomain"
-	scopeNameListDomains                      = CadenceMetricsPrefix + "ListDomains"
-	scopeNameGetWorkflowExecutionHistory      = CadenceMetricsPrefix + "GetWorkflowExecutionHistory"
-	scopeNameListClosedWorkflowExecutions     = CadenceMetricsPrefix + "ListClosedWorkflowExecutions"
-	scopeNameListOpenWorkflowExecutions       = CadenceMetricsPrefix + "ListOpenWorkflowExecutions"
-	scopeNameListWorkflowExecutions           = CadenceMetricsPrefix + "ListWorkflowExecutions"
-	scopeNameListArchivedWorkflowExecutions   = CadenceMetricsPrefix + "ListArchviedExecutions"
-	scopeNameScanWorkflowExecutions           = CadenceMetricsPrefix + "ScanWorkflowExecutions"
-	scopeNameCountWorkflowExecutions          = CadenceMetricsPrefix + "CountWorkflowExecutions"
-	scopeNamePollForActivityTask              = CadenceMetricsPrefix + "PollForActivityTask"
-	scopeNamePollForDecisionTask              = CadenceMetricsPrefix + "PollForDecisionTask"
-	scopeNameRecordActivityTaskHeartbeat      = CadenceMetricsPrefix + "RecordActivityTaskHeartbeat"
-	scopeNameRecordActivityTaskHeartbeatByID  = CadenceMetricsPrefix + "RecordActivityTaskHeartbeatByID"
-	scopeNameRegisterDomain                   = CadenceMetricsPrefix + "RegisterDomain"
-	scopeNameRequestCancelWorkflowExecution   = CadenceMetricsPrefix + "RequestCancelWorkflowExecution"
-	scopeNameRespondActivityTaskCanceled      = CadenceMetricsPrefix + "RespondActivityTaskCanceled"
-	scopeNameRespondActivityTaskCompleted     = CadenceMetricsPrefix + "RespondActivityTaskCompleted"
-	scopeNameRespondActivityTaskFailed        = CadenceMetricsPrefix + "RespondActivityTaskFailed"
-	scopeNameRespondActivityTaskCanceledByID  = CadenceMetricsPrefix + "RespondActivityTaskCanceledByID"
-	scopeNameRespondActivityTaskCompletedByID = CadenceMetricsPrefix + "RespondActivityTaskCompletedByID"
-	scopeNameRespondActivityTaskFailedByID    = CadenceMetricsPrefix + "RespondActivityTaskFailedByID"
-	scopeNameRespondDecisionTaskCompleted     = CadenceMetricsPrefix + "RespondDecisionTaskCompleted"
-	scopeNameRespondDecisionTaskFailed        = CadenceMetricsPrefix + "RespondDecisionTaskFailed"
-	scopeNameSignalWorkflowExecution          = CadenceMetricsPrefix + "SignalWorkflowExecution"
-	scopeNameSignalWithStartWorkflowExecution = CadenceMetricsPrefix + "SignalWithStartWorkflowExecution"
-	scopeNameStartWorkflowExecution           = CadenceMetricsPrefix + "StartWorkflowExecution"
-	scopeNameTerminateWorkflowExecution       = CadenceMetricsPrefix + "TerminateWorkflowExecution"
-	scopeNameResetWorkflowExecution           = CadenceMetricsPrefix + "ResetWorkflowExecution"
-	scopeNameUpdateDomain                     = CadenceMetricsPrefix + "UpdateDomain"
-	scopeNameQueryWorkflow                    = CadenceMetricsPrefix + "QueryWorkflow"
-	scopeNameDescribeTaskList                 = CadenceMetricsPrefix + "DescribeTaskList"
-	scopeNameRespondQueryTaskCompleted        = CadenceMetricsPrefix + "RespondQueryTaskCompleted"
-	scopeNameDescribeWorkflowExecution        = CadenceMetricsPrefix + "DescribeWorkflowExecution"
-	scopeNameResetStickyTaskList              = CadenceMetricsPrefix + "ResetStickyTaskList"
-	scopeNameGetSearchAttributes              = CadenceMetricsPrefix + "GetSearchAttributes"
-	scopeNameListTaskListPartitions           = CadenceMetricsPrefix + "ListTaskListPartitions"
-	scopeNameGetClusterInfo                   = CadenceMetricsPrefix + "GetClusterInfo"
-	scopeNameGetWorkflowExecutionRawHistory   = CadenceMetricsPrefix + "GetWorkflowExecutionRawHistory"
+	scopeNameDeprecateDomain                  = TemporalMetricsPrefix + "DeprecateDomain"
+	scopeNameDescribeDomain                   = TemporalMetricsPrefix + "DescribeDomain"
+	scopeNameListDomains                      = TemporalMetricsPrefix + "ListDomains"
+	scopeNameGetWorkflowExecutionHistory      = TemporalMetricsPrefix + "GetWorkflowExecutionHistory"
+	scopeNameListClosedWorkflowExecutions     = TemporalMetricsPrefix + "ListClosedWorkflowExecutions"
+	scopeNameListOpenWorkflowExecutions       = TemporalMetricsPrefix + "ListOpenWorkflowExecutions"
+	scopeNameListWorkflowExecutions           = TemporalMetricsPrefix + "ListWorkflowExecutions"
+	scopeNameListArchivedWorkflowExecutions   = TemporalMetricsPrefix + "ListArchviedExecutions"
+	scopeNameScanWorkflowExecutions           = TemporalMetricsPrefix + "ScanWorkflowExecutions"
+	scopeNameCountWorkflowExecutions          = TemporalMetricsPrefix + "CountWorkflowExecutions"
+	scopeNamePollForActivityTask              = TemporalMetricsPrefix + "PollForActivityTask"
+	scopeNamePollForDecisionTask              = TemporalMetricsPrefix + "PollForDecisionTask"
+	scopeNameRecordActivityTaskHeartbeat      = TemporalMetricsPrefix + "RecordActivityTaskHeartbeat"
+	scopeNameRecordActivityTaskHeartbeatByID  = TemporalMetricsPrefix + "RecordActivityTaskHeartbeatByID"
+	scopeNameRegisterDomain                   = TemporalMetricsPrefix + "RegisterDomain"
+	scopeNameRequestCancelWorkflowExecution   = TemporalMetricsPrefix + "RequestCancelWorkflowExecution"
+	scopeNameRespondActivityTaskCanceled      = TemporalMetricsPrefix + "RespondActivityTaskCanceled"
+	scopeNameRespondActivityTaskCompleted     = TemporalMetricsPrefix + "RespondActivityTaskCompleted"
+	scopeNameRespondActivityTaskFailed        = TemporalMetricsPrefix + "RespondActivityTaskFailed"
+	scopeNameRespondActivityTaskCanceledByID  = TemporalMetricsPrefix + "RespondActivityTaskCanceledByID"
+	scopeNameRespondActivityTaskCompletedByID = TemporalMetricsPrefix + "RespondActivityTaskCompletedByID"
+	scopeNameRespondActivityTaskFailedByID    = TemporalMetricsPrefix + "RespondActivityTaskFailedByID"
+	scopeNameRespondDecisionTaskCompleted     = TemporalMetricsPrefix + "RespondDecisionTaskCompleted"
+	scopeNameRespondDecisionTaskFailed        = TemporalMetricsPrefix + "RespondDecisionTaskFailed"
+	scopeNameSignalWorkflowExecution          = TemporalMetricsPrefix + "SignalWorkflowExecution"
+	scopeNameSignalWithStartWorkflowExecution = TemporalMetricsPrefix + "SignalWithStartWorkflowExecution"
+	scopeNameStartWorkflowExecution           = TemporalMetricsPrefix + "StartWorkflowExecution"
+	scopeNameTerminateWorkflowExecution       = TemporalMetricsPrefix + "TerminateWorkflowExecution"
+	scopeNameResetWorkflowExecution           = TemporalMetricsPrefix + "ResetWorkflowExecution"
+	scopeNameUpdateDomain                     = TemporalMetricsPrefix + "UpdateDomain"
+	scopeNameQueryWorkflow                    = TemporalMetricsPrefix + "QueryWorkflow"
+	scopeNameDescribeTaskList                 = TemporalMetricsPrefix + "DescribeTaskList"
+	scopeNameRespondQueryTaskCompleted        = TemporalMetricsPrefix + "RespondQueryTaskCompleted"
+	scopeNameDescribeWorkflowExecution        = TemporalMetricsPrefix + "DescribeWorkflowExecution"
+	scopeNameResetStickyTaskList              = TemporalMetricsPrefix + "ResetStickyTaskList"
+	scopeNameGetSearchAttributes              = TemporalMetricsPrefix + "GetSearchAttributes"
+	scopeNameListTaskListPartitions           = TemporalMetricsPrefix + "ListTaskListPartitions"
+	scopeNameGetClusterInfo                   = TemporalMetricsPrefix + "GetClusterInfo"
+	scopeNameGetWorkflowExecutionRawHistory   = TemporalMetricsPrefix + "GetWorkflowExecutionRawHistory"
 )
 
 var (
@@ -111,13 +111,13 @@ func (w *workflowServiceMetricsWrapper) getScope(scopeName string) tally.Scope {
 
 func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *operationScope {
 	scope := w.getScope(scopeName)
-	scope.Counter(CadenceRequest).Inc(1)
+	scope.Counter(TemporalRequest).Inc(1)
 
 	return &operationScope{scope: scope, startTime: time.Now()}
 }
 
 func (s *operationScope) handleError(err error) {
-	s.scope.Timer(CadenceLatency).Record(time.Since(s.startTime))
+	s.scope.Timer(TemporalLatency).Record(time.Since(s.startTime))
 	if err != nil {
 		switch err.(type) {
 		case *serviceerror.NotFound,
@@ -125,9 +125,9 @@ func (s *operationScope) handleError(err error) {
 			*serviceerror.DomainAlreadyExists,
 			*serviceerror.WorkflowExecutionAlreadyStarted,
 			*serviceerror.QueryFailed:
-			s.scope.Counter(CadenceInvalidRequest).Inc(1)
+			s.scope.Counter(TemporalInvalidRequest).Inc(1)
 		default:
-			s.scope.Counter(CadenceError).Inc(1)
+			s.scope.Counter(TemporalError).Inc(1)
 		}
 	}
 }

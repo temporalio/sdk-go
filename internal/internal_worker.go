@@ -76,7 +76,7 @@ const (
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
-	testTagsContextKey = "cadence-testTags"
+	testTagsContextKey = "temporal-testTags"
 )
 
 type (
@@ -215,15 +215,15 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		//config.Level.SetLevel(zapcore.DebugLevel)
 		logger, _ := config.Build()
 		params.Logger = logger
-		params.Logger.Info("No logger configured for cadence worker. Created default one.")
+		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsScope == nil {
 		params.MetricsScope = tally.NoopScope
-		params.Logger.Info("No metrics scope configured for cadence worker. Use NoopScope as default.")
+		params.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
 	if params.DataConverter == nil {
 		params.DataConverter = getDefaultDataConverter()
-		params.Logger.Info("No DataConverter configured for cadence worker. Use default one.")
+		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 }
 

@@ -18,11 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package worker contains functions to manage lifecycle of a Cadence client side worker.
+// Package worker contains functions to manage lifecycle of a Temporal client side worker.
 package worker
 
 import (
 	"context"
+
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/zap"
@@ -150,7 +151,7 @@ type (
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error
 
-		// ReplayWorkflowExecution loads a workflow execution history from the Cadence service and executes a single decision task for it.
+		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single decision task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is the only optional parameter. Defaults to the noop logger.
 		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution workflow.Execution) error
@@ -200,8 +201,8 @@ func NewWorkflowReplayer() WorkflowReplayer {
 	return internal.NewWorkflowReplayer()
 }
 
-// EnableVerboseLogging enable or disable verbose logging of internal Cadence library components.
-// Most customers don't need this feature, unless advised by the Cadence team member.
+// EnableVerboseLogging enable or disable verbose logging of internal Temporal library components.
+// Most customers don't need this feature, unless advised by the Temporal team member.
 // Also there is no guarantee that this API is not going to change.
 func EnableVerboseLogging(enable bool) {
 	internal.EnableVerboseLogging(enable)

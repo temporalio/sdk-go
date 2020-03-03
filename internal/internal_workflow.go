@@ -1342,7 +1342,7 @@ func (h *queryHandler) execute(input []byte) (result []byte, err error) {
 			if p == panicIllegalAccessCoroutinueState {
 				// query handler code try to access workflow functions outside of workflow context, make error message
 				// more descriptive and clear.
-				p = "query handler must not use cadence context to do things like workflow.NewChannel(), " +
+				p = "query handler must not use temporal context to do things like workflow.NewChannel(), " +
 					"workflow.Go() or to call any workflow blocking functions like Channel.Get() or Future.Get()"
 			}
 			err = fmt.Errorf("query handler panic: %v, stack trace: %v", p, st)

@@ -255,7 +255,7 @@ type (
 		//  - InternalServiceError
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
-		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Cadence
+		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
 		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
 		// by your domain to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
@@ -403,7 +403,7 @@ var _ internal.Client = Client(nil)
 var _ DomainClient = internal.DomainClient(nil)
 var _ internal.DomainClient = DomainClient(nil)
 
-// NewValue creates a new encoded.Value which can be used to decode binary data returned by Cadence.  For example:
+// NewValue creates a new encoded.Value which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
@@ -413,7 +413,7 @@ func NewValue(data []byte) encoded.Value {
 	return internal.NewValue(data)
 }
 
-// NewValues creates a new encoded.Values which can be used to decode binary data returned by Cadence. For example:
+// NewValues creates a new encoded.Values which can be used to decode binary data returned by Temporal. For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:

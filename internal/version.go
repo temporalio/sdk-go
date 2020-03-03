@@ -22,15 +22,15 @@ package internal
 
 // below are the metadata which will be embedded as part
 // of headers in every rpc call made by this client to
-// cadence server.
+// temporal server.
 
 // Update to the metadata below is typically done
-// by the cadence team as part of a major feature or
+// by the temporal team as part of a major feature or
 // behavior change
 
 // LibraryVersion is a semver that represents
-// the version of this cadence client library.
-// This represents API changes visible to Cadence
+// the version of this temporal client library.
+// This represents API changes visible to Temporal
 // client side library consumers, i.e. developers
 // that are writing workflows. So every time we change API
 // that can affect them we have to change this number.
@@ -38,8 +38,8 @@ package internal
 const LibraryVersion = "0.10.1"
 
 // FeatureVersion is a semver that represents the
-// feature set of this cadence client library support.
+// feature set of this temporal client library support.
 // This can be used for client capability check, on
-// Cadence server, for backward compatibility
+// Temporal server, for backward compatibility
 // Format: MAJOR.MINOR.PATCH
 const FeatureVersion = "1.5.0"

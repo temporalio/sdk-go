@@ -435,7 +435,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
 		// Created task to support testing multiple workflows with one env instance
-		// https://github.com/uber-go/cadence-client/issues/616
+		// https://github.com/temporalio/temporal-go-client/issues/50
 		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", env.workflowInfo.WorkflowType.Name, workflowType))
 	}
 	env.workflowInfo.WorkflowType.Name = workflowType
@@ -1316,7 +1316,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []b
 	}()
 
 	var mockRet mock.Arguments
-	// This will block workflow dispatcher (on cadence channel), which the dispatcher understand and will return from
+	// This will block workflow dispatcher (on temporal channel), which the dispatcher understand and will return from
 	// ExecuteUntilAllBlocked() so the main loop is not blocked. The dispatcher will unblock when getMockReturn() returns.
 	mockReadyChannel.Receive(ctx, &mockRet)
 

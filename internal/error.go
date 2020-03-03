@@ -46,7 +46,7 @@ Below are the possible cases that activity could fail:
 	If activity was timed out (several timeout types), workflow code will receive instance of *TimeoutError. The err contains
 	details about what type of timeout it was.
 5) *PanicError:
-	If activity code panic while executing, temporal activity worker will report it as activity failure to cadence server.
+	If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
 	The temporal client library will present that failure as *PanicError to workflow code. The err contains a string
 	representation of the panic message and the call stack when panic was happen.
 
@@ -135,10 +135,10 @@ type (
 )
 
 const (
-	errReasonPanic    = "cadenceInternal:Panic"
-	errReasonGeneric  = "cadenceInternal:Generic"
-	errReasonCanceled = "cadenceInternal:Canceled"
-	errReasonTimeout  = "cadenceInternal:Timeout"
+	errReasonPanic    = "temporalInternal:Panic"
+	errReasonGeneric  = "temporalInternal:Generic"
+	errReasonCanceled = "temporalInternal:Canceled"
+	errReasonTimeout  = "temporalInternal:Timeout"
 )
 
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
@@ -151,13 +151,13 @@ var ErrTooManyArg = errors.New("too many arguments")
 // activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
 // activity require human interaction (like approve an expense report), the activity could return activity.ErrResultPending
 // which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
-// that could report the activity completed event to cadence server via Client.CompleteActivity() API.
+// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
 // NewCustomError create new instance of *CustomError with reason and optional details.
 func NewCustomError(reason string, details ...interface{}) *CustomError {
-	if strings.HasPrefix(reason, "cadenceInternal:") {
-		panic("'cadenceInternal:' is reserved prefix, please use different reason")
+	if strings.HasPrefix(reason, "temporalInternal:") {
+		panic("'temporalInternal:' is reserved prefix, please use different reason")
 	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {

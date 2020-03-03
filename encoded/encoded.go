@@ -39,12 +39,12 @@ type (
 	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
 	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
-	// Cadence support using different DataConverters for different activity/childWorkflow in same workflow.
+	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter = internal.DataConverter
 )
 
-// GetDefaultDataConverter return default data converter used by Cadence worker
+// GetDefaultDataConverter return default data converter used by Temporal worker
 func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
 }

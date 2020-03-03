@@ -26,12 +26,12 @@ import (
 	commonproto "go.temporal.io/temporal-proto/common"
 )
 
-// HeaderWriter is an interface to write information to cadence headers
+// HeaderWriter is an interface to write information to temporal headers
 type HeaderWriter interface {
 	Set(string, []byte)
 }
 
-// HeaderReader is an interface to read information from cadence headers
+// HeaderReader is an interface to read information from temporal headers
 type HeaderReader interface {
 	ForEachKey(handler func(string, []byte) error) error
 }

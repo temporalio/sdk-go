@@ -1168,7 +1168,7 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*commonproto.HistoryE
 		e.GetMarkerRecordedEventAttributes().GetMarkerName() == versionMarkerName &&
 		idx < len(events)-1 &&
 		events[idx+1].GetEventType() == enums.EventTypeUpsertWorkflowSearchAttributes {
-		if _, ok := events[idx+1].GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes.IndexedFields[CadenceChangeVersion]; ok {
+		if _, ok := events[idx+1].GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes.IndexedFields[TemporalChangeVersion]; ok {
 			return true
 		}
 	}
@@ -1608,7 +1608,7 @@ func newActivityTaskHandlerWithCustomProvider(
 	}
 }
 
-type cadenceInvoker struct {
+type temporalInvoker struct {
 	sync.Mutex
 	identity              string
 	service               workflowservice.WorkflowServiceClient
@@ -1621,7 +1621,7 @@ type cadenceInvoker struct {
 	workerStopChannel     <-chan struct{}
 }
 
-func (i *cadenceInvoker) Heartbeat(details []byte) error {
+func (i *temporalInvoker) Heartbeat(details []byte) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -1679,7 +1679,7 @@ func (i *cadenceInvoker) Heartbeat(details []byte) error {
 	return err
 }
 
-func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
+func (i *temporalInvoker) internalHeartBeat(details []byte) (bool, error) {
 	isActivityCancelled := false
 	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
 	if timeout <= 0 {
@@ -1708,7 +1708,7 @@ func (i *cadenceInvoker) internalHeartBeat(details []byte) (bool, error) {
 	return isActivityCancelled, err
 }
 
-func (i *cadenceInvoker) Close(flushBufferedHeartbeat bool) {
+func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 	i.Lock()
 	defer i.Unlock()
 	close(i.closeCh)
@@ -1721,7 +1721,7 @@ func (i *cadenceInvoker) Close(flushBufferedHeartbeat bool) {
 	}
 }
 
-func (i *cadenceInvoker) GetClient(domain string, options *ClientOptions) Client {
+func (i *temporalInvoker) GetClient(domain string, options *ClientOptions) Client {
 	return NewClient(i.service, domain, options)
 }
 
@@ -1733,7 +1733,7 @@ func newServiceInvoker(
 	heartBeatTimeoutInSec int32,
 	workerStopChannel <-chan struct{},
 ) ServiceInvoker {
-	return &cadenceInvoker{
+	return &temporalInvoker{
 		taskToken:             taskToken,
 		identity:              identity,
 		service:               service,

@@ -1,14 +1,12 @@
-# Developing cadence-client
+# Developing temporal-client
 
-This doc is intended for contributors to `cadence-client` (hopefully that's you!)
+This doc is intended for contributors to `temporal-client` (hopefully that's you!)
 
 **Note:** All contributors also need to fill out the [Uber Contributor License Agreement](http://t.uber.com/cla) before we can merge in any of your changes
 
 ## Development Environment
 
 * Go. Install on OS X with `brew install go`. The minimum required Go version is 1.10.
-* `thrift`. Install on OS X with `brew install thrift`.
-* `thrift-gen`. Install with `go get github.com/uber/tchannel-go/thrift/thrift-gen`.
 
 ## Checking out the code
 
@@ -36,7 +34,7 @@ make copyright
 
 ## Commit Messages
 
-Overcommit adds some requirements to your commit messages. At Uber, we follow the
+Overcommit adds some requirements to your commit messages. At Temporal, we follow the
 [Chris Beams](http://chris.beams.io/posts/git-commit/) guide to writing git
 commit messages. Read it, follow it, learn it, love it.
 

@@ -1234,7 +1234,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		// test searchable change version
 		wfInfo := GetWorkflowInfo(ctx)
 		s.NotNil(wfInfo.SearchAttributes)
-		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[CadenceChangeVersion]
+		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
 		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
@@ -1294,7 +1294,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		// test searchable change version
 		wfInfo := GetWorkflowInfo(ctx)
 		s.NotNil(wfInfo.SearchAttributes)
-		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[CadenceChangeVersion]
+		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
 		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
@@ -1328,7 +1328,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
 	workflowFn := func(ctx Context) error {
 		attr := map[string]interface{}{
-			CadenceChangeVersion: "some change version",
+			TemporalChangeVersion: "some change version",
 		}
 		err := UpsertSearchAttributes(ctx, attr)
 		s.Error(err)
@@ -2837,7 +2837,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:          time.Second,
 				BackoffCoefficient:       1.1,
 				MaximumAttempts:          3,
-				NonRetriableErrorReasons: []string{"cadenceInternal:Timeout TimeoutTypeStartToClose"},
+				NonRetriableErrorReasons: []string{"temporalInternal:Timeout TimeoutTypeStartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)

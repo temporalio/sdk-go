@@ -824,7 +824,7 @@ type QueryWorkflowWithOptionsRequest struct {
 	RunID string
 
 	// QueryType is a required field which specifies the query you want to run.
-	// By default, cadence supports "__stack_trace" as a standard query type, which will return string value
+	// By default, temporal supports "__stack_trace" as a standard query type, which will return string value
 	// representing the call stack of the target workflow. The target workflow could also setup different query handler to handle custom query types.
 	// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details on how to setup query handler within the target workflow.
 	QueryType string
@@ -949,7 +949,7 @@ func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.He
 	return header
 }
 
-// Register a domain with cadence server
+// Register a domain with temporal server
 // The errors it can throw:
 //	- DomainAlreadyExistsError
 //	- BadRequestError

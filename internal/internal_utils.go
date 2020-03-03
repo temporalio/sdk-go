@@ -44,16 +44,16 @@ const (
 	// libraryVersionHeaderName refers to the name of the
 	// tchannel / http header that contains the client
 	// library version
-	libraryVersionHeaderName = "cadence-client-library-version"
+	libraryVersionHeaderName = "temporal-client-library-version"
 
 	// featureVersionHeaderName refers to the name of the
 	// tchannel / http header that contains the client
 	// feature version
-	featureVersionHeaderName = "cadence-client-feature-version"
+	featureVersionHeaderName = "temporal-client-feature-version"
 
 	// clientImplHeaderName refers to the name of the
 	// header that contains the client implementation
-	clientImplHeaderName  = "cadence-client-name"
+	clientImplHeaderName  = "temporal-client-name"
 	clientImplHeaderValue = "uber-go"
 
 	// defaultRPCTimeout is the default tchannel rpc call timeout
@@ -65,7 +65,7 @@ const (
 )
 
 var (
-	// call header to cadence server
+	// call header to temporal server
 	headers = metadata.New(map[string]string{
 		libraryVersionHeaderName: LibraryVersion,
 		featureVersionHeaderName: FeatureVersion,
@@ -277,7 +277,7 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 }
 
 func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
-	// "reason" is a string like "cadenceInternal:Timeout TimeoutTypeStartToClose"
+	// "reason" is a string like "temporalInternal:Timeout TimeoutTypeStartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
 	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
 		return enums.TimeoutType(timeoutType), nil
