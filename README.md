@@ -1,6 +1,6 @@
-# Go framework for Temporal [![Build Status](https://badge.buildkite.com/ce6df3b1a8b375270261ae70fb2d2756af298fef3a0dac4d20.svg?theme=github&branch=master)](https://buildkite.com/temporal/temporal-go-client) [![GoDoc](https://godoc.org/go.temporal.io/temporal?status.svg)](https://godoc.org/go.temporal.io/temporal)
+# Temporal GO SDK [![Build Status](https://badge.buildkite.com/ce6df3b1a8b375270261ae70fb2d2756af298fef3a0dac4d20.svg?theme=github&branch=master)](https://buildkite.com/temporal/temporal-go-client) [![GoDoc](https://godoc.org/go.temporal.io/temporal?status.svg)](https://godoc.org/go.temporal.io/temporal)
 
-[Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine we developed at Uber Engineering to execute asynchronous long-running business logic in a scalable and resilient way.
+[Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
 `temporal-client` is the framework for authoring workflows and activities.
 

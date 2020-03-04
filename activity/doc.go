@@ -27,7 +27,7 @@ desired results must be implemented.
 
 Overview
 
-The client library for Temporal does all the heavy lifting of handling the async communication between the Temporal
+Temporal GO SDK does all the heavy lifting of handling the async communication between the Temporal
 managed service and the worker running the activity. As such, the implementation of the activity can, for the most
 part, focus on the business logic. The sample code below shows the implementation of a simple activity that accepts a
 string parameter, appends a word to it and then returns the result.
