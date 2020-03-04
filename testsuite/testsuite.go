@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package testsuite contains unit testing framework for Cadence workflows and activities.
+// Package testsuite contains unit testing framework for Temporal workflows and activities.
 package testsuite
 
 import (

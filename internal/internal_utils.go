@@ -65,7 +65,7 @@ const (
 )
 
 var (
-	// call header to cadence server
+	// call header to temporal server
 	headers = metadata.New(map[string]string{
 		libraryVersionHeaderName: LibraryVersion,
 		featureVersionHeaderName: FeatureVersion,
@@ -277,7 +277,7 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 }
 
 func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
-	// "reason" is a string like "cadenceInternal:Timeout TimeoutTypeStartToClose"
+	// "reason" is a string like "temporalInternal:Timeout TimeoutTypeStartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
 	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
 		return enums.TimeoutType(timeoutType), nil

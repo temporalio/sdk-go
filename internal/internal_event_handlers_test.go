@@ -171,7 +171,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	require.Error(t, err)
 
 	err = env.UpsertSearchAttributes(map[string]interface{}{
-		CadenceChangeVersion: []string{"change2-1", "change1-1"}},
+		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
 	)
 	require.NoError(t, err)
 	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
@@ -307,7 +307,7 @@ func Test_GetChangeVersions(t *testing.T) {
 func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 	t.Parallel()
 	result := createSearchAttributesForChangeVersion("cid", 1, map[string]Version{})
-	val, ok := result["CadenceChangeVersion"]
+	val, ok := result["TemporalChangeVersion"]
 	require.True(t, ok, "Remember to update related key on server side")
 	require.Equal(t, []string{"cid-1"}, val)
 }

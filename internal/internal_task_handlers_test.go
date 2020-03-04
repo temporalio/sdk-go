@@ -815,7 +815,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.True(ok)
 	t.EqualValues(enums.DecisionTypeFailWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
-	t.EqualValues("cadenceInternal:Panic", attr.GetReason())
+	t.EqualValues("temporalInternal:Panic", attr.GetReason())
 	details := string(attr.Details)
 	t.True(strings.HasPrefix(details, "\"panicError"), details)
 }
@@ -1172,13 +1172,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
 
-	cadenceInvoker := &cadenceInvoker{
-		identity:  "Test_Cadence_Invoker",
+	temporalInvoker := &temporalInvoker{
+		identity:  "Test_Temporal_Invoker",
 		service:   mockService,
 		taskToken: nil,
 	}
 
-	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil)
 
 	t.NoError(heartbeatErr)
 }
@@ -1189,15 +1189,15 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
-	cadenceInvoker := newServiceInvoker(
+	temporalInvoker := newServiceInvoker(
 		nil,
-		"Test_Cadence_Invoker",
+		"Test_Temporal_Invoker",
 		mockService,
 		func() {},
 		0,
 		make(chan struct{}))
 
-	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1211,15 +1211,15 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 	called := false
 	cancelHandler := func() { called = true }
 
-	cadenceInvoker := newServiceInvoker(
+	temporalInvoker := newServiceInvoker(
 		nil,
-		"Test_Cadence_Invoker",
+		"Test_Temporal_Invoker",
 		mockService,
 		cancelHandler,
 		0,
 		make(chan struct{}))
 
-	heartbeatErr := cadenceInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.DomainNotActive{}, heartbeatErr, "heartbeatErr must be of type DomainNotActive.")
 	t.True(called)

@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	workflowTag = "cadenceWorkflowID"
+	workflowTag = "temporalWorkflowID"
 
-	runTag = "cadenceRunID"
+	runTag = "temporalRunID"
 )
 
 // createOpenTracingWorkflowSpan creates a new context with a workflow started span

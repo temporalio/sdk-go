@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 /*
-Package activity contains functions and types used to implement Cadence activities.
+Package activity contains functions and types used to implement Temporal activities.
 
 The activity is an implementation of a task to be performed as part of a larger workflow. There is no limitation of
 what an activity can do. In the context of a workflow, it is in the activities where all operations that affect the
@@ -27,7 +27,7 @@ desired results must be implemented.
 
 Overview
 
-The client library for Cadence does all the heavy lifting of handling the async communication between the Cadence
+Temporal Go SDK does all the heavy lifting of handling the async communication between the Temporal
 managed service and the worker running the activity. As such, the implementation of the activity can, for the most
 part, focus on the business logic. The sample code below shows the implementation of a simple activity that accepts a
 string parameter, appends a word to it and then returns the result.
@@ -52,7 +52,7 @@ The following sections explore the elements of the above code.
 
 Declaration
 
-In the Cadence programing model, an activity is implemented with a function. The function declaration specifies the
+In the Temporal programing model, an activity is implemented with a function. The function declaration specifies the
 parameters the activity accepts as well as any values it might return. An activity function can take zero or many
 activity specific parameters and can return one or two values. It must always at least return an error value. The
 activity function can accept as parameters and return as results any serializable type.
@@ -82,8 +82,8 @@ return value.
 
 Activity Heartbeating
 
-For long running activities, Cadence provides an API for the activity code to report both liveness and progress back to
-the Cadence managed service.
+For long running activities, Temporal provides an API for the activity code to report both liveness and progress back to
+the Temporal managed service.
 
     progress := 0
     for hasWork {
@@ -99,7 +99,7 @@ returned from the workflow.ExecuteActivity function as the details field of Time
 
 It is also possible to heartbeat an activity from an external source:
 
-    // instantiate a Cadence service Client
+    // instantiate a Temporal service Client
     client.Client client = client.NewClient(...)
 
     // record heartbeat
@@ -120,7 +120,7 @@ Async/Manual Activity Completion
 In certain scenarios completing an activity upon completion of its function is not possible or desirable.
 
 One example would be the UberEATS order processing workflow that gets kicked off once an eater pushes the “Place Order”
-button. Here is how that workflow could be implemented using Cadence and the “async activity completion”:
+button. Here is how that workflow could be implemented using Temporal and the “async activity completion”:
 
   - Activity 1: send order to restaurant
   - Activity 2: wait for restaurant to accept order
@@ -131,10 +131,10 @@ button. Here is how that workflow could be implemented using Cadence and the “
 
 Activities 2 & 4 in the above flow require someone in the restaurant to push a button in the Uber app to complete the
 activity. The activities could be implemented with some sort of polling mechanism. However, they can be implemented
-much simpler and much less resource intensive as a Cadence activity that is completed asynchronously.
+much simpler and much less resource intensive as a Temporal activity that is completed asynchronously.
 
 There are 2 parts to implementing an asynchronously completed activity. The first part is for the activity to provide
-the information necessary to be able to be completed from an external system and notify the Cadence service that it is
+the information necessary to be able to be completed from an external system and notify the Temporal service that it is
 waiting for that outside callback:
 
     // retrieve activity information needed to complete activity asynchronously
@@ -144,13 +144,13 @@ waiting for that outside callback:
     // send the taskToken to external service that will complete the activity
     ...
 
-    // return from activity function indicating the Cadence should wait for an async completion message
+    // return from activity function indicating the Temporal should wait for an async completion message
     return "", activity.ErrResultPending
 
-The second part is then for the external service to call the Cadence service to complete the activity. To complete the
+The second part is then for the external service to call the Temporal service to complete the activity. To complete the
 activity successfully you would do the following:
 
-    // instantiate a Cadence service Client
+    // instantiate a Temporal service Client
     // the same client can be used complete or fail any number of activities
     client.Client client = client.NewClient(...)
 

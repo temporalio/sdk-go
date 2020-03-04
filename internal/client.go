@@ -226,7 +226,7 @@ type (
 		//  - InternalServiceError
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
-		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Cadence
+		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
 		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
 		// by your domain to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
@@ -368,7 +368,7 @@ type (
 		Memo map[string]interface{}
 
 		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
-		// supported when Cadence server is using ElasticSearch). The key and value type must be registered on Cadence server side.
+		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes map[string]interface{}
 	}
@@ -402,11 +402,11 @@ type (
 		// Either MaximumAttempts or ExpirationInterval is required.
 		MaximumAttempts int32
 
-		// Non-Retriable errors. This is optional. Cadence server will stop retry if error reason matches this list.
+		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.
 		// Error reason for custom error is specified when your activity/workflow return temporal.NewCustomError(reason).
-		// Error reason for panic error is "cadenceInternal:Panic".
-		// Error reason for any other error is "cadenceInternal:Generic".
-		// Error reason for timeouts is: "cadenceInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be TimeoutTypeStartToClose or TimeoutTypeHeartbeat.
+		// Error reason for panic error is "temporalInternal:Panic".
+		// Error reason for any other error is "temporalInternal:Generic".
+		// Error reason for timeouts is: "temporalInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be TimeoutTypeStartToClose or TimeoutTypeHeartbeat.
 		// Note, cancellation is not a failure, so it won't be retried.
 		NonRetriableErrorReasons []string
 	}
@@ -557,7 +557,7 @@ func (p ParentClosePolicy) toProto() enums.ParentClosePolicy {
 	}
 }
 
-// NewValue creates a new encoded.Value which can be used to decode binary data returned by Cadence.  For example:
+// NewValue creates a new encoded.Value which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
@@ -567,7 +567,7 @@ func NewValue(data []byte) Value {
 	return newEncodedValue(data, nil)
 }
 
-// NewValues creates a new encoded.Values which can be used to decode binary data returned by Cadence. For example:
+// NewValues creates a new encoded.Values which can be used to decode binary data returned by Temporal. For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:

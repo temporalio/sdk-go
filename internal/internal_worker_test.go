@@ -1190,7 +1190,7 @@ var thriftEncodingTests = []encodingTest{
 	{&thriftEncoding{}, []interface{}{&testWorkflowID1, &testWorkflowID2, &testWorkflowID1}},
 }
 
-// TODO: Disable until thriftrw encoding support is added to cadence client.(follow up change)
+// TODO: Disable until thriftrw encoding support is added to temporal client.(follow up change)
 func _TestThriftEncoding(t *testing.T) {
 	// Success tests.
 	for _, et := range thriftEncodingTests {

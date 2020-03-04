@@ -46,11 +46,11 @@ Below are the possible errors that activity or child workflow could return:
 	If activity or child workflow was timed out (several timeout types), workflow code will receive instance of
     *TimeoutError. The err contains details about what type of timeout it was.
 5) *workflow.PanicError:
-	If activity code panics while executing, cadence activity worker will report it as activity failure to cadence server.
-	The cadence client library will present that failure as *PanicError to workflow code. The err contains a string
+	If activity code panics while executing, temporal activity worker will report it as activity failure to temporal server.
+	The temporal client library will present that failure as *PanicError to workflow code. The err contains a string
 	representation of the panic message and the call stack when panic was happen.
     Note that there should be no *PanicError from child workflow. When panic happen in workflow implementation code,
-    cadence client library catches that panic and causing the decision timeout. That decision task will be retried at
+    temporal client library catches that panic and causing the decision timeout. That decision task will be retried at
     a later time (with exponential backoff retry intervals). Eventually either decision code is fixed to not panic or
     a workflow execution times out. In the timeout case the parent workflow receives TimeoutError.
 

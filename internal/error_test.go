@@ -182,7 +182,7 @@ func Test_CustomError(t *testing.T) {
 	require.Equal(t, testErrorDetails3, b3)
 
 	// test reason and no detail
-	require.Panics(t, func() { _ = NewCustomError("cadenceInternal:testReason") })
+	require.Panics(t, func() { _ = NewCustomError("temporalInternal:testReason") })
 	newReason := "another reason"
 	err2 := NewCustomError(newReason)
 	require.True(t, !err2.HasDetails())

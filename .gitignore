@@ -11,7 +11,7 @@
 *.html
 .tmp/
 /vendor
-cadence-client
+temporal-client
 bins
 test.log
 /dummy

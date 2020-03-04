@@ -69,34 +69,34 @@ func Test_Wrapper(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
 	tests := []testCase{
 		// one case for each service call
-		{"DeprecateDomain", []interface{}{ctx, &workflowservice.DeprecateDomainRequest{}}, []interface{}{&workflowservice.DeprecateDomainResponse{}, nil}, []string{CadenceRequest}},
-		{"DescribeDomain", []interface{}{ctx, &workflowservice.DescribeDomainRequest{}}, []interface{}{&workflowservice.DescribeDomainResponse{}, nil}, []string{CadenceRequest}},
-		{"GetWorkflowExecutionHistory", []interface{}{ctx, &workflowservice.GetWorkflowExecutionHistoryRequest{}}, []interface{}{&workflowservice.GetWorkflowExecutionHistoryResponse{}, nil}, []string{CadenceRequest}},
-		{"ListClosedWorkflowExecutions", []interface{}{ctx, &workflowservice.ListClosedWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListClosedWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
-		{"ListOpenWorkflowExecutions", []interface{}{ctx, &workflowservice.ListOpenWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListOpenWorkflowExecutionsResponse{}, nil}, []string{CadenceRequest}},
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{&workflowservice.PollForActivityTaskResponse{}, nil}, []string{CadenceRequest}},
-		{"PollForDecisionTask", []interface{}{ctx, &workflowservice.PollForDecisionTaskRequest{}}, []interface{}{&workflowservice.PollForDecisionTaskResponse{}, nil}, []string{CadenceRequest}},
-		{"RecordActivityTaskHeartbeat", []interface{}{ctx, &workflowservice.RecordActivityTaskHeartbeatRequest{}}, []interface{}{&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil}, []string{CadenceRequest}},
-		{"RegisterDomain", []interface{}{ctx, &workflowservice.RegisterDomainRequest{}}, []interface{}{&workflowservice.RegisterDomainResponse{}, nil}, []string{CadenceRequest}},
-		{"RequestCancelWorkflowExecution", []interface{}{ctx, &workflowservice.RequestCancelWorkflowExecutionRequest{}}, []interface{}{&workflowservice.RequestCancelWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCanceled", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCompleted", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskFailed", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledByIDResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondActivityTaskFailedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedByIDResponse{}, nil}, []string{CadenceRequest}},
-		{"RespondDecisionTaskCompleted", []interface{}{ctx, &workflowservice.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil, nil}, []string{CadenceRequest}},
-		{"SignalWorkflowExecution", []interface{}{ctx, &workflowservice.SignalWorkflowExecutionRequest{}}, []interface{}{&workflowservice.SignalWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"StartWorkflowExecution", []interface{}{ctx, &workflowservice.StartWorkflowExecutionRequest{}}, []interface{}{&workflowservice.StartWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"TerminateWorkflowExecution", []interface{}{ctx, &workflowservice.TerminateWorkflowExecutionRequest{}}, []interface{}{&workflowservice.TerminateWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{CadenceRequest}},
-		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{CadenceRequest}},
+		{"DeprecateDomain", []interface{}{ctx, &workflowservice.DeprecateDomainRequest{}}, []interface{}{&workflowservice.DeprecateDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"DescribeDomain", []interface{}{ctx, &workflowservice.DescribeDomainRequest{}}, []interface{}{&workflowservice.DescribeDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"GetWorkflowExecutionHistory", []interface{}{ctx, &workflowservice.GetWorkflowExecutionHistoryRequest{}}, []interface{}{&workflowservice.GetWorkflowExecutionHistoryResponse{}, nil}, []string{TemporalRequest}},
+		{"ListClosedWorkflowExecutions", []interface{}{ctx, &workflowservice.ListClosedWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListClosedWorkflowExecutionsResponse{}, nil}, []string{TemporalRequest}},
+		{"ListOpenWorkflowExecutions", []interface{}{ctx, &workflowservice.ListOpenWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListOpenWorkflowExecutionsResponse{}, nil}, []string{TemporalRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{&workflowservice.PollForActivityTaskResponse{}, nil}, []string{TemporalRequest}},
+		{"PollForDecisionTask", []interface{}{ctx, &workflowservice.PollForDecisionTaskRequest{}}, []interface{}{&workflowservice.PollForDecisionTaskResponse{}, nil}, []string{TemporalRequest}},
+		{"RecordActivityTaskHeartbeat", []interface{}{ctx, &workflowservice.RecordActivityTaskHeartbeatRequest{}}, []interface{}{&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil}, []string{TemporalRequest}},
+		{"RegisterDomain", []interface{}{ctx, &workflowservice.RegisterDomainRequest{}}, []interface{}{&workflowservice.RegisterDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"RequestCancelWorkflowExecution", []interface{}{ctx, &workflowservice.RequestCancelWorkflowExecutionRequest{}}, []interface{}{&workflowservice.RequestCancelWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCanceled", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCompleted", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskFailed", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledByIDResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskFailedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedByIDResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondDecisionTaskCompleted", []interface{}{ctx, &workflowservice.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil, nil}, []string{TemporalRequest}},
+		{"SignalWorkflowExecution", []interface{}{ctx, &workflowservice.SignalWorkflowExecutionRequest{}}, []interface{}{&workflowservice.SignalWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
+		{"StartWorkflowExecution", []interface{}{ctx, &workflowservice.StartWorkflowExecutionRequest{}}, []interface{}{&workflowservice.StartWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
+		{"TerminateWorkflowExecution", []interface{}{ctx, &workflowservice.TerminateWorkflowExecutionRequest{}}, []interface{}{&workflowservice.TerminateWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
+		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
+		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{TemporalRequest}},
 		// one case of invalid request
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewNotFound("")}, []string{CadenceRequest, CadenceInvalidRequest}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewNotFound("")}, []string{TemporalRequest, TemporalInvalidRequest}},
 		// one case of server error
-		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
-		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
-		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{CadenceRequest, CadenceError}},
+		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{TemporalRequest, TemporalError}},
+		{"QueryWorkflow", []interface{}{ctx, &workflowservice.QueryWorkflowRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{TemporalRequest, TemporalError}},
+		{"RespondQueryTaskCompleted", []interface{}{ctx, &workflowservice.RespondQueryTaskCompletedRequest{}}, []interface{}{nil, serviceerror.NewInternal("")}, []string{TemporalRequest, TemporalError}},
 	}
 
 	// run each test twice - once with the regular scope, once with a sanitized metrics scope
@@ -191,7 +191,7 @@ func runTest(
 func assertMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
 	require.Equal(t, len(counterNames), len(reporter.counts))
 	for _, name := range counterNames {
-		counterName := CadenceMetricsPrefix + methodName + "." + name
+		counterName := TemporalMetricsPrefix + methodName + "." + name
 		find := false
 		// counters are not in order
 		for _, counter := range reporter.counts {
@@ -203,13 +203,13 @@ func assertMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName st
 		require.True(t, find)
 	}
 	require.Equal(t, 1, len(reporter.timers))
-	require.Equal(t, CadenceMetricsPrefix+methodName+"."+CadenceLatency, reporter.timers[0].name)
+	require.Equal(t, TemporalMetricsPrefix+methodName+"."+TemporalLatency, reporter.timers[0].name)
 }
 
 func assertPromMetrics(t *testing.T, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
 	require.Equal(t, len(counterNames), len(reporter.counts))
 	for _, name := range counterNames {
-		counterName := makePromCompatible(CadenceMetricsPrefix + methodName + "." + name)
+		counterName := makePromCompatible(TemporalMetricsPrefix + methodName + "." + name)
 		find := false
 		// counters are not in order
 		for _, counter := range reporter.counts {
@@ -221,7 +221,7 @@ func assertPromMetrics(t *testing.T, reporter *CapturingStatsReporter, methodNam
 		require.True(t, find)
 	}
 	require.Equal(t, 1, len(reporter.timers))
-	expected := makePromCompatible(CadenceMetricsPrefix + methodName + "." + CadenceLatency)
+	expected := makePromCompatible(TemporalMetricsPrefix + methodName + "." + TemporalLatency)
 	require.Equal(t, expected, reporter.timers[0].name)
 }
 

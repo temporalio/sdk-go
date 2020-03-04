@@ -87,7 +87,7 @@
         "decisionTaskCompletedEventId": 4,
         "searchAttributes": {
           "indexedFields": {
-            "CadenceChangeVersion": "WyJ0ZXN0LWNoYW5nZS0xIl0="
+            "TemporalChangeVersion": "WyJ0ZXN0LWNoYW5nZS0xIl0="
           }
         }
       }

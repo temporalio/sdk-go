@@ -297,7 +297,7 @@ func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]
 	}
 
 	var upsertID string
-	if changeVersion, ok := attributes[CadenceChangeVersion]; ok {
+	if changeVersion, ok := attributes[TemporalChangeVersion]; ok {
 		// to ensure backward compatibility on searchable GetVersion, use latest changeVersion as upsertID
 		upsertID = changeVersion.([]string)[0]
 	} else {
@@ -596,7 +596,7 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 
 func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]interface{} {
 	return map[string]interface{}{
-		CadenceChangeVersion: getChangeVersions(changeID, version, existingChangeVersions),
+		TemporalChangeVersion: getChangeVersions(changeID, version, existingChangeVersions),
 	}
 }
 
@@ -997,7 +997,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	if len(attributes.GetLastFailureReason()) > 0 && attributes.GetTimeoutType() == enums.TimeoutTypeStartToClose {
 		// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
 		// To stabilize the error type, we always return the customer error.
-		// See more details of background: https://github.com/uber/cadence/issues/2627
+		// See more details of background: https://github.com/temporalio/temporal/issues/185
 		err = constructError(attributes.GetLastFailureReason(), attributes.LastFailureDetails, weh.GetDataConverter())
 	} else {
 		details := newEncodedValues(attributes.Details, weh.GetDataConverter())

@@ -13,7 +13,7 @@
         },
         "executionStartToCloseTimeoutSeconds": 60,
         "taskStartToCloseTimeoutSeconds": 60,
-        "identity": "cadence-cli@user-C02WC08UHTDG"
+        "identity": "temporal-cli@user-C02WC08UHTDG"
       }
     },
     {

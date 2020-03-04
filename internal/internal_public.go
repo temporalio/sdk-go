@@ -24,7 +24,7 @@ package internal
 // Any of the APIs in this file are not supported for application level developers
 // and are subject to change without any notice.
 //
-// APIs that are internal to Cadence system developers and are public from the Go
+// APIs that are internal to Temporal system developers and are public from the Go
 // point of view only to access them from other packages.
 
 import (

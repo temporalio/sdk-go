@@ -92,7 +92,7 @@ type (
 		WaitForCancellation bool
 
 		// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
-		// to specify this then talk to cadence team. This is something will be done in future.
+		// to specify this then talk to temporal team. This is something will be done in future.
 		// Optional: default empty string
 		ActivityID string
 
@@ -100,7 +100,7 @@ type (
 		// and it is larger than the activity's ScheduleToStartTimeout, then the ExpirationInterval will override activity's
 		// ScheduleToStartTimeout. This is to avoid retrying on ScheduleToStartTimeout error which only happen when worker
 		// is not picking up the task within the timeout. Retrying ScheduleToStartTimeout does not make sense as it just
-		// mark the task as failed and create a new task and put back in the queue waiting worker to pick again. Cadence
+		// mark the task as failed and create a new task and put back in the queue waiting worker to pick again. Temporal
 		// server also make sure the ScheduleToStartTimeout will not be larger than the workflow's timeout.
 		// Same apply to ScheduleToCloseTimeout. See more details about RetryPolicy on the doc for RetryPolicy.
 		// Optional: default is no retry
@@ -209,7 +209,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	}
 }
 
-// ServiceInvoker abstracts calls to the Cadence service from an activity implementation.
+// ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled

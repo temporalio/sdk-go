@@ -90,7 +90,7 @@ type (
 		// default: default identity that include hostname, groupName and process ID.
 		Identity string
 
-		// Optional: Metrics to be reported. Metrics emitted by the cadence client are not prometheus compatible by
+		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
 		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
 		// options set.
 		// var (
@@ -143,7 +143,7 @@ type (
 		// Sticky Execution is to run the decision tasks for one workflow execution on same worker host. This is an
 		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
 		// memory. New decision task contains the new history events will be dispatched to the same worker. If this
-		// worker crashes, the sticky decision task will timeout after StickyScheduleToStartTimeout, and cadence server
+		// worker crashes, the sticky decision task will timeout after StickyScheduleToStartTimeout, and temporal server
 		// will clear the stickiness for that workflow execution and automatically reschedule a new decision task that
 		// is available for any worker to pick up and resume the progress.
 		DisableStickyExecution bool
@@ -162,7 +162,7 @@ type (
 		// default: NonDeterministicWorkflowPolicyBlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 
-		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Cadence
+		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
 		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
 		DataConverter DataConverter
 
@@ -228,8 +228,8 @@ func IsReplayDomain(dn string) bool {
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
-// service 	- gRPC connection to the cadence server.
-// domain - the name of the cadence domain.
+// service 	- gRPC connection to the temporal server.
+// domain - the name of the temporal domain.
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.

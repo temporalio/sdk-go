@@ -84,7 +84,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 //
 // • Local activity is scheduled and run by the workflow worker locally.
 //
-// • Local activity does not need Cadence server to schedule activity task and does not rely on activity worker.
+// • Local activity does not need Temporal server to schedule activity task and does not rely on activity worker.
 //
 // • No need to register local activity.
 //
@@ -107,7 +107,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // Input args are the arguments that will to be passed to the local activity. The input args will be hand over directly
 // to local activity function without serialization/deserialization because we don't need to pass the input across process
 // boundary. However, the result will still go through serialization/deserialization because we need to record the result
-// as history to cadence server so if the workflow crashes, a different worker can replay the history without running
+// as history to temporal server so if the workflow crashes, a different worker can replay the history without running
 // the local activity again.
 //
 // If the activity failed to complete then the future get error would indicate the failure, and it can be one of
@@ -311,7 +311,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 // should handle. The handler must be a function that returns 2 values. The first return value must be a serializable
 // result. The second return value must be an error. The handler function could receive any number of input parameters.
 // All the input parameter must be serializable. You should call workflow.SetQueryHandler() at the beginning of the workflow
-// code. When client calls Client.QueryWorkflow() to cadence server, a task will be generated on server that will be dispatched
+// code. When client calls Client.QueryWorkflow() to temporal server, a task will be generated on server that will be dispatched
 // to a workflow worker, which will replay the history events and then execute a query handler based on the query type.
 // The query handler will be invoked out of the context of the workflow, meaning that the handler code must not use workflow
 // context to do things like workflow.NewChannel(), workflow.Go() or to call any workflow blocking functions like
@@ -354,14 +354,14 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // Warning! Never make decisions, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
 // this flag as it is going to break workflow determinism requirement.
 // The only reasonable use case for this flag is to avoid some external actions during replay, like custom logging or
-// metric reporting. Please note that Cadence already provide standard logging/metric via workflow.GetLogger(ctx) and
+// metric reporting. Please note that Temporal already provide standard logging/metric via workflow.GetLogger(ctx) and
 // workflow.GetMetricsScope(ctx), and those standard mechanism are replay-aware and it will automatically suppress during
 // replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to kafka.
 //
 // Warning! Any action protected by this flag should not fail or if it does fail should ignore that failure or panic
 // on the failure. If workflow don't want to be blocked on those failure, it should ignore those failure; if workflow do
 // want to make sure it proceed only when that action succeed then it should panic on that failure. Panic raised from a
-// workflow causes decision task to fail and cadence server will rescheduled later to retry.
+// workflow causes decision task to fail and temporal server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
 	return internal.IsReplaying(ctx)
 }
@@ -387,7 +387,7 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 
 // UpsertSearchAttributes is used to add or update workflow search attributes.
 // The search attributes can be used in query of List/Scan/Count workflow APIs.
-// The key and value type must be registered on cadence server side;
+// The key and value type must be registered on temporal server side;
 // The value has to deterministic when replay;
 // The value has to be Json serializable.
 // UpsertSearchAttributes will merge attributes to existing map in workflow, for example workflow code:

@@ -289,10 +289,10 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		MaximumInterval:    time.Second * 10,
 		ExpirationInterval: options.CreationTimeout,
 		NonRetriableErrorReasons: []string{
-			"cadenceInternal:Panic",
-			"cadenceInternal:Generic",
-			"cadenceInternal:Timeout TimeoutTypeStartToClose",
-			"cadenceInternal:Timeout TimeoutTypeHeartbeat",
+			"temporalInternal:Panic",
+			"temporalInternal:Generic",
+			"temporalInternal:Timeout TimeoutTypeStartToClose",
+			"temporalInternal:Timeout TimeoutTypeHeartbeat",
 		},
 	}
 

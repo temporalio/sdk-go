@@ -19,16 +19,16 @@
 // THE SOFTWARE.
 
 /*
-Package workflow contains functions and types used to implement Cadence workflows.
+Package workflow contains functions and types used to implement Temporal workflows.
 
-A workflow is an implementation of coordination logic. The Cadence programming framework (aka client library) allows
+A workflow is an implementation of coordination logic. The Temporal programming framework (aka client library) allows
 you to write the workflow coordination logic as simple procedural code that uses standard Go data modeling. The client
-library takes care of the communication between the worker service and the Cadence service, and ensures state
+library takes care of the communication between the worker service and the Temporal service, and ensures state
 persistence between events even in case of worker failures. Any particular execution is not tied to a
 particular worker machine. Different steps of the coordination logic can end up executing on different worker
 instances, with the framework ensuring that necessary state is recreated on the worker executing the step.
 
-In order to facilitate this operational model both the Cadence programming framework and the managed service impose
+In order to facilitate this operational model both the Temporal programming framework and the managed service impose
 some requirements and restrictions on the implementation of the coordination logic. The details of these requirements
 and restrictions are described in the "Implementation" section below.
 
@@ -73,13 +73,13 @@ The following sections describe what is going on in the above code.
 
 Declaration
 
-In the Cadence programing model a workflow is implemented with a function. The function declaration specifies the
+In the Temporal programing model a workflow is implemented with a function. The function declaration specifies the
 parameters the workflow accepts as well as any values it might return.
 
 	func SimpleWorkflow(ctx workflow.Context, value string) error
 
 The first parameter to the function is ctx workflow.Context. This is a required parameter for all workflow functions
-and is used by the Cadence client library to pass execution context. Virtually all the client library functions that
+and is used by the Temporal client library to pass execution context. Virtually all the client library functions that
 are callable from the workflow functions require this ctx parameter. This **context** parameter is the same concept as
 the standard context.Context provided by Go. The only difference between workflow.Context and context.Context is that
 the Done() function in workflow.Context returns workflow.Channel instead of the standard go chan.
@@ -103,32 +103,32 @@ requirements are that:
 A simplistic way to think about these requirements is that the workflow code:
 
   - Can only read and manipulate local state or state received as return values
-    from Cadence client library functions
+    from Temporal client library functions
   - Should really not affect changes in external systems other than through
     invocation of activities
   - Should interact with time only through the functions provided by the
-    Cadence client library (i.e. workflow.Now(), workflow.Sleep())
+    Temporal client library (i.e. workflow.Now(), workflow.Sleep())
   - Should not create and interact with goroutines directly, it should instead
-    use the functions provided by the Cadence client library. (i.e.
+    use the functions provided by the Temporal client library. (i.e.
     workflow.Go() instead of go, workflow.Channel instead of chan,
     workflow.Selector instead of select)
-  - Should do all logging via the logger provided by the Cadence client
+  - Should do all logging via the logger provided by the Temporal client
     library (i.e. workflow.GetLogger())
   - Should not iterate over maps using range as order of map iteration is
     randomized
 
 Now that we laid out the ground rules we can take a look at how to implement some common patterns inside workflows.
 
-Special Cadence client library functions and types
+Special Temporal client library functions and types
 
-The Cadence client library provides a number of functions and types as alternatives to some native Go functions and
+The Temporal client library provides a number of functions and types as alternatives to some native Go functions and
 types. Usage of these replacement functions/types is necessary in order to ensure that the workflow code execution is
 deterministic and repeatable within an execution context.
 
 Coroutine related constructs:
 
   - workflow.Go : This is a replacement for the the go statement
-  - workflow.Channel : This is a replacement for the native chan type. Cadence
+  - workflow.Channel : This is a replacement for the native chan type. Temporal
     provides support for both buffered and unbuffered channels
   - workflow.Selector : This is a replacement for the select statement
 
@@ -178,7 +178,7 @@ object is that in that case the framework can validate activity parameters.
 
 The remaining parameters are the parameters to pass to the activity as part of the call. In our example we have a
 single parameter: **value**. This list of parameters must match the list of parameters declared by the activity
-function. Like mentioned above the Cadence client library will validate that this is indeed the case.
+function. Like mentioned above the Temporal client library will validate that this is indeed the case.
 
 The method call returns immediately and returns a workflow.Future. This allows for more code to be executed without
 having to wait for the scheduled activity to complete.
@@ -220,7 +220,7 @@ parent workflow has the ability to "monitor" and impact the life-cycle of the ch
 for an activity it invoked.
 
 	cwo := workflow.ChildWorkflowOptions{
-		// Do not specify WorkflowID if you want cadence to generate a unique ID for child execution
+		// Do not specify WorkflowID if you want temporal to generate a unique ID for child execution
 		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
 		ExecutionStartToCloseTimeout: time.Minute * 30,
 	}
@@ -327,7 +327,7 @@ third-party location until it's ready to be picked up by the activity. Further, 
 management, and the activity requires manual restart if it fails before acquiring the data.
 
 Signals, on the other hand, provides a fully asynch and durable mechanism for providing data to a running workflow.
-When a signal is received for a running workflow, Cadence persists the event and the payload in the workflow history.
+When a signal is received for a running workflow, Temporal persists the event and the payload in the workflow history.
 The workflow can then process the signal at any time afterwards without the risk of losing the information. The
 workflow also has the option to stop execution by blocking on a signal channel.
 
@@ -371,7 +371,7 @@ SideEffect API
 workflow.SideEffect executes the provided function once, records its result into the workflow history, and doesn't
 re-execute upon replay. Instead, it returns the recorded result. Use it only for short, nondeterministic code snippets,
 like getting a random value or generating a UUID. It can be seen as an "inline" activity. However, one thing to note
-about workflow.SideEffect is that whereas for activities Cadence guarantees "at-most-once" execution, no such guarantee
+about workflow.SideEffect is that whereas for activities Temporal guarantees "at-most-once" execution, no such guarantee
 exists for workflow.SideEffect. Under certain failure conditions, workflow.SideEffect can end up executing the function
 more than once.
 
@@ -393,13 +393,13 @@ SideEffect function any other way than through its recorded return value.
 
 Query API
 
-A workflow execution could be stuck at some state for longer than expected period. Cadence provide facilities to query
-the current call stack of a workflow execution. You can use cadence-cli to do the query, for example:
+A workflow execution could be stuck at some state for longer than expected period. Temporal provide facilities to query
+the current call stack of a workflow execution. You can use temporal-cli to do the query, for example:
 
-	cadence-cli --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt __stack_trace
+	temporal-cli --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt __stack_trace
 
 The above cli command uses __stack_trace as the query type. The __stack_trace is a built-in query type that is
-supported by cadence client library. You can also add your own custom query types to support thing like query current
+supported by temporal client library. You can also add your own custom query types to support thing like query current
 state of the workflow, or query how many activities the workflow has completed. To do so, you need to setup your own
 query handler using workflow.SetQueryHandler in your workflow code:
 
@@ -432,9 +432,9 @@ query handler using workflow.SetQueryHandler in your workflow code:
 The above sample code sets up a query handler to handle query type "state". With that, you should be able to query with
 cli:
 
-	cadence-cli --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt state
+	temporal-cli --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt state
 
-Besides using cadence-cli, you can also issue query from code using QueryWorkflow() API on cadence Client object.
+Besides using temporal-cli, you can also issue query from code using QueryWorkflow() API on temporal Client object.
 
 Registration
 
@@ -450,7 +450,7 @@ cause the entire workflow to fail.
 
 Testing
 
-The Cadence client library provides a test framework to facilitate testing workflow implementations. The framework is
+The Temporal client library provides a test framework to facilitate testing workflow implementations. The framework is
 suited for implementing unit tests as well as functional tests of the workflow logic.
 
 The code below implements the unit tests for the SimpleWorkflow sample.
@@ -460,8 +460,6 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 	import (
 		"errors"
 		"testing"
-
-		"code.uber.internal/devexp/cadence-worker/activity"
 
 		"github.com/stretchr/testify/mock"
 		"github.com/stretchr/testify/suite"
@@ -521,7 +519,7 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 Setup
 
 First, we define a "test suite" struct that absorbs both the basic suite functionality from testify
-http://godoc.org/github.com/stretchr/testify/suite via suite.Suite and the suite functionality from the Cadence test
+http://godoc.org/github.com/stretchr/testify/suite via suite.Suite and the suite functionality from the Temporal test
 framework via testsuite.WorkflowTestSuite. Since every test in this suite will test our workflow we add a property to
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
 setup method. For testing workflows we use a testsuite.TestWorkflowEnvironment.
