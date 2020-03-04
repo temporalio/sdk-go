@@ -94,11 +94,11 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    logger,
-		UserContext:               ctx,
-		UserContextCancel:         cancel,
+		TaskList:                     "testTaskList",
+		MaxConcurrentDecisionPollers: 5,
+		Logger:                       logger,
+		UserContext:                  ctx,
+		UserContextCancel:            cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
@@ -119,9 +119,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), callOptions...).Return(nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    logger,
+		TaskList:                     "testTaskList",
+		MaxConcurrentActivityPollers: 5,
+		Logger:                       logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -163,7 +163,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
 		TaskList:                        "testTaskList",
-		ConcurrentPollRoutineSize:       5,
+		MaxConcurrentActivityPollers:    5,
 		ConcurrentActivityExecutionSize: 2,
 		Logger:                          logger,
 		UserContext:                     ctx,
@@ -202,9 +202,9 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), callOptions...).Return(&m.PollForDecisionTaskResponse{}, &m.InternalServiceError{}).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		TaskList:                  "testDecisionTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    zap.NewNop(),
+		TaskList:                     "testDecisionTaskList",
+		MaxConcurrentDecisionPollers: 5,
+		Logger:                       zap.NewNop(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(
