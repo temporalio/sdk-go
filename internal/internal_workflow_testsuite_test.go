@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/temporal-proto/serviceerror"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	commonproto "go.temporal.io/temporal-proto/common"
@@ -1693,14 +1694,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
-	var localActivityFnCancelled bool
+	var localActivityFnCancelled atomic.Bool
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
 	}
 
 	cancelledLocalActivityFn := func(ctx context.Context) error {
 		<-ctx.Done()
-		localActivityFnCancelled = true
+		localActivityFnCancelled.Store(true)
 		return nil
 	}
 
@@ -1761,7 +1762,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	err := env.GetWorkflowResult(&result)
 	s.NoError(err)
 	s.Equal("hello mock", result)
-	s.True(localActivityFnCancelled)
+	s.True(localActivityFnCancelled.Load())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
@@ -2643,7 +2644,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
 			WorkflowID:                   "Test_ChildWorkflowAlreadyRunning",
 			ExecutionStartToCloseTimeout: time.Minute,
-			// WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicate,
+			WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicateFailedOnly,
 		})
 
 		var result1, result2 string
