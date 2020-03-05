@@ -537,7 +537,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
-) (Value, error) {
+) (val Value, result *localActivityResult, err error) {
 	params := executeLocalActivityParams{
 		localActivityOptions: localActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
@@ -559,11 +559,11 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		tracer:       opentracing.NoopTracer{},
 	}
 
-	result := taskHandler.executeLocalActivityTask(task)
+	result = taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
-		return nil, result.err
+		return nil, nil, result.err
 	}
-	return newEncodedValue(result.result, env.GetDataConverter()), nil
+	return newEncodedValue(result.result, env.GetDataConverter()), result, nil
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {

@@ -427,6 +427,12 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	})
+
+	workflowInfo := internal.GetWorkflowInfo(laCtx)
+	if &workflowInfo.WorkflowType == nil {
+		return errors.New("failed to get work flow type")
+	}
+
 	workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
 	queryResult = signalData
 	return nil

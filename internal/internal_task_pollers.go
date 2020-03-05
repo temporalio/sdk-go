@@ -464,7 +464,12 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		rootCtx = context.Background()
 	}
 
+	workflowTypeLocal := task.params.WorkflowInfo.WorkflowType
+
 	ctx := context.WithValue(rootCtx, activityEnvContextKey, &activityEnvironment{
+		workflowType:      &workflowTypeLocal,
+		workflowDomain:    task.params.WorkflowInfo.Domain,
+		taskList:          task.params.WorkflowInfo.TaskListName,
 		activityType:      ActivityType{Name: activityType},
 		activityID:        fmt.Sprintf("%v", task.activityID),
 		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
@@ -505,6 +510,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
 		deadline = task.expireTime
 	}
+
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	task.Lock()
 	if task.canceled {
