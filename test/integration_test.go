@@ -401,6 +401,16 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
+func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
+	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
+	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
+	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
+	ts.Nil(err)
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client := client.NewDomainClient(ts.rpcClient.Interface, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)

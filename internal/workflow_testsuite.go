@@ -159,7 +159,7 @@ func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args .
 
 // ExecuteLocalActivity executes a local activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use Value.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val Value, result *localActivityResult, err error) {
+func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val Value, err error) {
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 

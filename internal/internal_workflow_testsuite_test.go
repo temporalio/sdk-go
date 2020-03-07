@@ -1616,11 +1616,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	}
 
 	env := s.NewTestActivityEnvironment()
-	result, localActivity, err := env.ExecuteLocalActivity(localActivityFn, "local_activity")
+	result, err := env.ExecuteLocalActivity(localActivityFn, "local_activity")
 	s.NoError(err)
-	s.Equal(WorkflowType{Name: workflowTypeNotSpecified}, localActivity.task.params.WorkflowInfo.WorkflowType)
-	s.Equal(defaultTestDomain, localActivity.task.params.WorkflowInfo.Domain)
-	s.Equal(defaultTestTaskList, localActivity.task.params.WorkflowInfo.TaskListName)
 	var laResult string
 	err = result.Get(&laResult)
 	s.NoError(err)
