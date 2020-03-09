@@ -21,6 +21,7 @@
 package cadence
 
 import (
+	"go.uber.org/cadence/.gen/go/shared"
 	"go.uber.org/cadence/internal"
 	"go.uber.org/cadence/workflow"
 )
@@ -51,6 +52,12 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 // IsCustomError return if the err is a CustomError
 func IsCustomError(err error) bool {
 	_, ok := err.(*CustomError)
+	return ok
+}
+
+// IsWorkflowExecutionAlreadyStartedError return if the err is a WorkflowExecutionAlreadyStartedError
+func IsWorkflowExecutionAlreadyStartedError(err error) bool {
+	_, ok := err.(*shared.WorkflowExecutionAlreadyStartedError)
 	return ok
 }
 
