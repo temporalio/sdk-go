@@ -11,8 +11,8 @@ BUILD := .build
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
-INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integration_test_sticky_off_cover.out
-INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integration_test_sticky_on_cover.out
+INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
+INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
 
 # Automatically gather all srcs
 ALL_SRC :=  $(shell find . -name "*.go")
