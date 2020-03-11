@@ -211,7 +211,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		config := zap.NewProductionConfig()
 		// set default time formatter to "2006-01-02T15:04:05.000Z0700"
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		//config.Level.SetLevel(zapcore.DebugLevel)
+		// config.Level.SetLevel(zapcore.DebugLevel)
 		logger, _ := config.Build()
 		params.Logger = logger
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
@@ -991,11 +991,12 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type AggregatedWorker struct {
-	workflowWorker *workflowWorker
-	activityWorker *activityWorker
-	sessionWorker  *sessionWorker
-	logger         *zap.Logger
-	registry       *registry
+	workflowWorker   *workflowWorker
+	activityWorker   *activityWorker
+	sessionWorker    *sessionWorker
+	logger           *zap.Logger
+	registry         *registry
+	connectionCloser func() error
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1156,6 +1157,11 @@ func (aw *AggregatedWorker) Stop() {
 	if !isInterfaceNil(aw.sessionWorker) {
 		aw.sessionWorker.Stop()
 	}
+
+	if aw.connectionCloser != nil {
+		_ = aw.connectionCloser()
+	}
+
 	aw.logger.Info("Stopped Worker")
 }
 

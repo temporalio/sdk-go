@@ -27,6 +27,7 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/uber-go/tally"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
@@ -308,6 +309,8 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+
+		CloseConnection() error
 	}
 
 	GRPCDialer func(hostPort string, requiredInterceptors []grpc.UnaryClientInterceptor, defaultServiceConfig string) (*grpc.ClientConn, error)
@@ -502,11 +505,14 @@ func NewClient(hostPort, domain string, options *ClientOptions) Client {
 		return nil
 	}
 
-	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), domain, options)
+	workflowClient := newServiceClient(workflowservice.NewWorkflowServiceClient(connection), domain, options)
+	workflowClient.connectionCloser = func() error { return connection.Close() }
+
+	return workflowClient
 }
 
 // NewClient creates an instance of a workflow client
-func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) Client {
+func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) *workflowClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -604,7 +610,7 @@ func defaultGRPCDialer(hostPort string, requiredInterceptors []grpc.UnaryClientI
 	return grpc.Dial(hostPort,
 		grpc.WithInsecure(),
 		grpc.WithChainUnaryInterceptor(requiredInterceptors...),
-		grpc.WithDefaultServiceConfig(defaultServiceConfig),
+		// grpc.WithDefaultServiceConfig(defaultServiceConfig),
 	)
 }
 
@@ -617,7 +623,14 @@ func requiredInterceptors(metricScope tally.Scope) []grpc.UnaryClientInterceptor
 		return err
 	}
 
-	return []grpc.UnaryClientInterceptor{errorInterceptor, scopeInterceptor.Interceptor()}
+	loggerInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		log.Infof("Calling: %s, req: %v", method, req)
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		log.Infof("Called: %s, reply: %v, err: %v", method, reply, err)
+		return err
+	}
+
+	return []grpc.UnaryClientInterceptor{scopeInterceptor.Interceptor(), errorInterceptor, loggerInterceptor}
 }
 
 func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {

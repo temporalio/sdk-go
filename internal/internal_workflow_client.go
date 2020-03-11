@@ -938,6 +938,13 @@ func (wc *workflowClient) DescribeTaskList(ctx context.Context, taskList string,
 
 	return resp, nil
 }
+func (wc *workflowClient) CloseConnection() error {
+	if wc.connectionCloser == nil {
+		return nil
+	}
+
+	return wc.connectionCloser()
+}
 
 func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
 	header := &commonproto.Header{

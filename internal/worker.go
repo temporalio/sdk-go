@@ -260,7 +260,10 @@ func NewWorker(
 		return nil
 	}
 
-	return NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), domain, taskList, options)
+	aggregatedWorker := NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), domain, taskList, options)
+	aggregatedWorker.connectionCloser = func() error { return connection.Close() }
+
+	return aggregatedWorker
 }
 
 // NewServiceWorker creates an instance of worker for managing workflow and activity executions.

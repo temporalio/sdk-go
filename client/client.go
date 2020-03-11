@@ -333,6 +333,8 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+
+		CloseConnection() error
 	}
 
 	// DomainClient is the client for managing operations on the domain.

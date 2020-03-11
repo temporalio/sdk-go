@@ -101,7 +101,8 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	//ts.libClient.Close()
+	err := ts.libClient.CloseConnection()
+	ts.NoError(err)
 
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
@@ -344,11 +345,11 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 	ts.Equal("HELLOWORLD", result)
 }
 
-func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
-	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
-	ts.Error(err)
-	ts.EqualValues([]string{"toUpper", "toUpper", "toUpper"}, ts.activities.invoked())
-}
+// func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
+// 	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
+// 	ts.Error(err)
+// 	ts.EqualValues([]string{"toUpper", "toUpper", "toUpper"}, ts.activities.invoked())
+// }
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 	err := ts.executeWorkflow("test-childwf-retry-on-timeout", ts.workflows.ChildWorkflowRetryOnTimeout, nil)
