@@ -44,17 +44,17 @@ const (
 	// libraryVersionHeaderName refers to the name of the
 	// tchannel / http header that contains the client
 	// library version
-	libraryVersionHeaderName = "cadence-client-library-version"
+	libraryVersionHeaderName = "temporal-sdk-version"
 
 	// featureVersionHeaderName refers to the name of the
 	// tchannel / http header that contains the client
 	// feature version
-	featureVersionHeaderName = "cadence-client-feature-version"
+	featureVersionHeaderName = "temporal-sdk-feature-version"
 
 	// clientImplHeaderName refers to the name of the
 	// header that contains the client implementation
-	clientImplHeaderName  = "cadence-client-name"
-	clientImplHeaderValue = "uber-go"
+	clientImplHeaderName  = "temporal-sdk-name"
+	clientImplHeaderValue = "temporal-go"
 
 	// defaultRPCTimeout is the default tchannel rpc call timeout
 	defaultRPCTimeout = 10 * time.Second
