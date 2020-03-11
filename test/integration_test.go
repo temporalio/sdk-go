@@ -32,23 +32,23 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/goleak"
+	"go.uber.org/zap"
+
+	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/interceptors"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
-	"go.uber.org/goleak"
-	"go.uber.org/zap"
 )
 
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	config       Config
-	rpcClient    *rpcClient
 	libClient    client.Client
 	activities   *Activities
 	workflows    *Workflows
@@ -94,17 +94,14 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.config = newConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
-	ts.NoError(err)
-	ts.rpcClient = rpcClient
-	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
+	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
+	ts.libClient = client.NewClient(ts.config.ServiceAddr, domainName, &client.Options{})
 	ts.registerDomain()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.rpcClient.Close()
+	//ts.libClient.Close()
 
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
@@ -142,7 +139,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
-	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, options)
+	ts.worker = worker.New(ts.config.ServiceAddr, domainName, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -432,7 +429,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
+	client := client.NewDomainClient(ts.config.ServiceAddr, &client.Options{})
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName

@@ -23,10 +23,6 @@ package test
 import (
 	"os"
 	"strings"
-
-	"google.golang.org/grpc"
-
-	"go.temporal.io/temporal-proto/workflowservice"
 )
 
 // Config contains the integration test configuration
@@ -63,25 +59,4 @@ func getEnvStickyOff() string {
 
 func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
-}
-
-type rpcClient struct {
-	workflowservice.WorkflowServiceClient
-	connectionCloser func() error
-}
-
-func (c *rpcClient) Close() {
-	_ = c.connectionCloser()
-}
-
-// newRPCClient builds and returns a new rpc client that is able to
-// make calls to the localhost temporal-server container
-func newRPCClient(serviceAddr string) (*rpcClient, error) {
-	connection, err := grpc.Dial(serviceAddr, grpc.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-
-	client := workflowservice.NewWorkflowServiceClient(connection)
-	return &rpcClient{WorkflowServiceClient: client, connectionCloser: func() error { return connection.Close() }}, nil
 }
