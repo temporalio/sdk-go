@@ -114,11 +114,6 @@ type (
 		// Default value is 2
 		MaxConcurrentDecisionTaskPollers int
 
-		// Optional: if the activities need auto heart beating for those activities
-		// by the framework
-		// default: false not to heartbeat.
-		AutoHeartBeat bool
-
 		// Optional: Sets an identify that can be used to track this host for debugging.
 		// default: default identity that include hostname, groupName and process ID.
 		Identity string
