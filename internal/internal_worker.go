@@ -1406,7 +1406,6 @@ func newAggregatedWorker(
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.MetricsScope = tagScope(workerParams.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},

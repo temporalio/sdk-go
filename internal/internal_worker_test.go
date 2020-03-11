@@ -588,7 +588,7 @@ func createWorkerWithThrottle(
 	workerOptions.EnableSessionWorker = true
 
 	// Start Worker.
-	worker := NewWorker(
+	worker := NewServiceWorker(
 		service,
 		domain,
 		"testGroupName2",

@@ -197,6 +197,8 @@ type (
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
 		// default: no tracer - opentracing.NoopTracer
 		Tracer opentracing.Tracer
+
+		GRPCDialer GRPCDialer
 	}
 )
 
@@ -227,13 +229,47 @@ func IsReplayDomain(dn string) bool {
 	return ReplayDomainName == dn
 }
 
-// NewWorker creates an instance of worker for managing workflow and activity executions.
+func NewWorker(
+	hostPort,
+	domain string,
+	taskList string,
+	options WorkerOptions,
+) *AggregatedWorker {
+
+	if options.MetricsScope == nil {
+		options.MetricsScope = tally.NoopScope
+		options.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
+	}
+
+	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(hostPort) == 0 {
+		hostPort = LocalHostPort
+	}
+
+	var grpcDialer GRPCDialer
+	if options.GRPCDialer != nil {
+		grpcDialer = options.GRPCDialer
+	} else {
+		grpcDialer = defaultGRPCDialer
+	}
+
+	connection, err := grpcDialer(hostPort, requiredInterceptors(options.MetricsScope), DefaultServiceConfig)
+	if err != nil {
+		// TODO: change return type to (Client, error)?
+		return nil
+	}
+
+	return NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), domain, taskList, options)
+}
+
+// NewServiceWorker creates an instance of worker for managing workflow and activity executions.
 // service 	- gRPC connection to the temporal server.
 // domain - the name of the temporal domain.
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
-func NewWorker(
+func NewServiceWorker(
 	service workflowservice.WorkflowServiceClient,
 	domain string,
 	taskList string,
