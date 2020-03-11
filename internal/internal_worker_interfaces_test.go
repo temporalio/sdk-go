@@ -225,7 +225,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		ExecutionStartToCloseTimeout:    10 * time.Second,
 		DecisionTaskStartToCloseTimeout: 10 * time.Second,
 	}
-	workflowClient := NewClient(s.service, domain, nil)
+	workflowClient := NewServiceClient(s.service, domain, nil)
 	_, err := workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, "workflowType")
 	s.NoError(err)
 }

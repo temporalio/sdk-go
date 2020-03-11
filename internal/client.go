@@ -25,15 +25,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -44,6 +46,10 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
+
+	LocalHostPort = "localhost:7233"
+
+	DefaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 
 type (
@@ -304,6 +310,8 @@ type (
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 	}
 
+	GRPCDialer func(hostPort string, requiredInterceptors []grpc.UnaryClientInterceptor, defaultServiceConfig string) (*grpc.ClientConn, error)
+
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
 		MetricsScope       tally.Scope
@@ -311,6 +319,7 @@ type (
 		DataConverter      DataConverter
 		Tracer             opentracing.Tracer
 		ContextPropagators []ContextPropagator
+		GRPCDialer         GRPCDialer
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -469,8 +478,35 @@ const (
 	WorkflowIDReusePolicyRejectDuplicate
 )
 
+func NewClient(hostPort, domain string, options *ClientOptions) Client {
+	var metricScope tally.Scope
+	if options != nil {
+		metricScope = options.MetricsScope
+	}
+	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(hostPort) == 0 {
+		hostPort = LocalHostPort
+	}
+
+	var grpcDialer GRPCDialer
+	if options != nil && options.GRPCDialer != nil {
+		grpcDialer = options.GRPCDialer
+	} else {
+		grpcDialer = defaultGRPCDialer
+	}
+
+	connection, err := grpcDialer(hostPort, requiredInterceptors(metricScope), DefaultServiceConfig)
+	if err != nil {
+		// TODO: change return type to (Client, error)?
+		return nil
+	}
+
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), domain, options)
+}
+
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) Client {
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -499,8 +535,11 @@ func NewClient(service workflowservice.WorkflowServiceClient, domain string, opt
 	} else {
 		tracer = opentracing.NoopTracer{}
 	}
+
 	return &workflowClient{
-		workflowService:    metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
+		workflowService: workflowServiceClient,
+		// workflowService:    workflowservice.NewWorkflowServiceClient(connection),
+		// connectionCloser:   func() error { return connection.Close() },
 		domain:             domain,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
@@ -511,8 +550,35 @@ func NewClient(service workflowservice.WorkflowServiceClient, domain string, opt
 	}
 }
 
+func NewDomainClient(hostPort string, options *ClientOptions) DomainClient {
+	var metricScope tally.Scope
+	if options != nil {
+		metricScope = options.MetricsScope
+	}
+	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
+
+	if len(hostPort) == 0 {
+		hostPort = LocalHostPort
+	}
+
+	var grpcDialer GRPCDialer
+	if options != nil && options.GRPCDialer != nil {
+		grpcDialer = options.GRPCDialer
+	} else {
+		grpcDialer = defaultGRPCDialer
+	}
+
+	connection, err := grpcDialer(hostPort, requiredInterceptors(metricScope), DefaultServiceConfig)
+	if err != nil {
+		// TODO: change return type to (Client, error)?
+		return nil
+	}
+
+	return NewDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), options)
+}
+
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceClient, options *ClientOptions) DomainClient {
+func NewDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, options *ClientOptions) DomainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -524,11 +590,34 @@ func NewDomainClient(service workflowservice.WorkflowServiceClient, options *Cli
 		metricScope = options.MetricsScope
 	}
 	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
+
 	return &domainClient{
-		workflowService: metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
-		metricsScope:    metricScope,
-		identity:        identity,
+		workflowService: workflowServiceClient,
+		// workflowService:  workflowservice.NewWorkflowServiceClient(connection),
+		// connectionCloser: func() error { return connection.Close() },
+		metricsScope: metricScope,
+		identity:     identity,
 	}
+}
+
+func defaultGRPCDialer(hostPort string, requiredInterceptors []grpc.UnaryClientInterceptor, defaultServiceConfig string) (*grpc.ClientConn, error) {
+	return grpc.Dial(hostPort,
+		grpc.WithInsecure(),
+		grpc.WithChainUnaryInterceptor(requiredInterceptors...),
+		grpc.WithDefaultServiceConfig(defaultServiceConfig),
+	)
+}
+
+func requiredInterceptors(metricScope tally.Scope) []grpc.UnaryClientInterceptor {
+	scopeInterceptor := metrics.NewScopeInterceptor(metricScope)
+
+	errorInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		err = serviceerror.FromStatus(status.Convert(err))
+		return err
+	}
+
+	return []grpc.UnaryClientInterceptor{errorInterceptor, scopeInterceptor.Interceptor()}
 }
 
 func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {

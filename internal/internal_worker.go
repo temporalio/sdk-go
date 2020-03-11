@@ -49,11 +49,10 @@ import (
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/common/backoff"
-	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"go.temporal.io/temporal/internal/common/backoff"
 )
 
 const (
@@ -1287,7 +1286,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
 		domain:        ReplayDomainName,
-		service:       rpc.NewWorkflowServiceErrorWrapper(service),
+		service:       service,
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
 	}
@@ -1414,7 +1413,6 @@ func newAggregatedWorker(
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
-	service = metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), workerParams.MetricsScope)
 
 	processTestTags(&wOptions, &workerParams)
 

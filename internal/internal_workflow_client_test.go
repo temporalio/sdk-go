@@ -29,16 +29,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
-	"go.temporal.io/temporal-proto/failure"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
-	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -297,7 +294,7 @@ func (s *workflowRunSuite) SetupTest() {
 		MetricsScope: metricsScope,
 		Identity:     identity,
 	}
-	s.workflowClient = NewClient(s.workflowServiceClient, domain, options)
+	s.workflowClient = NewServiceClient(s.workflowServiceClient, domain, options)
 }
 
 func (s *workflowRunSuite) TearDownTest() {
@@ -350,12 +347,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
-	st, err := status.New(codes.AlreadyExists, "Already Started").
-		WithDetails(&failure.WorkflowExecutionAlreadyStarted{RunId: runID})
-	s.NoError(err)
-
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, st.Err()).Times(1)
+		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
 
 	eventType := enums.EventTypeWorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
@@ -768,7 +761,7 @@ func (s *workflowClientTestSuite) SetupSuite() {
 func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	s.client = NewClient(s.service, domain, nil)
+	s.client = NewServiceClient(s.service, domain, nil)
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -853,7 +846,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = NewClient(s.service, domain, &ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
+	s.client = NewServiceClient(s.service, domain, &ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -883,7 +876,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
 	dc := newTestDataConverter()
-	s.client = NewClient(s.service, domain, &ClientOptions{DataConverter: dc})
+	s.client = NewServiceClient(s.service, domain, &ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -1049,7 +1042,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 	s.Equal(response, resp)
 
 	request.Domain = "another"
-	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.InvalidArgument, "")).
+	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
 		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
@@ -1071,7 +1064,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 	s.Equal(response, resp)
 
 	request.Domain = "another"
-	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.InvalidArgument, "")).
+	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
 		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
@@ -1091,7 +1084,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	s.Equal(response, resp)
 
 	request.Domain = "another"
-	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.InvalidArgument, "")).
+	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
 		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
@@ -1111,7 +1104,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 	s.Equal(response, resp)
 
 	request.Domain = "another"
-	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.InvalidArgument, "")).
+	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
 		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetDomain())
 		})
@@ -1126,7 +1119,7 @@ func (s *workflowClientTestSuite) TestGetSearchAttributes() {
 	s.Nil(err)
 	s.Equal(response, resp)
 
-	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.InvalidArgument, ""))
+	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument(""))
 	_, err = s.client.GetSearchAttributes(context.Background())
 	s.IsType(&serviceerror.InvalidArgument{}, err)
 }

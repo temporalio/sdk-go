@@ -31,10 +31,9 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/serviceerror"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
@@ -59,6 +58,7 @@ type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
+		connectionCloser   func() error
 		domain             string
 		registry           *registry
 		metricsScope       *metrics.TaggedScope
@@ -70,9 +70,10 @@ type (
 
 	// domainClient is the client for managing domains.
 	domainClient struct {
-		workflowService workflowservice.WorkflowServiceClient
-		metricsScope    tally.Scope
-		identity        string
+		workflowService  workflowservice.WorkflowServiceClient
+		connectionCloser func() error
+		metricsScope     tally.Scope
+		identity         string
 	}
 
 	// WorkflowRun represents a started non child workflow

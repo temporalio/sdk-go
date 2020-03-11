@@ -388,13 +388,13 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *Options) Client {
-	return internal.NewClient(service, domain, options)
+func NewClient(hostPort, domain string, options *Options) Client {
+	return internal.NewClient(hostPort, domain, options)
 }
 
 // NewDomainClient creates an instance of a domain client, to manage lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceClient, options *Options) DomainClient {
-	return internal.NewDomainClient(service, options)
+func NewDomainClient(hostPort string, options *Options) DomainClient {
+	return internal.NewDomainClient(hostPort, options)
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
