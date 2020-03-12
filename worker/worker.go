@@ -188,12 +188,11 @@ const (
 //               hosted by a single worker process
 //    options  - configure any worker specific options like logger, metrics, identity
 func New(
-	hostPort,
 	domain string,
 	taskList string,
 	options Options,
-) Worker {
-	return internal.NewWorker(hostPort, domain, taskList, options)
+) (Worker, error) {
+	return internal.NewWorker(domain, taskList, options)
 }
 
 // NewWorkflowReplayer creates a WorkflowReplayer instance.

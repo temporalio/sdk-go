@@ -27,6 +27,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal-proto/workflowservice"
 )
@@ -36,6 +37,8 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	WorkerOptions struct {
+		HostPort string
+
 		// Optional: To set the maximum concurrent activity executions this worker can have.
 		// The zero value of this uses the default value.
 		// default: defaultMaxConcurrentActivityExecutionSize(1k)
@@ -230,40 +233,37 @@ func IsReplayDomain(dn string) bool {
 }
 
 func NewWorker(
-	hostPort,
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) *AggregatedWorker {
+) (*AggregatedWorker, error) {
 
 	if options.MetricsScope == nil {
 		options.MetricsScope = tally.NoopScope
 		options.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
 
-	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
+	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
 
-	if len(hostPort) == 0 {
-		hostPort = LocalHostPort
+	if len(options.HostPort) == 0 {
+		options.HostPort = LocalHostPort
 	}
 
-	var grpcDialer GRPCDialer
-	if options.GRPCDialer != nil {
-		grpcDialer = options.GRPCDialer
-	} else {
-		grpcDialer = defaultGRPCDialer
+	if options.GRPCDialer == nil {
+		options.GRPCDialer = defaultGRPCDialer
 	}
 
-	connection, err := grpcDialer(hostPort, requiredInterceptors(options.MetricsScope), DefaultServiceConfig)
+	connection, err := options.GRPCDialer(GRPCDialerParams{
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(metricsScope),
+		DefaultServiceConfig: DefaultServiceConfig,
+	})
+
 	if err != nil {
-		// TODO: change return type to (Client, error)?
-		return nil
+		return nil, err
 	}
 
-	aggregatedWorker := NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), domain, taskList, options)
-	aggregatedWorker.connectionCloser = func() error { return connection.Close() }
-
-	return aggregatedWorker
+	return NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), nil, domain, taskList, options), nil
 }
 
 // NewServiceWorker creates an instance of worker for managing workflow and activity executions.
@@ -272,11 +272,6 @@ func NewWorker(
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like logger, metrics, identity.
-func NewServiceWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	taskList string,
-	options WorkerOptions,
-) *AggregatedWorker {
-	return newAggregatedWorker(service, domain, taskList, options)
+func NewServiceWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) *AggregatedWorker {
+	return newAggregatedWorker(service, clientConn, domain, taskList, options)
 }

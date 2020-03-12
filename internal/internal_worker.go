@@ -51,6 +51,7 @@ import (
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 )
@@ -996,7 +997,7 @@ type AggregatedWorker struct {
 	sessionWorker    *sessionWorker
 	logger           *zap.Logger
 	registry         *registry
-	connectionCloser func() error
+	connectionCloser io.Closer
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1158,8 +1159,8 @@ func (aw *AggregatedWorker) Stop() {
 		aw.sessionWorker.Stop()
 	}
 
-	if aw.connectionCloser != nil {
-		_ = aw.connectionCloser()
+	if !isInterfaceNil(aw.connectionCloser) {
+		_ = aw.connectionCloser.Close()
 	}
 
 	aw.logger.Info("Stopped Worker")
@@ -1373,12 +1374,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // AggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func newAggregatedWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	taskList string,
-	options WorkerOptions,
-) (worker *AggregatedWorker) {
+func newAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1482,11 +1478,12 @@ func newAggregatedWorker(
 	}
 
 	return &AggregatedWorker{
-		workflowWorker: workflowWorker,
-		activityWorker: activityWorker,
-		sessionWorker:  sessionWorker,
-		logger:         logger,
-		registry:       registry,
+		workflowWorker:   workflowWorker,
+		activityWorker:   activityWorker,
+		sessionWorker:    sessionWorker,
+		logger:           logger,
+		registry:         registry,
+		connectionCloser: clientConn,
 	}
 }
 
