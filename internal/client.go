@@ -449,6 +449,8 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+
+		CloseConnection() error
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
@@ -580,11 +582,14 @@ func NewDomainClient(hostPort string, options *ClientOptions) DomainClient {
 		return nil
 	}
 
-	return NewDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), options)
+	domainClient := newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), options)
+	domainClient.connectionCloser = func() error { return connection.Close() }
+
+	return domainClient
 }
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, options *ClientOptions) DomainClient {
+func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, options *ClientOptions) *domainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -610,7 +615,7 @@ func defaultGRPCDialer(hostPort string, requiredInterceptors []grpc.UnaryClientI
 	return grpc.Dial(hostPort,
 		grpc.WithInsecure(),
 		grpc.WithChainUnaryInterceptor(requiredInterceptors...),
-		// grpc.WithDefaultServiceConfig(defaultServiceConfig),
+		grpc.WithDefaultServiceConfig(defaultServiceConfig),
 	)
 }
 

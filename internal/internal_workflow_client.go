@@ -1016,6 +1016,14 @@ func (dc *domainClient) Update(ctx context.Context, request *workflowservice.Upd
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
+func (dc *domainClient) CloseConnection() error {
+	if dc.connectionCloser == nil {
+		return nil
+	}
+
+	return dc.connectionCloser()
+}
+
 func (iter *historyEventIteratorImpl) HasNext() bool {
 	if iter.nextEventIndex < len(iter.events) || iter.err != nil {
 		return true

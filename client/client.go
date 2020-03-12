@@ -47,6 +47,8 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
+	GRPCDialer = internal.GRPCDialer
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
@@ -363,6 +365,8 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+
+		CloseConnection() error
 	}
 )
 

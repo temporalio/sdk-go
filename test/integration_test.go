@@ -345,11 +345,11 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 	ts.Equal("HELLOWORLD", result)
 }
 
-// func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
-// 	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
-// 	ts.Error(err)
-// 	ts.EqualValues([]string{"toUpper", "toUpper", "toUpper"}, ts.activities.invoked())
-// }
+func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
+	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
+	ts.Error(err)
+	ts.EqualValues([]string{"toUpper", "toUpper", "toUpper"}, ts.activities.invoked())
+}
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 	err := ts.executeWorkflow("test-childwf-retry-on-timeout", ts.workflows.ChildWorkflowRetryOnTimeout, nil)
@@ -439,6 +439,7 @@ func (ts *IntegrationTestSuite) registerDomain() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
+	_ = client.CloseConnection()
 	if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
 		return
 	}
