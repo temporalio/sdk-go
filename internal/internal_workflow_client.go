@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"time"
 
@@ -58,7 +59,7 @@ type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
-		connectionCloser   func() error
+		connectionCloser   io.Closer
 		domain             string
 		registry           *registry
 		metricsScope       *metrics.TaggedScope
@@ -71,7 +72,7 @@ type (
 	// domainClient is the client for managing domains.
 	domainClient struct {
 		workflowService  workflowservice.WorkflowServiceClient
-		connectionCloser func() error
+		connectionCloser io.Closer
 		metricsScope     tally.Scope
 		identity         string
 	}
@@ -943,7 +944,7 @@ func (wc *workflowClient) CloseConnection() error {
 		return nil
 	}
 
-	return wc.connectionCloser()
+	return wc.connectionCloser.Close()
 }
 
 func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
@@ -1021,7 +1022,7 @@ func (dc *domainClient) CloseConnection() error {
 		return nil
 	}
 
-	return dc.connectionCloser()
+	return dc.connectionCloser.Close()
 }
 
 func (iter *historyEventIteratorImpl) HasNext() bool {

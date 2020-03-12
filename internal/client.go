@@ -23,6 +23,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/gogo/status"
@@ -489,7 +490,6 @@ func NewClient(hostPort, domain string, options *ClientOptions) Client {
 		metricScope = options.MetricsScope
 	}
 	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
-
 	if len(hostPort) == 0 {
 		hostPort = LocalHostPort
 	}
@@ -507,14 +507,11 @@ func NewClient(hostPort, domain string, options *ClientOptions) Client {
 		return nil
 	}
 
-	workflowClient := newServiceClient(workflowservice.NewWorkflowServiceClient(connection), domain, options)
-	workflowClient.connectionCloser = func() error { return connection.Close() }
-
-	return workflowClient
+	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, domain, options)
 }
 
 // NewClient creates an instance of a workflow client
-func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) *workflowClient {
+func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, domain string, options *ClientOptions) Client {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -545,9 +542,8 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	return &workflowClient{
-		workflowService: workflowServiceClient,
-		// workflowService:    workflowservice.NewWorkflowServiceClient(connection),
-		// connectionCloser:   func() error { return connection.Close() },
+		workflowService:    workflowServiceClient,
+		connectionCloser:   connectionCloser,
 		domain:             domain,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(metricScope),
@@ -582,14 +578,11 @@ func NewDomainClient(hostPort string, options *ClientOptions) DomainClient {
 		return nil
 	}
 
-	domainClient := newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), options)
-	domainClient.connectionCloser = func() error { return connection.Close() }
-
-	return domainClient
+	return newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
 }
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, options *ClientOptions) *domainClient {
+func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options *ClientOptions) DomainClient {
 	var identity string
 	if options == nil || options.Identity == "" {
 		identity = getWorkerIdentity("")
@@ -603,11 +596,10 @@ func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServic
 	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 
 	return &domainClient{
-		workflowService: workflowServiceClient,
-		// workflowService:  workflowservice.NewWorkflowServiceClient(connection),
-		// connectionCloser: func() error { return connection.Close() },
-		metricsScope: metricScope,
-		identity:     identity,
+		workflowService:  workflowServiceClient,
+		connectionCloser: clientConn,
+		metricsScope:     metricScope,
+		identity:         identity,
 	}
 }
 
