@@ -45,8 +45,10 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
+	// LocalHostPort is a default host:port for worker and client to connect to.
 	LocalHostPort = "localhost:7233"
 
+	// DefaultServiceConfig is a default gRPC connection service config which enables DNS round robin between IPs.
 	DefaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 

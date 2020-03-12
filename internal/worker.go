@@ -37,6 +37,7 @@ type (
 	WorkerOptions struct {
 
 		// Optional: To set the host:port for this worker to connect to.
+		// Use "dns:///" prefix to enable DNS based round robin.
 		// default: localhost:7233
 		HostPort string
 

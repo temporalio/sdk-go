@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
+
 // Package client is used by external programs to communicate with Temporal service.
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
 package client
