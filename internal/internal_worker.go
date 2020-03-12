@@ -1371,7 +1371,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 	return history, nil
 }
 
-// AggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
+// NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) (worker *AggregatedWorker) {

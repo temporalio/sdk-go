@@ -28,11 +28,10 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -308,6 +307,7 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
+		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
 	}
 
@@ -447,6 +447,7 @@ type (
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
 
+		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
 	}
 
@@ -480,6 +481,7 @@ const (
 	WorkflowIDReusePolicyRejectDuplicate
 )
 
+// NewClient creates an instance of a workflow client
 func NewClient(domain string, options ClientOptions) (Client, error) {
 	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
 
@@ -504,7 +506,6 @@ func NewClient(domain string, options ClientOptions) (Client, error) {
 	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, domain, options), nil
 }
 
-// NewClient creates an instance of a workflow client
 func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, domain string, options ClientOptions) Client {
 	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
 
@@ -535,6 +536,7 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 }
 
+// NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
 func NewDomainClient(options ClientOptions) (DomainClient, error) {
 	metricsScope := tagScope(options.MetricsScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
 
@@ -559,7 +561,6 @@ func NewDomainClient(options ClientOptions) (DomainClient, error) {
 	return newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-// NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
 func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options ClientOptions) DomainClient {
 	if len(options.Identity) == 0 {
 		options.Identity = getWorkerIdentity("")

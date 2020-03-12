@@ -32,12 +32,14 @@ import (
 )
 
 type (
+	// GRPCDialerParams are passed to GRPCDialer and must be used to create gRPC connection.
 	GRPCDialerParams struct {
 		HostPort             string
 		RequiredInterceptors []grpc.UnaryClientInterceptor
 		DefaultServiceConfig string
 	}
 
+	// GRPCDialer can be used to set custom gRPC connection creation logic.
 	GRPCDialer func(params GRPCDialerParams) (*grpc.ClientConn, error)
 )
 
@@ -50,11 +52,11 @@ func defaultGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
 }
 
 func requiredInterceptors(metricScope tally.Scope) []grpc.UnaryClientInterceptor {
-	errorInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		err = serviceerror.FromStatus(status.Convert(err))
-		return err
-	}
-
 	return []grpc.UnaryClientInterceptor{metrics.NewScopeInterceptor(metricScope), errorInterceptor}
+}
+
+func errorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	err = serviceerror.FromStatus(status.Convert(err))
+	return err
 }

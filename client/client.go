@@ -47,7 +47,11 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
+	// GRPCDialer can be used to set custom gRPC connection creation logic.
 	GRPCDialer = internal.GRPCDialer
+
+	// GRPCDialerParams are passed to GRPCDialer and must be used to create gRPC connection.
+	GRPCDialerParams = internal.GRPCDialerParams
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
@@ -336,6 +340,7 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
+		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
 	}
 
@@ -366,6 +371,7 @@ type (
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
 
+		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
 	}
 )

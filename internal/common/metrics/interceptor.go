@@ -38,6 +38,7 @@ type (
 	}
 )
 
+// NewScopeInterceptor creates new metrics scope interceptor.
 func NewScopeInterceptor(scope tally.Scope) grpc.UnaryClientInterceptor {
 	scopeInterceptor := &scopeInterceptor{scope: scope, childScopes: make(map[string]tally.Scope)}
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

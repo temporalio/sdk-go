@@ -181,7 +181,6 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    service  - gRPC connection to the temporal server
 //    domain   - the name of the temporal domain
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are

@@ -35,6 +35,9 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	WorkerOptions struct {
+
+		// Optional: To set the host:port for this worker to connect to.
+		// default: localhost:7233
 		HostPort string
 
 		// Optional: To set the maximum concurrent activity executions this worker can have.
