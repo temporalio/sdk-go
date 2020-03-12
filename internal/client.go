@@ -26,10 +26,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -324,14 +322,6 @@ type (
 		GRPCDialer         GRPCDialer
 	}
 
-	GRPCDialerParams struct {
-		HostPort             string
-		RequiredInterceptors []grpc.UnaryClientInterceptor
-		DefaultServiceConfig string
-	}
-
-	GRPCDialer func(params GRPCDialerParams) (*grpc.ClientConn, error)
-
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -583,24 +573,6 @@ func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServic
 		metricsScope:     metricsScope,
 		identity:         options.Identity,
 	}
-}
-
-func defaultGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
-	return grpc.Dial(params.HostPort,
-		grpc.WithInsecure(),
-		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
-		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
-	)
-}
-
-func requiredInterceptors(metricScope tally.Scope) []grpc.UnaryClientInterceptor {
-	errorInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		err = serviceerror.FromStatus(status.Convert(err))
-		return err
-	}
-
-	return []grpc.UnaryClientInterceptor{metrics.NewScopeInterceptor(metricScope), errorInterceptor}
 }
 
 func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {

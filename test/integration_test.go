@@ -95,7 +95,9 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	ts.libClient = client.NewClient(ts.config.ServiceAddr, domainName, &client.Options{})
+	var err error
+	ts.libClient, err = client.NewClient(domainName, client.Options{HostPort: ts.config.ServiceAddr})
+	ts.NoError(err)
 	ts.registerDomain()
 }
 
@@ -139,8 +141,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
+		HostPort:                          ts.config.ServiceAddr,
 	}
-	ts.worker = worker.New(ts.config.ServiceAddr, domainName, ts.taskListName, options)
+	ts.worker, err = worker.New(domainName, ts.taskListName, options)
+	ts.NoError(err)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -430,12 +434,13 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.config.ServiceAddr, &client.Options{})
+	client, err := client.NewDomainClient(client.Options{HostPort: ts.config.ServiceAddr})
+	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err = client.Register(ctx, &workflowservice.RegisterDomainRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})

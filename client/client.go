@@ -394,20 +394,12 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(domain string) (Client, error) {
-	return internal.NewClient(domain, Options{})
-}
-
-func NewClientWithOptions(domain string, options Options) (Client, error) {
+func NewClient(domain string, options Options) (Client, error) {
 	return internal.NewClient(domain, options)
 }
 
 // NewDomainClient creates an instance of a domain client, to manage lifecycle of domains.
-func NewDomainClient() (DomainClient, error) {
-	return internal.NewDomainClient(Options{})
-}
-
-func NewDomainClientWithOptions(options Options) (DomainClient, error) {
+func NewDomainClient(options Options) (DomainClient, error) {
 	return internal.NewDomainClient(options)
 }
 

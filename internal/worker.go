@@ -26,10 +26,8 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 )
 
 type (
@@ -232,6 +230,11 @@ func IsReplayDomain(dn string) bool {
 	return ReplayDomainName == dn
 }
 
+// NewWorker creates an instance of worker for managing workflow and activity executions.
+// domain - the name of the temporal domain.
+// taskList 	- is the task list name you use to identify your client worker, also
+// 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
+// options 	-  configure any worker specific options like hostPort, logger, metrics, identity.
 func NewWorker(
 	domain string,
 	taskList string,
@@ -263,15 +266,5 @@ func NewWorker(
 		return nil, err
 	}
 
-	return NewServiceWorker(workflowservice.NewWorkflowServiceClient(connection), nil, domain, taskList, options), nil
-}
-
-// NewServiceWorker creates an instance of worker for managing workflow and activity executions.
-// service 	- gRPC connection to the temporal server.
-// domain - the name of the temporal domain.
-// taskList 	- is the task list name you use to identify your client worker, also
-// 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
-// options 	-  configure any worker specific options like logger, metrics, identity.
-func NewServiceWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) *AggregatedWorker {
-	return newAggregatedWorker(service, clientConn, domain, taskList, options)
+	return NewAggregatedWorker(workflowservice.NewWorkflowServiceClient(connection), connection, domain, taskList, options), nil
 }
