@@ -203,6 +203,16 @@ type (
 		// default: no tracer - opentracing.NoopTracer
 		Tracer opentracing.Tracer
 
+		// Optional: Sets GRPCDialer that can be used to create gRPC connection
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
+		//	return grpc.Dial(params.HostPort,
+		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
+		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//	)
+		// }
+		// default: defaultGRPCDialer (same as above)
 		GRPCDialer GRPCDialer
 	}
 )

@@ -39,7 +39,7 @@ type (
 		DefaultServiceConfig string
 	}
 
-	// GRPCDialer can be used to set custom gRPC connection creation logic.
+	// GRPCDialer creates gRPC connection.
 	GRPCDialer func(params GRPCDialerParams) (*grpc.ClientConn, error)
 )
 

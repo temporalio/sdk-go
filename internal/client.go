@@ -315,13 +315,67 @@ type (
 
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
-		HostPort           string
-		MetricsScope       tally.Scope
-		Identity           string
-		DataConverter      DataConverter
-		Tracer             opentracing.Tracer
+		// Optional: To set the host:port for this client to connect to.
+		// Use "dns:///" prefix to enable DNS based round robin.
+		// default: localhost:7233
+		HostPort string
+
+		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
+		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
+		// options set.
+		// var (
+		// _safeCharacters = []rune{'_'}
+		// _sanitizeOptions = tally.SanitizeOptions{
+		// 	NameCharacters: tally.ValidCharacters{
+		// 		Ranges:     tally.AlphanumericRange,
+		// 		Characters: _safeCharacters,
+		// 	},
+		// 		KeyCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ValueCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ReplacementCharacter: tally.DefaultReplacementCharacter,
+		// 	}
+		// )
+		// opts := tally.ScopeOptions{
+		// 	Reporter:        reporter,
+		// 	SanitizeOptions: &_sanitizeOptions,
+		// }
+		// scope, _ := tally.NewRootScope(opts, time.Second)
+		// default: no metrics.
+		MetricsScope tally.Scope
+
+		// Optional: Sets an identify that can be used to track this host for debugging.
+		// default: default identity that include hostname, groupName and process ID.
+		Identity string
+
+		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
+		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
+		DataConverter DataConverter
+
+		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
+		// default: no tracer - opentracing.NoopTracer
+		Tracer opentracing.Tracer
+
+		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator
-		GRPCDialer         GRPCDialer
+
+		// Optional: Sets GRPCDialer that can be used to create gRPC connection
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
+		//	return grpc.Dial(params.HostPort,
+		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
+		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//	)
+		// }
+		// default: defaultGRPCDialer (same as above)
+		GRPCDialer GRPCDialer
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
