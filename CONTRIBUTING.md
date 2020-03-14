@@ -1,8 +1,8 @@
-# Developing temporal-client
+# Developing temporal-sdk
 
 This doc is intended for contributors to `temporal-client` (hopefully that's you!)
 
-**Note:** All contributors also need to fill out the [Uber Contributor License Agreement](http://t.uber.com/cla) before we can merge in any of your changes
+**Note:** All contributors also need to fill out the [Temporal Contributor License Agreement](https://gist.github.com/samarabbas/7dcd41eb1d847e12263cc961ccfdb197) before we can merge in any of your changes
 
 ## Development Environment
 
@@ -17,11 +17,6 @@ Make sure the repository is cloned to the correct location:
 go get go.temporal.io/temporal/...
 cd $GOPATH/src/go.temporal.io/temporal
 ```
-
-## Dependency management
-
-Dependencies are tracked via `Gopkg.toml`. If you're not familiar with `dep`,
-read the [docs](https://https://golang.github.io/dep/docs/introduction.html).
 
 ## Licence headers
 
