@@ -22,7 +22,7 @@ package temporal
 
 import "go.temporal.io/temporal/internal"
 
-// LibraryVersion is a semver string that represents
+// SDKVersion is a semver string that represents
 // the version of this temporal client library
 // it will be embedded as a "version" header in every
 // rpc call made by this client to temporal server.
@@ -31,4 +31,4 @@ import "go.temporal.io/temporal/internal"
 // Update to this version number is typically done
 // by the temporal team as part of a major feature or
 // behavior change
-const LibraryVersion = internal.LibraryVersion
+const SDKVersion = internal.SDKVersion

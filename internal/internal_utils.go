@@ -41,35 +41,30 @@ import (
 )
 
 const (
-	// libraryVersionHeaderName refers to the name of the
-	// tchannel / http header that contains the client
-	// library version
-	libraryVersionHeaderName = "temporal-sdk-version"
+	// sdkVersionHeaderName refers to the name of the gRPC metadata header that contains the SDK version.
+	sdkVersionHeaderName = "temporal-sdk-version"
 
-	// featureVersionHeaderName refers to the name of the
-	// tchannel / http header that contains the client
-	// feature version
-	featureVersionHeaderName = "temporal-sdk-feature-version"
+	// sdkFeatureVersionHeaderName refers to the name of the gRPC metadata header that contains the client feature version.
+	sdkFeatureVersionHeaderName = "temporal-sdk-feature-version"
 
-	// clientImplHeaderName refers to the name of the
-	// header that contains the client implementation
-	clientImplHeaderName  = "temporal-sdk-name"
-	clientImplHeaderValue = "temporal-go"
+	// sdkImplHeaderName refers to the name of the gRPC metadata header that contains the client implementation.
+	sdkImplHeaderName  = "temporal-sdk-name"
+	sdkImplHeaderValue = "temporal-go"
 
-	// defaultRPCTimeout is the default tchannel rpc call timeout
+	// defaultRPCTimeout is the default gRPC rpc call timeout
 	defaultRPCTimeout = 10 * time.Second
-	//minRPCTimeout is minimum rpc call timeout allowed
+	// minRPCTimeout is minimum rpc call timeout allowed
 	minRPCTimeout = 1 * time.Second
-	//maxRPCTimeout is maximum rpc call timeout allowed
+	// maxRPCTimeout is maximum rpc call timeout allowed
 	maxRPCTimeout = 20 * time.Second
 )
 
 var (
 	// call header to temporal server
 	headers = metadata.New(map[string]string{
-		libraryVersionHeaderName: LibraryVersion,
-		featureVersionHeaderName: FeatureVersion,
-		clientImplHeaderName:     clientImplHeaderValue,
+		sdkVersionHeaderName:        SDKVersion,
+		sdkFeatureVersionHeaderName: SDKFeatureVersion,
+		sdkImplHeaderName:           sdkImplHeaderValue,
 	})
 )
 
