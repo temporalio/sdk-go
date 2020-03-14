@@ -80,6 +80,11 @@ func (w *workflowServiceErrorWrapper) GetWorkflowExecutionHistory(ctx context.Co
 	return result, w.convertError(err)
 }
 
+func (w *workflowServiceErrorWrapper) PollForWorkflowExecutionRawHistory(ctx context.Context, in *workflowservice.PollForWorkflowExecutionRawHistoryRequest, opts ...grpc.CallOption) (*workflowservice.PollForWorkflowExecutionRawHistoryResponse, error) {
+	result, err := w.service.PollForWorkflowExecutionRawHistory(ctx, in, opts...)
+	return result, w.convertError(err)
+}
+
 func (w *workflowServiceErrorWrapper) ListClosedWorkflowExecutions(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest, opts ...grpc.CallOption) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	result, err := w.service.ListClosedWorkflowExecutions(ctx, request, opts...)
 	return result, w.convertError(err)
