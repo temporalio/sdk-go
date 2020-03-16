@@ -588,7 +588,7 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
 func NewDomainClient(options ClientOptions) (DomainClient, error) {
-	metricsScope := tagScope(options.MetricsScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
+	metricsScope := tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
 		options.HostPort = LocalHostPort
