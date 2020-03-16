@@ -49,11 +49,11 @@ import (
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
-	"go.temporal.io/temporal/internal/common/backoff"
-	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc"
+
+	"go.temporal.io/temporal/internal/common/backoff"
 )
 
 const (
@@ -212,7 +212,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		config := zap.NewProductionConfig()
 		// set default time formatter to "2006-01-02T15:04:05.000Z0700"
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		//config.Level.SetLevel(zapcore.DebugLevel)
+		// config.Level.SetLevel(zapcore.DebugLevel)
 		logger, _ := config.Build()
 		params.Logger = logger
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
@@ -992,11 +992,12 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type AggregatedWorker struct {
-	workflowWorker *workflowWorker
-	activityWorker *activityWorker
-	sessionWorker  *sessionWorker
-	logger         *zap.Logger
-	registry       *registry
+	workflowWorker   *workflowWorker
+	activityWorker   *activityWorker
+	sessionWorker    *sessionWorker
+	logger           *zap.Logger
+	registry         *registry
+	connectionCloser io.Closer
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1157,6 +1158,11 @@ func (aw *AggregatedWorker) Stop() {
 	if !isInterfaceNil(aw.sessionWorker) {
 		aw.sessionWorker.Stop()
 	}
+
+	if !isInterfaceNil(aw.connectionCloser) {
+		_ = aw.connectionCloser.Close()
+	}
+
 	aw.logger.Info("Stopped Worker")
 }
 
@@ -1287,7 +1293,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
 		domain:        ReplayDomainName,
-		service:       rpc.NewWorkflowServiceErrorWrapper(service),
+		service:       service,
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
 	}
@@ -1365,15 +1371,10 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 	return history, nil
 }
 
-// AggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
+// NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func newAggregatedWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	taskList string,
-	options WorkerOptions,
-) (worker *AggregatedWorker) {
+func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1407,14 +1408,12 @@ func newAggregatedWorker(
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.MetricsScope = tagScope(workerParams.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
-	service = metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), workerParams.MetricsScope)
 
 	processTestTags(&wOptions, &workerParams)
 
@@ -1479,11 +1478,12 @@ func newAggregatedWorker(
 	}
 
 	return &AggregatedWorker{
-		workflowWorker: workflowWorker,
-		activityWorker: activityWorker,
-		sessionWorker:  sessionWorker,
-		logger:         logger,
-		registry:       registry,
+		workflowWorker:   workflowWorker,
+		activityWorker:   activityWorker,
+		sessionWorker:    sessionWorker,
+		logger:           logger,
+		registry:         registry,
+		connectionCloser: clientConn,
 	}
 }
 

@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/facebookgo/clock"
-	"github.com/gogo/status"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
@@ -43,7 +42,6 @@ import (
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -276,7 +274,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
 				zap.String(tagActivityID, activityID))
-			return status.Error(codes.NotFound, "")
+			return serviceerror.NewNotFound("")
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)

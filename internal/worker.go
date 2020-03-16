@@ -26,9 +26,8 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 )
 
 type (
@@ -36,6 +35,12 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	WorkerOptions struct {
+
+		// Optional: To set the host:port for this worker to connect to.
+		// Use "dns:///" prefix to enable DNS based round robin.
+		// default: localhost:7233
+		HostPort string
+
 		// Optional: To set the maximum concurrent activity executions this worker can have.
 		// The zero value of this uses the default value.
 		// default: defaultMaxConcurrentActivityExecutionSize(1k)
@@ -197,6 +202,18 @@ type (
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
 		// default: no tracer - opentracing.NoopTracer
 		Tracer opentracing.Tracer
+
+		// Optional: Sets GRPCDialer that can be used to create gRPC connection
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
+		//	return grpc.Dial(params.HostPort,
+		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
+		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//	)
+		// }
+		// default: defaultGRPCDialer (same as above)
+		GRPCDialer GRPCDialer
 	}
 )
 
@@ -228,16 +245,40 @@ func IsReplayDomain(dn string) bool {
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
-// service 	- gRPC connection to the temporal server.
 // domain - the name of the temporal domain.
 // taskList 	- is the task list name you use to identify your client worker, also
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
-// options 	-  configure any worker specific options like logger, metrics, identity.
+// options 	-  configure any worker specific options like hostPort, logger, metrics, identity.
 func NewWorker(
-	service workflowservice.WorkflowServiceClient,
 	domain string,
 	taskList string,
 	options WorkerOptions,
-) *AggregatedWorker {
-	return newAggregatedWorker(service, domain, taskList, options)
+) (*AggregatedWorker, error) {
+
+	if options.MetricsScope == nil {
+		options.MetricsScope = tally.NoopScope
+		options.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
+	}
+
+	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(options.HostPort) == 0 {
+		options.HostPort = LocalHostPort
+	}
+
+	if options.GRPCDialer == nil {
+		options.GRPCDialer = defaultGRPCDialer
+	}
+
+	connection, err := options.GRPCDialer(GRPCDialerParams{
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(metricsScope),
+		DefaultServiceConfig: DefaultServiceConfig,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return NewAggregatedWorker(workflowservice.NewWorkflowServiceClient(connection), connection, domain, taskList, options), nil
 }

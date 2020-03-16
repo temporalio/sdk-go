@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"google.golang.org/grpc"
 )
@@ -37,11 +36,6 @@ type (
 		scope       tally.Scope
 		childScopes map[string]tally.Scope
 		mutex       sync.Mutex
-	}
-
-	operationScope struct {
-		scope     tally.Scope
-		startTime time.Time
 	}
 )
 
@@ -115,22 +109,6 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 	scope.Counter(TemporalRequest).Inc(1)
 
 	return &operationScope{scope: scope, startTime: time.Now()}
-}
-
-func (s *operationScope) handleError(err error) {
-	s.scope.Timer(TemporalLatency).Record(time.Since(s.startTime))
-	if err != nil {
-		switch err.(type) {
-		case *serviceerror.NotFound,
-			*serviceerror.InvalidArgument,
-			*serviceerror.DomainAlreadyExists,
-			*serviceerror.WorkflowExecutionAlreadyStarted,
-			*serviceerror.QueryFailed:
-			s.scope.Counter(TemporalInvalidRequest).Inc(1)
-		default:
-			s.scope.Counter(TemporalError).Inc(1)
-		}
-	}
 }
 
 func (w *workflowServiceMetricsWrapper) DeprecateDomain(ctx context.Context, request *workflowservice.DeprecateDomainRequest, opts ...grpc.CallOption) (*workflowservice.DeprecateDomainResponse, error) {

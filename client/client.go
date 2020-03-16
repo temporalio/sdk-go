@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
+
 // Package client is used by external programs to communicate with Temporal service.
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
 package client
@@ -46,6 +48,12 @@ const (
 type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
+
+	// GRPCDialer can be used to set custom gRPC connection creation logic.
+	GRPCDialer = internal.GRPCDialer
+
+	// GRPCDialerParams are passed to GRPCDialer and must be used to create gRPC connection.
+	GRPCDialerParams = internal.GRPCDialerParams
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
@@ -333,6 +341,9 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 
 	// DomainClient is the client for managing operations on the domain.
@@ -361,6 +372,9 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 )
 
@@ -388,13 +402,13 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *Options) Client {
-	return internal.NewClient(service, domain, options)
+func NewClient(domain string, options Options) (Client, error) {
+	return internal.NewClient(domain, options)
 }
 
 // NewDomainClient creates an instance of a domain client, to manage lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceClient, options *Options) DomainClient {
-	return internal.NewDomainClient(service, options)
+func NewDomainClient(options Options) (DomainClient, error) {
+	return internal.NewDomainClient(options)
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.

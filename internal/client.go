@@ -23,17 +23,17 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
-
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/rpc"
 )
 
 const (
@@ -302,15 +302,74 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
-		MetricsScope       tally.Scope
-		Identity           string
-		DataConverter      DataConverter
-		Tracer             opentracing.Tracer
+		// Optional: To set the host:port for this client to connect to.
+		// Use "dns:///" prefix to enable DNS based round robin.
+		// default: localhost:7233
+		HostPort string
+
+		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
+		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
+		// options set.
+		// var (
+		// _safeCharacters = []rune{'_'}
+		// _sanitizeOptions = tally.SanitizeOptions{
+		// 	NameCharacters: tally.ValidCharacters{
+		// 		Ranges:     tally.AlphanumericRange,
+		// 		Characters: _safeCharacters,
+		// 	},
+		// 		KeyCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ValueCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
+		// 		ReplacementCharacter: tally.DefaultReplacementCharacter,
+		// 	}
+		// )
+		// opts := tally.ScopeOptions{
+		// 	Reporter:        reporter,
+		// 	SanitizeOptions: &_sanitizeOptions,
+		// }
+		// scope, _ := tally.NewRootScope(opts, time.Second)
+		// default: no metrics.
+		MetricsScope tally.Scope
+
+		// Optional: Sets an identify that can be used to track this host for debugging.
+		// default: default identity that include hostname, groupName and process ID.
+		Identity string
+
+		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
+		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
+		DataConverter DataConverter
+
+		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
+		// default: no tracer - opentracing.NoopTracer
+		Tracer opentracing.Tracer
+
+		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator
+
+		// Optional: Sets GRPCDialer that can be used to create gRPC connection
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
+		//	return grpc.Dial(params.HostPort,
+		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
+		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//	)
+		// }
+		// default: defaultGRPCDialer (same as above)
+		GRPCDialer GRPCDialer
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -437,6 +496,9 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
@@ -470,64 +532,97 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *ClientOptions) Client {
-	var identity string
-	if options == nil || options.Identity == "" {
-		identity = getWorkerIdentity("")
+func NewClient(domain string, options ClientOptions) (Client, error) {
+	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(options.HostPort) == 0 {
+		options.HostPort = LocalHostPort
+	}
+
+	if options.GRPCDialer == nil {
+		options.GRPCDialer = defaultGRPCDialer
+	}
+
+	connection, err := options.GRPCDialer(GRPCDialerParams{
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(metricsScope),
+		DefaultServiceConfig: DefaultServiceConfig,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, domain, options), nil
+}
+
+func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, domain string, options ClientOptions) Client {
+	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(options.Identity) == 0 {
+		options.Identity = getWorkerIdentity("")
+	}
+
+	if options.DataConverter == nil {
+		options.DataConverter = getDefaultDataConverter()
+	}
+
+	if options.Tracer != nil {
+		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(zap.NewNop(), options.Tracer))
 	} else {
-		identity = options.Identity
+		options.Tracer = opentracing.NoopTracer{}
 	}
-	var metricScope tally.Scope
-	if options != nil {
-		metricScope = options.MetricsScope
-	}
-	metricScope = tagScope(metricScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
-	var dataConverter DataConverter
-	if options != nil && options.DataConverter != nil {
-		dataConverter = options.DataConverter
-	} else {
-		dataConverter = getDefaultDataConverter()
-	}
-	var contextPropagators []ContextPropagator
-	if options != nil {
-		contextPropagators = options.ContextPropagators
-	}
-	var tracer opentracing.Tracer
-	if options != nil && options.Tracer != nil {
-		tracer = options.Tracer
-		contextPropagators = append(contextPropagators, NewTracingContextPropagator(zap.NewNop(), tracer))
-	} else {
-		tracer = opentracing.NoopTracer{}
-	}
+
 	return &workflowClient{
-		workflowService:    metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
+		workflowService:    workflowServiceClient,
+		connectionCloser:   connectionCloser,
 		domain:             domain,
 		registry:           newRegistry(),
-		metricsScope:       metrics.NewTaggedScope(metricScope),
-		identity:           identity,
-		dataConverter:      dataConverter,
-		contextPropagators: contextPropagators,
-		tracer:             tracer,
+		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
+		identity:           options.Identity,
+		dataConverter:      options.DataConverter,
+		contextPropagators: options.ContextPropagators,
+		tracer:             options.Tracer,
 	}
 }
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceClient, options *ClientOptions) DomainClient {
-	var identity string
-	if options == nil || options.Identity == "" {
-		identity = getWorkerIdentity("")
-	} else {
-		identity = options.Identity
+func NewDomainClient(options ClientOptions) (DomainClient, error) {
+	metricsScope := tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
+
+	if len(options.HostPort) == 0 {
+		options.HostPort = LocalHostPort
 	}
-	var metricScope tally.Scope
-	if options != nil {
-		metricScope = options.MetricsScope
+
+	if options.GRPCDialer == nil {
+		options.GRPCDialer = defaultGRPCDialer
 	}
-	metricScope = tagScope(metricScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
+
+	connection, err := options.GRPCDialer(GRPCDialerParams{
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(metricsScope),
+		DefaultServiceConfig: DefaultServiceConfig,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+}
+
+func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options ClientOptions) DomainClient {
+	if len(options.Identity) == 0 {
+		options.Identity = getWorkerIdentity("")
+	}
+
+	metricsScope := tagScope(options.MetricsScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
+
 	return &domainClient{
-		workflowService: metrics.NewWorkflowServiceWrapper(rpc.NewWorkflowServiceErrorWrapper(service), metricScope),
-		metricsScope:    metricScope,
-		identity:        identity,
+		workflowService:  workflowServiceClient,
+		connectionCloser: clientConn,
+		metricsScope:     metricsScope,
+		identity:         options.Identity,
 	}
 }
 

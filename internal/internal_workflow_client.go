@@ -25,16 +25,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/serviceerror"
-
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
+	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
@@ -59,6 +59,7 @@ type (
 	// workflowClient is the client for starting a workflow execution.
 	workflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
+		connectionCloser   io.Closer
 		domain             string
 		registry           *registry
 		metricsScope       *metrics.TaggedScope
@@ -70,9 +71,10 @@ type (
 
 	// domainClient is the client for managing domains.
 	domainClient struct {
-		workflowService workflowservice.WorkflowServiceClient
-		metricsScope    tally.Scope
-		identity        string
+		workflowService  workflowservice.WorkflowServiceClient
+		connectionCloser io.Closer
+		metricsScope     tally.Scope
+		identity         string
 	}
 
 	// WorkflowRun represents a started non child workflow
@@ -938,6 +940,15 @@ func (wc *workflowClient) DescribeTaskList(ctx context.Context, taskList string,
 	return resp, nil
 }
 
+// CloseConnection closes underlying gRPC connection.
+func (wc *workflowClient) CloseConnection() error {
+	if wc.connectionCloser == nil {
+		return nil
+	}
+
+	return wc.connectionCloser.Close()
+}
+
 func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
 	header := &commonproto.Header{
 		Fields: make(map[string][]byte),
@@ -1006,6 +1017,15 @@ func (dc *domainClient) Update(ctx context.Context, request *workflowservice.Upd
 			_, err := dc.workflowService.UpdateDomain(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+}
+
+// CloseConnection closes underlying gRPC connection.
+func (dc *domainClient) CloseConnection() error {
+	if dc.connectionCloser == nil {
+		return nil
+	}
+
+	return dc.connectionCloser.Close()
 }
 
 func (iter *historyEventIteratorImpl) HasNext() bool {
