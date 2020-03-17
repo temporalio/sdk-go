@@ -120,7 +120,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter(
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHello)
 
-	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.SetWorkerOptions(WorkerOptions{dataConverter: newTestDataConverter()})
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Twice()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -377,7 +377,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	workerOptions := WorkerOptions{
-		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
+		contextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
 	}
 
 	// inline activity using value passing through user context.

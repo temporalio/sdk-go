@@ -138,7 +138,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.NoError(err)
 	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
-		DomainName:                        domainName,
+		domainName:                        domainName,
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},

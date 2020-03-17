@@ -318,9 +318,9 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	options := WorkerOptions{
 		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
-		Identity:              "test-worker-identity",
+		identity:              "test-worker-identity",
 	}
-	worker := NewAggregatedWorker(s.service, nil, taskList, options)
+	worker := NewAggregatedWorker(s.service, taskList, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "long-running-decision-workflow-type"},
@@ -446,9 +446,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	options := WorkerOptions{
 		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
-		Identity:              "test-worker-identity",
+		identity:              "test-worker-identity",
 	}
-	worker := NewAggregatedWorker(s.service, nil, taskList, options)
+	worker := NewAggregatedWorker(s.service, taskList, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "multiple-local-activities-workflow-type"},

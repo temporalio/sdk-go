@@ -582,16 +582,16 @@ func createWorkerWithThrottle(
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{}
-	workerOptions.DomainName = domain
+	workerOptions.domainName = domain
 	workerOptions.WorkerActivitiesPerSecond = 20
 	workerOptions.TaskListActivitiesPerSecond = activitiesPerSecond
 	if dc != nil {
-		workerOptions.DataConverter = dc
+		workerOptions.dataConverter = dc
 	}
 	workerOptions.EnableSessionWorker = true
 
 	// Start Worker.
-	worker := NewAggregatedWorker(service, nil, "testGroupName2", workerOptions)
+	worker := NewAggregatedWorker(service, "testGroupName2", workerOptions)
 	return worker
 }
 
@@ -904,7 +904,7 @@ func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
 func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
-	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.SetWorkerOptions(WorkerOptions{dataConverter: newTestDataConverter()})
 	env.RegisterWorkflow(wf)
 	testInternalWorkerRegisterWithTestEnv(env)
 	env.ExecuteWorkflow(wf, []byte{1, 2})

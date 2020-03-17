@@ -51,7 +51,6 @@ import (
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 )
@@ -942,12 +941,11 @@ func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type AggregatedWorker struct {
-	workflowWorker   *workflowWorker
-	activityWorker   *activityWorker
-	sessionWorker    *sessionWorker
-	logger           *zap.Logger
-	registry         *registry
-	connectionCloser io.Closer
+	workflowWorker *workflowWorker
+	activityWorker *activityWorker
+	sessionWorker  *sessionWorker
+	logger         *zap.Logger
+	registry       *registry
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1107,10 +1105,6 @@ func (aw *AggregatedWorker) Stop() {
 	}
 	if !isInterfaceNil(aw.sessionWorker) {
 		aw.sessionWorker.Stop()
-	}
-
-	if !isInterfaceNil(aw.connectionCloser) {
-		_ = aw.connectionCloser.Close()
 	}
 
 	aw.logger.Info("Stopped Worker")
@@ -1313,7 +1307,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 	for _, event := range deserializedHistory.Events {
 		events = append(events, event)
 		if event.GetEventId() == lastEventID {
-			// Copy history upto last event (inclusive)
+			// Copy history up to last event (inclusive)
 			break
 		}
 	}
@@ -1325,7 +1319,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
+func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1334,7 +1328,7 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
 	workerParams := workerExecutionParameters{
-		DomainName:                           wOptions.DomainName,
+		DomainName:                           wOptions.domainName,
 		TaskList:                             taskList,
 		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
 		ConcurrentActivityExecutionSize:      wOptions.MaxConcurrentActivityExecutionSize,
@@ -1343,8 +1337,8 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 		WorkerLocalActivitiesPerSecond:       wOptions.WorkerLocalActivitiesPerSecond,
 		ConcurrentDecisionTaskExecutionSize:  wOptions.MaxConcurrentDecisionTaskExecutionSize,
 		WorkerDecisionTasksPerSecond:         wOptions.WorkerDecisionTasksPerSecond,
-		Identity:                             wOptions.Identity,
-		MetricsScope:                         wOptions.MetricsScope,
+		Identity:                             wOptions.identity,
+		MetricsScope:                         wOptions.metricsScope,
 		Logger:                               wOptions.Logger,
 		EnableLoggingInReplay:                wOptions.EnableLoggingInReplay,
 		UserContext:                          backgroundActivityContext,
@@ -1353,15 +1347,15 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
 		NonDeterministicWorkflowPolicy:       wOptions.NonDeterministicWorkflowPolicy,
-		DataConverter:                        wOptions.DataConverter,
+		DataConverter:                        wOptions.dataConverter,
 		WorkerStopTimeout:                    wOptions.WorkerStopTimeout,
-		ContextPropagators:                   wOptions.ContextPropagators,
-		Tracer:                               wOptions.Tracer,
+		ContextPropagators:                   wOptions.contextPropagators,
+		Tracer:                               wOptions.tracer,
 	}
 
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
-		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: options.DomainName},
+		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: options.domainName},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
@@ -1404,12 +1398,11 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 	}
 
 	return &AggregatedWorker{
-		workflowWorker:   workflowWorker,
-		activityWorker:   activityWorker,
-		sessionWorker:    sessionWorker,
-		logger:           logger,
-		registry:         registry,
-		connectionCloser: clientConn,
+		workflowWorker: workflowWorker,
+		activityWorker: activityWorker,
+		sessionWorker:  sessionWorker,
+		logger:         logger,
+		registry:       registry,
 	}
 }
 
@@ -1499,8 +1492,8 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 }
 
 func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
-	if len(options.DomainName) == 0 {
-		options.DomainName = DefaultDomainName
+	if len(options.domainName) == 0 {
+		options.domainName = DefaultDomainName
 	}
 
 	if options.MaxConcurrentActivityExecutionSize == 0 {
@@ -1527,18 +1520,18 @@ func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
 	}
-	if options.DataConverter == nil {
-		options.DataConverter = getDefaultDataConverter()
+	if options.dataConverter == nil {
+		options.dataConverter = getDefaultDataConverter()
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
 	}
 
 	// if the user passes in a tracer then add a tracing context propagator
-	if options.Tracer != nil {
-		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Logger, options.Tracer))
+	if options.tracer != nil {
+		options.contextPropagators = append(options.contextPropagators, NewTracingContextPropagator(options.Logger, options.tracer))
 	} else {
-		options.Tracer = opentracing.NoopTracer{}
+		options.tracer = opentracing.NoopTracer{}
 	}
 	return options
 }

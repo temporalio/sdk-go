@@ -303,14 +303,14 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	if env.workerOptions.Logger == nil {
 		env.workerOptions.Logger = env.logger
 	}
-	if env.workerOptions.MetricsScope == nil {
-		env.workerOptions.MetricsScope = env.metricsScope
+	if env.workerOptions.metricsScope == nil {
+		env.workerOptions.metricsScope = env.metricsScope
 	}
-	if env.workerOptions.DataConverter == nil {
-		env.workerOptions.DataConverter = getDefaultDataConverter()
+	if env.workerOptions.dataConverter == nil {
+		env.workerOptions.dataConverter = getDefaultDataConverter()
 	}
-	if len(env.workerOptions.ContextPropagators) == 0 {
-		env.workerOptions.ContextPropagators = env.ctxProps
+	if len(env.workerOptions.contextPropagators) == 0 {
+		env.workerOptions.contextPropagators = env.ctxProps
 	}
 
 	return env
@@ -333,7 +333,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
-	childEnv.workerOptions.DataConverter = params.dataConverter
+	childEnv.workerOptions.dataConverter = params.dataConverter
 	childEnv.registry = env.registry
 
 	if params.workflowID == "" {
@@ -375,17 +375,17 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
-	if len(options.Identity) > 0 {
-		env.workerOptions.Identity = options.Identity
+	if len(options.identity) > 0 {
+		env.workerOptions.identity = options.identity
 	}
 	if options.BackgroundActivityContext != nil {
 		env.workerOptions.BackgroundActivityContext = options.BackgroundActivityContext
 	}
-	if options.MetricsScope != nil {
-		env.workerOptions.MetricsScope = options.MetricsScope
+	if options.metricsScope != nil {
+		env.workerOptions.metricsScope = options.metricsScope
 	}
-	if options.DataConverter != nil {
-		env.workerOptions.DataConverter = options.DataConverter
+	if options.dataConverter != nil {
+		env.workerOptions.dataConverter = options.dataConverter
 	}
 	// Uncomment when resourceID is exposed to user.
 	// if options.SessionResourceID != "" {
@@ -394,8 +394,8 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if options.MaxConcurrentSessionExecutionSize != 0 {
 		env.workerOptions.MaxConcurrentSessionExecutionSize = options.MaxConcurrentSessionExecutionSize
 	}
-	if len(options.ContextPropagators) > 0 {
-		env.workerOptions.ContextPropagators = options.ContextPropagators
+	if len(options.contextPropagators) > 0 {
+		env.workerOptions.contextPropagators = options.contextPropagators
 	}
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 }
@@ -908,15 +908,15 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
 }
 
 func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
-	return env.workerOptions.MetricsScope
+	return env.workerOptions.metricsScope
 }
 
 func (env *testWorkflowEnvironmentImpl) GetDataConverter() DataConverter {
-	return env.workerOptions.DataConverter
+	return env.workerOptions.dataConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
-	return env.workerOptions.ContextPropagators
+	return env.workerOptions.contextPropagators
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
@@ -1082,11 +1082,11 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:        wOptions.BackgroundActivityContext,
-		metricsScope:       metrics.NewTaggedScope(wOptions.MetricsScope),
+		metricsScope:       metrics.NewTaggedScope(wOptions.metricsScope),
 		logger:             wOptions.Logger,
-		dataConverter:      wOptions.DataConverter,
-		tracer:             wOptions.Tracer,
-		contextPropagators: wOptions.ContextPropagators,
+		dataConverter:      wOptions.dataConverter,
+		tracer:             wOptions.tracer,
+		contextPropagators: wOptions.contextPropagators,
 	}
 
 	env.localActivities[activityID] = task
@@ -1502,14 +1502,14 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	wOptions := augmentWorkerOptions(env.workerOptions)
 	params := workerExecutionParameters{
 		TaskList:           taskList,
-		Identity:           wOptions.Identity,
-		MetricsScope:       wOptions.MetricsScope,
+		Identity:           wOptions.identity,
+		MetricsScope:       wOptions.metricsScope,
 		Logger:             wOptions.Logger,
 		UserContext:        wOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
-		ContextPropagators: wOptions.ContextPropagators,
-		Tracer:             wOptions.Tracer,
+		ContextPropagators: wOptions.contextPropagators,
+		Tracer:             wOptions.tracer,
 	}
 	ensureRequiredParams(&params)
 	if params.UserContext == nil {
