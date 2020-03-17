@@ -929,7 +929,7 @@ ProcessEvents:
 			// workflow timeout.
 			return nil, nonDeterministicErr
 		default:
-			panic(fmt.Sprintf("unknown mismatched workflow history policy."))
+			panic("unknown mismatched workflow history policy.")
 		}
 	}
 

@@ -890,7 +890,7 @@ func TestFutureSet(t *testing.T) {
 			require.True(t, f1.IsReady())
 			history = append(history, fmt.Sprintf("f2-get2-%v-%v", v, err))
 
-			history = append(history, fmt.Sprintf("child-end"))
+			history = append(history, "child-end")
 		})
 		history = append(history, "root-end")
 	})

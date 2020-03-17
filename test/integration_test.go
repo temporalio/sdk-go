@@ -120,7 +120,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 			ts.FailNow("leaks timed out but no error, should be impossible")
 		case <-time.After(time.Second):
 			// https://github.com/temporalio/temporal-go-client/issues/51
-			last = goleak.FindLeaks(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
+			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
 			if last == nil {
 				// no leak, done waiting
 				return
