@@ -1492,10 +1492,6 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 }
 
 func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
-	if len(options.domainName) == 0 {
-		options.domainName = DefaultDomainName
-	}
-
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
@@ -1520,17 +1516,18 @@ func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
 	}
-	if options.dataConverter == nil {
-		options.dataConverter = getDefaultDataConverter()
-	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
 	}
 
-	// if the user passes in a tracer then add a tracing context propagator
-	if options.tracer != nil {
-		options.contextPropagators = append(options.contextPropagators, NewTracingContextPropagator(options.Logger, options.tracer))
-	} else {
+	// Private options can be nil only in unit tests.
+	if options.dataConverter == nil {
+		options.dataConverter = getDefaultDataConverter()
+	}
+	if len(options.domainName) == 0 {
+		options.domainName = DefaultDomainName
+	}
+	if options.tracer == nil {
 		options.tracer = opentracing.NoopTracer{}
 	}
 	return options
