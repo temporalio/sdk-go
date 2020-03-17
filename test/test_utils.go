@@ -23,8 +23,6 @@ package test
 import (
 	"os"
 	"strings"
-
-	"go.temporal.io/temporal/internal"
 )
 
 // Config contains the integration test configuration
@@ -36,7 +34,7 @@ type Config struct {
 
 func newConfig() Config {
 	cfg := Config{
-		ServiceAddr: internal.LocalHostPort,
+		ServiceAddr: "localhost:7233",
 		IsStickyOff: true,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {

@@ -210,15 +210,11 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 }
 
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
-func newWorkflowTaskPoller(
-	taskHandler WorkflowTaskHandler,
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters) *workflowTaskPoller {
+func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   basePoller{shutdownC: params.WorkerStopChannel},
 		service:                      service,
-		domain:                       domain,
+		domain:                       params.DomainName,
 		taskListName:                 params.TaskList,
 		identity:                     params.Identity,
 		taskHandler:                  taskHandler,
@@ -765,13 +761,12 @@ func newGetHistoryPageFunc(
 	}
 }
 
-func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient,
-	domain string, params workerExecutionParameters) *activityTaskPoller {
+func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller:          basePoller{shutdownC: params.WorkerStopChannel},
 		taskHandler:         taskHandler,
 		service:             service,
-		domain:              domain,
+		domain:              params.DomainName,
 		taskListName:        params.TaskList,
 		identity:            params.Identity,
 		logger:              params.Logger,

@@ -291,10 +291,11 @@ func (s *workflowRunSuite) SetupTest() {
 
 	metricsScope := metrics.NewTaggedScope(nil)
 	options := ClientOptions{
+		DomainName:   domain,
 		MetricsScope: metricsScope,
 		Identity:     identity,
 	}
-	s.workflowClient = newServiceClient(s.workflowServiceClient, nil, domain, options)
+	s.workflowClient = newServiceClient(s.workflowServiceClient, nil, options)
 }
 
 func (s *workflowRunSuite) TearDownTest() {
@@ -761,7 +762,7 @@ func (s *workflowClientTestSuite) SetupSuite() {
 func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	s.client = newServiceClient(s.service, nil, domain, ClientOptions{})
+	s.client = newServiceClient(s.service, nil, ClientOptions{DomainName: domain})
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -846,7 +847,10 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = newServiceClient(s.service, nil, domain, ClientOptions{ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})}})
+	s.client = newServiceClient(s.service, nil, ClientOptions{
+		DomainName:         domain,
+		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
+	})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -876,7 +880,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
 	dc := newTestDataConverter()
-	s.client = newServiceClient(s.service, nil, domain, ClientOptions{DataConverter: dc})
+	s.client = newServiceClient(s.service, nil, ClientOptions{DomainName: domain, DataConverter: dc})
 	client, ok := s.client.(*workflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{

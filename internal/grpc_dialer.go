@@ -44,11 +44,11 @@ type (
 )
 
 const (
-	// LocalHostPort is a default host:port for worker and client to connect to.
-	LocalHostPort = "localhost:7233"
+	// localHostPort is a default host:port for worker and client to connect to.
+	localHostPort = "localhost:7233"
 
-	// DefaultServiceConfig is a default gRPC connection service config which enables DNS round robin between IPs.
-	DefaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
+	// defaultServiceConfig is a default gRPC connection service config which enables DNS round-robin between IPs.
+	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 
 func defaultGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {

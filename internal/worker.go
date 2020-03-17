@@ -37,9 +37,13 @@ type (
 	WorkerOptions struct {
 
 		// Optional: To set the host:port for this worker to connect to.
-		// Use "dns:///" prefix to enable DNS based round robin.
+		// Use "dns:///" prefix to enable DNS based round-robin.
 		// default: localhost:7233
 		HostPort string
+
+		// Optional: To set the domain name for this client to work with.
+		// default: default
+		DomainName string
 
 		// Optional: To set the maximum concurrent activity executions this worker can have.
 		// The zero value of this uses the default value.
@@ -204,12 +208,12 @@ type (
 		Tracer opentracing.Tracer
 
 		// Optional: Sets GRPCDialer that can be used to create gRPC connection
-		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// GRPCDialer must add params.RequiredInterceptors and set params.defaultServiceConfig if round-robin load balancer needs to be enabled:
 		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
 		//	return grpc.Dial(params.HostPort,
 		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
 		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
-		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//		grpc.WithDefaultServiceConfig(params.defaultServiceConfig),     // defaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
 		//	)
 		// }
 		// default: defaultGRPCDialer (same as above)
@@ -250,7 +254,6 @@ func IsReplayDomain(dn string) bool {
 // 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	-  configure any worker specific options like hostPort, logger, metrics, identity.
 func NewWorker(
-	domain string,
 	taskList string,
 	options WorkerOptions,
 ) (*AggregatedWorker, error) {
@@ -260,10 +263,14 @@ func NewWorker(
 		options.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
 
-	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
+	if len(options.DomainName) == 0 {
+		options.DomainName = defaultDomainName
+	}
+
+	metricsScope := tagScope(options.MetricsScope, tagDomain, options.DomainName, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
-		options.HostPort = LocalHostPort
+		options.HostPort = localHostPort
 	}
 
 	if options.GRPCDialer == nil {
@@ -273,12 +280,12 @@ func NewWorker(
 	connection, err := options.GRPCDialer(GRPCDialerParams{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(metricsScope),
-		DefaultServiceConfig: DefaultServiceConfig,
+		DefaultServiceConfig: defaultServiceConfig,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	return NewAggregatedWorker(workflowservice.NewWorkflowServiceClient(connection), connection, domain, taskList, options), nil
+	return NewAggregatedWorker(workflowservice.NewWorkflowServiceClient(connection), connection, taskList, options), nil
 }

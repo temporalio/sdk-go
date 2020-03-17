@@ -86,7 +86,6 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
-		domain              string
 		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
 		localActivityWorker *baseWorker
@@ -99,7 +98,6 @@ type (
 	activityWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
-		domain              string
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
@@ -122,6 +120,9 @@ type (
 
 	// workerExecutionParameters defines worker configure/execution options.
 	workerExecutionParameters struct {
+		// Domain name.
+		DomainName string
+
 		// Task list name to poll.
 		TaskList string
 
@@ -193,14 +194,8 @@ type (
 )
 
 // newWorkflowWorker returns an instance of the workflow worker.
-func newWorkflowWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	ppMgr pressurePointMgr,
-	registry *registry,
-) *workflowWorker {
-	return newWorkflowWorkerInternal(service, domain, params, ppMgr, nil, registry)
+func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
+	return newWorkflowWorkerInternal(service, params, ppMgr, nil, registry)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -259,14 +254,7 @@ func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain stri
 	return backoff.Retry(ctx, descDomainOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
-func newWorkflowWorkerInternal(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	ppMgr pressurePointMgr,
-	overrides *workerOverrides,
-	registry *registry,
-) *workflowWorker {
+func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -275,25 +263,14 @@ func newWorkflowWorkerInternal(
 	if overrides != nil && overrides.workflowTaskHandler != nil {
 		taskHandler = overrides.workflowTaskHandler
 	} else {
-		taskHandler = newWorkflowTaskHandler(domain, params, ppMgr, registry)
+		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, domain, params, workerStopChannel)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel)
 }
 
-func newWorkflowTaskWorkerInternal(
-	taskHandler WorkflowTaskHandler,
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	stopC chan struct{},
-) *workflowWorker {
+func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters, stopC chan struct{}) *workflowWorker {
 	ensureRequiredParams(&params)
-	poller := newWorkflowTaskPoller(
-		taskHandler,
-		service,
-		domain,
-		params,
-	)
+	poller := newWorkflowTaskPoller(taskHandler, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.ConcurrentPollRoutineSize,
 		pollerRate:        defaultPollerRate,
@@ -341,14 +318,13 @@ func newWorkflowTaskWorkerInternal(
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
-		domain:              domain,
 		stopC:               stopC,
 	}
 }
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyDomainExist(ww.workflowService, ww.domain, ww.worker.logger)
+	err := verifyDomainExist(ww.workflowService, ww.executionParameters.DomainName, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -358,7 +334,7 @@ func (ww *workflowWorker) Start() error {
 }
 
 func (ww *workflowWorker) Run() error {
-	err := verifyDomainExist(ww.workflowService, ww.domain, ww.worker.logger)
+	err := verifyDomainExist(ww.workflowService, ww.executionParameters.DomainName, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -375,13 +351,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	overrides *workerOverrides,
-	env *registry,
-	maxConcurrentSessionExecutionSize int,
-) *sessionWorker {
+func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskList)
 	}
@@ -394,11 +364,11 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient,
 	creationTasklist := getCreationTasklist(params.TaskList)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskList = sessionEnvironment.GetResourceSpecificTasklist()
-	activityWorker := newActivityWorker(service, domain, params, overrides, env, nil)
+	activityWorker := newActivityWorker(service, params, overrides, env, nil)
 
 	params.ConcurrentPollRoutineSize = 1
 	params.TaskList = creationTasklist
-	creationWorker := newActivityWorker(service, domain, params, overrides, env, sessionEnvironment.GetTokenBucket())
+	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
 		creationWorker: creationWorker,
@@ -433,14 +403,7 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
-func newActivityWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	overrides *workerOverrides,
-	env *registry,
-	sessionTokenBucket *sessionTokenBucket,
-) *activityWorker {
+func newActivityWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, sessionTokenBucket *sessionTokenBucket) *activityWorker {
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -452,25 +415,13 @@ func newActivityWorker(
 	} else {
 		taskHandler = newActivityTaskHandler(service, params, env)
 	}
-	return newActivityTaskWorker(taskHandler, service, domain, params, sessionTokenBucket, workerStopChannel)
+	return newActivityTaskWorker(taskHandler, service, params, sessionTokenBucket, workerStopChannel)
 }
 
-func newActivityTaskWorker(
-	taskHandler ActivityTaskHandler,
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	workerParams workerExecutionParameters,
-	sessionTokenBucket *sessionTokenBucket,
-	stopC chan struct{},
-) (worker *activityWorker) {
+func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, workerParams workerExecutionParameters, sessionTokenBucket *sessionTokenBucket, stopC chan struct{}) (worker *activityWorker) {
 	ensureRequiredParams(&workerParams)
 
-	poller := newActivityTaskPoller(
-		taskHandler,
-		service,
-		domain,
-		workerParams,
-	)
+	poller := newActivityTaskPoller(taskHandler, service, workerParams)
 
 	base := newBaseWorker(
 		baseWorkerOptions{
@@ -494,14 +445,13 @@ func newActivityTaskWorker(
 		worker:              base,
 		poller:              poller,
 		identity:            workerParams.Identity,
-		domain:              domain,
 		stopC:               stopC,
 	}
 }
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyDomainExist(aw.workflowService, aw.domain, aw.worker.logger)
+	err := verifyDomainExist(aw.workflowService, aw.executionParameters.DomainName, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -511,7 +461,7 @@ func (aw *activityWorker) Start() error {
 
 // Run the worker.
 func (aw *activityWorker) Run() error {
-	err := verifyDomainExist(aw.workflowService, aw.domain, aw.worker.logger)
+	err := verifyDomainExist(aw.workflowService, aw.executionParameters.DomainName, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -1298,11 +1248,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		maxEventID:    task.GetStartedEventId(),
 	}
 	params := workerExecutionParameters{
-		TaskList: taskList,
-		Identity: "replayID",
-		Logger:   logger,
+		DomainName: domain,
+		TaskList:   taskList,
+		Identity:   "replayID",
+		Logger:     logger,
 	}
-	taskHandler := newWorkflowTaskHandler(domain, params, nil, aw.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
 	if err != nil {
 		return err
@@ -1374,7 +1325,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, domain string, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
+func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
 	wOptions := augmentWorkerOptions(options)
 	ctx := wOptions.BackgroundActivityContext
 	if ctx == nil {
@@ -1383,6 +1334,7 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
 	workerParams := workerExecutionParameters{
+		DomainName:                           wOptions.DomainName,
 		TaskList:                             taskList,
 		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
 		ConcurrentActivityExecutionSize:      wOptions.MaxConcurrentActivityExecutionSize,
@@ -1409,7 +1361,7 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
-		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: domain},
+		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: options.DomainName},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
@@ -1426,21 +1378,9 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 	if !wOptions.DisableWorkflowWorker {
 		testTags := getTestTags(wOptions.BackgroundActivityContext)
 		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(
-				service,
-				domain,
-				workerParams,
-				testTags,
-				registry,
-			)
+			workflowWorker = newWorkflowWorkerWithPressurePoints(service, workerParams, testTags, registry)
 		} else {
-			workflowWorker = newWorkflowWorker(
-				service,
-				domain,
-				workerParams,
-				nil,
-				registry,
-			)
+			workflowWorker = newWorkflowWorker(service, workerParams, nil, registry)
 		}
 	}
 
@@ -1448,26 +1388,12 @@ func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, clientCo
 	var activityWorker *activityWorker
 
 	if !wOptions.DisableActivityWorker {
-		activityWorker = newActivityWorker(
-			service,
-			domain,
-			workerParams,
-			nil,
-			registry,
-			nil,
-		)
+		activityWorker = newActivityWorker(service, workerParams, nil, registry, nil)
 	}
 
 	var sessionWorker *sessionWorker
 	if wOptions.EnableSessionWorker {
-		sessionWorker = newSessionWorker(
-			service,
-			domain,
-			workerParams,
-			nil,
-			registry,
-			wOptions.MaxConcurrentSessionExecutionSize,
-		)
+		sessionWorker = newSessionWorker(service, workerParams, nil, registry, wOptions.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})
@@ -1573,6 +1499,10 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 }
 
 func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
+	if len(options.DomainName) == 0 {
+		options.DomainName = defaultDomainName
+	}
+
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
