@@ -628,11 +628,11 @@ func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt ClientOptions) 
 }
 
 func (s *internalWorkerTestSuite) TestCompleteActivity() {
-	s.testCompleteActivityHelper(ClientOptions{DomainName: testDomain})
+	s.testCompleteActivityHelper(ClientOptions{})
 }
 
 func (s *internalWorkerTestSuite) TestCompleteActivity_WithDataConverter() {
-	opt := ClientOptions{DomainName: testDomain, DataConverter: newTestDataConverter()}
+	opt := ClientOptions{DataConverter: newTestDataConverter()}
 	s.testCompleteActivityHelper(opt)
 }
 
@@ -658,13 +658,13 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	runID := ""
 	activityID := "aid"
 
-	_ = wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, nil)
+	_ = wfClient.CompleteActivityByID(context.Background(), defaultDomainName, workflowID, runID, activityID, nil, nil)
 	require.NotNil(t, completedRequest)
 
-	_ = wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, NewCanceledError())
+	_ = wfClient.CompleteActivityByID(context.Background(), defaultDomainName, workflowID, runID, activityID, nil, NewCanceledError())
 	require.NotNil(t, canceledRequest)
 
-	_ = wfClient.CompleteActivityByID(context.Background(), domain, workflowID, runID, activityID, nil, errors.New(""))
+	_ = wfClient.CompleteActivityByID(context.Background(), defaultDomainName, workflowID, runID, activityID, nil, errors.New(""))
 	require.NotNil(t, failedRequest)
 }
 
@@ -713,8 +713,8 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 			heartbeatRequest = request
 		}).Times(2)
 
-	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), domain, "wid", "rid", "aid")
-	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), domain, "wid", "rid", "aid",
+	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), defaultDomainName, "wid", "rid", "aid")
+	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), defaultDomainName, "wid", "rid", "aid",
 		"testStack", "customerObjects", 4)
 	require.NotNil(s.T(), heartbeatRequest)
 }

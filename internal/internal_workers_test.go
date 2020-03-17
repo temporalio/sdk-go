@@ -95,7 +95,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		DomainName:                "testDomain",
+		DomainName:                defaultDomainName,
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    logger,
@@ -118,7 +118,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                "testDomain",
+		DomainName:                defaultDomainName,
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    logger,
@@ -159,7 +159,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		DomainName:                      "testDomain",
+		DomainName:                      defaultDomainName,
 		TaskList:                        "testTaskList",
 		ConcurrentPollRoutineSize:       5,
 		ConcurrentActivityExecutionSize: 2,
@@ -193,7 +193,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                "testDomain",
+		DomainName:                defaultDomainName,
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    zap.NewNop(),
@@ -316,7 +316,6 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	}).Times(2)
 
 	options := WorkerOptions{
-		DomainName:            "testDomain",
 		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
 		Identity:              "test-worker-identity",
@@ -445,7 +444,6 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	}).Times(1)
 
 	options := WorkerOptions{
-		DomainName:            "testDomain",
 		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
 		Identity:              "test-worker-identity",
