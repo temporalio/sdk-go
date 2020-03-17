@@ -87,7 +87,6 @@ func TestWorkersTestSuite(t *testing.T) {
 }
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
-	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -96,6 +95,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
+		DomainName:                DefaultDomainName,
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    logger,
@@ -103,9 +103,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		UserContextCancel:         cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, newRegistry(),
-	)
+	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
@@ -113,7 +111,6 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
-	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
@@ -121,6 +118,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
+		DomainName:                DefaultDomainName,
 		TaskList:                  "testTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    logger,
@@ -129,15 +127,12 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, registry, nil,
-	)
+	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
 
 func (s *WorkersTestSuite) TestActivityWorkerStop() {
-	domain := "testDomain"
 	logger, _ := zap.NewDevelopment()
 
 	pats := &workflowservice.PollForActivityTaskResponse{
@@ -164,6 +159,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
+		DomainName:                      DefaultDomainName,
 		TaskList:                        "testTaskList",
 		ConcurrentPollRoutineSize:       5,
 		ConcurrentActivityExecutionSize: 2,
@@ -178,9 +174,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivity(a.ActivityType().Name, a)
-	worker := newActivityWorker(
-		s.service, domain, executionParameters, overrides, registry, nil,
-	)
+	worker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
@@ -195,20 +189,17 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 }
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
-	domain := "testDomain"
-
 	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
+		DomainName:                DefaultDomainName,
 		TaskList:                  "testDecisionTaskList",
 		ConcurrentPollRoutineSize: 5,
 		Logger:                    zap.NewNop(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(
-		s.service, domain, executionParameters, nil, overrides, newRegistry(),
-	)
+	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 }
@@ -240,7 +231,6 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		return err
 	}
 
-	domain := "testDomain"
 	taskList := "long-running-decision-tl"
 	testEvents := []*commonproto.HistoryEvent{
 		{
@@ -330,7 +320,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		DisableActivityWorker: true,
 		Identity:              "test-worker-identity",
 	}
-	worker := NewAggregatedWorker(s.service, nil, domain, taskList, options)
+	worker := NewAggregatedWorker(s.service, nil, taskList, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "long-running-decision-workflow-type"},
@@ -377,7 +367,6 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		return err
 	}
 
-	domain := "testDomain"
 	taskList := "multiple-local-activities-tl"
 	testEvents := []*commonproto.HistoryEvent{
 		{
@@ -459,7 +448,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		DisableActivityWorker: true,
 		Identity:              "test-worker-identity",
 	}
-	worker := NewAggregatedWorker(s.service, nil, domain, taskList, options)
+	worker := NewAggregatedWorker(s.service, nil, taskList, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "multiple-local-activities-workflow-type"},

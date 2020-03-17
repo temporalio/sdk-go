@@ -96,7 +96,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.workflows = &Workflows{}
 	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
 	var err error
-	ts.libClient, err = client.NewClient(domainName, client.Options{HostPort: ts.config.ServiceAddr})
+	ts.libClient, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, DomainName: domainName})
 	ts.NoError(err)
 	ts.registerDomain()
 }
@@ -120,7 +120,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 			ts.FailNow("leaks timed out but no error, should be impossible")
 		case <-time.After(time.Second):
 			// https://github.com/temporalio/temporal-go-client/issues/51
-			last = goleak.FindLeaks(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
+			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
 			if last == nil {
 				// no leak, done waiting
 				return
@@ -138,12 +138,13 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.NoError(err)
 	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
+		DomainName:                        domainName,
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 		HostPort:                          ts.config.ServiceAddr,
 	}
-	ts.worker, err = worker.New(domainName, ts.taskListName, options)
+	ts.worker, err = worker.New(ts.taskListName, options)
 	ts.NoError(err)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())

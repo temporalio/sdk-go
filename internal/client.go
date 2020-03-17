@@ -37,6 +37,9 @@ import (
 )
 
 const (
+	// DefaultDomainName is the domain name which is used if not passed with options.
+	DefaultDomainName = "default"
+
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the EncodedValue.
 	QueryTypeStackTrace string = "__stack_trace"
@@ -310,9 +313,13 @@ type (
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
 		// Optional: To set the host:port for this client to connect to.
-		// Use "dns:///" prefix to enable DNS based round robin.
+		// Use "dns:///" prefix to enable DNS based round-robin.
 		// default: localhost:7233
 		HostPort string
+
+		// Optional: To set the domain name for this client to work with.
+		// default: default
+		DomainName string
 
 		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
 		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
@@ -360,12 +367,12 @@ type (
 		ContextPropagators []ContextPropagator
 
 		// Optional: Sets GRPCDialer that can be used to create gRPC connection
-		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round robin load balancer needs to be enabled:
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round-robin load balancer needs to be enabled:
 		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
 		//	return grpc.Dial(params.HostPort,
 		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
 		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
-		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
 		//	)
 		// }
 		// default: defaultGRPCDialer (same as above)
@@ -532,8 +539,12 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(domain string, options ClientOptions) (Client, error) {
-	metricsScope := tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+func NewClient(options ClientOptions) (Client, error) {
+	if len(options.DomainName) == 0 {
+		options.DomainName = DefaultDomainName
+	}
+
+	metricsScope := tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
 		options.HostPort = LocalHostPort
@@ -546,18 +557,22 @@ func NewClient(domain string, options ClientOptions) (Client, error) {
 	connection, err := options.GRPCDialer(GRPCDialerParams{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(metricsScope),
-		DefaultServiceConfig: DefaultServiceConfig,
+		DefaultServiceConfig: defaultServiceConfig,
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, domain, options), nil
+	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, domain string, options ClientOptions) Client {
-	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, domain, clientImplHeaderName, clientImplHeaderValue)
+func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) Client {
+	if len(options.DomainName) == 0 {
+		options.DomainName = DefaultDomainName
+	}
+
+	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.Identity) == 0 {
 		options.Identity = getWorkerIdentity("")
@@ -576,7 +591,7 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	return &workflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
-		domain:             domain,
+		domain:             options.DomainName,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
 		identity:           options.Identity,
@@ -601,7 +616,7 @@ func NewDomainClient(options ClientOptions) (DomainClient, error) {
 	connection, err := options.GRPCDialer(GRPCDialerParams{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(metricsScope),
-		DefaultServiceConfig: DefaultServiceConfig,
+		DefaultServiceConfig: defaultServiceConfig,
 	})
 
 	if err != nil {

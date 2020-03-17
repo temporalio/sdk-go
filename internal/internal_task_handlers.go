@@ -367,15 +367,10 @@ func isPreloadMarkerEvent(event *commonproto.HistoryEvent) bool {
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(
-	domain string,
-	params workerExecutionParameters,
-	ppMgr pressurePointMgr,
-	registry *registry,
-) WorkflowTaskHandler {
+func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		domain:                         domain,
+		domain:                         params.DomainName,
 		logger:                         params.Logger,
 		ppMgr:                          ppMgr,
 		metricsScope:                   metrics.NewTaggedScope(params.MetricsScope),
@@ -934,7 +929,7 @@ ProcessEvents:
 			// workflow timeout.
 			return nil, nonDeterministicErr
 		default:
-			panic(fmt.Sprintf("unknown mismatched workflow history policy."))
+			panic("unknown mismatched workflow history policy.")
 		}
 	}
 
@@ -1722,7 +1717,7 @@ func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 }
 
 func (i *temporalInvoker) GetClient(domain string, options ClientOptions) Client {
-	return newServiceClient(i.service, nil, domain, options)
+	return newServiceClient(i.service, nil, options)
 }
 
 func newServiceInvoker(
