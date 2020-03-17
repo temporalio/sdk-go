@@ -41,7 +41,7 @@ type (
 		// default: localhost:7233
 		HostPort string
 
-		// Optional: To set the domain name for this client to work with.
+		// Optional: To set the domain name for this worker to work with.
 		// default: default
 		DomainName string
 
@@ -208,12 +208,12 @@ type (
 		Tracer opentracing.Tracer
 
 		// Optional: Sets GRPCDialer that can be used to create gRPC connection
-		// GRPCDialer must add params.RequiredInterceptors and set params.defaultServiceConfig if round-robin load balancer needs to be enabled:
+		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round-robin load balancer needs to be enabled:
 		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
 		//	return grpc.Dial(params.HostPort,
 		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
 		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
-		//		grpc.WithDefaultServiceConfig(params.defaultServiceConfig),     // defaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
+		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
 		//	)
 		// }
 		// default: defaultGRPCDialer (same as above)

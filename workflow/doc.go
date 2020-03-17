@@ -434,7 +434,7 @@ cli:
 
 	tctl --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt state
 
-Besides using temporal-cli, you can also issue query from code using QueryWorkflow() API on temporal Client object.
+Besides using tctl, you can also issue query from code using QueryWorkflow() API on temporal Client object.
 
 Registration
 
