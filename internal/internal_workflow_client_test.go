@@ -146,7 +146,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 
 	s.wfClient = &workflowClient{
 		workflowService: s.workflowServiceClient,
-		domain:          defaultDomainName,
+		domain:          DefaultDomainName,
 	}
 }
 
@@ -725,7 +725,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 
 func getGetWorkflowExecutionHistoryRequest(filterType enums.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
-		Domain: defaultDomainName,
+		Domain: DefaultDomainName,
 		Execution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -1036,7 +1036,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 	response := &workflowservice.ListWorkflowExecutionsResponse{}
 	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
-			s.Equal(defaultDomainName, request.GetDomain())
+			s.Equal(DefaultDomainName, request.GetDomain())
 		})
 	resp, err := s.client.ListWorkflow(context.Background(), request)
 	s.Nil(err)
@@ -1056,7 +1056,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 	response := &workflowservice.ListArchivedWorkflowExecutionsResponse{}
 	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
-			s.Equal(defaultDomainName, request.GetDomain())
+			s.Equal(DefaultDomainName, request.GetDomain())
 		})
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -1078,7 +1078,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	response := &workflowservice.ScanWorkflowExecutionsResponse{}
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
-			s.Equal(defaultDomainName, request.GetDomain())
+			s.Equal(DefaultDomainName, request.GetDomain())
 		})
 	resp, err := s.client.ScanWorkflow(context.Background(), request)
 	s.Nil(err)
@@ -1098,7 +1098,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 	response := &workflowservice.CountWorkflowExecutionsResponse{}
 	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
-			s.Equal(defaultDomainName, request.GetDomain())
+			s.Equal(DefaultDomainName, request.GetDomain())
 		})
 	resp, err := s.client.CountWorkflow(context.Background(), request)
 	s.Nil(err)

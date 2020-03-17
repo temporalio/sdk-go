@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	// defaultDomainName is default domain name in case if it is not passed with options.
-	defaultDomainName = "default"
+	// DefaultDomainName is the domain name which is used if not passed with options.
+	DefaultDomainName = "default"
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the EncodedValue.
@@ -541,13 +541,13 @@ const (
 // NewClient creates an instance of a workflow client
 func NewClient(options ClientOptions) (Client, error) {
 	if len(options.DomainName) == 0 {
-		options.DomainName = defaultDomainName
+		options.DomainName = DefaultDomainName
 	}
 
 	metricsScope := tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
-		options.HostPort = localHostPort
+		options.HostPort = LocalHostPort
 	}
 
 	if options.GRPCDialer == nil {
@@ -569,7 +569,7 @@ func NewClient(options ClientOptions) (Client, error) {
 
 func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) Client {
 	if len(options.DomainName) == 0 {
-		options.DomainName = defaultDomainName
+		options.DomainName = DefaultDomainName
 	}
 
 	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
@@ -606,7 +606,7 @@ func NewDomainClient(options ClientOptions) (DomainClient, error) {
 	metricsScope := tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
-		options.HostPort = localHostPort
+		options.HostPort = LocalHostPort
 	}
 
 	if options.GRPCDialer == nil {

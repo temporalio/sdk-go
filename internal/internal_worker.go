@@ -1500,7 +1500,7 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 
 func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if len(options.DomainName) == 0 {
-		options.DomainName = defaultDomainName
+		options.DomainName = DefaultDomainName
 	}
 
 	if options.MaxConcurrentActivityExecutionSize == 0 {

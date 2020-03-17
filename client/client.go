@@ -36,6 +36,12 @@ import (
 )
 
 const (
+	// DefaultHostPort is the host:port which is used if not passed with options.
+	DefaultHostPort = internal.LocalHostPort
+
+	// DefaultDomainName is the domain name which is used if not passed with options.
+	DefaultDomainName = internal.DefaultDomainName
+
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the encoded.Value.
 	QueryTypeStackTrace string = internal.QueryTypeStackTrace
@@ -58,22 +64,22 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
-	// HistoryEventIterator is a iterator which can return history events
+	// HistoryEventIterator is a iterator which can return history events.
 	HistoryEventIterator = internal.HistoryEventIterator
 
-	// WorkflowRun represents a started non child workflow
+	// WorkflowRun represents a started non child workflow.
 	WorkflowRun = internal.WorkflowRun
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
 	WorkflowIDReusePolicy = internal.WorkflowIDReusePolicy
 
-	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions
+	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
 
-	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions
+	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
 
-	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed
+	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed.
 	ParentClosePolicy = internal.ParentClosePolicy
 
 	// Client is the client for starting and getting information about a workflow executions as well as

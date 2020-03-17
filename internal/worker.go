@@ -264,13 +264,13 @@ func NewWorker(
 	}
 
 	if len(options.DomainName) == 0 {
-		options.DomainName = defaultDomainName
+		options.DomainName = DefaultDomainName
 	}
 
 	metricsScope := tagScope(options.MetricsScope, tagDomain, options.DomainName, tagTaskList, taskList, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
-		options.HostPort = localHostPort
+		options.HostPort = LocalHostPort
 	}
 
 	if options.GRPCDialer == nil {
