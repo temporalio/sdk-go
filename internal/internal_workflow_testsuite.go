@@ -124,7 +124,6 @@ type (
 		service            workflowservice.WorkflowServiceClient
 		logger             *zap.Logger
 		metricsScope       *metrics.TaggedScope
-		dataConverter      DataConverter
 		contextPropagators []ContextPropagator
 		identity           string
 		tracer             opentracing.Tracer
@@ -182,6 +181,7 @@ type (
 		testError        error
 		doneChannel      chan struct{}
 		workerOptions    WorkerOptions
+		dataConverter    DataConverter
 		executionTimeout time.Duration
 
 		heartbeatDetails []byte
@@ -217,7 +217,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			logger:           s.logger,
 			metricsScope:     metrics.NewTaggedScope(s.scope),
-			dataConverter:    getDefaultDataConverter(),
 			tracer:           opentracing.NoopTracer{},
 			mockClock:        clock.NewMock(),
 			wallClock:        clock.New(),
@@ -250,6 +249,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
+		dataConverter:     getDefaultDataConverter(),
 	}
 
 	// move forward the mock clock to start time.
@@ -1503,7 +1503,7 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter DataConverter) ActivityTaskHandler {
-	augmentWorkerOptions(&env.workerOptions)
+	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
 		TaskList:           taskList,
 		Identity:           env.identity,

@@ -1320,8 +1320,8 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
 func NewAggregatedWorker(client *workflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
-	augmentClient(client)
-	augmentWorkerOptions(&options)
+	setClientDefaults(client)
+	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
 	if ctx == nil {
 		ctx = context.Background()
@@ -1492,7 +1492,7 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
 }
 
-func augmentWorkerOptions(options *WorkerOptions) {
+func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
@@ -1522,7 +1522,7 @@ func augmentWorkerOptions(options *WorkerOptions) {
 	}
 }
 
-func augmentClient(client *workflowClient) {
+func setClientDefaults(client *workflowClient) {
 	// This should be needed only in unit tests.
 	if client.dataConverter == nil {
 		client.dataConverter = getDefaultDataConverter()
