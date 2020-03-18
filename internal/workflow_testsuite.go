@@ -46,10 +46,10 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger   *zap.Logger
-		scope    tally.Scope
-		ctxProps []ContextPropagator
-		header   *commonproto.Header
+		logger             *zap.Logger
+		scope              tally.Scope
+		contextPropagators []ContextPropagator
+		header             *commonproto.Header
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -144,7 +144,7 @@ func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
 // SetContextPropagators sets the context propagators for this WorkflowTestSuite. If you don't set context propagators,
 // test suite will not use context propagators
 func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) {
-	s.ctxProps = ctxProps
+	s.contextPropagators = ctxProps
 }
 
 // SetHeader sets the headers for this WorkflowTestSuite. If you don't set header, test suite will not pass headers to
@@ -180,6 +180,11 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, a
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
 	t.impl.setWorkerOptions(options)
+	return t
+}
+
+func (t *TestActivityEnvironment) SetContextPropagators(contextPropagators []ContextPropagator) *TestActivityEnvironment {
+	t.impl.setContextPropagators(contextPropagators)
 	return t
 }
 
@@ -446,6 +451,11 @@ func (t *TestWorkflowEnvironment) Now() time.Time {
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
 	t.impl.setWorkerOptions(options)
+	return t
+}
+
+func (t *TestWorkflowEnvironment) SetDataConverter(dataConverter DataConverter) *TestWorkflowEnvironment {
+	t.impl.setDataConverter(dataConverter)
 	return t
 }
 

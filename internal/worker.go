@@ -24,8 +24,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -150,13 +148,6 @@ type (
 		// Optional: Specifies factories used to instantiate workflow interceptor chain
 		// The chain is instantiated per each replay of a workflow execution
 		WorkflowInterceptorChainFactories []WorkflowInterceptorFactory
-
-		domainName         string
-		metricsScope       tally.Scope
-		identity           string
-		dataConverter      DataConverter
-		tracer             opentracing.Tracer
-		contextPropagators []ContextPropagator
 	}
 )
 
@@ -201,13 +192,5 @@ func NewWorker(
 	if !ok {
 		panic("Client must be created with client.NewClient()")
 	}
-
-	options.domainName = workflowClient.domain
-	options.metricsScope = workflowClient.metricsScope
-	options.identity = workflowClient.identity
-	options.dataConverter = workflowClient.dataConverter
-	options.tracer = workflowClient.tracer
-	options.contextPropagators = workflowClient.contextPropagators
-
-	return NewAggregatedWorker(workflowClient.workflowService, taskList, options)
+	return NewAggregatedWorker(workflowClient, taskList, options)
 }

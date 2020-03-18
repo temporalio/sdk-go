@@ -564,10 +564,11 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) Client {
+// NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *workflowClient {
 	// DomainName can be empty in unit tests.
 	if len(options.DomainName) == 0 {
 		options.DomainName = DefaultDomainName

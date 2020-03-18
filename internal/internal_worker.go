@@ -1319,75 +1319,76 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func NewAggregatedWorker(service workflowservice.WorkflowServiceClient, taskList string, options WorkerOptions) (worker *AggregatedWorker) {
-	wOptions := augmentWorkerOptions(options)
-	ctx := wOptions.BackgroundActivityContext
+func NewAggregatedWorker(client *workflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
+	augmentClient(client)
+	augmentWorkerOptions(&options)
+	ctx := options.BackgroundActivityContext
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
 	workerParams := workerExecutionParameters{
-		DomainName:                           wOptions.domainName,
+		DomainName:                           client.domain,
 		TaskList:                             taskList,
 		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
-		ConcurrentActivityExecutionSize:      wOptions.MaxConcurrentActivityExecutionSize,
-		WorkerActivitiesPerSecond:            wOptions.WorkerActivitiesPerSecond,
-		ConcurrentLocalActivityExecutionSize: wOptions.MaxConcurrentLocalActivityExecutionSize,
-		WorkerLocalActivitiesPerSecond:       wOptions.WorkerLocalActivitiesPerSecond,
-		ConcurrentDecisionTaskExecutionSize:  wOptions.MaxConcurrentDecisionTaskExecutionSize,
-		WorkerDecisionTasksPerSecond:         wOptions.WorkerDecisionTasksPerSecond,
-		Identity:                             wOptions.identity,
-		MetricsScope:                         wOptions.metricsScope,
-		Logger:                               wOptions.Logger,
-		EnableLoggingInReplay:                wOptions.EnableLoggingInReplay,
+		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
+		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
+		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
+		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
+		ConcurrentDecisionTaskExecutionSize:  options.MaxConcurrentDecisionTaskExecutionSize,
+		WorkerDecisionTasksPerSecond:         options.WorkerDecisionTasksPerSecond,
+		Identity:                             client.identity,
+		MetricsScope:                         client.metricsScope,
+		Logger:                               options.Logger,
+		EnableLoggingInReplay:                options.EnableLoggingInReplay,
 		UserContext:                          backgroundActivityContext,
 		UserContextCancel:                    backgroundActivityContextCancel,
-		DisableStickyExecution:               wOptions.DisableStickyExecution,
-		StickyScheduleToStartTimeout:         wOptions.StickyScheduleToStartTimeout,
-		TaskListActivitiesPerSecond:          wOptions.TaskListActivitiesPerSecond,
-		NonDeterministicWorkflowPolicy:       wOptions.NonDeterministicWorkflowPolicy,
-		DataConverter:                        wOptions.dataConverter,
-		WorkerStopTimeout:                    wOptions.WorkerStopTimeout,
-		ContextPropagators:                   wOptions.contextPropagators,
-		Tracer:                               wOptions.tracer,
+		DisableStickyExecution:               options.DisableStickyExecution,
+		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
+		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
+		NonDeterministicWorkflowPolicy:       options.NonDeterministicWorkflowPolicy,
+		DataConverter:                        client.dataConverter,
+		WorkerStopTimeout:                    options.WorkerStopTimeout,
+		ContextPropagators:                   client.contextPropagators,
+		Tracer:                               client.tracer,
 	}
 
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
-		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: options.domainName},
+		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: client.domain},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
 
-	processTestTags(&wOptions, &workerParams)
+	processTestTags(&options, &workerParams)
 
 	// worker specific registry
 	registry := newRegistry()
-	registry.SetWorkflowInterceptors(wOptions.WorkflowInterceptorChainFactories)
+	registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
-	if !wOptions.DisableWorkflowWorker {
-		testTags := getTestTags(wOptions.BackgroundActivityContext)
+	if !options.DisableWorkflowWorker {
+		testTags := getTestTags(options.BackgroundActivityContext)
 		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(service, workerParams, testTags, registry)
+			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
 		} else {
-			workflowWorker = newWorkflowWorker(service, workerParams, nil, registry)
+			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 		}
 	}
 
 	// activity types.
 	var activityWorker *activityWorker
 
-	if !wOptions.DisableActivityWorker {
-		activityWorker = newActivityWorker(service, workerParams, nil, registry, nil)
+	if !options.DisableActivityWorker {
+		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 	}
 
 	var sessionWorker *sessionWorker
-	if wOptions.EnableSessionWorker {
-		sessionWorker = newSessionWorker(service, workerParams, nil, registry, wOptions.MaxConcurrentSessionExecutionSize)
+	if options.EnableSessionWorker {
+		sessionWorker = newSessionWorker(client.workflowService, workerParams, nil, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})
@@ -1491,7 +1492,7 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
 }
 
-func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
+func augmentWorkerOptions(options *WorkerOptions) {
 	if options.MaxConcurrentActivityExecutionSize == 0 {
 		options.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
 	}
@@ -1519,18 +1520,19 @@ func augmentWorkerOptions(options WorkerOptions) WorkerOptions {
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
 	}
+}
 
-	// Private options can be nil only in unit tests.
-	if options.dataConverter == nil {
-		options.dataConverter = getDefaultDataConverter()
+func augmentClient(client *workflowClient) {
+	// This should be needed only in unit tests.
+	if client.dataConverter == nil {
+		client.dataConverter = getDefaultDataConverter()
 	}
-	if len(options.domainName) == 0 {
-		options.domainName = DefaultDomainName
+	if len(client.domain) == 0 {
+		client.domain = DefaultDomainName
 	}
-	if options.tracer == nil {
-		options.tracer = opentracing.NoopTracer{}
+	if client.tracer == nil {
+		client.tracer = opentracing.NoopTracer{}
 	}
-	return options
 }
 
 // getTestTags returns the test tags in the context.
