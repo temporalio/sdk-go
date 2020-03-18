@@ -1319,7 +1319,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 // NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
 // poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
 // With 2 poller, we could achieve around 300~400 RPS.
-func NewAggregatedWorker(client *workflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
+func NewAggregatedWorker(client *WorkflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
@@ -1522,7 +1522,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 }
 
-func setClientDefaults(client *workflowClient) {
+func setClientDefaults(client *WorkflowClient) {
 	// This should be needed only in unit tests.
 	if client.dataConverter == nil {
 		client.dataConverter = getDefaultDataConverter()

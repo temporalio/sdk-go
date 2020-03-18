@@ -568,7 +568,7 @@ func NewClient(options ClientOptions) (Client, error) {
 }
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
-func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *workflowClient {
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
 	// DomainName can be empty in unit tests.
 	if len(options.DomainName) == 0 {
 		options.DomainName = DefaultDomainName
@@ -588,7 +588,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.Tracer = opentracing.NoopTracer{}
 	}
 
-	return &workflowClient{
+	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
 		domain:             options.DomainName,

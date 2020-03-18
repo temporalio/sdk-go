@@ -58,7 +58,7 @@ type (
 		suite.Suite
 		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicemock.MockWorkflowServiceClient
-		wfClient              *workflowClient
+		wfClient              *WorkflowClient
 	}
 )
 
@@ -144,7 +144,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
-	s.wfClient = &workflowClient{
+	s.wfClient = &WorkflowClient{
 		workflowService: s.workflowServiceClient,
 		domain:          DefaultDomainName,
 	}
@@ -821,7 +821,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow() {
-	client, ok := s.client.(*workflowClient)
+	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
 		ID:                              workflowID,
@@ -848,7 +848,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 	s.client = NewServiceClient(s.service, nil, ClientOptions{
 		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
 	})
-	client, ok := s.client.(*workflowClient)
+	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
 		ID:                              workflowID,
@@ -878,7 +878,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
 	dc := newTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
-	client, ok := s.client.(*workflowClient)
+	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
 		ID:                              workflowID,

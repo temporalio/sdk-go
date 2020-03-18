@@ -389,10 +389,6 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 	env.identity = identity
 }
 
-func (env *testWorkflowEnvironmentImpl) setMetricsScope(metricsScope *metrics.TaggedScope) {
-	env.metricsScope = metricsScope
-}
-
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter DataConverter) {
 	env.dataConverter = dataConverter
 }

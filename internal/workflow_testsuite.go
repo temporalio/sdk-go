@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -176,13 +177,33 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, a
 }
 
 // SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
+// Other options are ignored.
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
 	t.impl.setWorkerOptions(options)
 	return t
 }
 
+// SetDataConverter sets data converter.
+func (t *TestActivityEnvironment) SetDataConverter(dataConverter DataConverter) *TestActivityEnvironment {
+	t.impl.setDataConverter(dataConverter)
+	return t
+}
+
+// SetIdentity sets identity.
+func (t *TestActivityEnvironment) SetIdentity(identity string) *TestActivityEnvironment {
+	t.impl.setIdentity(identity)
+	return t
+}
+
+// SetTracer sets tracer.
+func (t *TestActivityEnvironment) SetTracer(tracer opentracing.Tracer) *TestActivityEnvironment {
+	t.impl.setTracer(tracer)
+	return t
+}
+
+// SetContextPropagators sets context propagators.
 func (t *TestActivityEnvironment) SetContextPropagators(contextPropagators []ContextPropagator) *TestActivityEnvironment {
 	t.impl.setContextPropagators(contextPropagators)
 	return t
@@ -446,16 +467,30 @@ func (t *TestWorkflowEnvironment) Now() time.Time {
 	return t.impl.Now()
 }
 
-// SetWorkerOptions sets the WorkerOptions for TestWorkflowEnvironment. TestWorkflowEnvironment will use options set by
-// use options of Identity, MetricsScope and BackgroundActivityContext on the WorkerOptions. Other options are ignored.
+// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
+// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
+// Other options are ignored.
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
 	t.impl.setWorkerOptions(options)
 	return t
 }
 
+// SetDataConverter sets data converter.
 func (t *TestWorkflowEnvironment) SetDataConverter(dataConverter DataConverter) *TestWorkflowEnvironment {
 	t.impl.setDataConverter(dataConverter)
+	return t
+}
+
+// SetIdentity sets identity.
+func (t *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvironment {
+	t.impl.setIdentity(identity)
+	return t
+}
+
+// SetTracer sets tracer.
+func (t *TestWorkflowEnvironment) SetTracer(tracer opentracing.Tracer) *TestWorkflowEnvironment {
+	t.impl.setTracer(tracer)
 	return t
 }
 

@@ -43,7 +43,7 @@ import (
 )
 
 // Assert that structs do indeed implement the interfaces
-var _ Client = (*workflowClient)(nil)
+var _ Client = (*WorkflowClient)(nil)
 var _ DomainClient = (*domainClient)(nil)
 
 const (
@@ -56,8 +56,8 @@ var (
 )
 
 type (
-	// workflowClient is the client for starting a workflow execution.
-	workflowClient struct {
+	// WorkflowClient is the client for starting a workflow execution.
+	WorkflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
 		connectionCloser   io.Closer
 		domain             string
@@ -147,7 +147,7 @@ type (
 //     StartWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func (wc *workflowClient) StartWorkflow(
+func (wc *WorkflowClient) StartWorkflow(
 	ctx context.Context,
 	options StartWorkflowOptions,
 	workflowFunc interface{},
@@ -261,7 +261,7 @@ func (wc *workflowClient) StartWorkflow(
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
-func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
 
 	// start the workflow execution
 	var runID string
@@ -298,7 +298,7 @@ func (wc *workflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 // reaches the end state, such as workflow finished successfully or timeout.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func (wc *workflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
+func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enums.HistoryEventFilterTypeCloseEvent)
@@ -315,7 +315,7 @@ func (wc *workflowClient) GetWorkflow(_ context.Context, workflowID string, runI
 }
 
 // SignalWorkflow signals a workflow in execution.
-func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
 	input, err := encodeArg(wc.dataConverter, arg)
 	if err != nil {
 		return err
@@ -343,7 +343,7 @@ func (wc *workflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 // SignalWithStartWorkflow sends a signal to a running workflow.
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
-func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
+func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (*WorkflowExecution, error) {
 
 	signalInput, err := encodeArg(wc.dataConverter, signalArg)
@@ -446,7 +446,7 @@ func (wc *workflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 // CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *workflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
+func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Domain: wc.domain,
 		WorkflowExecution: &commonproto.WorkflowExecution{
@@ -468,7 +468,7 @@ func (wc *workflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *workflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
+func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Domain: wc.domain,
 		WorkflowExecution: &commonproto.WorkflowExecution{
@@ -492,7 +492,7 @@ func (wc *workflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 }
 
 // GetWorkflowHistory return a channel which contains the history events of a given workflow
-func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
+func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
 	isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator {
 
 	domain := wc.domain
@@ -547,7 +547,7 @@ func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 // should be called when that activity is completed with the actual result and error. If err is nil, activity task
 // completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 // activity task failed event will be reported.
-func (wc *workflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
 	if taskToken == nil {
 		return errors.New("invalid task token provided")
 	}
@@ -564,9 +564,9 @@ func (wc *workflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
 }
 
-// CompleteActivityById reports activity completed. Similar to CompleteActivity
+// CompleteActivityByID reports activity completed. Similar to CompleteActivity
 // It takes domain name, workflowID, runID, activityID as arguments.
-func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string,
+func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string,
 	result interface{}, err error) error {
 
 	if activityID == "" || workflowID == "" || domain == "" {
@@ -587,7 +587,7 @@ func (wc *workflowClient) CompleteActivityByID(ctx context.Context, domain, work
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
-func (wc *workflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
+func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
 	data, err := encodeArgs(wc.dataConverter, details)
 	if err != nil {
 		return err
@@ -596,7 +596,7 @@ func (wc *workflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
-func (wc *workflowClient) RecordActivityHeartbeatByID(ctx context.Context,
+func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	domain, workflowID, runID, activityID string, details ...interface{}) error {
 	data, err := encodeArgs(wc.dataConverter, details)
 	if err != nil {
@@ -610,7 +610,7 @@ func (wc *workflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *workflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -634,7 +634,7 @@ func (wc *workflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *workflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -654,7 +654,7 @@ func (wc *workflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 }
 
 // ListWorkflow implementation
-func (wc *workflowClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -674,7 +674,7 @@ func (wc *workflowClient) ListWorkflow(ctx context.Context, request *workflowser
 }
 
 // ListArchivedWorkflow implementation
-func (wc *workflowClient) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -706,7 +706,7 @@ func (wc *workflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 }
 
 // ScanWorkflow implementation
-func (wc *workflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -726,7 +726,7 @@ func (wc *workflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 }
 
 // CountWorkflow implementation
-func (wc *workflowClient) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
+func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	if len(request.GetDomain()) == 0 {
 		request.Domain = wc.domain
 	}
@@ -746,7 +746,7 @@ func (wc *workflowClient) CountWorkflow(ctx context.Context, request *workflowse
 }
 
 // GetSearchAttributes implementation
-func (wc *workflowClient) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
+func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
 	var response *workflowservice.GetSearchAttributesResponse
 	err := backoff.Retry(ctx,
 		func() error {
@@ -767,7 +767,7 @@ func (wc *workflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Domain: wc.domain,
 		Execution: &commonproto.WorkflowExecution{
@@ -802,7 +802,7 @@ func (wc *workflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *workflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
+func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
 	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -862,7 +862,7 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *workflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
+func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
 	var input []byte
 	if len(request.Args) > 0 {
 		var err error
@@ -917,7 +917,7 @@ func (wc *workflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *workflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
+func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	request := &workflowservice.DescribeTaskListRequest{
 		Domain:       wc.domain,
 		TaskList:     &commonproto.TaskList{Name: taskList},
@@ -941,7 +941,7 @@ func (wc *workflowClient) DescribeTaskList(ctx context.Context, taskList string,
 }
 
 // CloseConnection closes underlying gRPC connection.
-func (wc *workflowClient) CloseConnection() error {
+func (wc *WorkflowClient) CloseConnection() error {
 	if wc.connectionCloser == nil {
 		return nil
 	}
@@ -949,7 +949,7 @@ func (wc *workflowClient) CloseConnection() error {
 	return wc.connectionCloser.Close()
 }
 
-func (wc *workflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
+func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
 	header := &commonproto.Header{
 		Fields: make(map[string][]byte),
 	}
