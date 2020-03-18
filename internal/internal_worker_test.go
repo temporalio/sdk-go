@@ -581,17 +581,20 @@ func createWorkerWithThrottle(
 	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	// Configure worker options.
-	workerOptions := WorkerOptions{}
-	workerOptions.DomainName = domain
-	workerOptions.WorkerActivitiesPerSecond = 20
-	workerOptions.TaskListActivitiesPerSecond = activitiesPerSecond
-	if dc != nil {
-		workerOptions.DataConverter = dc
-	}
-	workerOptions.EnableSessionWorker = true
+	workerOptions := WorkerOptions{
+		WorkerActivitiesPerSecond:   20,
+		TaskListActivitiesPerSecond: activitiesPerSecond,
+		EnableSessionWorker:         true}
 
-	// Start Worker.
-	worker := NewAggregatedWorker(service, nil, "testGroupName2", workerOptions)
+	clientOptions := ClientOptions{
+		DomainName: domain,
+	}
+	if dc != nil {
+		clientOptions.DataConverter = dc
+	}
+
+	client := NewServiceClient(service, nil, clientOptions)
+	worker := NewAggregatedWorker(client, "testGroupName2", workerOptions)
 	return worker
 }
 
@@ -602,7 +605,7 @@ func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServ
 func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt ClientOptions) {
 	t := s.T()
 	mockService := s.service
-	wfClient := newServiceClient(mockService, nil, opt)
+	wfClient := NewServiceClient(mockService, nil, opt)
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedRequest, opts ...grpc.CallOption) {
@@ -639,7 +642,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity_WithDataConverter() {
 func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	t := s.T()
 	mockService := s.service
-	wfClient := newServiceClient(mockService, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{DomainName: "testDomain"})
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) {
@@ -669,7 +672,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
-	wfClient := newServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
@@ -686,7 +689,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 	t := s.T()
 	dc := newTestDataConverter()
 	opt := ClientOptions{DomainName: "testDomain", DataConverter: dc}
-	wfClient := newServiceClient(s.service, nil, opt)
+	wfClient := NewServiceClient(s.service, nil, opt)
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	detail1 := "testStack"
@@ -705,7 +708,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
-	wfClient := newServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIDRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIDResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
@@ -904,7 +907,7 @@ func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
 func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
-	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.SetDataConverter(newTestDataConverter())
 	env.RegisterWorkflow(wf)
 	testInternalWorkerRegisterWithTestEnv(env)
 	env.ExecuteWorkflow(wf, []byte{1, 2})

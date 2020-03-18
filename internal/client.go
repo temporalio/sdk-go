@@ -544,7 +544,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.DomainName = DefaultDomainName
 	}
 
-	metricsScope := tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
+	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
 		options.HostPort = LocalHostPort
@@ -556,7 +556,7 @@ func NewClient(options ClientOptions) (Client, error) {
 
 	connection, err := options.GRPCDialer(GRPCDialerParams{
 		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(metricsScope),
+		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,
 	})
 
@@ -564,15 +564,15 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	return newServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) Client {
+// NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
+	// DomainName can be empty in unit tests.
 	if len(options.DomainName) == 0 {
 		options.DomainName = DefaultDomainName
 	}
-
-	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.Identity) == 0 {
 		options.Identity = getWorkerIdentity("")
@@ -588,7 +588,7 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.Tracer = opentracing.NoopTracer{}
 	}
 
-	return &workflowClient{
+	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
 		domain:             options.DomainName,
@@ -603,7 +603,7 @@ func newServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
 func NewDomainClient(options ClientOptions) (DomainClient, error) {
-	metricsScope := tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
+	options.MetricsScope = tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
 		options.HostPort = LocalHostPort
@@ -615,7 +615,7 @@ func NewDomainClient(options ClientOptions) (DomainClient, error) {
 
 	connection, err := options.GRPCDialer(GRPCDialerParams{
 		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(metricsScope),
+		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,
 	})
 
@@ -631,12 +631,10 @@ func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServic
 		options.Identity = getWorkerIdentity("")
 	}
 
-	metricsScope := tagScope(options.MetricsScope, tagDomain, "domain-client", clientImplHeaderName, clientImplHeaderValue)
-
 	return &domainClient{
 		workflowService:  workflowServiceClient,
 		connectionCloser: clientConn,
-		metricsScope:     metricsScope,
+		metricsScope:     options.MetricsScope,
 		identity:         options.Identity,
 	}
 }

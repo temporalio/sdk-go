@@ -49,7 +49,7 @@ type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	config       Config
-	libClient    client.Client
+	client       client.Client
 	activities   *Activities
 	workflows    *Workflows
 	worker       worker.Worker
@@ -96,14 +96,14 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.workflows = &Workflows{}
 	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
 	var err error
-	ts.libClient, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, DomainName: domainName})
+	ts.client, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, DomainName: domainName})
 	ts.NoError(err)
 	ts.registerDomain()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	err := ts.libClient.CloseConnection()
+	err := ts.client.CloseConnection()
 	ts.NoError(err)
 
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
@@ -138,14 +138,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.NoError(err)
 	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
-		DomainName:                        domainName,
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
-		HostPort:                          ts.config.ServiceAddr,
 	}
-	ts.worker, err = worker.New(ts.taskListName, options)
-	ts.NoError(err)
+	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -228,11 +225,11 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-cancellation"), ts.workflows.Basic)
 	ts.NoError(err)
 	ts.NotNil(run)
-	ts.Nil(ts.libClient.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
 	_, ok := err.(*temporal.CanceledError)
@@ -242,10 +239,10 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-stack-trace-query"), ts.workflows.Basic)
 	ts.NoError(err)
-	value, err := ts.libClient.QueryWorkflow(ctx, "test-stack-trace-query", run.GetRunID(), "__stack_trace")
+	value, err := ts.client.QueryWorkflow(ctx, "test-stack-trace-query", run.GetRunID(), "__stack_trace")
 	ts.NoError(err)
 	ts.NotNil(value)
 	var trace string
@@ -260,7 +257,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	// to ensure that consistent query must wait in order to satisfy consistency
 	wfOpts := ts.startWorkflowOptions("test-consistent-query")
 	wfOpts.DecisionTaskStartToCloseTimeout = 5 * time.Second
-	run, err := ts.libClient.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
 	ts.Nil(err)
 	// Wait for a second to ensure that first decision task gets started and completed before we send signal.
 	// Query cannot be run until first decision task has been completed.
@@ -268,10 +265,10 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	// decision task. So query will be blocked waiting for signal to complete, this is not what we want because it
 	// will not exercise the consistent query code path.
 	<-time.After(time.Second)
-	err = ts.libClient.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
+	err = ts.client.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
 	ts.NoError(err)
 
-	value, err := ts.libClient.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+	value, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
@@ -376,7 +373,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
 	for {
-		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
@@ -393,7 +390,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 
 	for {
-		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
@@ -423,10 +420,10 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
-	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
@@ -477,13 +474,13 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
 	if err != nil {
 		return err
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.libClient.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

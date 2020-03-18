@@ -61,7 +61,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.header = &commonproto.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
 	}
-	s.ctxProps = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
+	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
 }
 
 func TestUnitTestSuite(t *testing.T) {
@@ -120,7 +120,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter(
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHello)
 
-	env.SetWorkerOptions(WorkerOptions{DataConverter: newTestDataConverter()})
+	env.SetDataConverter(newTestDataConverter())
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Twice()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -376,10 +376,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
-	workerOptions := WorkerOptions{
-		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
-	}
-
 	// inline activity using value passing through user context.
 	activityWithUserContext := func(ctx context.Context) (string, error) {
 		value := ctx.Value(contextKey(testHeader))
@@ -397,7 +393,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activityWithUserContext)
-	env.SetWorkerOptions(workerOptions)
+	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	blob, err := env.ExecuteActivity(activityWithUserContext)
 	s.NoError(err)
 	var value string

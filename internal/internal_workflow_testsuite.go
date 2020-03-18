@@ -120,13 +120,16 @@ type (
 
 		taskListSpecificActivities map[string]*taskListSpecificActivity
 
-		mock         *mock.Mock
-		service      workflowservice.WorkflowServiceClient
-		logger       *zap.Logger
-		metricsScope *metrics.TaggedScope
-		ctxProps     []ContextPropagator
-		mockClock    *clock.Mock
-		wallClock    clock.Clock
+		mock               *mock.Mock
+		service            workflowservice.WorkflowServiceClient
+		logger             *zap.Logger
+		metricsScope       *metrics.TaggedScope
+		contextPropagators []ContextPropagator
+		identity           string
+		tracer             opentracing.Tracer
+
+		mockClock *clock.Mock
+		wallClock clock.Clock
 
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
@@ -178,6 +181,7 @@ type (
 		testError        error
 		doneChannel      chan struct{}
 		workerOptions    WorkerOptions
+		dataConverter    DataConverter
 		executionTimeout time.Duration
 
 		heartbeatDetails []byte
@@ -213,6 +217,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			logger:           s.logger,
 			metricsScope:     metrics.NewTaggedScope(s.scope),
+			tracer:           opentracing.NoopTracer{},
 			mockClock:        clock.NewMock(),
 			wallClock:        clock.New(),
 			timers:           make(map[string]*testTimerHandle),
@@ -244,6 +249,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
+		dataConverter:     getDefaultDataConverter(),
 	}
 
 	// move forward the mock clock to start time.
@@ -259,7 +265,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	if env.metricsScope == nil {
 		env.metricsScope = metrics.NewTaggedScope(s.scope)
 	}
-	env.ctxProps = s.ctxProps
+	env.contextPropagators = s.contextPropagators
 	env.header = s.header
 
 	// setup mock service
@@ -303,15 +309,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	if env.workerOptions.Logger == nil {
 		env.workerOptions.Logger = env.logger
 	}
-	if env.workerOptions.MetricsScope == nil {
-		env.workerOptions.MetricsScope = env.metricsScope
-	}
-	if env.workerOptions.DataConverter == nil {
-		env.workerOptions.DataConverter = getDefaultDataConverter()
-	}
-	if len(env.workerOptions.ContextPropagators) == 0 {
-		env.workerOptions.ContextPropagators = env.ctxProps
-	}
 
 	return env
 }
@@ -333,7 +330,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
-	childEnv.workerOptions.DataConverter = params.dataConverter
+	childEnv.dataConverter = params.dataConverter
 	childEnv.registry = env.registry
 
 	if params.workflowID == "" {
@@ -375,17 +372,8 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
-	if len(options.Identity) > 0 {
-		env.workerOptions.Identity = options.Identity
-	}
 	if options.BackgroundActivityContext != nil {
 		env.workerOptions.BackgroundActivityContext = options.BackgroundActivityContext
-	}
-	if options.MetricsScope != nil {
-		env.workerOptions.MetricsScope = options.MetricsScope
-	}
-	if options.DataConverter != nil {
-		env.workerOptions.DataConverter = options.DataConverter
 	}
 	// Uncomment when resourceID is exposed to user.
 	// if options.SessionResourceID != "" {
@@ -394,10 +382,23 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	if options.MaxConcurrentSessionExecutionSize != 0 {
 		env.workerOptions.MaxConcurrentSessionExecutionSize = options.MaxConcurrentSessionExecutionSize
 	}
-	if len(options.ContextPropagators) > 0 {
-		env.workerOptions.ContextPropagators = options.ContextPropagators
-	}
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+}
+
+func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
+	env.identity = identity
+}
+
+func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter DataConverter) {
+	env.dataConverter = dataConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
+	env.contextPropagators = contextPropagators
+}
+
+func (env *testWorkflowEnvironmentImpl) setTracer(tracer opentracing.Tracer) {
+	env.tracer = tracer
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
@@ -908,15 +909,15 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() *zap.Logger {
 }
 
 func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
-	return env.workerOptions.MetricsScope
+	return env.metricsScope
 }
 
 func (env *testWorkflowEnvironmentImpl) GetDataConverter() DataConverter {
-	return env.workerOptions.DataConverter
+	return env.dataConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
-	return env.workerOptions.ContextPropagators
+	return env.contextPropagators
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
@@ -1066,7 +1067,6 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonproto.RetryPolicy, attempt i
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
 	activityID := getStringID(env.nextID())
-	wOptions := augmentWorkerOptions(env.workerOptions)
 	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
 	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
@@ -1081,12 +1081,12 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
-		userContext:        wOptions.BackgroundActivityContext,
-		metricsScope:       metrics.NewTaggedScope(wOptions.MetricsScope),
-		logger:             wOptions.Logger,
-		dataConverter:      wOptions.DataConverter,
-		tracer:             wOptions.Tracer,
-		contextPropagators: wOptions.ContextPropagators,
+		userContext:        env.workerOptions.BackgroundActivityContext,
+		metricsScope:       metrics.NewTaggedScope(env.metricsScope),
+		logger:             env.workerOptions.Logger,
+		dataConverter:      env.dataConverter,
+		tracer:             env.tracer,
+		contextPropagators: env.contextPropagators,
 	}
 
 	env.localActivities[activityID] = task
@@ -1499,24 +1499,24 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter DataConverter) ActivityTaskHandler {
-	wOptions := augmentWorkerOptions(env.workerOptions)
+	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
 		TaskList:           taskList,
-		Identity:           wOptions.Identity,
-		MetricsScope:       wOptions.MetricsScope,
-		Logger:             wOptions.Logger,
-		UserContext:        wOptions.BackgroundActivityContext,
+		Identity:           env.identity,
+		MetricsScope:       env.metricsScope,
+		Logger:             env.workerOptions.Logger,
+		UserContext:        env.workerOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
-		ContextPropagators: wOptions.ContextPropagators,
-		Tracer:             wOptions.Tracer,
+		ContextPropagators: env.contextPropagators,
+		Tracer:             env.tracer,
 	}
 	ensureRequiredParams(&params)
 	if params.UserContext == nil {
 		params.UserContext = context.Background()
 	}
 	if env.sessionEnvironment == nil {
-		env.sessionEnvironment = newTestSessionEnvironment(env, &params, wOptions.MaxConcurrentSessionExecutionSize)
+		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
 	registry := env.registry
