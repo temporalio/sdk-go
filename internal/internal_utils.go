@@ -41,15 +41,15 @@ import (
 )
 
 const (
-	// sdkVersionHeaderName refers to the name of the gRPC metadata header that contains the SDK version.
-	sdkVersionHeaderName = "temporal-sdk-version"
+	// clientVersionHeaderName refers to the name of the gRPC metadata header that contains the client version.
+	clientVersionHeaderName = "temporal-client-version"
 
-	// sdkFeatureVersionHeaderName refers to the name of the gRPC metadata header that contains the client feature version.
-	sdkFeatureVersionHeaderName = "temporal-sdk-feature-version"
+	// clientFeatureVersionHeaderName refers to the name of the gRPC metadata header that contains the client feature set version.
+	clientFeatureVersionHeaderName = "temporal-client-feature-version"
 
-	// sdkImplHeaderName refers to the name of the gRPC metadata header that contains the client implementation.
-	sdkImplHeaderName  = "temporal-sdk-name"
-	sdkImplHeaderValue = "temporal-go"
+	// clientImplHeaderName refers to the name of the gRPC metadata header that contains the client implementation.
+	clientImplHeaderName  = "temporal-client-name"
+	clientImplHeaderValue = "temporal-go"
 
 	// defaultRPCTimeout is the default gRPC rpc call timeout
 	defaultRPCTimeout = 10 * time.Second
@@ -62,9 +62,9 @@ const (
 var (
 	// call header to temporal server
 	headers = metadata.New(map[string]string{
-		sdkVersionHeaderName:        SDKVersion,
-		sdkFeatureVersionHeaderName: SDKFeatureVersion,
-		sdkImplHeaderName:           sdkImplHeaderValue,
+		clientVersionHeaderName:        SDKVersion,
+		clientFeatureVersionHeaderName: SDKFeatureVersion,
+		clientImplHeaderName:           clientImplHeaderValue,
 	})
 )
 

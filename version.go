@@ -22,13 +22,8 @@ package temporal
 
 import "go.temporal.io/temporal/internal"
 
-// SDKVersion is a semver string that represents
-// the version of this temporal client library
-// it will be embedded as a "version" header in every
-// rpc call made by this client to temporal server.
-// In addition, the version string will be used by
-// the server to enforce compatibility checks
-// Update to this version number is typically done
-// by the temporal team as part of a major feature or
-// behavior change
+// SDKVersion is a semver that represents the version of this Temporal SDK.
+// This represents API changes visible to Temporal SDK consumers, i.e. developers
+// that are writing workflows. So every time we change API that can affect them we have to change this number.
+// Format: MAJOR.MINOR.PATCH
 const SDKVersion = internal.SDKVersion
