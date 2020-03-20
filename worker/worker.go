@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/activity"
+	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/workflow"
 )
@@ -181,19 +182,17 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    service  - gRPC connection to the temporal server
 //    domain   - the name of the temporal domain
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process
 //    options  - configure any worker specific options like logger, metrics, identity
 func New(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
+	client client.Client,
 	taskList string,
 	options Options,
 ) Worker {
-	return internal.NewWorker(service, domain, taskList, options)
+	return internal.NewWorker(client, taskList, options)
 }
 
 // NewWorkflowReplayer creates a WorkflowReplayer instance.

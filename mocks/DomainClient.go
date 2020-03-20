@@ -84,3 +84,17 @@ func (_m *DomainClient) Update(ctx context.Context, request *workflowservice.Upd
 
 	return r0
 }
+
+// CloseConnection provides a mock function without given fields
+func (_m *DomainClient) CloseConnection() error {
+	ret := _m.Called()
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func() error); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}

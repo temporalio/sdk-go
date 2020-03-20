@@ -57,20 +57,8 @@ type (
 )
 
 // newWorkflowWorkerWithPressurePoints returns an instance of a workflow worker.
-func newWorkflowWorkerWithPressurePoints(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
-	params workerExecutionParameters,
-	pressurePoints map[string]map[string]string,
-	registry *registry,
-) (worker *workflowWorker) {
-	return newWorkflowWorker(
-		service,
-		domain,
-		params,
-		&pressurePointMgrImpl{config: pressurePoints, logger: params.Logger},
-		registry,
-	)
+func newWorkflowWorkerWithPressurePoints(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, pressurePoints map[string]map[string]string, registry *registry) (worker *workflowWorker) {
+	return newWorkflowWorker(service, params, &pressurePointMgrImpl{config: pressurePoints, logger: params.Logger}, registry)
 }
 
 func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {

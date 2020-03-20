@@ -24,11 +24,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/uber-go/tally"
 	"go.uber.org/zap"
-
-	"go.temporal.io/temporal-proto/workflowservice"
 )
 
 type (
@@ -86,39 +82,6 @@ type (
 		// default: false not to heartbeat.
 		AutoHeartBeat bool
 
-		// Optional: Sets an identify that can be used to track this host for debugging.
-		// default: default identity that include hostname, groupName and process ID.
-		Identity string
-
-		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
-		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
-		// options set.
-		// var (
-		// _safeCharacters = []rune{'_'}
-		// _sanitizeOptions = tally.SanitizeOptions{
-		// 	NameCharacters: tally.ValidCharacters{
-		// 		Ranges:     tally.AlphanumericRange,
-		// 		Characters: _safeCharacters,
-		// 	},
-		// 		KeyCharacters: tally.ValidCharacters{
-		// 			Ranges:     tally.AlphanumericRange,
-		// 			Characters: _safeCharacters,
-		// 		},
-		// 		ValueCharacters: tally.ValidCharacters{
-		// 			Ranges:     tally.AlphanumericRange,
-		// 			Characters: _safeCharacters,
-		// 		},
-		// 		ReplacementCharacter: tally.DefaultReplacementCharacter,
-		// 	}
-		// )
-		// opts := tally.ScopeOptions{
-		// 	Reporter:        reporter,
-		// 	SanitizeOptions: &_sanitizeOptions,
-		// }
-		// scope, _ := tally.NewRootScope(opts, time.Second)
-		// default: no metrics.
-		MetricsScope tally.Scope
-
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
 		Logger *zap.Logger
@@ -162,10 +125,6 @@ type (
 		// default: NonDeterministicWorkflowPolicyBlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
 
-		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
-		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
-		DataConverter DataConverter
-
 		// Optional: worker graceful shutdown timeout
 		// default: 0s
 		WorkerStopTimeout time.Duration
@@ -189,14 +148,6 @@ type (
 		// Optional: Specifies factories used to instantiate workflow interceptor chain
 		// The chain is instantiated per each replay of a workflow execution
 		WorkflowInterceptorChainFactories []WorkflowInterceptorFactory
-
-		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
-		// default: no ContextPropagators
-		ContextPropagators []ContextPropagator
-
-		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
-		// default: no tracer - opentracing.NoopTracer
-		Tracer opentracing.Tracer
 	}
 )
 
@@ -228,16 +179,19 @@ func IsReplayDomain(dn string) bool {
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
-// service 	- gRPC connection to the temporal server.
-// domain - the name of the temporal domain.
-// taskList 	- is the task list name you use to identify your client worker, also
-// 		  identifies group of workflow and activity implementations that are hosted by a single worker process.
-// options 	-  configure any worker specific options like logger, metrics, identity.
+// client   - client created with client.NewClient().
+// taskList - is the task list name you use to identify your client worker, also
+//            identifies group of workflow and activity implementations that are hosted by a single worker process.
+// options 	- configure any worker specific options.
 func NewWorker(
-	service workflowservice.WorkflowServiceClient,
-	domain string,
+	client Client,
 	taskList string,
 	options WorkerOptions,
 ) *AggregatedWorker {
-	return newAggregatedWorker(service, domain, taskList, options)
+	// TODO: refactor and remove this downcast: https://github.com/temporalio/temporal-go-sdk/issues/70
+	workflowClient, ok := client.(*WorkflowClient)
+	if !ok {
+		panic("Client must be created with client.NewClient()")
+	}
+	return NewAggregatedWorker(workflowClient, taskList, options)
 }

@@ -32,24 +32,24 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal"
 	"go.temporal.io/temporal-proto/enums"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/goleak"
+	"go.uber.org/zap"
+
+	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/interceptors"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
-	"go.uber.org/goleak"
-	"go.uber.org/zap"
 )
 
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	config       Config
-	rpcClient    *rpcClient
-	libClient    client.Client
+	client       client.Client
 	activities   *Activities
 	workflows    *Workflows
 	worker       worker.Worker
@@ -94,17 +94,17 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.config = newConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.Nil(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	rpcClient, err := newRPCClient(ts.config.ServiceAddr)
+	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
+	var err error
+	ts.client, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, DomainName: domainName})
 	ts.NoError(err)
-	ts.rpcClient = rpcClient
-	ts.libClient = client.NewClient(ts.rpcClient.WorkflowServiceClient, domainName, &client.Options{})
 	ts.registerDomain()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.rpcClient.Close()
+	err := ts.client.CloseConnection()
+	ts.NoError(err)
 
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
@@ -120,7 +120,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 			ts.FailNow("leaks timed out but no error, should be impossible")
 		case <-time.After(time.Second):
 			// https://github.com/temporalio/temporal-go-client/issues/51
-			last = goleak.FindLeaks(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
+			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
 			if last == nil {
 				// no leak, done waiting
 				return
@@ -142,7 +142,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
-	ts.worker = worker.New(ts.rpcClient.WorkflowServiceClient, domainName, ts.taskListName, options)
+	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -225,11 +225,11 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-cancellation"), ts.workflows.Basic)
 	ts.NoError(err)
 	ts.NotNil(run)
-	ts.Nil(ts.libClient.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
 	_, ok := err.(*temporal.CanceledError)
@@ -239,10 +239,10 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-stack-trace-query"), ts.workflows.Basic)
 	ts.NoError(err)
-	value, err := ts.libClient.QueryWorkflow(ctx, "test-stack-trace-query", run.GetRunID(), "__stack_trace")
+	value, err := ts.client.QueryWorkflow(ctx, "test-stack-trace-query", run.GetRunID(), "__stack_trace")
 	ts.NoError(err)
 	ts.NotNil(value)
 	var trace string
@@ -257,7 +257,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	// to ensure that consistent query must wait in order to satisfy consistency
 	wfOpts := ts.startWorkflowOptions("test-consistent-query")
 	wfOpts.DecisionTaskStartToCloseTimeout = 5 * time.Second
-	run, err := ts.libClient.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
 	ts.Nil(err)
 	// Wait for a second to ensure that first decision task gets started and completed before we send signal.
 	// Query cannot be run until first decision task has been completed.
@@ -265,10 +265,10 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	// decision task. So query will be blocked waiting for signal to complete, this is not what we want because it
 	// will not exercise the consistent query code path.
 	<-time.After(time.Second)
-	err = ts.libClient.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
+	err = ts.client.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
 	ts.NoError(err)
 
-	value, err := ts.libClient.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+	value, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
@@ -373,7 +373,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
 	for {
-		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
@@ -390,7 +390,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 
 	for {
-		resp, err := ts.libClient.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
@@ -420,10 +420,10 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx,
+	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
-	value, err := ts.libClient.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
@@ -432,15 +432,17 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 }
 
 func (ts *IntegrationTestSuite) registerDomain() {
-	client := client.NewDomainClient(ts.rpcClient.WorkflowServiceClient, &client.Options{})
+	client, err := client.NewDomainClient(client.Options{HostPort: ts.config.ServiceAddr})
+	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := domainName
 	retention := int32(1)
-	err := client.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err = client.Register(ctx, &workflowservice.RegisterDomainRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
+	_ = client.CloseConnection()
 	if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
 		return
 	}
@@ -472,13 +474,13 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	run, err := ts.libClient.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
 	if err != nil {
 		return err
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.libClient.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

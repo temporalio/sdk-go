@@ -18,47 +18,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package test
+package metrics
 
 import (
-	"os"
-	"strings"
+	"time"
 
-	"go.temporal.io/temporal/client"
+	"github.com/uber-go/tally"
+	"go.temporal.io/temporal-proto/serviceerror"
 )
 
-// Config contains the integration test configuration
-type Config struct {
-	ServiceAddr string
-	IsStickyOff bool
-	Debug       bool
-}
-
-func newConfig() Config {
-	cfg := Config{
-		ServiceAddr: client.DefaultHostPort,
-		IsStickyOff: true,
+type (
+	operationScope struct {
+		scope     tally.Scope
+		startTime time.Time
 	}
-	if addr := getEnvServiceAddr(); addr != "" {
-		cfg.ServiceAddr = addr
-	}
-	if so := getEnvStickyOff(); so != "" {
-		cfg.IsStickyOff = so == "true"
-	}
-	if debug := getDebug(); debug != "" {
-		cfg.Debug = debug == "true"
-	}
-	return cfg
-}
+)
 
-func getEnvServiceAddr() string {
-	return strings.TrimSpace(os.Getenv("SERVICE_ADDR"))
-}
-
-func getEnvStickyOff() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("STICKY_OFF")))
-}
-
-func getDebug() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
+func (s *operationScope) handleError(err error) {
+	s.scope.Timer(TemporalLatency).Record(time.Since(s.startTime))
+	if err != nil {
+		switch err.(type) {
+		case *serviceerror.NotFound,
+			*serviceerror.InvalidArgument,
+			*serviceerror.DomainAlreadyExists,
+			*serviceerror.WorkflowExecutionAlreadyStarted,
+			*serviceerror.QueryFailed:
+			s.scope.Counter(TemporalInvalidRequest).Inc(1)
+		default:
+			s.scope.Counter(TemporalError).Inc(1)
+		}
+	}
 }

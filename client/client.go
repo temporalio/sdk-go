@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
+
 // Package client is used by external programs to communicate with Temporal service.
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
 package client
@@ -34,6 +36,12 @@ import (
 )
 
 const (
+	// DefaultHostPort is the host:port which is used if not passed with options.
+	DefaultHostPort = internal.LocalHostPort
+
+	// DefaultDomainName is the domain name which is used if not passed with options.
+	DefaultDomainName = internal.DefaultDomainName
+
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the encoded.Value.
 	QueryTypeStackTrace string = internal.QueryTypeStackTrace
@@ -47,25 +55,31 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
+	// GRPCDialer can be used to set custom gRPC connection creation logic.
+	GRPCDialer = internal.GRPCDialer
+
+	// GRPCDialerParams are passed to GRPCDialer and must be used to create gRPC connection.
+	GRPCDialerParams = internal.GRPCDialerParams
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
-	// HistoryEventIterator is a iterator which can return history events
+	// HistoryEventIterator is a iterator which can return history events.
 	HistoryEventIterator = internal.HistoryEventIterator
 
-	// WorkflowRun represents a started non child workflow
+	// WorkflowRun represents a started non child workflow.
 	WorkflowRun = internal.WorkflowRun
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
 	WorkflowIDReusePolicy = internal.WorkflowIDReusePolicy
 
-	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions
+	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
 
-	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions
+	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
 
-	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed
+	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed.
 	ParentClosePolicy = internal.ParentClosePolicy
 
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -333,6 +347,9 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 
 	// DomainClient is the client for managing operations on the domain.
@@ -361,6 +378,9 @@ type (
 		//	- BadRequestError
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+
+		// CloseConnection closes underlying gRPC connection.
+		CloseConnection() error
 	}
 )
 
@@ -388,13 +408,13 @@ const (
 )
 
 // NewClient creates an instance of a workflow client
-func NewClient(service workflowservice.WorkflowServiceClient, domain string, options *Options) Client {
-	return internal.NewClient(service, domain, options)
+func NewClient(options Options) (Client, error) {
+	return internal.NewClient(options)
 }
 
 // NewDomainClient creates an instance of a domain client, to manage lifecycle of domains.
-func NewDomainClient(service workflowservice.WorkflowServiceClient, options *Options) DomainClient {
-	return internal.NewDomainClient(service, options)
+func NewDomainClient(options Options) (DomainClient, error) {
+	return internal.NewDomainClient(options)
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
