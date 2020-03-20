@@ -321,16 +321,15 @@ type (
 		// default: default
 		DomainName string
 
-		// Optional: Metrics to be reported. Metrics emitted by the temporal client are not prometheus compatible by
-		// default. To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer
-		// options set.
+		// Optional: Metrics to be reported.
+		// To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer options set.
 		// var (
 		// _safeCharacters = []rune{'_'}
 		// _sanitizeOptions = tally.SanitizeOptions{
-		// 	NameCharacters: tally.ValidCharacters{
-		// 		Ranges:     tally.AlphanumericRange,
-		// 		Characters: _safeCharacters,
-		// 	},
+		// 		NameCharacters: tally.ValidCharacters{
+		// 			Ranges:     tally.AlphanumericRange,
+		// 			Characters: _safeCharacters,
+		// 		},
 		// 		KeyCharacters: tally.ValidCharacters{
 		// 			Ranges:     tally.AlphanumericRange,
 		// 			Characters: _safeCharacters,
