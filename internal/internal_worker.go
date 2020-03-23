@@ -53,6 +53,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 const (
@@ -1531,8 +1532,8 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 }
 
+// setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
-	// This should be needed only in unit tests.
 	if client.dataConverter == nil {
 		client.dataConverter = getDefaultDataConverter()
 	}
@@ -1541,6 +1542,9 @@ func setClientDefaults(client *WorkflowClient) {
 	}
 	if client.tracer == nil {
 		client.tracer = opentracing.NoopTracer{}
+	}
+	if client.metricsScope == nil {
+		client.metricsScope = metrics.NewTaggedScope(nil)
 	}
 }
 

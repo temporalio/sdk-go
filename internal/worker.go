@@ -42,7 +42,8 @@ type (
 		// Notice that the number is represented in float, so that you can set it to less than
 		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
 		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value. Default: 100k
+		// The zero value of this uses the default value
+		// default: 100k
 		WorkerActivitiesPerSecond float64
 
 		// Optional: To set the maximum concurrent local activity executions this worker can have.
@@ -55,7 +56,8 @@ type (
 		// Notice that the number is represented in float, so that you can set it to less than
 		// 1 if needed. For example, set the number to 0.1 means you want your local activity to be executed
 		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value. Default: 100k
+		// The zero value of this uses the default value
+		// default: 100k
 		WorkerLocalActivitiesPerSecond float64
 
 		// Optional: Sets the rate limiting on number of activities that can be executed per second.
@@ -64,13 +66,14 @@ type (
 		// Notice that the number is represented in float, so that you can set it to less than
 		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
 		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value. Default: 100k
+		// The zero value of this uses the default value.
+		// default: 100k
 		TaskListActivitiesPerSecond float64
 
-		// optional: Sets the maximum number of goroutines that will concurrently poll the
+		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// cadence-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task list.
-		// Default value is 2
+		// default: 2
 		MaxConcurrentActivityTaskPollers int
 
 		// Optional: To set the maximum concurrent decision task executions this worker can have.
@@ -80,13 +83,14 @@ type (
 
 		// Optional: Sets the rate limiting on number of decision tasks that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
-		// The zero value of this uses the default value. Default: 100k
+		// The zero value of this uses the default value.
+		// default: 100k
 		WorkerDecisionTasksPerSecond float64
 
-		// optional: Sets the maximum number of goroutines that will concurrently poll the
+		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// cadence-server to retrieve decision tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task list.
-		// Default value is 2
+		// default: 2
 		MaxConcurrentDecisionTaskPollers int
 
 		// Optional: Logger framework can use to log.
@@ -109,18 +113,18 @@ type (
 		DisableActivityWorker bool
 
 		// Optional: Disable sticky execution.
-		// default: false
 		// Sticky Execution is to run the decision tasks for one workflow execution on same worker host. This is an
 		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
 		// memory. New decision task contains the new history events will be dispatched to the same worker. If this
 		// worker crashes, the sticky decision task will timeout after StickyScheduleToStartTimeout, and temporal server
 		// will clear the stickiness for that workflow execution and automatically reschedule a new decision task that
 		// is available for any worker to pick up and resume the progress.
+		// default: false
 		DisableStickyExecution bool
 
 		// Optional: Sticky schedule to start timeout.
-		// default: 5s
 		// The resolution is seconds. See details about StickyExecution on the comments for DisableStickyExecution.
+		// default: 5s
 		StickyScheduleToStartTimeout time.Duration
 
 		// Optional: sets context for activity. The context can be used to pass any configuration to activity

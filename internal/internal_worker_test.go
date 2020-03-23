@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1172,32 +1173,19 @@ func TestActivityNilArgs(t *testing.T) {
 	require.Equal(t, nilErr, reflectResults[0].Interface())
 }
 
-/*
-type encodingTest struct {
-	encoding encoding
-	input    []interface{}
-}
-
-	args := []interface{}{nil, nil, nil}
-	_, _, err := getValidatedActivityFunction(activityFn, args, newTestDataConverter())
-	require.Error(t, err) // testDataConverter cannot encode nil value
-}
-
 func TestWorkerOptionDefaults(t *testing.T) {
-	domain := "worker-options-test"
+	client := &WorkflowClient{}
 	taskList := "worker-options-tl"
-	worker := newAggregatedWorker(nil, domain, taskList, WorkerOptions{})
-	aggWorker, ok := worker.(*aggregatedWorker)
-	require.True(t, ok)
+	aggWorker := NewAggregatedWorker(client, taskList, WorkerOptions{})
 
-	decisionWorker, ok := aggWorker.workflowWorker.(*workflowWorker)
-	require.True(t, ok)
+	decisionWorker := aggWorker.workflowWorker
 	require.True(t, decisionWorker.executionParameters.Identity != "")
 	require.NotNil(t, decisionWorker.executionParameters.Logger)
 	require.NotNil(t, decisionWorker.executionParameters.MetricsScope)
 	require.Nil(t, decisionWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
+		DomainName:                           DefaultDomainName,
 		TaskList:                             taskList,
 		MaxConcurrentActivityPollers:         defaultConcurrentPollRoutineSize,
 		MaxConcurrentDecisionPollers:         defaultConcurrentPollRoutineSize,
@@ -1219,8 +1207,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 
 	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
 
-	activityWorker, ok := aggWorker.activityWorker.(*activityWorker)
-	require.True(t, ok)
+	activityWorker := aggWorker.activityWorker
 	require.True(t, activityWorker.executionParameters.Identity != "")
 	require.NotNil(t, activityWorker.executionParameters.Logger)
 	require.NotNil(t, activityWorker.executionParameters.MetricsScope)
@@ -1229,11 +1216,20 @@ func TestWorkerOptionDefaults(t *testing.T) {
 }
 
 func TestWorkerOptionNonDefaults(t *testing.T) {
-	domain := "worker-options-test"
 	taskList := "worker-options-tl"
 
+	client := &WorkflowClient{
+		workflowService:    nil,
+		connectionCloser:   nil,
+		domain:             "worker-options-test",
+		registry:           nil,
+		identity:           "143@worker-options-test-1",
+		dataConverter:      &defaultDataConverter{},
+		contextPropagators: nil,
+		tracer:             nil,
+	}
+
 	options := WorkerOptions{
-		Identity:                                "143@worker-options-test-1",
 		TaskListActivitiesPerSecond:             8888,
 		MaxConcurrentSessionExecutionSize:       3333,
 		MaxConcurrentDecisionTaskExecutionSize:  2222,
@@ -1245,20 +1241,14 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		WorkerDecisionTasksPerSecond:            111,
 		WorkerActivitiesPerSecond:               99,
 		StickyScheduleToStartTimeout:            555 * time.Minute,
-		DataConverter:                           &defaultDataConverter{},
 		BackgroundActivityContext:               context.Background(),
 		Logger:                                  zap.NewNop(),
-		MetricsScope:                            tally.NoopScope,
-		Tracer:                                  opentracing.NoopTracer{},
 	}
 
-	worker := newAggregatedWorker(nil, domain, taskList, options)
-	aggWorker, ok := worker.(*aggregatedWorker)
-	require.True(t, ok)
+	aggWorker := NewAggregatedWorker(client, taskList, options)
 
-	decisionWorker, ok := aggWorker.workflowWorker.(*workflowWorker)
-	require.True(t, len(decisionWorker.executionParameters.ContextPropagators) > 0)
-	require.True(t, ok)
+	decisionWorker := aggWorker.workflowWorker
+	require.Len(t, decisionWorker.executionParameters.ContextPropagators, 0)
 
 	expected := workerExecutionParameters{
 		TaskList:                             taskList,
@@ -1272,18 +1262,17 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
-		DataConverter:                        options.DataConverter,
-		Tracer:                               options.Tracer,
+		DataConverter:                        client.dataConverter,
+		Tracer:                               client.tracer,
 		Logger:                               options.Logger,
-		MetricsScope:                         options.MetricsScope,
-		Identity:                             options.Identity,
+		MetricsScope:                         client.metricsScope,
+		Identity:                             client.identity,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
 
-	activityWorker, ok := aggWorker.activityWorker.(*activityWorker)
-	require.True(t, ok)
-	require.True(t, len(activityWorker.executionParameters.ContextPropagators) > 0)
+	activityWorker := aggWorker.activityWorker
+	require.Len(t, activityWorker.executionParameters.ContextPropagators, 0)
 	assertWorkerExecutionParamsEqual(t, expected, activityWorker.executionParameters)
 }
 
@@ -1307,6 +1296,11 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 }
 
 /*
+type encodingTest struct {
+	encoding encoding
+	input    []interface{}
+}
+
 var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
 var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
 var thriftEncodingTests = []encodingTest{
