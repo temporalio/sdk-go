@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1172,14 +1173,136 @@ func TestActivityNilArgs(t *testing.T) {
 	require.Equal(t, nilErr, reflectResults[0].Interface())
 }
 
+func TestWorkerOptionDefaults(t *testing.T) {
+	client := &WorkflowClient{}
+	taskList := "worker-options-tl"
+	aggWorker := NewAggregatedWorker(client, taskList, WorkerOptions{})
+
+	decisionWorker := aggWorker.workflowWorker
+	require.True(t, decisionWorker.executionParameters.Identity != "")
+	require.NotNil(t, decisionWorker.executionParameters.Logger)
+	require.NotNil(t, decisionWorker.executionParameters.MetricsScope)
+	require.Nil(t, decisionWorker.executionParameters.ContextPropagators)
+
+	expected := workerExecutionParameters{
+		DomainName:                           DefaultDomainName,
+		TaskList:                             taskList,
+		MaxConcurrentActivityPollers:         defaultConcurrentPollRoutineSize,
+		MaxConcurrentDecisionPollers:         defaultConcurrentPollRoutineSize,
+		ConcurrentLocalActivityExecutionSize: defaultMaxConcurrentLocalActivityExecutionSize,
+		ConcurrentActivityExecutionSize:      defaultMaxConcurrentActivityExecutionSize,
+		ConcurrentDecisionTaskExecutionSize:  defaultMaxConcurrentTaskExecutionSize,
+		WorkerActivitiesPerSecond:            defaultTaskListActivitiesPerSecond,
+		WorkerDecisionTasksPerSecond:         defaultWorkerTaskExecutionRate,
+		TaskListActivitiesPerSecond:          defaultTaskListActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:       defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:         stickyDecisionScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                        getDefaultDataConverter(),
+		Tracer:                               opentracing.NoopTracer{},
+		Logger:                               decisionWorker.executionParameters.Logger,
+		MetricsScope:                         decisionWorker.executionParameters.MetricsScope,
+		Identity:                             decisionWorker.executionParameters.Identity,
+		UserContext:                          decisionWorker.executionParameters.UserContext,
+	}
+
+	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+
+	activityWorker := aggWorker.activityWorker
+	require.True(t, activityWorker.executionParameters.Identity != "")
+	require.NotNil(t, activityWorker.executionParameters.Logger)
+	require.NotNil(t, activityWorker.executionParameters.MetricsScope)
+	require.Nil(t, activityWorker.executionParameters.ContextPropagators)
+	assertWorkerExecutionParamsEqual(t, expected, activityWorker.executionParameters)
+}
+
+func TestWorkerOptionNonDefaults(t *testing.T) {
+	taskList := "worker-options-tl"
+
+	client := &WorkflowClient{
+		workflowService:    nil,
+		connectionCloser:   nil,
+		domain:             "worker-options-test",
+		registry:           nil,
+		identity:           "143@worker-options-test-1",
+		dataConverter:      &defaultDataConverter{},
+		contextPropagators: nil,
+		tracer:             nil,
+	}
+
+	options := WorkerOptions{
+		TaskListActivitiesPerSecond:             8888,
+		MaxConcurrentSessionExecutionSize:       3333,
+		MaxConcurrentDecisionTaskExecutionSize:  2222,
+		MaxConcurrentActivityExecutionSize:      1111,
+		MaxConcurrentLocalActivityExecutionSize: 101,
+		MaxConcurrentDecisionTaskPollers:        11,
+		MaxConcurrentActivityTaskPollers:        12,
+		WorkerLocalActivitiesPerSecond:          222,
+		WorkerDecisionTasksPerSecond:            111,
+		WorkerActivitiesPerSecond:               99,
+		StickyScheduleToStartTimeout:            555 * time.Minute,
+		BackgroundActivityContext:               context.Background(),
+		Logger:                                  zap.NewNop(),
+	}
+
+	aggWorker := NewAggregatedWorker(client, taskList, options)
+
+	decisionWorker := aggWorker.workflowWorker
+	require.Len(t, decisionWorker.executionParameters.ContextPropagators, 0)
+
+	expected := workerExecutionParameters{
+		TaskList:                             taskList,
+		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
+		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
+		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
+		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
+		ConcurrentDecisionTaskExecutionSize:  options.MaxConcurrentDecisionTaskExecutionSize,
+		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
+		WorkerDecisionTasksPerSecond:         options.WorkerDecisionTasksPerSecond,
+		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
+		DataConverter:                        client.dataConverter,
+		Tracer:                               client.tracer,
+		Logger:                               options.Logger,
+		MetricsScope:                         client.metricsScope,
+		Identity:                             client.identity,
+	}
+
+	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+
+	activityWorker := aggWorker.activityWorker
+	require.Len(t, activityWorker.executionParameters.ContextPropagators, 0)
+	assertWorkerExecutionParamsEqual(t, expected, activityWorker.executionParameters)
+}
+
+func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParameters, paramsB workerExecutionParameters) {
+	require.Equal(t, paramsA.TaskList, paramsA.TaskList)
+	require.Equal(t, paramsA.Identity, paramsB.Identity)
+	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
+	require.Equal(t, paramsA.Tracer, paramsB.Tracer)
+	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
+	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
+	require.Equal(t, paramsA.ConcurrentDecisionTaskExecutionSize, paramsB.ConcurrentDecisionTaskExecutionSize)
+	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
+	require.Equal(t, paramsA.WorkerDecisionTasksPerSecond, paramsB.WorkerDecisionTasksPerSecond)
+	require.Equal(t, paramsA.TaskListActivitiesPerSecond, paramsB.TaskListActivitiesPerSecond)
+	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
+	require.Equal(t, paramsA.MaxConcurrentDecisionPollers, paramsB.MaxConcurrentDecisionPollers)
+	require.Equal(t, paramsA.MaxConcurrentActivityPollers, paramsB.MaxConcurrentActivityPollers)
+	require.Equal(t, paramsA.NonDeterministicWorkflowPolicy, paramsB.NonDeterministicWorkflowPolicy)
+	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
+	require.Equal(t, paramsA.DisableStickyExecution, paramsB.DisableStickyExecution)
+}
+
 /*
 type encodingTest struct {
 	encoding encoding
 	input    []interface{}
 }
 
-var testWorkflowID1 = s.WorkflowExecution{WorkflowId: "testWID", RunId: "runID"}
-var testWorkflowID2 = s.WorkflowExecution{WorkflowId: "testWID2", RunId: "runID2"}
+var testWorkflowID1 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID"), RunId: common.StringPtr("runID")}
+var testWorkflowID2 = s.WorkflowExecution{WorkflowId: common.StringPtr("testWID2"), RunId: common.StringPtr("runID2")}
 var thriftEncodingTests = []encodingTest{
 	{&thriftEncoding{}, []interface{}{&testWorkflowID1}},
 	{&thriftEncoding{}, []interface{}{&testWorkflowID1, &testWorkflowID2}},

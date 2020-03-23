@@ -557,7 +557,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
-) (Value, error) {
+) (val Value, err error) {
 	params := executeLocalActivityParams{
 		localActivityOptions: localActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),

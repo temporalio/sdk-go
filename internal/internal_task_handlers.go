@@ -1808,7 +1808,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		return nil, ctx.Err()
 	}
-	if err != nil {
+	if err != nil && err != ErrActivityResultPending {
 		ath.logger.Error("Activity error.",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
 			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),

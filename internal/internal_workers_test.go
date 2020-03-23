@@ -95,12 +95,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		DomainName:                DefaultDomainName,
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    logger,
-		UserContext:               ctx,
-		UserContextCancel:         cancel,
+		DomainName:                   DefaultDomainName,
+		TaskList:                     "testTaskList",
+		MaxConcurrentDecisionPollers: 5,
+		Logger:                       logger,
+		UserContext:                  ctx,
+		UserContextCancel:            cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
@@ -118,10 +118,10 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                DefaultDomainName,
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    logger,
+		DomainName:                   DefaultDomainName,
+		TaskList:                     "testTaskList",
+		MaxConcurrentActivityPollers: 5,
+		Logger:                       logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -161,7 +161,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	executionParameters := workerExecutionParameters{
 		DomainName:                      DefaultDomainName,
 		TaskList:                        "testTaskList",
-		ConcurrentPollRoutineSize:       5,
+		MaxConcurrentActivityPollers:    5,
 		ConcurrentActivityExecutionSize: 2,
 		Logger:                          logger,
 		UserContext:                     ctx,
@@ -193,10 +193,10 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                DefaultDomainName,
-		TaskList:                  "testDecisionTaskList",
-		ConcurrentPollRoutineSize: 5,
-		Logger:                    zap.NewNop(),
+		DomainName:                   DefaultDomainName,
+		TaskList:                     "testDecisionTaskList",
+		MaxConcurrentDecisionPollers: 5,
+		Logger:                       zap.NewNop(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())

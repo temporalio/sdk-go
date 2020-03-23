@@ -21,6 +21,8 @@
 package temporal
 
 import (
+	"go.temporal.io/temporal-proto/serviceerror"
+
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/workflow"
 )
@@ -51,6 +53,12 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 // IsCustomError return if the err is a CustomError
 func IsCustomError(err error) bool {
 	_, ok := err.(*CustomError)
+	return ok
+}
+
+// IsWorkflowExecutionAlreadyStartedError return if the err is a WorkflowExecutionAlreadyStartedError
+func IsWorkflowExecutionAlreadyStartedError(err error) bool {
+	_, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted)
 	return ok
 }
 

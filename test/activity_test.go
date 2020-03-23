@@ -22,6 +22,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +86,21 @@ func (a *Activities) fail(_ context.Context) error {
 	return errFailOnPurpose
 }
 
+func (a *Activities) InspectActivityInfo(ctx context.Context, domain, taskList, wfType string) error {
+	a.append("inspectActivityInfo")
+	info := activity.GetInfo(ctx)
+	if info.WorkflowDomain != domain {
+		return fmt.Errorf("expected domainName %v but got %v", domain, info.WorkflowDomain)
+	}
+	if info.WorkflowType == nil || info.WorkflowType.Name != wfType {
+		return fmt.Errorf("expected workflowType %v but got %v", wfType, info.WorkflowType)
+	}
+	if info.TaskList != taskList {
+		return fmt.Errorf("expected taskList %v but got %v", taskList, info.TaskList)
+	}
+	return nil
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -129,4 +145,5 @@ func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivityWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
 	// Check prefix
 	worker.RegisterActivityWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
+	worker.RegisterActivityWithOptions(a.InspectActivityInfo, activity.RegisterOptions{Name: "inspectActivityInfo"})
 }
