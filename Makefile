@@ -23,9 +23,6 @@ INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)
 # Files that needs to run lint. Excludes testify mocks.
 LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
-gobin:
-	GO111MODULE=off go get -u github.com/myitcv/gobin
-
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
 copyright $(BUILD)/copyright: $(ALL_SRC)
@@ -87,8 +84,8 @@ define lint_if_present
 test -n "$1" && golint -set_exit_status $1
 endef
 
-lint: gobin $(ALL_SRC)
-	gobin -mod=readonly golang.org/x/lint/golint
+lint: $(ALL_SRC)
+	GO111MODULE=off go get -u golang.org/x/lint/golint
 	@$(foreach pkg,\
 		$(sort $(dir $(LINT_SRC))), \
 		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
@@ -100,11 +97,13 @@ lint: gobin $(ALL_SRC)
 		exit 1; \
 	fi
 
-staticcheck: gobin $(ALL_SRC)
-	gobin -mod=readonly -run honnef.co/go/tools/cmd/staticcheck ./...
+staticcheck: $(ALL_SRC)
+	GO111MODULE=off go get -u honnef.co/go/tools/cmd/staticcheck
+	staticcheck ./...
 
-errcheck: gobin $(ALL_SRC)
-	gobin -mod=readonly -run github.com/kisielk/errcheck ./...
+errcheck: $(ALL_SRC)
+	GO111MODULE=off go get -u github.com/kisielk/errcheck
+	errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)
@@ -112,4 +111,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: fmt lint errcheck staticcheck test
+check: fmt lint errcheck staticcheck copyright test
