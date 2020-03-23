@@ -2,14 +2,14 @@
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
-`temporal-client` is the framework for authoring workflows and activities.
+`temporal-go-sdk` is the framework for authoring workflows and activities using Go language.
 
 ## How to use
 
-Make sure you clone this repo into the correct location.
+Clone this repo into the preferred location.
 
 ```bash
-git clone git@github.com:temporalio/temporal-go-client.git $GOPATH/src/go.temporal.io/temporal
+git clone git@github.com:temporalio/temporal-go-sdk.git
 ```
 
 or
@@ -20,11 +20,11 @@ go get go.temporal.io/temporal
 
 See [samples](https://github.com/temporalio/temporal-go-samples) to get started. 
 
-Documentation is available [here](https://cadenceworkflow.io/docs/07_goclient/). 
+Documentation is available [here](https://docs.temporal.io/docs/07_goclient/). 
 You can also find the API documentation [here](https://godoc.org/go.temporal.io/temporal).
 
 ## Contributing
-We'd love your help in making the Temporal Go client great. Please review our [contribution guidelines](CONTRIBUTING.md).
+We'd love your help in making the Temporal Go SDK great. Please review our [contribution guidelines](CONTRIBUTING.md).
 
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.

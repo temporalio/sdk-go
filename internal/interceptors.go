@@ -21,10 +21,11 @@
 package internal
 
 import (
-	"github.com/uber-go/tally"
 	"time"
+
+	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
-import "go.uber.org/zap"
 
 // WorkflowInterceptorFactory is used to create a single link in the interceptor chain
 type WorkflowInterceptorFactory interface {

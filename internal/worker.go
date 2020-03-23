@@ -71,7 +71,7 @@ type (
 		TaskListActivitiesPerSecond float64
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
-		// cadence-server to retrieve activity tasks. Changing this value will affect the
+		// temporal-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task list.
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
@@ -88,7 +88,7 @@ type (
 		WorkerDecisionTasksPerSecond float64
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
-		// cadence-server to retrieve decision tasks. Changing this value will affect the
+		// temporal-server to retrieve decision tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task list.
 		// default: 2
 		MaxConcurrentDecisionTaskPollers int
