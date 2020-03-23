@@ -125,20 +125,23 @@ type (
 		// Task list name to poll.
 		TaskList string
 
-		// Defines how many concurrent poll requests for the task list by this worker.
-		ConcurrentPollRoutineSize int
-
 		// Defines how many concurrent activity executions by this worker.
 		ConcurrentActivityExecutionSize int
 
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
 
+		// MaxConcurrentActivityPollers is the max number of pollers for activity task list
+		MaxConcurrentActivityPollers int
+
 		// Defines how many concurrent decision task executions by this worker.
 		ConcurrentDecisionTaskExecutionSize int
 
 		// Defines rate limiting on number of decision tasks that can be executed per second per worker.
 		WorkerDecisionTasksPerSecond float64
+
+		// MaxConcurrentDecisionPollers is the max number of pollers for decision task list
+		MaxConcurrentDecisionPollers int
 
 		// Defines how many concurrent local activity executions by this worker.
 		ConcurrentLocalActivityExecutionSize int
@@ -271,7 +274,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
-		pollerCount:       params.ConcurrentPollRoutineSize,
+		pollerCount:       params.MaxConcurrentDecisionPollers,
 		pollerRate:        defaultPollerRate,
 		maxConcurrentTask: params.ConcurrentDecisionTaskExecutionSize,
 		maxTaskPerSecond:  params.WorkerDecisionTasksPerSecond,
@@ -365,7 +368,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	params.TaskList = sessionEnvironment.GetResourceSpecificTasklist()
 	activityWorker := newActivityWorker(service, params, overrides, env, nil)
 
-	params.ConcurrentPollRoutineSize = 1
+	params.MaxConcurrentActivityPollers = 1
 	params.TaskList = creationTasklist
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
@@ -424,7 +427,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:       workerParams.ConcurrentPollRoutineSize,
+			pollerCount:       workerParams.MaxConcurrentActivityPollers,
 			pollerRate:        defaultPollerRate,
 			maxConcurrentTask: workerParams.ConcurrentActivityExecutionSize,
 			maxTaskPerSecond:  workerParams.WorkerActivitiesPerSecond,
@@ -1316,9 +1319,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 	return history, nil
 }
 
-// NewAggregatedWorker returns an instance to manage the workers. Use defaultConcurrentPollRoutineSize (which is 2) as
-// poller size. The typical RTT (round-trip time) is below 1ms within data center. And the poll API latency is about 5ms.
-// With 2 poller, we could achieve around 300~400 RPS.
+// NewAggregatedWorker returns an instance to manage both activity and decision workers
 func NewAggregatedWorker(client *WorkflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
@@ -1331,13 +1332,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 	workerParams := workerExecutionParameters{
 		DomainName:                           client.domain,
 		TaskList:                             taskList,
-		ConcurrentPollRoutineSize:            defaultConcurrentPollRoutineSize,
 		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
 		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
+		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
 		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
 		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
 		ConcurrentDecisionTaskExecutionSize:  options.MaxConcurrentDecisionTaskExecutionSize,
 		WorkerDecisionTasksPerSecond:         options.WorkerDecisionTasksPerSecond,
+		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
 		Identity:                             client.identity,
 		MetricsScope:                         client.metricsScope,
 		Logger:                               options.Logger,
@@ -1431,7 +1433,8 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 				switch key {
 				case workerOptionsConfigConcurrentPollRoutineSize:
 					if size, err := strconv.Atoi(val); err == nil {
-						ep.ConcurrentPollRoutineSize = size
+						ep.MaxConcurrentActivityPollers = size
+						ep.MaxConcurrentDecisionPollers = size
 					}
 				}
 			}
@@ -1499,11 +1502,17 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.WorkerActivitiesPerSecond == 0 {
 		options.WorkerActivitiesPerSecond = defaultWorkerActivitiesPerSecond
 	}
+	if options.MaxConcurrentActivityTaskPollers <= 0 {
+		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
+	}
 	if options.MaxConcurrentDecisionTaskExecutionSize == 0 {
 		options.MaxConcurrentDecisionTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
 	}
 	if options.WorkerDecisionTasksPerSecond == 0 {
 		options.WorkerDecisionTasksPerSecond = defaultWorkerTaskExecutionRate
+	}
+	if options.MaxConcurrentDecisionTaskPollers <= 0 {
+		options.MaxConcurrentDecisionTaskPollers = defaultConcurrentPollRoutineSize
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize == 0 {
 		options.MaxConcurrentLocalActivityExecutionSize = defaultMaxConcurrentLocalActivityExecutionSize

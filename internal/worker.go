@@ -67,6 +67,12 @@ type (
 		// The zero value of this uses the default value. Default: 100k
 		TaskListActivitiesPerSecond float64
 
+		// optional: Sets the maximum number of goroutines that will concurrently poll the
+		// cadence-server to retrieve activity tasks. Changing this value will affect the
+		// rate at which the worker is able to consume tasks from a task list.
+		// Default value is 2
+		MaxConcurrentActivityTaskPollers int
+
 		// Optional: To set the maximum concurrent decision task executions this worker can have.
 		// The zero value of this uses the default value.
 		// default: defaultMaxConcurrentTaskExecutionSize(1k)
@@ -77,10 +83,11 @@ type (
 		// The zero value of this uses the default value. Default: 100k
 		WorkerDecisionTasksPerSecond float64
 
-		// Optional: if the activities need auto heart beating for those activities
-		// by the framework
-		// default: false not to heartbeat.
-		AutoHeartBeat bool
+		// optional: Sets the maximum number of goroutines that will concurrently poll the
+		// cadence-server to retrieve decision tasks. Changing this value will affect the
+		// rate at which the worker is able to consume tasks from a task list.
+		// Default value is 2
+		MaxConcurrentDecisionTaskPollers int
 
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.

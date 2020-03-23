@@ -112,8 +112,8 @@ const (
 
 	errTooManySessionsMsg string = "too many outstanding sessions"
 
-	defaultSessionHeartBeatTimeout = time.Second * 20
-	maxSessionHeartBeatInterval    = time.Second * 10
+	defaultSessionHeartBeatTimeout time.Duration = time.Second * 20
+	maxSessionHeartBeatInterval    time.Duration = time.Second * 10
 )
 
 var (

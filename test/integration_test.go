@@ -431,6 +431,16 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
+func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
+	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
+	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
+	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
+	ts.Nil(err)
+}
+
 func (ts *IntegrationTestSuite) registerDomain() {
 	client, err := client.NewDomainClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
