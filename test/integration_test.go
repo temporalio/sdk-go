@@ -133,7 +133,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 func (ts *IntegrationTestSuite) SetupTest() {
 	ts.seq++
 	ts.activities.clearInvoked()
-	ts.taskListName = fmt.Sprintf("tl-%v", ts.seq)
+	ts.taskListName = fmt.Sprintf("tl-%s-%v", ts.T().Name(), ts.seq)
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.tracer = newtracingInterceptorFactory()
