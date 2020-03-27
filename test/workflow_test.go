@@ -421,6 +421,7 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	})
+
 	_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, delay).Get(laCtx, nil)
 	queryResult = signalData
 	return nil
@@ -486,6 +487,26 @@ func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
 	return workflow.ExecuteActivity(ctx, "Activities_Sleep", d).Get(ctx, nil)
 }
 
+func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
+	info := workflow.GetInfo(ctx)
+	domain := info.Domain
+	wfType := info.WorkflowType.Name
+	taskList := info.TaskListName
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", domain, taskList, wfType).Get(ctx, nil)
+}
+
+func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
+	info := workflow.GetInfo(ctx)
+	domain := info.Domain
+	wfType := info.WorkflowType.Name
+	taskList := info.TaskListName
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	activites := Activities{}
+	return workflow.ExecuteLocalActivity(
+		ctx, activites.InspectActivityInfo, domain, taskList, wfType).Get(ctx, nil)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
@@ -500,6 +521,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.InspectActivityInfo)
+	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
 	worker.RegisterWorkflow(w.sleep)
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
@@ -517,6 +540,13 @@ func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
 		StartToCloseTimeout:    9 * time.Second,
 	}
 }
+
+func (w *Workflows) defaultLocalActivityOptions() workflow.LocalActivityOptions {
+	return workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	}
+}
+
 func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
 	return workflow.ActivityOptions{
 		ScheduleToStartTimeout: 5 * time.Second,

@@ -177,10 +177,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 	domain := "testDomain"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 4,
-		Logger:                    logger,
-		Tracer:                    opentracing.NoopTracer{},
+		TaskList:                     "testTaskList",
+		MaxConcurrentActivityPollers: 4,
+		MaxConcurrentDecisionPollers: 4,
+		Logger:                       logger,
+		Tracer:                       opentracing.NoopTracer{},
 	}
 
 	domainStatus := enums.DomainStatusRegistered
@@ -207,10 +208,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskList:                  "testTaskList",
-		ConcurrentPollRoutineSize: 10,
-		Logger:                    logger,
-		Tracer:                    opentracing.NoopTracer{},
+		TaskList:                     "testTaskList",
+		MaxConcurrentActivityPollers: 10,
+		MaxConcurrentDecisionPollers: 10,
+		Logger:                       logger,
+		Tracer:                       opentracing.NoopTracer{},
 	}
 
 	// Register activity instances and launch the worker.
