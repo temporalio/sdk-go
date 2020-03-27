@@ -29,6 +29,7 @@
 package evictiontest
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -41,7 +42,6 @@ import (
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/atomic"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/temporal/internal"

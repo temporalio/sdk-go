@@ -21,11 +21,11 @@
 package internal
 
 import (
+	"context"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/net/context"
 
 	commonproto "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/enums"
