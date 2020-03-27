@@ -23,7 +23,7 @@ services:
           - statsd
 
   temporal:
-    image: temporalio/temporal:master-auto-setup
+    image: temporalio/auto-setup:latest
     ports:
       - "7233:7233"
       - "7234:7234"
