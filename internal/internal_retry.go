@@ -68,9 +68,9 @@ func isServiceTransientError(err error) bool {
 	case *serviceerror.InvalidArgument,
 		*serviceerror.NotFound,
 		*serviceerror.WorkflowExecutionAlreadyStarted,
-		*serviceerror.DomainAlreadyExists,
+		*serviceerror.NamespaceAlreadyExists,
 		*serviceerror.QueryFailed,
-		*serviceerror.DomainNotActive,
+		*serviceerror.NamespaceNotActive,
 		*serviceerror.CancellationAlreadyRequested:
 		return false
 	}

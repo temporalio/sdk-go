@@ -269,23 +269,23 @@ func (wc *workflowEnvironmentImpl) Complete(result []byte, err error) {
 	wc.completeHandler(result, err)
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(domainName string, workflowID string) {
+func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(namespace string, workflowID string) {
 	// For cancellation of child workflow only, we do not use cancellation ID and run ID
-	wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, "", "", true)
+	wc.decisionsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true)
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName, workflowID, runID string, callback resultHandler) {
+func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler) {
 	// for cancellation of external workflow, we have to use cancellation ID and set isChildWorkflowOnly to false
 	cancellationID := wc.GenerateSequenceID()
-	decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(domainName, workflowID, runID, cancellationID, false)
+	decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
 	decision.setData(&scheduledCancellation{callback: callback})
 }
 
-func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string,
+func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string,
 	input []byte, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback resultHandler) {
 
 	signalID := wc.GenerateSequenceID()
-	decision := wc.decisionsHelper.signalExternalWorkflowExecution(domainName, workflowID, runID, signalName, input, signalID, childWorkflowOnly)
+	decision := wc.decisionsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input, signalID, childWorkflowOnly)
 	decision.setData(&scheduledSignal{callback: callback})
 }
 
@@ -361,7 +361,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 
 	attributes := &commonproto.StartChildWorkflowExecutionDecisionAttributes{}
 
-	attributes.Domain = params.domain
+	attributes.Namespace = params.namespace
 	attributes.TaskList = &commonproto.TaskList{Name: params.taskListName}
 	attributes.WorkflowId = params.workflowID
 	attributes.ExecutionStartToCloseTimeoutSeconds = params.executionStartToCloseTimeoutSeconds

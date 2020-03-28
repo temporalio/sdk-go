@@ -139,7 +139,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	cacheSize := 5
 	internal.SetStickyWorkflowCacheSize(cacheSize)
 	// once for workflow worker because we disable activity worker
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
 	// feed our worker exactly *cacheSize* "legit" decision tasks
 	// these are handcrafted decision tasks that are not blatantly obviously mocks
 	// the goal is to trick our worker into thinking they are real so it

@@ -396,7 +396,7 @@ Query API
 A workflow execution could be stuck at some state for longer than expected period. Temporal provide facilities to query
 the current call stack of a workflow execution. You can use tctl to do the query, for example:
 
-	tctl --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt __stack_trace
+	tctl --namespace samples-namespace workflow query -w my_workflow_id -r my_run_id -qt __stack_trace
 
 The above cli command uses __stack_trace as the query type. The __stack_trace is a built-in query type that is
 supported by temporal client library. You can also add your own custom query types to support thing like query current
@@ -432,7 +432,7 @@ query handler using workflow.SetQueryHandler in your workflow code:
 The above sample code sets up a query handler to handle query type "state". With that, you should be able to query with
 cli:
 
-	tctl --domain samples-domain workflow query -w my_workflow_id -r my_run_id -qt state
+	tctl --namespace samples-namespace workflow query -w my_workflow_id -r my_run_id -qt state
 
 Besides using tctl, you can also issue query from code using QueryWorkflow() API on temporal Client object.
 

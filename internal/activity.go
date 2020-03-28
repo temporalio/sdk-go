@@ -42,7 +42,7 @@ type (
 	ActivityInfo struct {
 		TaskToken          []byte
 		WorkflowType       *WorkflowType
-		WorkflowDomain     string
+		WorkflowNamespace  string
 		WorkflowExecution  WorkflowExecution
 		ActivityID         string
 		ActivityType       ActivityType
@@ -134,7 +134,7 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 		TaskList:           env.taskList,
 		Attempt:            env.attempt,
 		WorkflowType:       env.workflowType,
-		WorkflowDomain:     env.workflowDomain,
+		WorkflowNamespace:  env.workflowNamespace,
 	}
 }
 
@@ -215,7 +215,7 @@ type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
 	Heartbeat(details []byte) error
 	Close(flushBufferedHeartbeat bool)
-	GetClient(domain string, options ClientOptions) Client
+	GetClient(namespace string, options ClientOptions) Client
 }
 
 // WithActivityTask adds activity specific information into context.
@@ -276,7 +276,7 @@ func WithActivityTask(
 		workflowType: &WorkflowType{
 			Name: task.WorkflowType.Name,
 		},
-		workflowDomain:     task.WorkflowDomain,
+		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
 		tracer:             tracer,

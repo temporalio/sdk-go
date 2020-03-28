@@ -159,9 +159,9 @@ func GetMetricsScope(ctx Context) tally.Scope {
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
 // then the currently running instance of that workflowID will be used.
-// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
-//	ctx := WithWorkflowDomain(ctx, "domain-name")
+//	ctx := WithWorkflowNamespace(ctx, "namespace")
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	return internal.RequestCancelExternalWorkflow(ctx, workflowID, runID)
@@ -171,9 +171,9 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
 // then the currently running instance of that workflowID will be used.
-// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
-//	ctx := WithWorkflowDomain(ctx, "domain-name")
+//	ctx := WithWorkflowNamespace(ctx, "namespace")
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)

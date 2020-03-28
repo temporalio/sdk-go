@@ -23,7 +23,7 @@ package internal
 const (
 	tagActivityID        = "ActivityID"
 	tagActivityType      = "ActivityType"
-	tagDomain            = "Domain"
+	tagNamespace         = "Namespace"
 	tagEventID           = "EventID"
 	tagEventType         = "EventType"
 	tagRunID             = "RunID"

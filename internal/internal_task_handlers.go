@@ -113,7 +113,7 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		domain                         string
+		namespace                      string
 		metricsScope                   *metrics.TaggedScope
 		ppMgr                          pressurePointMgr
 		logger                         *zap.Logger
@@ -370,7 +370,7 @@ func isPreloadMarkerEvent(event *commonproto.HistoryEvent) bool {
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		domain:                         params.DomainName,
+		namespace:                      params.Namespace,
 		logger:                         params.Logger,
 		ppMgr:                          ppMgr,
 		metricsScope:                   metrics.NewTaggedScope(params.MetricsScope),
@@ -526,7 +526,7 @@ func (w *workflowExecutionContextImpl) IsDestroyed() bool {
 func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
 	task.task = &workflowservice.ResetStickyTaskListRequest{
-		Domain: w.workflowInfo.Domain,
+		Namespace: w.workflowInfo.Namespace,
 		Execution: &commonproto.WorkflowExecution{
 			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
 			RunId:      w.workflowInfo.WorkflowExecution.RunID,
@@ -613,12 +613,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		TaskListName:                        taskList.GetName(),
 		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
 		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
-		Domain:                              wth.domain,
+		Namespace:                           wth.namespace,
 		Attempt:                             attributes.GetAttempt(),
 		lastCompletionResult:                attributes.LastCompletionResult,
 		CronSchedule:                        attributes.CronSchedule,
 		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
-		ParentWorkflowDomain:                attributes.ParentWorkflowDomain,
+		ParentWorkflowNamespace:             attributes.ParentWorkflowNamespace,
 		ParentWorkflowExecution:             parentWorkflowExecution,
 		Memo:                                attributes.Memo,
 		SearchAttributes:                    attributes.SearchAttributes,
@@ -1338,7 +1338,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 		}
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 		decisionAttributes := d.GetRequestCancelExternalWorkflowExecutionDecisionAttributes()
-		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
+		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
 			return false
 		}
@@ -1351,7 +1351,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 		}
 		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
 		decisionAttributes := d.GetSignalExternalWorkflowExecutionDecisionAttributes()
-		if checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain()) ||
+		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
 			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
 			return false
@@ -1386,7 +1386,7 @@ func isDecisionMatchEvent(d *commonproto.Decision, e *commonproto.HistoryEvent, 
 		eventAttributes := e.GetStartChildWorkflowExecutionInitiatedEventAttributes()
 		decisionAttributes := d.GetStartChildWorkflowExecutionDecisionAttributes()
 		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
-			(strictMode && checkDomainsInDecisionAndEvent(eventAttributes.GetDomain(), decisionAttributes.GetDomain())) ||
+			(strictMode && checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace())) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
 			return false
 		}
@@ -1416,14 +1416,14 @@ func isSearchAttributesMatched(attrFromEvent, attrFromDecision *commonproto.Sear
 }
 
 // return true if the check fails:
-//    domain is not empty in decision
-//    and domain is not replayDomain
-//    and domains unmatch in decision and events
-func checkDomainsInDecisionAndEvent(eventDomainName, decisionDomainName string) bool {
-	if decisionDomainName == "" || IsReplayDomain(decisionDomainName) {
+//    namespace is not empty in decision
+//    and namespace is not replayNamespace
+//    and namespaces unmatch in decision and events
+func checkNamespacesInDecisionAndEvent(eventNamespace, decisionNamespace string) bool {
+	if decisionNamespace == "" || IsReplayNamespace(decisionNamespace) {
 		return false
 	}
-	return eventDomainName != decisionDomainName
+	return eventNamespace != decisionNamespace
 }
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
@@ -1691,7 +1691,7 @@ func (i *temporalInvoker) internalHeartBeat(details []byte) (bool, error) {
 		i.cancelHandler()
 		isActivityCancelled = true
 
-	case *serviceerror.NotFound, *serviceerror.DomainNotActive:
+	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
@@ -1716,7 +1716,7 @@ func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 	}
 }
 
-func (i *temporalInvoker) GetClient(domain string, options ClientOptions) Client {
+func (i *temporalInvoker) GetClient(namespace string, options ClientOptions) Client {
 	return NewServiceClient(i.service, nil, options)
 }
 
@@ -1877,11 +1877,11 @@ func recordActivityHeartbeatByID(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
 	identity string,
-	domain, workflowID, runID, activityID string,
+	namespace, workflowID, runID, activityID string,
 	details []byte,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIDRequest{
-		Domain:     domain,
+		Namespace:  namespace,
 		WorkflowID: workflowID,
 		RunID:      runID,
 		ActivityID: activityID,

@@ -58,7 +58,7 @@ func (w *scopeInterceptor) getOperationScope(method string) *operationScope {
 }
 
 func (w *scopeInterceptor) convertMethodToScope(method string) string {
-	// method is something like "/workflowservice.WorkflowService/RegisterDomain"
+	// method is something like "/workflowservice.WorkflowService/RegisterNamespace"
 	methodStart := strings.LastIndex(method, "/") + 1
 	return TemporalMetricsPrefix + method[methodStart:]
 }

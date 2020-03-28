@@ -174,7 +174,7 @@ func (s *InterfacesTestSuite) TearDownTest() {
 
 func (s *InterfacesTestSuite) TestInterface() {
 	logger, _ := zap.NewDevelopment()
-	domain := "testDomain"
+	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
 		TaskList:                     "testTaskList",
@@ -184,16 +184,16 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Tracer:                       opentracing.NoopTracer{},
 	}
 
-	domainStatus := enums.DomainStatusRegistered
-	domainDesc := &workflowservice.DescribeDomainResponse{
-		DomainInfo: &commonproto.DomainInfo{
-			Name:   domain,
-			Status: domainStatus,
+	namespaceStatus := enums.NamespaceStatusRegistered
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &commonproto.NamespaceInfo{
+			Name:   namespace,
+			Status: namespaceStatus,
 		},
 	}
 
 	// mocks
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).AnyTimes()
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()

@@ -59,9 +59,9 @@ type IntegrationTestSuite struct {
 }
 
 const (
-	ctxTimeout                 = 15 * time.Second
-	domainName                 = "integration-test-domain"
-	domainCacheRefreshInterval = 20 * time.Second
+	ctxTimeout                    = 15 * time.Second
+	namespace                     = "integration-test-namespace"
+	namespaceCacheRefreshInterval = 20 * time.Second
 )
 
 func TestIntegrationSuite(t *testing.T) {
@@ -96,9 +96,9 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.workflows = &Workflows{}
 	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
 	var err error
-	ts.client, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, DomainName: domainName})
+	ts.client, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, Namespace: namespace})
 	ts.NoError(err)
-	ts.registerDomain()
+	ts.registerNamespace()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -441,31 +441,31 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	ts.Nil(err)
 }
 
-func (ts *IntegrationTestSuite) registerDomain() {
-	client, err := client.NewDomainClient(client.Options{HostPort: ts.config.ServiceAddr})
+func (ts *IntegrationTestSuite) registerNamespace() {
+	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	name := domainName
+	name := namespace
 	retention := int32(1)
-	err = client.Register(ctx, &workflowservice.RegisterDomainRequest{
+	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
 	_ = client.CloseConnection()
-	if _, ok := err.(*serviceerror.DomainAlreadyExists); ok {
+	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}
 	ts.NoError(err)
-	time.Sleep(domainCacheRefreshInterval) // wait for domain cache refresh on temporal-server
-	// bellow is used to guarantee domain is ready
+	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
+	// bellow is used to guarantee namespace is ready
 	var dummyReturn string
-	err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
+	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
 		if _, ok := err.(*serviceerror.NotFound); ok {
-			time.Sleep(domainCacheRefreshInterval)
-			err = ts.executeWorkflow("test-domain-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
+			time.Sleep(namespaceCacheRefreshInterval)
+			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {
 			break
 		}

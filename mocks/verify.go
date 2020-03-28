@@ -26,4 +26,4 @@ import (
 
 // make sure mocks are in sync with interfaces
 var _ client.Client = (*Client)(nil)
-var _ client.DomainClient = (*DomainClient)(nil)
+var _ client.NamespaceClient = (*NamespaceClient)(nil)

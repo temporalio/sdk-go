@@ -89,13 +89,13 @@ func TestWorkersTestSuite(t *testing.T) {
 func (s *WorkersTestSuite) TestWorkflowWorker() {
 	logger, _ := zap.NewDevelopment()
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		DomainName:                   DefaultDomainName,
+		Namespace:                    DefaultNamespace,
 		TaskList:                     "testTaskList",
 		MaxConcurrentDecisionPollers: 5,
 		Logger:                       logger,
@@ -113,12 +113,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 func (s *WorkersTestSuite) TestActivityWorker() {
 	logger, _ := zap.NewDevelopment()
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                   DefaultDomainName,
+		Namespace:                    DefaultNamespace,
 		TaskList:                     "testTaskList",
 		MaxConcurrentActivityPollers: 5,
 		Logger:                       logger,
@@ -149,17 +149,17 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		WorkflowType: &commonproto.WorkflowType{
 			Name: "wType",
 		},
-		WorkflowDomain: "domain",
+		WorkflowNamespace: "namespace",
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		DomainName:                      DefaultDomainName,
+		Namespace:                       DefaultNamespace,
 		TaskList:                        "testTaskList",
 		MaxConcurrentActivityPollers:    5,
 		ConcurrentActivityExecutionSize: 2,
@@ -189,11 +189,11 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 }
 
 func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		DomainName:                   DefaultDomainName,
+		Namespace:                    DefaultNamespace,
 		TaskList:                     "testDecisionTaskList",
 		MaxConcurrentDecisionPollers: 5,
 		Logger:                       zap.NewNop(),
@@ -271,7 +271,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		createTestEventDecisionTaskStarted(11),
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonproto.WorkflowExecution{
@@ -411,7 +411,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		createTestEventDecisionTaskStarted(11),
 	}
 
-	s.service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonproto.WorkflowExecution{

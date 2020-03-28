@@ -127,7 +127,7 @@ type (
 		attempt            int32 // starts from 0.
 		heartbeatDetails   []byte
 		workflowType       *WorkflowType
-		workflowDomain     string
+		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer

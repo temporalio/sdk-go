@@ -74,13 +74,13 @@ type (
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
 		RegisterCancelHandler(handler func())
-		RequestCancelChildWorkflow(domainName, workflowID string)
-		RequestCancelExternalWorkflow(domainName, workflowID, runID string, callback resultHandler)
+		RequestCancelChildWorkflow(namespace, workflowID string)
+		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler)
 		ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input []byte))
-		SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
+		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value

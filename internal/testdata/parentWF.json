@@ -69,7 +69,7 @@
       "version": -24,
       "taskId": 50331658,
       "startChildWorkflowExecutionInitiatedEventAttributes": {
-        "domain": "samples-domain",
+        "namespace": "samples-namespace",
         "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
         "workflowType": {
           "name": "testReplayWorkflowFromFile"
@@ -92,7 +92,7 @@
       "version": -24,
       "taskId": 50331660,
       "childWorkflowExecutionStartedEventAttributes": {
-        "domain": "samples-domain",
+        "namespace": "samples-namespace",
         "initiatedEventId": 5,
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
@@ -151,7 +151,7 @@
       "taskId": 50331671,
       "signalExternalWorkflowExecutionInitiatedEventAttributes": {
         "decisionTaskCompletedEventId": 9,
-        "domain": "samples-domain",
+        "namespace": "samples-namespace",
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
           "runId": ""
@@ -170,7 +170,7 @@
       "taskId": 50331673,
       "externalWorkflowExecutionSignaledEventAttributes": {
         "initiatedEventId": 10,
-        "domain": "2896806f-7a10-47d0-b963-ad80dc5df011",
+        "namespace": "2896806f-7a10-47d0-b963-ad80dc5df011",
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
           "runId": ""
@@ -225,7 +225,7 @@
       "taskId": 50331684,
       "childWorkflowExecutionCompletedEventAttributes": {
         "result": "IkNoaWxkIHdvcmtmbG93IGV4ZWN1dGlvbiBjb21wbGV0ZWQgYWZ0ZXIgNSBydW5zIgo=",
-        "domain": "samples-domain",
+        "namespace": "samples-namespace",
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
           "runId": "1c4e88cc-37fa-4cd1-82b5-997c4c746678"

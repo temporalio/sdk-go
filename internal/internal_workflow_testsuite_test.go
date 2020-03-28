@@ -1780,7 +1780,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
 			ExecutionStartToCloseTimeout: time.Minute,
-			Domain:                       "test-domain",
+			Namespace:                    "test-namespace",
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, GetWorkflowInfo(ctx).WorkflowExecution)
@@ -1818,8 +1818,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 	signalName := "test-signal-name"
 	signalData := "test-signal-data"
 	workflowFn := func(ctx Context) error {
-		// set domain to be more specific
-		ctx = WithWorkflowDomain(ctx, "test-domain")
+		// set namespace to be more specific
+		ctx = WithWorkflowNamespace(ctx, "test-namespace")
 		f1 := SignalExternalWorkflow(ctx, "test-workflow-id1", "test-runid1", signalName, signalData)
 		f2 := SignalExternalWorkflow(ctx, "test-workflow-id2", "test-runid2", signalName, signalData)
 		f3 := SignalExternalWorkflow(ctx, "test-workflow-id3", "test-runid3", signalName, signalData)
@@ -1862,16 +1862,16 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 	env.RegisterWorkflow(workflowFn)
 
 	// signal1 should succeed
-	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1", signalName, signalData).Return(nil).Once()
+	env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1", signalName, signalData).Return(nil).Once()
 
 	// signal2 should fail
-	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id2", "test-runid2", signalName, signalData).Return(
-		func(domainName, workflowID, runID, signalName string, arg interface{}) error {
+	env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id2", "test-runid2", signalName, signalData).Return(
+		func(namespace, workflowID, runID, signalName string, arg interface{}) error {
 			return errors.New("unknown external workflow")
 		}).Once()
 
 	// signal3 should succeed with delay, mock match exactly the parameters
-	env.OnSignalExternalWorkflow("test-domain", "test-workflow-id3", "test-runid3", signalName, signalData).After(time.Minute).Return(nil).Once()
+	env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id3", "test-runid3", signalName, signalData).After(time.Minute).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
 	env.AssertExpectations(s.T())
@@ -1897,7 +1897,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 	workflowFn := func(ctx Context) error {
 
 		cwo := ChildWorkflowOptions{
-			Domain:                       "test-domain",
+			Namespace:                    "test-namespace",
 			ExecutionStartToCloseTimeout: time.Minute,
 		}
 
@@ -1924,8 +1924,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_CancelExternalWorkflow() {
 	workflowFn := func(ctx Context) error {
-		// set domain to be more specific
-		ctx = WithWorkflowDomain(ctx, "test-domain")
+		// set namespace to be more specific
+		ctx = WithWorkflowNamespace(ctx, "test-namespace")
 		f1 := RequestCancelExternalWorkflow(ctx, "test-workflow-id1", "test-runid1")
 		f2 := RequestCancelExternalWorkflow(ctx, "test-workflow-id2", "test-runid2")
 
@@ -1948,11 +1948,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelExternalWorkflow() {
 	env.RegisterWorkflow(workflowFn)
 
 	// cancellation 1 should succeed
-	env.OnRequestCancelExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1").Return(nil).Once()
+	env.OnRequestCancelExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1").Return(nil).Once()
 
 	// cancellation 2 should fail
-	env.OnRequestCancelExternalWorkflow("test-domain", "test-workflow-id2", "test-runid2").Return(
-		func(domainName, workflowID, runID string) error {
+	env.OnRequestCancelExternalWorkflow("test-namespace", "test-workflow-id2", "test-runid2").Return(
+		func(namespace, workflowID, runID string) error {
 			return errors.New("unknown external workflow")
 		}).Once()
 

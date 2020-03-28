@@ -69,15 +69,15 @@ func Test_Wrapper(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), time.Minute)
 	tests := []testCase{
 		// one case for each service call
-		{"DeprecateDomain", []interface{}{ctx, &workflowservice.DeprecateDomainRequest{}}, []interface{}{&workflowservice.DeprecateDomainResponse{}, nil}, []string{TemporalRequest}},
-		{"DescribeDomain", []interface{}{ctx, &workflowservice.DescribeDomainRequest{}}, []interface{}{&workflowservice.DescribeDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"DeprecateNamespace", []interface{}{ctx, &workflowservice.DeprecateNamespaceRequest{}}, []interface{}{&workflowservice.DeprecateNamespaceResponse{}, nil}, []string{TemporalRequest}},
+		{"DescribeNamespace", []interface{}{ctx, &workflowservice.DescribeNamespaceRequest{}}, []interface{}{&workflowservice.DescribeNamespaceResponse{}, nil}, []string{TemporalRequest}},
 		{"GetWorkflowExecutionHistory", []interface{}{ctx, &workflowservice.GetWorkflowExecutionHistoryRequest{}}, []interface{}{&workflowservice.GetWorkflowExecutionHistoryResponse{}, nil}, []string{TemporalRequest}},
 		{"ListClosedWorkflowExecutions", []interface{}{ctx, &workflowservice.ListClosedWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListClosedWorkflowExecutionsResponse{}, nil}, []string{TemporalRequest}},
 		{"ListOpenWorkflowExecutions", []interface{}{ctx, &workflowservice.ListOpenWorkflowExecutionsRequest{}}, []interface{}{&workflowservice.ListOpenWorkflowExecutionsResponse{}, nil}, []string{TemporalRequest}},
 		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{&workflowservice.PollForActivityTaskResponse{}, nil}, []string{TemporalRequest}},
 		{"PollForDecisionTask", []interface{}{ctx, &workflowservice.PollForDecisionTaskRequest{}}, []interface{}{&workflowservice.PollForDecisionTaskResponse{}, nil}, []string{TemporalRequest}},
 		{"RecordActivityTaskHeartbeat", []interface{}{ctx, &workflowservice.RecordActivityTaskHeartbeatRequest{}}, []interface{}{&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil}, []string{TemporalRequest}},
-		{"RegisterDomain", []interface{}{ctx, &workflowservice.RegisterDomainRequest{}}, []interface{}{&workflowservice.RegisterDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"RegisterNamespace", []interface{}{ctx, &workflowservice.RegisterNamespaceRequest{}}, []interface{}{&workflowservice.RegisterNamespaceResponse{}, nil}, []string{TemporalRequest}},
 		{"RequestCancelWorkflowExecution", []interface{}{ctx, &workflowservice.RequestCancelWorkflowExecutionRequest{}}, []interface{}{&workflowservice.RequestCancelWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
 		{"RespondActivityTaskCanceled", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledResponse{}, nil}, []string{TemporalRequest}},
 		{"RespondActivityTaskCompleted", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedResponse{}, nil}, []string{TemporalRequest}},
@@ -90,7 +90,7 @@ func Test_Wrapper(t *testing.T) {
 		{"StartWorkflowExecution", []interface{}{ctx, &workflowservice.StartWorkflowExecutionRequest{}}, []interface{}{&workflowservice.StartWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
 		{"TerminateWorkflowExecution", []interface{}{ctx, &workflowservice.TerminateWorkflowExecutionRequest{}}, []interface{}{&workflowservice.TerminateWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
 		{"ResetWorkflowExecution", []interface{}{ctx, &workflowservice.ResetWorkflowExecutionRequest{}}, []interface{}{&workflowservice.ResetWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
-		{"UpdateDomain", []interface{}{ctx, &workflowservice.UpdateDomainRequest{}}, []interface{}{&workflowservice.UpdateDomainResponse{}, nil}, []string{TemporalRequest}},
+		{"UpdateNamespace", []interface{}{ctx, &workflowservice.UpdateNamespaceRequest{}}, []interface{}{&workflowservice.UpdateNamespaceResponse{}, nil}, []string{TemporalRequest}},
 		// one case of invalid request
 		{"PollForActivityTask", []interface{}{ctx, &workflowservice.PollForActivityTaskRequest{}}, []interface{}{nil, serviceerror.NewNotFound("")}, []string{TemporalRequest, TemporalInvalidRequest}},
 		// one case of server error
@@ -121,10 +121,10 @@ func runTest(
 
 		mockService, wrapperService, closer, reporter := serviceFunc(t)
 		switch test.serviceMethod {
-		case "DeprecateDomain":
-			mockService.EXPECT().DeprecateDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "DescribeDomain":
-			mockService.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "DeprecateNamespace":
+			mockService.EXPECT().DeprecateNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "DescribeNamespace":
+			mockService.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "GetWorkflowExecutionHistory":
 			mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "ListClosedWorkflowExecutions":
@@ -139,8 +139,8 @@ func runTest(
 			mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RecordActivityTaskHeartbeatByID":
 			mockService.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "RegisterDomain":
-			mockService.EXPECT().RegisterDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "RegisterNamespace":
+			mockService.EXPECT().RegisterNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RequestCancelWorkflowExecution":
 			mockService.EXPECT().RequestCancelWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RespondActivityTaskCanceled":
@@ -167,8 +167,8 @@ func runTest(
 			mockService.EXPECT().TerminateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "ResetWorkflowExecution":
 			mockService.EXPECT().ResetWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "UpdateDomain":
-			mockService.EXPECT().UpdateDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "UpdateNamespace":
+			mockService.EXPECT().UpdateNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "QueryWorkflow":
 			mockService.EXPECT().QueryWorkflow(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RespondQueryTaskCompleted":

@@ -32,9 +32,9 @@ func WithChildOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	return internal.WithChildWorkflowOptions(ctx, cwo)
 }
 
-// WithWorkflowDomain adds a domain to the context.
-func WithWorkflowDomain(ctx Context, name string) Context {
-	return internal.WithWorkflowDomain(ctx, name)
+// WithWorkflowNamespace adds a namespace to the context.
+func WithWorkflowNamespace(ctx Context, name string) Context {
+	return internal.WithWorkflowNamespace(ctx, name)
 }
 
 // WithWorkflowTaskList adds a task list to the context.

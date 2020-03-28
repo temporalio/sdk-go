@@ -168,7 +168,7 @@ type (
 		taskListName                        string
 		executionStartToCloseTimeoutSeconds int32
 		taskStartToCloseTimeoutSeconds      int32
-		domain                              string
+		namespace                           string
 		workflowID                          string
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
@@ -423,7 +423,7 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 
 	// Set default values for the workflow execution.
 	wInfo := env.WorkflowInfo()
-	rootCtx = WithWorkflowDomain(rootCtx, wInfo.Domain)
+	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
 	rootCtx = WithExecutionStartToCloseTimeout(rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
@@ -1153,9 +1153,9 @@ func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
 		return nil, errWorkflowOptionBadRequest
 	}
 	info := GetWorkflowInfo(ctx)
-	if p.domain == "" {
-		// default to use current workflow's domain
-		p.domain = info.Domain
+	if p.namespace == "" {
+		// default to use current workflow's namespace
+		p.namespace = info.Namespace
 	}
 	if p.taskListName == "" {
 		// default to use current workflow's task list

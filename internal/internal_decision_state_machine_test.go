@@ -339,7 +339,7 @@ func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 
 func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	t.Parallel()
-	domain := "test-domain"
+	namespace := "test-namespace"
 	workflowID := "test-child-workflow"
 	runID := ""
 	cancellationID := ""
@@ -359,7 +359,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h.handleChildWorkflowExecutionStarted(workflowID)
 
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true)
 	require.Equal(t, decisionStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -383,7 +383,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 
 func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	t.Parallel()
-	domain := "test-domain"
+	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := ""
 	attributes := &commonproto.StartChildWorkflowExecutionDecisionAttributes{
@@ -427,7 +427,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	require.NotNil(t, err)
 
 	// cancel child workflow after child workflow is started
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true)
 	require.Equal(t, decisionStateCanceledAfterStarted, d.getState())
 
 	// send cancel request
@@ -465,7 +465,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 
 func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	t.Parallel()
-	domain := "test-domain"
+	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := ""
 	attributes := &commonproto.StartChildWorkflowExecutionDecisionAttributes{
@@ -484,7 +484,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	// child workflow started
 	h.handleChildWorkflowExecutionStarted(workflowID)
 	// cancel child workflow
-	h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, true)
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true)
 	// send cancel request
 	h.getDecisions(true)
 	// cancel request initiated
@@ -530,7 +530,7 @@ func Test_UpsertSearchAttributesDecisionStateMachine(t *testing.T) {
 
 func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	t.Parallel()
-	domain := "test-domain"
+	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := "test-run-id"
 	cancellationID := "1"
@@ -538,7 +538,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, false)
+	decision := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
@@ -550,7 +550,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	require.Equal(
 		t,
 		&commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-			Domain:            domain,
+			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           []byte(cancellationID),
@@ -576,7 +576,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 
 func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	t.Parallel()
-	domain := "test-domain"
+	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := "test-run-id"
 	cancellationID := "2"
@@ -584,7 +584,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// request cancel external workflow
-	decision := h.requestCancelExternalWorkflowExecution(domain, workflowID, runID, cancellationID, false)
+	decision := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
 	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
@@ -596,7 +596,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.Equal(
 		t,
 		&commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-			Domain:            domain,
+			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           []byte(cancellationID),

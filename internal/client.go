@@ -37,8 +37,8 @@ import (
 )
 
 const (
-	// DefaultDomainName is the domain name which is used if not passed with options.
-	DefaultDomainName = "default"
+	// DefaultNamespace is the namespace name which is used if not passed with options.
+	DefaultNamespace = "default"
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the EncodedValue.
@@ -60,7 +60,7 @@ type (
 		//     or
 		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
-		//	- EntityNotExistsError, if domain does not exists
+		//	- EntityNotExistsError, if namespace does not exists
 		//	- BadRequestError
 		//	- InternalServiceError
 		//
@@ -113,7 +113,7 @@ type (
 		// Note: options.WorkflowIDReusePolicy is default to WorkflowIDReusePolicyAllowDuplicate in this API;
 		// while in StartWorkflow/ExecuteWorkflow APIs it is default to WorkflowIdReusePolicyAllowDuplicateFailedOnly.
 		// The errors it can return:
-		//  - EntityNotExistsError, if domain does not exist
+		//  - EntityNotExistsError, if namespace does not exist
 		//  - BadRequestError
 		//	- InternalServiceError
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
@@ -181,12 +181,12 @@ type (
 		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
-		// domain name, workflowID, activityID are required, runID is optional.
+		// namespace name, workflowID, activityID are required, runID is optional.
 		// The errors it can return:
 		//  - ErrorWithDetails
 		//  - TimeoutError
 		//  - CanceledError
-		CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string, result interface{}, err error) error
+		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
@@ -200,7 +200,7 @@ type (
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- InternalServiceError
-		RecordActivityHeartbeatByID(ctx context.Context, domain, workflowID, runID, activityID string, details ...interface{}) error
+		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters
 		// The errors it can return:
@@ -230,9 +230,9 @@ type (
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
-		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
+		// cluster or target namespace is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
-		// by your domain to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
+		// by your namespace to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
@@ -317,9 +317,9 @@ type (
 		// default: localhost:7233
 		HostPort string
 
-		// Optional: To set the domain name for this client to work with.
+		// Optional: To set the namespace name for this client to work with.
 		// default: default
-		DomainName string
+		Namespace string
 
 		// Optional: Metrics to be reported.
 		// To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer options set.
@@ -443,7 +443,7 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     temporal --do <domain> wf desc -w <wf-id>
+	//     temporal --do <namespace> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If coefficient is 1.0 then it is used for all retries.
 		// Required, no default value.
@@ -476,32 +476,32 @@ type (
 		NonRetriableErrorReasons []string
 	}
 
-	// DomainClient is the client for managing operations on the domain.
-	// CLI, tools, ... can use this layer to manager operations on domain.
-	DomainClient interface {
-		// Register a domain with temporal server
+	// NamespaceClient is the client for managing operations on the namespace.
+	// CLI, tools, ... can use this layer to manager operations on namespace.
+	NamespaceClient interface {
+		// Register a namespace with temporal server
 		// The errors it can throw:
-		//	- DomainAlreadyExistsError
+		//	- NamespaceAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) error
+		Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error
 
-		// Describe a domain. The domain has 3 part of information
-		// DomainInfo - Which has Name, Status, Description, Owner Email
-		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// Describe a namespace. The namespace has 3 part of information
+		// NamespaceInfo - Which has Name, Status, Description, Owner Email
+		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Describe(ctx context.Context, name string) (*workflowservice.DescribeDomainResponse, error)
+		Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error)
 
-		// Update a domain.
+		// Update a namespace.
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
@@ -539,11 +539,11 @@ const (
 
 // NewClient creates an instance of a workflow client
 func NewClient(options ClientOptions) (Client, error) {
-	if len(options.DomainName) == 0 {
-		options.DomainName = DefaultDomainName
+	if len(options.Namespace) == 0 {
+		options.Namespace = DefaultNamespace
 	}
 
-	options.MetricsScope = tagScope(options.MetricsScope, tagDomain, options.DomainName, clientImplHeaderName, clientImplHeaderValue)
+	options.MetricsScope = tagScope(options.MetricsScope, tagNamespace, options.Namespace, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
 		options.HostPort = LocalHostPort
@@ -568,9 +568,9 @@ func NewClient(options ClientOptions) (Client, error) {
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
 func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
-	// DomainName can be empty in unit tests.
-	if len(options.DomainName) == 0 {
-		options.DomainName = DefaultDomainName
+	// Namespace can be empty in unit tests.
+	if len(options.Namespace) == 0 {
+		options.Namespace = DefaultNamespace
 	}
 
 	if len(options.Identity) == 0 {
@@ -590,7 +590,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
-		domain:             options.DomainName,
+		namespace:          options.Namespace,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
 		identity:           options.Identity,
@@ -600,8 +600,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 }
 
-// NewDomainClient creates an instance of a domain client, to manager lifecycle of domains.
-func NewDomainClient(options ClientOptions) (DomainClient, error) {
+// NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
+func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	options.MetricsScope = tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
 
 	if len(options.HostPort) == 0 {
@@ -622,15 +622,15 @@ func NewDomainClient(options ClientOptions) (DomainClient, error) {
 		return nil, err
 	}
 
-	return newDomainServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func newDomainServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options ClientOptions) DomainClient {
+func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options ClientOptions) NamespaceClient {
 	if len(options.Identity) == 0 {
 		options.Identity = getWorkerIdentity("")
 	}
 
-	return &domainClient{
+	return &namespaceClient{
 		workflowService:  workflowServiceClient,
 		connectionCloser: clientConn,
 		metricsScope:     options.MetricsScope,

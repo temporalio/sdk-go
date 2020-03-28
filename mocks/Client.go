@@ -70,13 +70,13 @@ func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result
 	return r0
 }
 
-// CompleteActivityByID provides a mock function with given fields: ctx, domain, workflowID, runID, activityID, result, err
-func (_m *Client) CompleteActivityByID(ctx context.Context, domain string, workflowID string, runID string, activityID string, result interface{}, err error) error {
-	ret := _m.Called(ctx, domain, workflowID, runID, activityID, result, err)
+// CompleteActivityByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, result, err
+func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
+	ret := _m.Called(ctx, namespace, workflowID, runID, activityID, result, err)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, interface{}, error) error); ok {
-		r0 = rf(ctx, domain, workflowID, runID, activityID, result, err)
+		r0 = rf(ctx, namespace, workflowID, runID, activityID, result, err)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -394,16 +394,16 @@ func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte,
 	return r0
 }
 
-// RecordActivityHeartbeatByID provides a mock function with given fields: ctx, domain, workflowID, runID, activityID, details
-func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, domain string, workflowID string, runID string, activityID string, details ...interface{}) error {
+// RecordActivityHeartbeatByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, details
+func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
 	var _ca []interface{}
-	_ca = append(_ca, ctx, domain, workflowID, runID, activityID)
+	_ca = append(_ca, ctx, namespace, workflowID, runID, activityID)
 	_ca = append(_ca, details...)
 	ret := _m.Called(_ca...)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...interface{}) error); ok {
-		r0 = rf(ctx, domain, workflowID, runID, activityID, details...)
+		r0 = rf(ctx, namespace, workflowID, runID, activityID, details...)
 	} else {
 		r0 = ret.Error(0)
 	}

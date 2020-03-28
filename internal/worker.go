@@ -180,13 +180,13 @@ const (
 	// to fail the workflow execution.
 	NonDeterministicWorkflowPolicyFailWorkflow
 
-	// ReplayDomainName is domainName for replay because startEvent doesn't contain it
-	ReplayDomainName = "ReplayDomain"
+	// ReplayNamespace is namespace for replay because startEvent doesn't contain it
+	ReplayNamespace = "ReplayNamespace"
 )
 
-// IsReplayDomain checks if the domainName is from replay
-func IsReplayDomain(dn string) bool {
-	return ReplayDomainName == dn
+// IsReplayNamespace checks if the namespace is from replay
+func IsReplayNamespace(dn string) bool {
+	return ReplayNamespace == dn
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
