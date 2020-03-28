@@ -44,7 +44,7 @@ import (
 
 // Assert that structs do indeed implement the interfaces
 var _ Client = (*WorkflowClient)(nil)
-var _ DomainClient = (*domainClient)(nil)
+var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
 	defaultDecisionTaskTimeoutInSecs = 10
@@ -60,7 +60,7 @@ type (
 	WorkflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
 		connectionCloser   io.Closer
-		domain             string
+		namespace          string
 		registry           *registry
 		metricsScope       *metrics.TaggedScope
 		identity           string
@@ -69,8 +69,8 @@ type (
 		tracer             opentracing.Tracer
 	}
 
-	// domainClient is the client for managing domains.
-	domainClient struct {
+	// namespaceClient is the client for managing namespaces.
+	namespaceClient struct {
 		workflowService  workflowservice.WorkflowServiceClient
 		connectionCloser io.Closer
 		metricsScope     tally.Scope
@@ -206,7 +206,7 @@ func (wc *WorkflowClient) StartWorkflow(
 
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
-		Domain:                              wc.domain,
+		Namespace:                           wc.namespace,
 		RequestId:                           uuid.New(),
 		WorkflowId:                          workflowID,
 		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
@@ -322,7 +322,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 	}
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
-		Domain: wc.domain,
+		Namespace: wc.namespace,
 		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -396,7 +396,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	header := wc.getWorkflowHeader(ctx)
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
-		Domain:                              wc.domain,
+		Namespace:                           wc.namespace,
 		RequestId:                           uuid.New(),
 		WorkflowId:                          workflowID,
 		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
@@ -448,7 +448,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
-		Domain: wc.domain,
+		Namespace: wc.namespace,
 		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -470,7 +470,7 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
-		Domain: wc.domain,
+		Namespace: wc.namespace,
 		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -495,10 +495,10 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
 	isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator {
 
-	domain := wc.domain
+	namespace := wc.namespace
 	paginate := func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 		request := &workflowservice.GetWorkflowExecutionHistoryRequest{
-			Domain: domain,
+			Namespace: namespace,
 			Execution: &commonproto.WorkflowExecution{
 				WorkflowId: workflowID,
 				RunId:      runID,
@@ -565,12 +565,12 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 }
 
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
-// It takes domain name, workflowID, runID, activityID as arguments.
-func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string,
+// It takes namespace name, workflowID, runID, activityID as arguments.
+func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string,
 	result interface{}, err error) error {
 
-	if activityID == "" || workflowID == "" || domain == "" {
-		return errors.New("empty activity or workflow id or domainName")
+	if activityID == "" || workflowID == "" || namespace == "" {
+		return errors.New("empty activity or workflow id or namespace")
 	}
 
 	var data []byte
@@ -582,7 +582,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, domain, work
 		}
 	}
 
-	request := convertActivityResultToRespondRequestByID(wc.identity, domain, workflowID, runID, activityID, data, err, wc.dataConverter)
+	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID, data, err, wc.dataConverter)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
 }
 
@@ -597,12 +597,12 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
-	domain, workflowID, runID, activityID string, details ...interface{}) error {
+	namespace, workflowID, runID, activityID string, details ...interface{}) error {
 	data, err := encodeArgs(wc.dataConverter, details)
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, domain, workflowID, runID, activityID, data)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, namespace, workflowID, runID, activityID, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
@@ -611,8 +611,8 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - InternalServiceError
 //  - EntityNotExistError
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListClosedWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -635,8 +635,8 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - InternalServiceError
 //  - EntityNotExistError
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListOpenWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -655,8 +655,8 @@ func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 
 // ListWorkflow implementation
 func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -675,8 +675,8 @@ func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowser
 
 // ListArchivedWorkflow implementation
 func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListArchivedWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -707,8 +707,8 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 
 // ScanWorkflow implementation
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ScanWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -727,8 +727,8 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 
 // CountWorkflow implementation
 func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
-	if len(request.GetDomain()) == 0 {
-		request.Domain = wc.domain
+	if len(request.GetNamespace()) == 0 {
+		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.CountWorkflowExecutionsResponse
 	err := backoff.Retry(ctx,
@@ -769,7 +769,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 //  - EntityNotExistError
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
-		Domain: wc.domain,
+		Namespace: wc.namespace,
 		Execution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -871,7 +871,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		}
 	}
 	req := &workflowservice.QueryWorkflowRequest{
-		Domain: wc.domain,
+		Namespace: wc.namespace,
 		Execution: &commonproto.WorkflowExecution{
 			WorkflowId: request.WorkflowID,
 			RunId:      request.RunID,
@@ -919,7 +919,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 //  - EntityNotExistError
 func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	request := &workflowservice.DescribeTaskListRequest{
-		Domain:       wc.domain,
+		Namespace:    wc.namespace,
 		TaskList:     &commonproto.TaskList{Name: taskList},
 		TaskListType: taskListType,
 	}
@@ -960,42 +960,42 @@ func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonproto.He
 	return header
 }
 
-// Register a domain with temporal server
+// Register a namespace with temporal server
 // The errors it can throw:
-//	- DomainAlreadyExistsError
+//	- NamespaceAlreadyExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) error {
+func (dc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			_, err = dc.workflowService.RegisterDomain(tchCtx, request)
+			_, err = dc.workflowService.RegisterNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
-// Describe a domain. The domain has 3 part of information
-// DomainInfo - Which has Name, Status, Description, Owner Email
-// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+// Describe a namespace. The namespace has 3 part of information
+// NamespaceInfo - Which has Name, Status, Description, Owner Email
+// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 // ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Describe(ctx context.Context, name string) (*workflowservice.DescribeDomainResponse, error) {
-	request := &workflowservice.DescribeDomainRequest{
+func (dc *namespaceClient) Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error) {
+	request := &workflowservice.DescribeNamespaceRequest{
 		Name: name,
 	}
 
-	var response *workflowservice.DescribeDomainResponse
+	var response *workflowservice.DescribeNamespaceResponse
 	err := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			response, err = dc.workflowService.DescribeDomain(tchCtx, request)
+			response, err = dc.workflowService.DescribeNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	if err != nil {
@@ -1004,23 +1004,23 @@ func (dc *domainClient) Describe(ctx context.Context, name string) (*workflowser
 	return response, nil
 }
 
-// Update a domain.
+// Update a namespace.
 // The errors it can throw:
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *domainClient) Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error {
+func (dc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
-			_, err := dc.workflowService.UpdateDomain(tchCtx, request)
+			_, err := dc.workflowService.UpdateNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
 // CloseConnection closes underlying gRPC connection.
-func (dc *domainClient) CloseConnection() error {
+func (dc *namespaceClient) CloseConnection() error {
 	if dc.connectionCloser == nil {
 		return nil
 	}

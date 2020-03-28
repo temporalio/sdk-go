@@ -155,7 +155,7 @@ type (
 		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single decision task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is the only optional parameter. Defaults to the noop logger.
-		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution workflow.Execution) error
+		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution workflow.Execution) error
 	}
 
 	// Options is used to configure a worker instance.
@@ -182,7 +182,7 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    domain   - the name of the temporal domain
+//    namespace   - the name of the temporal namespace
 //    taskList - is the task list name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process

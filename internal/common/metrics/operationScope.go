@@ -40,7 +40,7 @@ func (s *operationScope) handleError(err error) {
 		switch err.(type) {
 		case *serviceerror.NotFound,
 			*serviceerror.InvalidArgument,
-			*serviceerror.DomainAlreadyExists,
+			*serviceerror.NamespaceAlreadyExists,
 			*serviceerror.WorkflowExecutionAlreadyStarted,
 			*serviceerror.QueryFailed:
 			s.scope.Counter(TemporalInvalidRequest).Inc(1)

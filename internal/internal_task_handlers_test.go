@@ -44,7 +44,7 @@ import (
 )
 
 const (
-	testDomain = "test-domain"
+	testNamespace = "test-namespace"
 )
 
 type (
@@ -350,10 +350,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	}
 	task := createWorkflowTask(testEvents, 8, "BinaryChecksumWorkflow")
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -391,10 +391,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -438,10 +438,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 		createTestEventActivityTaskCompleted(7, &commonproto.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 	}
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 
@@ -484,10 +484,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
 	}
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 
 	// query after first decision task (notice the previousStartEventID is always the last eventID for query task)
@@ -551,7 +551,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		}),
 	}
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -586,7 +586,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		createTestEventDecisionTaskStarted(7),
 	}
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -627,7 +627,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		}),
 	}
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -704,7 +704,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	}
 
 	params := workerExecutionParameters{
-		DomainName:             testDomain,
+		Namespace:              testNamespace,
 		TaskList:               taskList,
 		Identity:               "test-id-1",
 		Logger:                 zap.NewNop(),
@@ -747,7 +747,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	stopC := make(chan struct{})
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -810,7 +810,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	}
 	task := createWorkflowTask(testEvents, 3, "ReturnPanicWorkflow")
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -839,7 +839,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	}
 	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -866,7 +866,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		WorkflowId: parentID,
 		RunId:      parentRunID,
 	}
-	parentDomain := "parentDomain"
+	parentNamespace := "parentNamespace"
 	var attempt int32 = 123
 	var executionTimeout int32 = 213456
 	var taskTimeout int32 = 21
@@ -879,7 +879,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		ParentWorkflowExecution:             parentExecution,
 		CronSchedule:                        cronSchedule,
 		ContinuedExecutionRunId:             continuedRunID,
-		ParentWorkflowDomain:                parentDomain,
+		ParentWorkflowNamespace:             parentNamespace,
 		Attempt:                             attempt,
 		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
 		TaskStartToCloseTimeoutSeconds:      taskTimeout,
@@ -892,7 +892,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	}
 	task := createWorkflowTask(testEvents, 3, workflowType)
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -914,18 +914,18 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
 	t.EqualValues(cronSchedule, result.CronSchedule)
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
-	t.EqualValues(parentDomain, result.ParentWorkflowDomain)
+	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)
 	t.EqualValues(attempt, result.Attempt)
 	t.EqualValues(executionTimeout, result.ExecutionStartToCloseTimeoutSeconds)
 	t.EqualValues(taskTimeout, result.TaskStartToCloseTimeoutSeconds)
 	t.EqualValues(workflowType, result.WorkflowType.Name)
-	t.EqualValues(testDomain, result.Domain)
+	t.EqualValues(testNamespace, result.Namespace)
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	taskList := "taskList"
 	params := workerExecutionParameters{
-		DomainName:                     testDomain,
+		Namespace:                      testNamespace,
 		TaskList:                       taskList,
 		Identity:                       "test-id-1",
 		Logger:                         zap.NewNop(),
@@ -976,10 +976,10 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries)
 
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -1042,10 +1042,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_WorkflowCancel")
 
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -1068,10 +1068,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	task.NextPageToken = []byte("token")
 
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		TaskList:   taskList,
-		Identity:   "test-id-1",
-		Logger:     t.logger,
+		Namespace: testNamespace,
+		TaskList:  taskList,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
 	}
 
 	nextEvents := []*commonproto.HistoryEvent{
@@ -1133,7 +1133,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
 	stopCh := make(chan struct{})
 	params := workerExecutionParameters{
-		DomainName:        testDomain,
+		Namespace:         testNamespace,
 		TaskList:          testWorkflowTaskTasklist,
 		Identity:          "test-id-1",
 		Logger:            t.logger,
@@ -1219,11 +1219,11 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
 
-func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveError() {
+func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewDomainNotActive("fake_domain", "current_cluster", "active_cluster"))
+	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNamespaceNotActive("fake_namespace", "current_cluster", "active_cluster"))
 
 	called := false
 	cancelHandler := func() { called = true }
@@ -1238,7 +1238,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithDomainNotActiveErro
 
 	heartbeatErr := temporalInvoker.Heartbeat(nil)
 	t.NotNil(heartbeatErr)
-	t.IsType(&serviceerror.DomainNotActive{}, heartbeatErr, "heartbeatErr must be of type DomainNotActive.")
+	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)
 }
 
@@ -1317,7 +1317,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			WorkflowType: &commonproto.WorkflowType{
 				Name: "wType",
 			},
-			WorkflowDomain: "domain",
+			WorkflowNamespace: "namespace",
 		}
 		td := fmt.Sprintf("testIndex: %v, testDetails: %v", i, d)
 		r, err := activityHandler.Execute(tasklist, pats)
@@ -1372,7 +1372,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		WorkflowType: &commonproto.WorkflowType{
 			Name: "wType",
 		},
-		WorkflowDomain: "domain",
+		WorkflowNamespace: "namespace",
 	}
 	close(workerStopCh)
 	r, err := activityHandler.Execute(tasklist, pats)

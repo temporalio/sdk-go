@@ -120,8 +120,8 @@ type (
 
 	// workerExecutionParameters defines worker configure/execution options.
 	workerExecutionParameters struct {
-		// Domain name.
-		DomainName string
+		// Namespace name.
+		Namespace string
 
 		// Task list name to poll.
 		TaskList string
@@ -225,36 +225,36 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	}
 }
 
-// verifyDomainExist does a DescribeDomain operation on the specified domain with backoff/retry
+// verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyDomainExist(client workflowservice.WorkflowServiceClient, domain string, logger *zap.Logger) error {
+func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger *zap.Logger) error {
 	ctx := context.Background()
-	descDomainOp := func() error {
+	descNamespaceOp := func() error {
 		tchCtx, cancel := newChannelContext(ctx)
 		defer cancel()
-		_, err := client.DescribeDomain(tchCtx, &workflowservice.DescribeDomainRequest{Name: domain})
+		_, err := client.DescribeNamespace(tchCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
 		if err != nil {
 			switch err.(type) {
 			case *serviceerror.NotFound:
-				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
+				logger.Error("namespace does not exist", zap.String("namespace", namespace), zap.Error(err))
 				return err
 			case *serviceerror.InvalidArgument:
-				logger.Error("domain does not exist", zap.String("domain", domain), zap.Error(err))
+				logger.Error("namespace does not exist", zap.String("namespace", namespace), zap.Error(err))
 				return err
 			}
 			// on any other error, just return true
-			logger.Warn("unable to verify if domain exist", zap.String("domain", domain), zap.Error(err))
+			logger.Warn("unable to verify if namespace exist", zap.String("namespace", namespace), zap.Error(err))
 		}
 		return nil
 	}
 
-	if len(domain) == 0 {
-		return errors.New("domain cannot be empty")
+	if len(namespace) == 0 {
+		return errors.New("namespace cannot be empty")
 	}
 
 	// exponential backoff retry for upto a minute
-	return backoff.Retry(ctx, descDomainOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+	return backoff.Retry(ctx, descNamespaceOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
 func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
@@ -327,7 +327,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyDomainExist(ww.workflowService, ww.executionParameters.DomainName, ww.worker.logger)
+	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func (ww *workflowWorker) Start() error {
 }
 
 func (ww *workflowWorker) Run() error {
-	err := verifyDomainExist(ww.workflowService, ww.executionParameters.DomainName, ww.worker.logger)
+	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -454,7 +454,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyDomainExist(aw.workflowService, aw.executionParameters.DomainName, aw.worker.logger)
+	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -464,7 +464,7 @@ func (aw *activityWorker) Start() error {
 
 // Run the worker.
 func (aw *activityWorker) Run() error {
-	err := verifyDomainExist(aw.workflowService, aw.executionParameters.DomainName, aw.worker.logger)
+	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -1146,7 +1146,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *c
 	controller := gomock.NewController(testReporter)
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayDomainName, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
@@ -1175,17 +1175,17 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap
 	controller := gomock.NewController(testReporter)
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayDomainName, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
-func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, domain string, execution WorkflowExecution) error {
+func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution WorkflowExecution) error {
 	sharedExecution := &commonproto.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
 	}
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
-		Domain:    domain,
+		Namespace: namespace,
 		Execution: sharedExecution,
 	}
 	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
@@ -1193,10 +1193,10 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 		return err
 	}
 
-	return aw.replayWorkflowHistory(logger, service, domain, hResponse.History)
+	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, domain string, history *commonproto.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *commonproto.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {
@@ -1240,16 +1240,16 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	iterator := &historyIteratorImpl{
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
-		domain:        ReplayDomainName,
+		namespace:     ReplayNamespace,
 		service:       service,
 		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
 	}
 	params := workerExecutionParameters{
-		DomainName: domain,
-		TaskList:   taskList,
-		Identity:   "replayID",
-		Logger:     logger,
+		Namespace: namespace,
+		TaskList:  taskList,
+		Identity:  "replayID",
+		Logger:    logger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1331,7 +1331,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
 	workerParams := workerExecutionParameters{
-		DomainName:                           client.domain,
+		Namespace:                            client.namespace,
 		TaskList:                             taskList,
 		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
 		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
@@ -1359,7 +1359,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
-		zapcore.Field{Key: tagDomain, Type: zapcore.StringType, String: client.domain},
+		zapcore.Field{Key: tagNamespace, Type: zapcore.StringType, String: client.namespace},
 		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
@@ -1537,8 +1537,8 @@ func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = getDefaultDataConverter()
 	}
-	if len(client.domain) == 0 {
-		client.domain = DefaultDomainName
+	if len(client.namespace) == 0 {
+		client.namespace = DefaultNamespace
 	}
 	if client.tracer == nil {
 		client.tracer = opentracing.NoopTracer{}

@@ -48,12 +48,11 @@ import (
 )
 
 const (
-	defaultTestDomain           = "default-test-domain"
+	defaultTestNamespace        = "default-test-namespace"
 	defaultTestTaskList         = "default-test-tasklist"
 	defaultTestWorkflowID       = "default-test-workflow-id"
 	defaultTestRunID            = "default-test-run-id"
 	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
-	defaultTestDomainName       = "default-test-domain-name"
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
 )
 
@@ -231,7 +230,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		},
 
 		workflowInfo: &WorkflowInfo{
-			Domain: defaultTestDomain,
+			Namespace: defaultTestNamespace,
 			WorkflowExecution: WorkflowExecution{
 				ID:    defaultTestWorkflowID,
 				RunID: defaultTestRunID,
@@ -344,13 +343,13 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.Attempt = params.attempt
 	childEnv.workflowInfo.WorkflowExecution.ID = params.workflowID
 	childEnv.workflowInfo.WorkflowExecution.RunID = params.workflowID + "_RunID"
-	childEnv.workflowInfo.Domain = params.domain
+	childEnv.workflowInfo.Namespace = params.namespace
 	childEnv.workflowInfo.TaskListName = params.taskListName
 	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = params.executionStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = params.taskStartToCloseTimeoutSeconds
 	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
 	childEnv.workflowInfo.CronSchedule = cronSchedule
-	childEnv.workflowInfo.ParentWorkflowDomain = env.workflowInfo.Domain
+	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
 	childEnv.executionTimeout = time.Duration(params.executionStartToCloseTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
@@ -517,7 +516,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		defaultTestRunID,
 		"0",
 		defaultTestWorkflowTypeName,
-		defaultTestDomainName,
+		defaultTestNamespace,
 		params,
 	)
 
@@ -933,7 +932,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		defaultTestRunID,
 		activityInfo.activityID,
 		defaultTestWorkflowTypeName,
-		defaultTestDomainName,
+		defaultTestNamespace,
 		parameters,
 	)
 
@@ -1556,7 +1555,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	return taskHandler
 }
 
-func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, domainName string, params executeActivityParams) *workflowservice.PollForActivityTaskResponse {
+func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, namespace string, params executeActivityParams) *workflowservice.PollForActivityTaskResponse {
 	task := &workflowservice.PollForActivityTaskResponse{
 		WorkflowExecution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
@@ -1574,8 +1573,8 @@ func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, domain
 		WorkflowType: &commonproto.WorkflowType{
 			Name: workflowTypeName,
 		},
-		WorkflowDomain: domainName,
-		Header:         params.Header,
+		WorkflowNamespace: namespace,
+		Header:            params.Header,
 	}
 	return task
 }
@@ -1656,7 +1655,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName, workflowID, runID string, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		// cancel current workflow
 		env.workflowCancelHandler()
@@ -1685,7 +1684,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(domainName
 	// configured to delay, it will block the main loop which stops the world.
 	env.runningCount++
 	go func() {
-		args := []interface{}{domainName, workflowID, runID}
+		args := []interface{}{namespace, workflowID, runID}
 		// below call will panic if mock is not properly setup.
 		mockRet := env.mock.MethodCalled(mockMethodForRequestCancelExternalWorkflow, args...)
 		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
@@ -1708,7 +1707,7 @@ func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	return false
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -1737,7 +1736,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(domainName, workf
 	// configured to delay, it will block the main loop which stops the world.
 	env.runningCount++
 	go func() {
-		args := []interface{}{domainName, workflowID, runID, signalName, arg}
+		args := []interface{}{namespace, workflowID, runID, signalName, arg}
 		// below call will panic if mock is not properly setup.
 		mockRet := env.mock.MethodCalled(mockMethodForSignalExternalWorkflow, args...)
 		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
@@ -1895,7 +1894,7 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
 	env.postCallback(func() {
 		// RequestCancelWorkflow needs to be run in main thread
 		env.RequestCancelExternalWorkflow(
-			env.workflowInfo.Domain,
+			env.workflowInfo.Namespace,
 			env.workflowInfo.WorkflowExecution.ID,
 			env.workflowInfo.WorkflowExecution.RunID,
 			callback,

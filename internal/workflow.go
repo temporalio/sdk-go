@@ -35,7 +35,7 @@ import (
 )
 
 var (
-	errDomainNotSet                  = errors.New("domain is not set")
+	errNamespaceNotSet               = errors.New("namespace is not set")
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
 	errActivityParamsBadRequest      = errors.New("missing activity parameters through context, check ActivityOptions")
@@ -159,9 +159,9 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	ChildWorkflowOptions struct {
-		// Domain of the child workflow.
-		// Optional: the current workflow (parent)'s domain will be used if this is not provided.
-		Domain string
+		// Namespace of the child workflow.
+		// Optional: the current workflow (parent)'s namespace will be used if this is not provided.
+		Namespace string
 
 		// WorkflowID of the child workflow to be scheduled.
 		// Optional: an auto generated workflowID will be used if this is not provided.
@@ -678,7 +678,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
 				// child workflow started, and ctx cancelled
-				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.domain, childWorkflowExecution.ID)
+				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.namespace, childWorkflowExecution.ID)
 			}
 			return false
 		}
@@ -709,12 +709,12 @@ type WorkflowInfo struct {
 	TaskListName                        string
 	ExecutionStartToCloseTimeoutSeconds int32
 	TaskStartToCloseTimeoutSeconds      int32
-	Domain                              string
+	Namespace                           string
 	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
 	lastCompletionResult                []byte
 	CronSchedule                        string
 	ContinuedExecutionRunID             string
-	ParentWorkflowDomain                string
+	ParentWorkflowNamespace             string
 	ParentWorkflowExecution             *WorkflowExecution
 	Memo                                *commonproto.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
 	SearchAttributes                    *commonproto.SearchAttributes // Value can be decoded using DefaultDataConverter.
@@ -828,9 +828,9 @@ func (wc *workflowEnvironmentInterceptor) Sleep(ctx Context, d time.Duration) (e
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
 // then the currently running instance of that workflowID will be used.
-// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
-//	ctx := WithWorkflowDomain(ctx, "domain-name")
+//	ctx := WithWorkflowNamespace(ctx, "namespace")
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	i := getWorkflowInterceptor(ctx)
@@ -842,8 +842,8 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.domain == "" {
-		settable.Set(nil, errDomainNotSet)
+	if options.namespace == "" {
+		settable.Set(nil, errNamespaceNotSet)
 		return future
 	}
 
@@ -857,7 +857,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	}
 
 	wc.env.RequestCancelExternalWorkflow(
-		options.domain,
+		options.namespace,
 		workflowID,
 		runID,
 		resultCallback,
@@ -870,9 +870,9 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,
 // then the currently running instance of that workflowID will be used.
-// By default, the current workflow's domain will be used as target domain. However, you can specify a different domain
+// By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
-//	ctx := WithWorkflowDomain(ctx, "domain-name")
+//	ctx := WithWorkflowNamespace(ctx, "namespace")
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	i := getWorkflowInterceptor(ctx)
@@ -890,8 +890,8 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.domain == "" {
-		settable.Set(nil, errDomainNotSet)
+	if options.namespace == "" {
+		settable.Set(nil, errNamespaceNotSet)
 		return future
 	}
 
@@ -910,7 +910,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		settable.Set(result, err)
 	}
 	env.SignalExternalWorkflow(
-		options.domain,
+		options.namespace,
 		workflowID,
 		runID,
 		signalName,
@@ -967,7 +967,7 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
-	wfOptions.domain = cwo.Domain
+	wfOptions.namespace = cwo.Namespace
 	wfOptions.taskListName = cwo.TaskList
 	wfOptions.workflowID = cwo.WorkflowID
 	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds())
@@ -983,10 +983,10 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	return ctx1
 }
 
-// WithWorkflowDomain adds a domain to the context.
-func WithWorkflowDomain(ctx Context, name string) Context {
+// WithWorkflowNamespace adds a namespace to the context.
+func WithWorkflowNamespace(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).domain = name
+	getWorkflowEnvOptions(ctx1).namespace = name
 	return ctx1
 }
 

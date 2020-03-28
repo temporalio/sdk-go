@@ -40,9 +40,9 @@ type (
 )
 
 const (
-	scopeNameDeprecateDomain                    = TemporalMetricsPrefix + "DeprecateDomain"
-	scopeNameDescribeDomain                     = TemporalMetricsPrefix + "DescribeDomain"
-	scopeNameListDomains                        = TemporalMetricsPrefix + "ListDomains"
+	scopeNameDeprecateNamespace                 = TemporalMetricsPrefix + "DeprecateNamespace"
+	scopeNameDescribeNamespace                  = TemporalMetricsPrefix + "DescribeNamespace"
+	scopeNameListNamespaces                     = TemporalMetricsPrefix + "ListNamespaces"
 	scopeNameGetWorkflowExecutionHistory        = TemporalMetricsPrefix + "GetWorkflowExecutionHistory"
 	scopeNamePollForWorkflowExecutionRawHistory = TemporalMetricsPrefix + "PollForWorkflowExecutionRawHistory"
 	scopeNameListClosedWorkflowExecutions       = TemporalMetricsPrefix + "ListClosedWorkflowExecutions"
@@ -55,7 +55,7 @@ const (
 	scopeNamePollForDecisionTask                = TemporalMetricsPrefix + "PollForDecisionTask"
 	scopeNameRecordActivityTaskHeartbeat        = TemporalMetricsPrefix + "RecordActivityTaskHeartbeat"
 	scopeNameRecordActivityTaskHeartbeatByID    = TemporalMetricsPrefix + "RecordActivityTaskHeartbeatByID"
-	scopeNameRegisterDomain                     = TemporalMetricsPrefix + "RegisterDomain"
+	scopeNameRegisterNamespace                  = TemporalMetricsPrefix + "RegisterNamespace"
 	scopeNameRequestCancelWorkflowExecution     = TemporalMetricsPrefix + "RequestCancelWorkflowExecution"
 	scopeNameRespondActivityTaskCanceled        = TemporalMetricsPrefix + "RespondActivityTaskCanceled"
 	scopeNameRespondActivityTaskCompleted       = TemporalMetricsPrefix + "RespondActivityTaskCompleted"
@@ -70,7 +70,7 @@ const (
 	scopeNameStartWorkflowExecution             = TemporalMetricsPrefix + "StartWorkflowExecution"
 	scopeNameTerminateWorkflowExecution         = TemporalMetricsPrefix + "TerminateWorkflowExecution"
 	scopeNameResetWorkflowExecution             = TemporalMetricsPrefix + "ResetWorkflowExecution"
-	scopeNameUpdateDomain                       = TemporalMetricsPrefix + "UpdateDomain"
+	scopeNameUpdateNamespace                    = TemporalMetricsPrefix + "UpdateNamespace"
 	scopeNameQueryWorkflow                      = TemporalMetricsPrefix + "QueryWorkflow"
 	scopeNameDescribeTaskList                   = TemporalMetricsPrefix + "DescribeTaskList"
 	scopeNameRespondQueryTaskCompleted          = TemporalMetricsPrefix + "RespondQueryTaskCompleted"
@@ -111,23 +111,23 @@ func (w *workflowServiceMetricsWrapper) getOperationScope(scopeName string) *ope
 	return &operationScope{scope: scope, startTime: time.Now()}
 }
 
-func (w *workflowServiceMetricsWrapper) DeprecateDomain(ctx context.Context, request *workflowservice.DeprecateDomainRequest, opts ...grpc.CallOption) (*workflowservice.DeprecateDomainResponse, error) {
-	scope := w.getOperationScope(scopeNameDeprecateDomain)
-	result, err := w.service.DeprecateDomain(ctx, request, opts...)
+func (w *workflowServiceMetricsWrapper) DeprecateNamespace(ctx context.Context, request *workflowservice.DeprecateNamespaceRequest, opts ...grpc.CallOption) (*workflowservice.DeprecateNamespaceResponse, error) {
+	scope := w.getOperationScope(scopeNameDeprecateNamespace)
+	result, err := w.service.DeprecateNamespace(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) ListDomains(ctx context.Context, request *workflowservice.ListDomainsRequest, opts ...grpc.CallOption) (*workflowservice.ListDomainsResponse, error) {
-	scope := w.getOperationScope(scopeNameListDomains)
-	result, err := w.service.ListDomains(ctx, request, opts...)
+func (w *workflowServiceMetricsWrapper) ListNamespaces(ctx context.Context, request *workflowservice.ListNamespacesRequest, opts ...grpc.CallOption) (*workflowservice.ListNamespacesResponse, error) {
+	scope := w.getOperationScope(scopeNameListNamespaces)
+	result, err := w.service.ListNamespaces(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) DescribeDomain(ctx context.Context, request *workflowservice.DescribeDomainRequest, opts ...grpc.CallOption) (*workflowservice.DescribeDomainResponse, error) {
-	scope := w.getOperationScope(scopeNameDescribeDomain)
-	result, err := w.service.DescribeDomain(ctx, request, opts...)
+func (w *workflowServiceMetricsWrapper) DescribeNamespace(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) (*workflowservice.DescribeNamespaceResponse, error) {
+	scope := w.getOperationScope(scopeNameDescribeNamespace)
+	result, err := w.service.DescribeNamespace(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
@@ -223,9 +223,9 @@ func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeatByID(ctx cont
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) RegisterDomain(ctx context.Context, request *workflowservice.RegisterDomainRequest, opts ...grpc.CallOption) (*workflowservice.RegisterDomainResponse, error) {
-	scope := w.getOperationScope(scopeNameRegisterDomain)
-	result, err := w.service.RegisterDomain(ctx, request, opts...)
+func (w *workflowServiceMetricsWrapper) RegisterNamespace(ctx context.Context, request *workflowservice.RegisterNamespaceRequest, opts ...grpc.CallOption) (*workflowservice.RegisterNamespaceResponse, error) {
+	scope := w.getOperationScope(scopeNameRegisterNamespace)
+	result, err := w.service.RegisterNamespace(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
@@ -328,9 +328,9 @@ func (w *workflowServiceMetricsWrapper) ResetWorkflowExecution(ctx context.Conte
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) UpdateDomain(ctx context.Context, request *workflowservice.UpdateDomainRequest, opts ...grpc.CallOption) (*workflowservice.UpdateDomainResponse, error) {
-	scope := w.getOperationScope(scopeNameUpdateDomain)
-	result, err := w.service.UpdateDomain(ctx, request, opts...)
+func (w *workflowServiceMetricsWrapper) UpdateNamespace(ctx context.Context, request *workflowservice.UpdateNamespaceRequest, opts ...grpc.CallOption) (*workflowservice.UpdateNamespaceResponse, error) {
+	scope := w.getOperationScope(scopeNameUpdateNamespace)
+	result, err := w.service.UpdateNamespace(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }

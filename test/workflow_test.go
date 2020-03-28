@@ -489,22 +489,22 @@ func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
 
 func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	info := workflow.GetInfo(ctx)
-	domain := info.Domain
+	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskList := info.TaskListName
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", domain, taskList, wfType).Get(ctx, nil)
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskList, wfType).Get(ctx, nil)
 }
 
 func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	info := workflow.GetInfo(ctx)
-	domain := info.Domain
+	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskList := info.TaskListName
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
 	activites := Activities{}
 	return workflow.ExecuteLocalActivity(
-		ctx, activites.InspectActivityInfo, domain, taskList, wfType).Get(ctx, nil)
+		ctx, activites.InspectActivityInfo, namespace, taskList, wfType).Get(ctx, nil)
 }
 
 func (w *Workflows) register(worker worker.Worker) {

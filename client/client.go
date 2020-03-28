@@ -39,8 +39,8 @@ const (
 	// DefaultHostPort is the host:port which is used if not passed with options.
 	DefaultHostPort = internal.LocalHostPort
 
-	// DefaultDomainName is the domain name which is used if not passed with options.
-	DefaultDomainName = internal.DefaultDomainName
+	// DefaultNamespace is the namespace name which is used if not passed with options.
+	DefaultNamespace = internal.DefaultNamespace
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the encoded.Value.
@@ -92,7 +92,7 @@ type (
 		//     or
 		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
-		//	- EntityNotExistsError, if domain does not exists
+		//	- EntityNotExistsError, if namespace does not exists
 		//	- BadRequestError
 		//	- InternalServiceError
 		//
@@ -144,7 +144,7 @@ type (
 		// Note: options.WorkflowIDReusePolicy is default to WorkflowIDReusePolicyAllowDuplicate in this API;
 		// while in StartWorkflow/ExecuteWorkflow APIs it is default to WorkflowIdReusePolicyAllowDuplicateFailedOnly.
 		// The errors it can return:
-		//  - EntityNotExistsError, if domain does not exist
+		//  - EntityNotExistsError, if namespace does not exist
 		//  - BadRequestError
 		//	- InternalServiceError
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
@@ -214,12 +214,12 @@ type (
 		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
-		// domain name, workflowID, activityID are required, runID is optional.
+		// namespace name, workflowID, activityID are required, runID is optional.
 		// The errors it can return:
 		//  - ErrorWithDetails
 		//  - TimeoutError
 		//  - CanceledError
-		CompleteActivityByID(ctx context.Context, domain, workflowID, runID, activityID string, result interface{}, err error) error
+		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
@@ -234,7 +234,7 @@ type (
 		// The errors it can return:
 		//	- EntityNotExistsError
 		//	- InternalServiceError
-		RecordActivityHeartbeatByID(ctx context.Context, domain, workflowID, runID, activityID string, details ...interface{}) error
+		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by start time in descending order.
@@ -270,9 +270,9 @@ type (
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
-		// cluster or target domain is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
+		// cluster or target namespace is not configured for visibility archival or read is not enabled. The query is basically the SQL WHERE clause.
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
-		// by your domain to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
+		// by your namespace to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
@@ -352,32 +352,32 @@ type (
 		CloseConnection() error
 	}
 
-	// DomainClient is the client for managing operations on the domain.
-	// CLI, tools, ... can use this layer to manager operations on domain.
-	DomainClient interface {
-		// Register a domain with temporal server
+	// NamespaceClient is the client for managing operations on the namespace.
+	// CLI, tools, ... can use this layer to manager operations on namespace.
+	NamespaceClient interface {
+		// Register a namespace with temporal server
 		// The errors it can throw:
-		//	- DomainAlreadyExistsError
+		//	- NamespaceAlreadyExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Register(ctx context.Context, request *workflowservice.RegisterDomainRequest) error
+		Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error
 
-		// Describe a domain. The domain has 3 part of information
-		// DomainInfo - Which has Name, Status, Description, Owner Email
-		// DomainConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
+		// Describe a namespace. The namespace has 3 part of information
+		// NamespaceInfo - Which has Name, Status, Description, Owner Email
+		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Describe(ctx context.Context, name string) (*workflowservice.DescribeDomainResponse, error)
+		Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error)
 
-		// Update a domain.
+		// Update a namespace.
 		// The errors it can throw:
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Update(ctx context.Context, request *workflowservice.UpdateDomainRequest) error
+		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
@@ -412,16 +412,16 @@ func NewClient(options Options) (Client, error) {
 	return internal.NewClient(options)
 }
 
-// NewDomainClient creates an instance of a domain client, to manage lifecycle of domains.
-func NewDomainClient(options Options) (DomainClient, error) {
-	return internal.NewDomainClient(options)
+// NewNamespaceClient creates an instance of a namespace client, to manage lifecycle of namespaces.
+func NewNamespaceClient(options Options) (NamespaceClient, error) {
+	return internal.NewNamespaceClient(options)
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
 var _ Client = internal.Client(nil)
 var _ internal.Client = Client(nil)
-var _ DomainClient = internal.DomainClient(nil)
-var _ internal.DomainClient = DomainClient(nil)
+var _ NamespaceClient = internal.NamespaceClient(nil)
+var _ internal.NamespaceClient = NamespaceClient(nil)
 
 // NewValue creates a new encoded.Value which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.

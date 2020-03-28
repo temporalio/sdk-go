@@ -515,7 +515,7 @@ func (d *childWorkflowDecisionStateMachine) getDecision() *commonproto.Decision 
 	case decisionStateCanceledAfterStarted:
 		decision := createNewDecision(enums.DecisionTypeRequestCancelExternalWorkflowExecution)
 		decision.Attributes = &commonproto.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-			Domain:            d.attributes.Domain,
+			Namespace:         d.attributes.Namespace,
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
 		}}
@@ -841,7 +841,7 @@ func (h *decisionsHelper) handleStartChildWorkflowExecutionFailed(workflowID str
 	return decision
 }
 
-func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflowID, runID string, cancellationID string, childWorkflowOnly bool) decisionStateMachine {
+func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool) decisionStateMachine {
 	if childWorkflowOnly {
 		// For cancellation of child workflow only, we do not use cancellation ID
 		// since the child workflow cancellation go through the existing child workflow
@@ -874,7 +874,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(domain, workflo
 		panic("cancellation on external workflow should use cancellation ID")
 	}
 	attributes := &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
-		Domain:            domain,
+		Namespace:         namespace,
 		WorkflowId:        workflowID,
 		RunId:             runID,
 		Control:           []byte(cancellationID),
@@ -928,9 +928,9 @@ func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(ini
 	return isExternal, decision
 }
 
-func (h *decisionsHelper) signalExternalWorkflowExecution(domain, workflowID, runID, signalName string, input []byte, signalID string, childWorkflowOnly bool) decisionStateMachine {
+func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input []byte, signalID string, childWorkflowOnly bool) decisionStateMachine {
 	attributes := &commonproto.SignalExternalWorkflowExecutionDecisionAttributes{
-		Domain: domain,
+		Namespace: namespace,
 		Execution: &commonproto.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,

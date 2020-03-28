@@ -86,11 +86,11 @@ func (a *Activities) fail(_ context.Context) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, domain, taskList, wfType string) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskList, wfType string) error {
 	a.append("inspectActivityInfo")
 	info := activity.GetInfo(ctx)
-	if info.WorkflowDomain != domain {
-		return fmt.Errorf("expected domainName %v but got %v", domain, info.WorkflowDomain)
+	if info.WorkflowNamespace != namespace {
+		return fmt.Errorf("expected namespace %v but got %v", namespace, info.WorkflowNamespace)
 	}
 	if info.WorkflowType == nil || info.WorkflowType.Name != wfType {
 		return fmt.Errorf("expected workflowType %v but got %v", wfType, info.WorkflowType)

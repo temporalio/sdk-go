@@ -68,7 +68,7 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		domain       string
+		namespace    string
 		taskListName string
 		identity     string
 		service      workflowservice.WorkflowServiceClient
@@ -89,7 +89,7 @@ type (
 	// activityTaskPoller implements polling/processing a workflow task
 	activityTaskPoller struct {
 		basePoller
-		domain              string
+		namespace           string
 		taskListName        string
 		identity            string
 		service             workflowservice.WorkflowServiceClient
@@ -103,7 +103,7 @@ type (
 		iteratorFunc  func(nextPageToken []byte) (*commonproto.History, []byte, error)
 		execution     *commonproto.WorkflowExecution
 		nextPageToken []byte
-		domain        string
+		namespace     string
 		service       workflowservice.WorkflowServiceClient
 		metricsScope  tally.Scope
 		maxEventID    int64
@@ -214,7 +214,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 	return &workflowTaskPoller{
 		basePoller:                   basePoller{shutdownC: params.WorkerStopChannel},
 		service:                      service,
-		domain:                       params.DomainName,
+		namespace:                    params.Namespace,
 		taskListName:                 params.TaskList,
 		identity:                     params.Identity,
 		taskHandler:                  taskHandler,
@@ -464,7 +464,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 
 	ctx := context.WithValue(rootCtx, activityEnvContextKey, &activityEnvironment{
 		workflowType:      &workflowTypeLocal,
-		workflowDomain:    task.params.WorkflowInfo.Domain,
+		workflowNamespace: task.params.WorkflowInfo.Namespace,
 		taskList:          task.params.WorkflowInfo.TaskListName,
 		activityType:      ActivityType{Name: activityType},
 		activityID:        fmt.Sprintf("%v", task.activityID),
@@ -617,7 +617,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Kind: taskListKind,
 	}
 	return &workflowservice.PollForDecisionTaskRequest{
-		Domain:         wtp.domain,
+		Namespace:      wtp.namespace,
 		TaskList:       taskList,
 		Identity:       wtp.identity,
 		BinaryChecksum: getBinaryChecksum(),
@@ -680,7 +680,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollForD
 	historyIterator := &historyIteratorImpl{
 		nextPageToken: response.NextPageToken,
 		execution:     response.WorkflowExecution,
-		domain:        wtp.domain,
+		namespace:     wtp.namespace,
 		service:       wtp.service,
 		metricsScope:  wtp.metricsScope,
 		maxEventID:    response.GetStartedEventId(),
@@ -697,7 +697,7 @@ func (h *historyIteratorImpl) GetNextPage() (*commonproto.History, error) {
 		h.iteratorFunc = newGetHistoryPageFunc(
 			context.Background(),
 			h.service,
-			h.domain,
+			h.namespace,
 			h.execution,
 			h.maxEventID,
 			h.metricsScope)
@@ -722,7 +722,7 @@ func (h *historyIteratorImpl) HasNextPage() bool {
 func newGetHistoryPageFunc(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
-	domain string,
+	namespace string,
 	execution *commonproto.WorkflowExecution,
 	atDecisionTaskCompletedEventID int64,
 	metricsScope tally.Scope,
@@ -738,7 +738,7 @@ func newGetHistoryPageFunc(
 
 				var err1 error
 				resp, err1 = service.GetWorkflowExecutionHistory(tchCtx, &workflowservice.GetWorkflowExecutionHistoryRequest{
-					Domain:        domain,
+					Namespace:     namespace,
 					Execution:     execution,
 					NextPageToken: nextPageToken,
 				})
@@ -772,7 +772,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		basePoller:          basePoller{shutdownC: params.WorkerStopChannel},
 		taskHandler:         taskHandler,
 		service:             service,
-		domain:              params.DomainName,
+		namespace:           params.Namespace,
 		taskListName:        params.TaskList,
 		identity:            params.Identity,
 		logger:              params.Logger,
@@ -791,7 +791,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
 	request := &workflowservice.PollForActivityTaskRequest{
-		Domain:           atp.domain,
+		Namespace:        atp.namespace,
 		TaskList:         &commonproto.TaskList{Name: atp.taskListName},
 		Identity:         atp.identity,
 		TaskListMetadata: &commonproto.TaskListMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
@@ -1012,7 +1012,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 		Identity:  identity}
 }
 
-func convertActivityResultToRespondRequestByID(identity, domain, workflowID, runID, activityID string,
+func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
 	result []byte, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1022,7 +1022,7 @@ func convertActivityResultToRespondRequestByID(identity, domain, workflowID, run
 
 	if err == nil {
 		return &workflowservice.RespondActivityTaskCompletedByIDRequest{
-			Domain:     domain,
+			Namespace:  namespace,
 			WorkflowID: workflowID,
 			RunID:      runID,
 			ActivityID: activityID,
@@ -1033,7 +1033,7 @@ func convertActivityResultToRespondRequestByID(identity, domain, workflowID, run
 	reason, details := getErrorDetails(err, dataConverter)
 	if _, ok := err.(*CanceledError); ok || err == context.Canceled {
 		return &workflowservice.RespondActivityTaskCanceledByIDRequest{
-			Domain:     domain,
+			Namespace:  namespace,
 			WorkflowID: workflowID,
 			RunID:      runID,
 			ActivityID: activityID,
@@ -1042,7 +1042,7 @@ func convertActivityResultToRespondRequestByID(identity, domain, workflowID, run
 	}
 
 	return &workflowservice.RespondActivityTaskFailedByIDRequest{
-		Domain:     domain,
+		Namespace:  namespace,
 		WorkflowID: workflowID,
 		RunID:      runID,
 		ActivityID: activityID,

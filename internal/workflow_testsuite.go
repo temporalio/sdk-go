@@ -349,19 +349,19 @@ const mockMethodForUpsertSearchAttributes = "workflow.UpsertSearchAttributes"
 // Some examples of how to setup mock:
 //
 // * mock for specific target workflow that matches specific signal name and signal data
-// 	 env.OnSignalExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1", "test-signal", "test-data").Return(nil).Once()
+// 	 env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1", "test-signal", "test-data").Return(nil).Once()
 // * mock for anything and succeed the send
 // 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 // * mock for anything and fail the send
 // 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
 // * mock function for SignalExternalWorkflow
 //   env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-//     func(domainName, workflowID, runID, signalName string, arg interface{}) error {
+//     func(namespace, workflowID, runID, signalName string, arg interface{}) error {
 //       // you can do differently based on the parameters
 //       return nil
 //     })
-func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(domainName, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
-	call := t.Mock.On(mockMethodForSignalExternalWorkflow, domainName, workflowID, runID, signalName, arg)
+func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
+	call := t.Mock.On(mockMethodForSignalExternalWorkflow, namespace, workflowID, runID, signalName, arg)
 	return t.wrapCall(call)
 }
 
@@ -373,19 +373,19 @@ func (t *TestWorkflowEnvironment) OnSignalExternalWorkflow(domainName, workflowI
 // Some examples of how to setup mock:
 //
 // * mock for specific target workflow that matches specific workflow ID and run ID
-// 	 env.OnRequestCancelExternalWorkflow("test-domain", "test-workflow-id1", "test-runid1").Return(nil).Once()
+// 	 env.OnRequestCancelExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1").Return(nil).Once()
 // * mock for anything and succeed the cancellation
 // 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 // * mock for anything and fail the cancellation
 // 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
 // * mock function for RequestCancelExternalWorkflow
 //   env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
-//     func(domainName, workflowID, runID) error {
+//     func(namespace, workflowID, runID) error {
 //       // you can do differently based on the parameters
 //       return nil
 //     })
-func (t *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(domainName, workflowID, runID string) *MockCallWrapper {
-	call := t.Mock.On(mockMethodForRequestCancelExternalWorkflow, domainName, workflowID, runID)
+func (t *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, workflowID, runID string) *MockCallWrapper {
+	call := t.Mock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID)
 	return t.wrapCall(call)
 }
 

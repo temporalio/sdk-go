@@ -400,16 +400,16 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 
 func (s *internalWorkerTestSuite) TestDecisionTaskHandler() {
 	params := workerExecutionParameters{
-		DomainName: testDomain,
-		Identity:   "identity",
-		Logger:     getLogger(),
+		Namespace: testNamespace,
+		Identity:  "identity",
+		Logger:    getLogger(),
 	}
 	s.testDecisionTaskHandlerHelper(params)
 }
 
 func (s *internalWorkerTestSuite) TestDecisionTaskHandler_WithDataConverter() {
 	params := workerExecutionParameters{
-		DomainName:    testDomain,
+		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
 		DataConverter: newTestDataConverter(),
@@ -480,11 +480,11 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.NoError(t, w.Start())
 }
 
-func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
+func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 	t := s.T()
 	testCases := []struct {
-		domainErr  error
-		isErrFatal bool
+		namespaceErr error
+		isErrFatal   bool
 	}{
 		{serviceerror.NewNotFound(""), true},
 		{serviceerror.NewInvalidArgument(""), true},
@@ -496,22 +496,22 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidDomain() {
 
 	for _, tc := range testCases {
 		service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-		service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.domainErr).Do(
-			func(ctx context.Context, request *workflowservice.DescribeDomainRequest, opts ...grpc.CallOption) {
+		service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.namespaceErr).Do(
+			func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
 				// log
 			}).Times(2)
 
 		worker := createWorker(service)
 		if tc.isErrFatal {
 			err := worker.Start()
-			assert.Error(t, err, "worker.start() MUST fail when domain is invalid")
+			assert.Error(t, err, "worker.start() MUST fail when namespace is invalid")
 			errC := make(chan error)
 			go func() { errC <- worker.Run() }()
 			select {
 			case e := <-errC:
-				assert.Error(t, e, "worker.Run() MUST fail when domain is invalid")
+				assert.Error(t, e, "worker.Run() MUST fail when namespace is invalid")
 			case <-time.After(time.Second):
-				assert.Fail(t, "worker.Run() MUST fail when domain is invalid")
+				assert.Fail(t, "worker.Run() MUST fail when namespace is invalid")
 			}
 			continue
 		}
@@ -553,17 +553,17 @@ func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *Aggre
 func createWorkerWithThrottle(
 	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc DataConverter,
 ) *AggregatedWorker {
-	domain := "testDomain"
-	domainStatus := enums.DomainStatusRegistered
-	domainDesc := &workflowservice.DescribeDomainResponse{
-		DomainInfo: &commonproto.DomainInfo{
-			Name:   domain,
-			Status: domainStatus,
+	namespace := "testNamespace"
+	namespaceStatus := enums.NamespaceStatusRegistered
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &commonproto.NamespaceInfo{
+			Name:   namespace,
+			Status: namespaceStatus,
 		},
 	}
 	// mocks
-	service.EXPECT().DescribeDomain(gomock.Any(), gomock.Any(), gomock.Any()).Return(domainDesc, nil).Do(
-		func(ctx context.Context, request *workflowservice.DescribeDomainRequest, opts ...grpc.CallOption) {
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
+		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
 			// log
 		}).AnyTimes()
 
@@ -588,7 +588,7 @@ func createWorkerWithThrottle(
 		EnableSessionWorker:         true}
 
 	clientOptions := ClientOptions{
-		DomainName: domain,
+		Namespace: namespace,
 	}
 	if dc != nil {
 		clientOptions.DataConverter = dc
@@ -643,7 +643,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity_WithDataConverter() {
 func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	t := s.T()
 	mockService := s.service
-	wfClient := NewServiceClient(mockService, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{Namespace: "testNamespace"})
 	var completedRequest, canceledRequest, failedRequest interface{}
 	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) {
@@ -662,18 +662,18 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	runID := ""
 	activityID := "aid"
 
-	_ = wfClient.CompleteActivityByID(context.Background(), DefaultDomainName, workflowID, runID, activityID, nil, nil)
+	_ = wfClient.CompleteActivityByID(context.Background(), DefaultNamespace, workflowID, runID, activityID, nil, nil)
 	require.NotNil(t, completedRequest)
 
-	_ = wfClient.CompleteActivityByID(context.Background(), DefaultDomainName, workflowID, runID, activityID, nil, NewCanceledError())
+	_ = wfClient.CompleteActivityByID(context.Background(), DefaultNamespace, workflowID, runID, activityID, nil, NewCanceledError())
 	require.NotNil(t, canceledRequest)
 
-	_ = wfClient.CompleteActivityByID(context.Background(), DefaultDomainName, workflowID, runID, activityID, nil, errors.New(""))
+	_ = wfClient.CompleteActivityByID(context.Background(), DefaultNamespace, workflowID, runID, activityID, nil, errors.New(""))
 	require.NotNil(t, failedRequest)
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
-	wfClient := NewServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
@@ -689,7 +689,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter() {
 	t := s.T()
 	dc := newTestDataConverter()
-	opt := ClientOptions{DomainName: "testDomain", DataConverter: dc}
+	opt := ClientOptions{Namespace: "testNamespace", DataConverter: dc}
 	wfClient := NewServiceClient(s.service, nil, opt)
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
@@ -709,7 +709,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
-	wfClient := NewServiceClient(s.service, nil, ClientOptions{DomainName: "testDomain"})
+	wfClient := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIDRequest
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIDResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
@@ -717,8 +717,8 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 			heartbeatRequest = request
 		}).Times(2)
 
-	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), DefaultDomainName, "wid", "rid", "aid")
-	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), DefaultDomainName, "wid", "rid", "aid",
+	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), DefaultNamespace, "wid", "rid", "aid")
+	_ = wfClient.RecordActivityHeartbeatByID(context.Background(), DefaultNamespace, "wid", "rid", "aid",
 		"testStack", "customerObjects", 4)
 	require.NotNil(s.T(), heartbeatRequest)
 }
@@ -1185,7 +1185,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	require.Nil(t, decisionWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
-		DomainName:                           DefaultDomainName,
+		Namespace:                            DefaultNamespace,
 		TaskList:                             taskList,
 		MaxConcurrentActivityPollers:         defaultConcurrentPollRoutineSize,
 		MaxConcurrentDecisionPollers:         defaultConcurrentPollRoutineSize,
@@ -1221,7 +1221,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	client := &WorkflowClient{
 		workflowService:    nil,
 		connectionCloser:   nil,
-		domain:             "worker-options-test",
+		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
 		dataConverter:      &defaultDataConverter{},
