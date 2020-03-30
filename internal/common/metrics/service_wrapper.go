@@ -54,15 +54,15 @@ const (
 	scopeNamePollForActivityTask                = TemporalMetricsPrefix + "PollForActivityTask"
 	scopeNamePollForDecisionTask                = TemporalMetricsPrefix + "PollForDecisionTask"
 	scopeNameRecordActivityTaskHeartbeat        = TemporalMetricsPrefix + "RecordActivityTaskHeartbeat"
-	scopeNameRecordActivityTaskHeartbeatByID    = TemporalMetricsPrefix + "RecordActivityTaskHeartbeatByID"
+	scopeNameRecordActivityTaskHeartbeatByID    = TemporalMetricsPrefix + "RecordActivityTaskHeartbeatById"
 	scopeNameRegisterNamespace                  = TemporalMetricsPrefix + "RegisterNamespace"
 	scopeNameRequestCancelWorkflowExecution     = TemporalMetricsPrefix + "RequestCancelWorkflowExecution"
 	scopeNameRespondActivityTaskCanceled        = TemporalMetricsPrefix + "RespondActivityTaskCanceled"
 	scopeNameRespondActivityTaskCompleted       = TemporalMetricsPrefix + "RespondActivityTaskCompleted"
 	scopeNameRespondActivityTaskFailed          = TemporalMetricsPrefix + "RespondActivityTaskFailed"
-	scopeNameRespondActivityTaskCanceledByID    = TemporalMetricsPrefix + "RespondActivityTaskCanceledByID"
-	scopeNameRespondActivityTaskCompletedByID   = TemporalMetricsPrefix + "RespondActivityTaskCompletedByID"
-	scopeNameRespondActivityTaskFailedByID      = TemporalMetricsPrefix + "RespondActivityTaskFailedByID"
+	scopeNameRespondActivityTaskCanceledByID    = TemporalMetricsPrefix + "RespondActivityTaskCanceledById"
+	scopeNameRespondActivityTaskCompletedByID   = TemporalMetricsPrefix + "RespondActivityTaskCompletedById"
+	scopeNameRespondActivityTaskFailedByID      = TemporalMetricsPrefix + "RespondActivityTaskFailedById"
 	scopeNameRespondDecisionTaskCompleted       = TemporalMetricsPrefix + "RespondDecisionTaskCompleted"
 	scopeNameRespondDecisionTaskFailed          = TemporalMetricsPrefix + "RespondDecisionTaskFailed"
 	scopeNameSignalWorkflowExecution            = TemporalMetricsPrefix + "SignalWorkflowExecution"
@@ -216,9 +216,9 @@ func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeat(ctx context.
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeatByID(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIDRequest, opts ...grpc.CallOption) (*workflowservice.RecordActivityTaskHeartbeatByIDResponse, error) {
+func (w *workflowServiceMetricsWrapper) RecordActivityTaskHeartbeatById(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIdRequest, opts ...grpc.CallOption) (*workflowservice.RecordActivityTaskHeartbeatByIdResponse, error) {
 	scope := w.getOperationScope(scopeNameRecordActivityTaskHeartbeatByID)
-	result, err := w.service.RecordActivityTaskHeartbeatByID(ctx, request, opts...)
+	result, err := w.service.RecordActivityTaskHeartbeatById(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
@@ -258,23 +258,23 @@ func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailed(ctx context.Co
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) RespondActivityTaskCanceledByID(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIDRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskCanceledByIDResponse, error) {
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskCanceledById(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIdRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskCanceledByIdResponse, error) {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCanceledByID)
-	result, err := w.service.RespondActivityTaskCanceledByID(ctx, request, opts...)
+	result, err := w.service.RespondActivityTaskCanceledById(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompletedByID(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskCompletedByIDResponse, error) {
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskCompletedById(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIdRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskCompletedByIdResponse, error) {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskCompletedByID)
-	result, err := w.service.RespondActivityTaskCompletedByID(ctx, request, opts...)
+	result, err := w.service.RespondActivityTaskCompletedById(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }
 
-func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedByID(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIDRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskFailedByIDResponse, error) {
+func (w *workflowServiceMetricsWrapper) RespondActivityTaskFailedById(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIdRequest, opts ...grpc.CallOption) (*workflowservice.RespondActivityTaskFailedByIdResponse, error) {
 	scope := w.getOperationScope(scopeNameRespondActivityTaskFailedByID)
-	result, err := w.service.RespondActivityTaskFailedByID(ctx, request, opts...)
+	result, err := w.service.RespondActivityTaskFailedById(ctx, request, opts...)
 	scope.handleError(err)
 	return result, err
 }

@@ -82,9 +82,9 @@ func Test_Wrapper(t *testing.T) {
 		{"RespondActivityTaskCanceled", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledResponse{}, nil}, []string{TemporalRequest}},
 		{"RespondActivityTaskCompleted", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedResponse{}, nil}, []string{TemporalRequest}},
 		{"RespondActivityTaskFailed", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedResponse{}, nil}, []string{TemporalRequest}},
-		{"RespondActivityTaskCanceledByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledByIDResponse{}, nil}, []string{TemporalRequest}},
-		{"RespondActivityTaskCompletedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil}, []string{TemporalRequest}},
-		{"RespondActivityTaskFailedByID", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedByIDRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedByIDResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCanceledById", []interface{}{ctx, &workflowservice.RespondActivityTaskCanceledByIdRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCanceledByIdResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskCompletedById", []interface{}{ctx, &workflowservice.RespondActivityTaskCompletedByIdRequest{}}, []interface{}{&workflowservice.RespondActivityTaskCompletedByIdResponse{}, nil}, []string{TemporalRequest}},
+		{"RespondActivityTaskFailedById", []interface{}{ctx, &workflowservice.RespondActivityTaskFailedByIdRequest{}}, []interface{}{&workflowservice.RespondActivityTaskFailedByIdResponse{}, nil}, []string{TemporalRequest}},
 		{"RespondDecisionTaskCompleted", []interface{}{ctx, &workflowservice.RespondDecisionTaskCompletedRequest{}}, []interface{}{nil, nil}, []string{TemporalRequest}},
 		{"SignalWorkflowExecution", []interface{}{ctx, &workflowservice.SignalWorkflowExecutionRequest{}}, []interface{}{&workflowservice.SignalWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
 		{"StartWorkflowExecution", []interface{}{ctx, &workflowservice.StartWorkflowExecutionRequest{}}, []interface{}{&workflowservice.StartWorkflowExecutionResponse{}, nil}, []string{TemporalRequest}},
@@ -137,8 +137,8 @@ func runTest(
 			mockService.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RecordActivityTaskHeartbeat":
 			mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "RecordActivityTaskHeartbeatByID":
-			mockService.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "RecordActivityTaskHeartbeatById":
+			mockService.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RegisterNamespace":
 			mockService.EXPECT().RegisterNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RequestCancelWorkflowExecution":
@@ -149,12 +149,12 @@ func runTest(
 			mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RespondActivityTaskFailed":
 			mockService.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "RespondActivityTaskCanceledByID":
-			mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "RespondActivityTaskCompletedByID":
-			mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
-		case "RespondActivityTaskFailedByID":
-			mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "RespondActivityTaskCanceledById":
+			mockService.EXPECT().RespondActivityTaskCanceledById(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "RespondActivityTaskCompletedById":
+			mockService.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
+		case "RespondActivityTaskFailedById":
+			mockService.EXPECT().RespondActivityTaskFailedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "RespondDecisionTaskCompleted":
 			mockService.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(returns...)
 		case "SignalWorkflowExecution":
