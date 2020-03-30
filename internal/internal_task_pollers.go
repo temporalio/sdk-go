@@ -940,41 +940,41 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 
 	var reportErr error
 	switch request := request.(type) {
-	case *workflowservice.RespondActivityTaskCanceledByIDRequest:
+	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
 				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCanceledByID(tchCtx, request)
+				_, err := service.RespondActivityTaskCanceledById(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-	case *workflowservice.RespondActivityTaskFailedByIDRequest:
+	case *workflowservice.RespondActivityTaskFailedByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
 				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskFailedByID(tchCtx, request)
+				_, err := service.RespondActivityTaskFailedById(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-	case *workflowservice.RespondActivityTaskCompletedByIDRequest:
+	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
 				tchCtx, cancel := newChannelContext(ctx)
 				defer cancel()
 
-				_, err := service.RespondActivityTaskCompletedByID(tchCtx, request)
+				_, err := service.RespondActivityTaskCompletedById(tchCtx, request)
 				return err
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
 	if reportErr == nil {
 		switch request.(type) {
-		case *workflowservice.RespondActivityTaskCanceledByIDRequest:
+		case *workflowservice.RespondActivityTaskCanceledByIdRequest:
 			metricsScope.Counter(metrics.ActivityTaskCanceledByIDCounter).Inc(1)
-		case *workflowservice.RespondActivityTaskFailedByIDRequest:
+		case *workflowservice.RespondActivityTaskFailedByIdRequest:
 			metricsScope.Counter(metrics.ActivityTaskFailedByIDCounter).Inc(1)
-		case *workflowservice.RespondActivityTaskCompletedByIDRequest:
+		case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 			metricsScope.Counter(metrics.ActivityTaskCompletedByIDCounter).Inc(1)
 		}
 	}
@@ -1021,31 +1021,31 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 	}
 
 	if err == nil {
-		return &workflowservice.RespondActivityTaskCompletedByIDRequest{
+		return &workflowservice.RespondActivityTaskCompletedByIdRequest{
 			Namespace:  namespace,
-			WorkflowID: workflowID,
-			RunID:      runID,
-			ActivityID: activityID,
+			WorkflowId: workflowID,
+			RunId:      runID,
+			ActivityId: activityID,
 			Result:     result,
 			Identity:   identity}
 	}
 
 	reason, details := getErrorDetails(err, dataConverter)
 	if _, ok := err.(*CanceledError); ok || err == context.Canceled {
-		return &workflowservice.RespondActivityTaskCanceledByIDRequest{
+		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
 			Namespace:  namespace,
-			WorkflowID: workflowID,
-			RunID:      runID,
-			ActivityID: activityID,
+			WorkflowId: workflowID,
+			RunId:      runID,
+			ActivityId: activityID,
 			Details:    details,
 			Identity:   identity}
 	}
 
-	return &workflowservice.RespondActivityTaskFailedByIDRequest{
+	return &workflowservice.RespondActivityTaskFailedByIdRequest{
 		Namespace:  namespace,
-		WorkflowID: workflowID,
-		RunID:      runID,
-		ActivityID: activityID,
+		WorkflowId: workflowID,
+		RunId:      runID,
+		ActivityId: activityID,
 		Reason:     reason,
 		Details:    details,
 		Identity:   identity}
