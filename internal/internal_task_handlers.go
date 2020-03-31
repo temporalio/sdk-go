@@ -1880,22 +1880,22 @@ func recordActivityHeartbeatByID(
 	namespace, workflowID, runID, activityID string,
 	details []byte,
 ) error {
-	request := &workflowservice.RecordActivityTaskHeartbeatByIDRequest{
+	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,
-		WorkflowID: workflowID,
-		RunID:      runID,
-		ActivityID: activityID,
+		WorkflowId: workflowID,
+		RunId:      runID,
+		ActivityId: activityID,
 		Details:    details,
 		Identity:   identity}
 
-	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIDResponse
+	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeatByID(tchCtx, request)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeatById(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 

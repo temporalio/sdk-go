@@ -645,16 +645,16 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	mockService := s.service
 	wfClient := NewServiceClient(mockService, nil, ClientOptions{Namespace: "testNamespace"})
 	var completedRequest, canceledRequest, failedRequest interface{}
-	mockService.EXPECT().RespondActivityTaskCompletedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedByIDResponse{}, nil).Do(
-		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIDRequest, opts ...grpc.CallOption) {
+	mockService.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedByIdResponse{}, nil).Do(
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIdRequest, opts ...grpc.CallOption) {
 			completedRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskCanceledByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCanceledByIDResponse{}, nil).Do(
-		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIDRequest, opts ...grpc.CallOption) {
+	mockService.EXPECT().RespondActivityTaskCanceledById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCanceledByIdResponse{}, nil).Do(
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskCanceledByIdRequest, opts ...grpc.CallOption) {
 			canceledRequest = request
 		})
-	mockService.EXPECT().RespondActivityTaskFailedByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskFailedByIDResponse{}, nil).Do(
-		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIDRequest, opts ...grpc.CallOption) {
+	mockService.EXPECT().RespondActivityTaskFailedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskFailedByIdResponse{}, nil).Do(
+		func(ctx context.Context, request *workflowservice.RespondActivityTaskFailedByIdRequest, opts ...grpc.CallOption) {
 			failedRequest = request
 		})
 
@@ -710,10 +710,10 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter(
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByID() {
 	wfClient := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
-	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIDRequest
-	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIDResponse{CancelRequested: false}
-	s.service.EXPECT().RecordActivityTaskHeartbeatByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
-		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIDRequest, opts ...grpc.CallOption) {
+	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatByIdRequest
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIdResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatByIdRequest, opts ...grpc.CallOption) {
 			heartbeatRequest = request
 		}).Times(2)
 
