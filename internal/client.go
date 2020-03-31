@@ -322,10 +322,16 @@ type (
 		Namespace string
 
 		// Optional: Metrics to be reported.
-		// To ensure metrics are compatible with prometheus make sure to create tally scope with sanitizer options set.
+		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
+		// opts := tally.ScopeOptions{
+		//   Separator: "_",
+		// }
+		// scope, _ := tally.NewRootScope(opts, time.Second)
+		//
+		// If you have custom metrics make sure they are compatible with Prometheus or create tally scope with sanitizer options set:
 		// var (
-		// _safeCharacters = []rune{'_'}
-		// _sanitizeOptions = tally.SanitizeOptions{
+		//   safeCharacters = []rune{'_'}
+		//   sanitizeOptions = tally.SanitizeOptions{
 		// 		NameCharacters: tally.ValidCharacters{
 		// 			Ranges:     tally.AlphanumericRange,
 		// 			Characters: _safeCharacters,
@@ -342,8 +348,8 @@ type (
 		// 	}
 		// )
 		// opts := tally.ScopeOptions{
-		// 	Reporter:        reporter,
-		// 	SanitizeOptions: &_sanitizeOptions,
+		// 	 SanitizeOptions: &sanitizeOptions,
+		//   Separator: "_",
 		// }
 		// scope, _ := tally.NewRootScope(opts, time.Second)
 		// default: no metrics.

@@ -1412,16 +1412,16 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 
 // tagScope with one or multiple tags, like
 // tagScope(scope, tag1, val1, tag2, val2)
-func tagScope(metricsScope tally.Scope, keyValueinPairs ...string) tally.Scope {
+func tagScope(metricsScope tally.Scope, keyValuePairs ...string) tally.Scope {
 	if metricsScope == nil {
 		metricsScope = tally.NoopScope
 	}
-	if len(keyValueinPairs)%2 != 0 {
+	if len(keyValuePairs)%2 != 0 {
 		panic("tagScope key value are not in pairs")
 	}
 	tagsMap := map[string]string{}
-	for i := 0; i < len(keyValueinPairs); i += 2 {
-		tagsMap[keyValueinPairs[i]] = keyValueinPairs[i+1]
+	for i := 0; i < len(keyValuePairs); i += 2 {
+		tagsMap[keyValuePairs[i]] = keyValuePairs[i+1]
 	}
 	return metricsScope.Tagged(tagsMap)
 }
