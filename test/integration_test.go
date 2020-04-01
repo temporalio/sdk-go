@@ -377,7 +377,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(enums.WorkflowExecutionCloseStatusTerminated, info.GetCloseStatus(), info)
+			ts.Equal(enums.WorkflowExecutionStatusTerminated, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -394,7 +394,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(enums.WorkflowExecutionCloseStatusCompleted, info.GetCloseStatus(), info)
+			ts.Equal(enums.WorkflowExecutionStatusCompleted, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
