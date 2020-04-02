@@ -176,7 +176,7 @@ type (
 		// - whether return all history events or just the last event, which contains the workflow execution end result
 		// Example:-
 		//	To iterate all events,
-		//		iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
+		// 		iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
 		//		events := []*shared.HistoryEvent{}
 		//		for iter.HasNext() {
 		//			event, err := iter.Next()

@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/cadence/internal/common/serializer"
 	"log"
 	"os"
 	"testing"
@@ -175,11 +176,28 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 				&shared.HistoryEvent{},
 			},
 		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+
+	dummyEvent := []*shared.HistoryEvent{
+		// dummy history event
+		&shared.HistoryEvent{},
+	}
+
+	blobData := serializeEvents(dummyEvent)
+	request3 := getGetWorkflowExecutionHistoryRequest(filterType)
+	request3.NextPageToken = response2.NextPageToken
+	response3 := &shared.GetWorkflowExecutionHistoryResponse{
+		RawHistory: []*shared.DataBlob{
+			// dummy history event
+			blobData,
+		},
 		NextPageToken: nil,
 	}
 
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
 
 	events := []*shared.HistoryEvent{}
 	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, shared.HistoryEventFilterTypeAllEvent)
@@ -188,7 +206,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 		s.Nil(err)
 		events = append(events, event)
 	}
-	s.Equal(2, len(events))
+	s.Equal(3, len(events))
 }
 
 func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
@@ -209,11 +227,28 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 				&shared.HistoryEvent{},
 			},
 		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+
+	dummyEvent := []*shared.HistoryEvent{
+		// dummy history event
+		&shared.HistoryEvent{},
+	}
+
+	blobData := serializeEvents(dummyEvent)
+	request3 := getGetWorkflowExecutionHistoryRequest(filterType)
+	request3.NextPageToken = response2.NextPageToken
+	response3 := &shared.GetWorkflowExecutionHistoryResponse{
+		RawHistory: []*shared.DataBlob{
+			// dummy history event
+			blobData,
+		},
 		NextPageToken: nil,
 	}
 
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
 
 	events := []*shared.HistoryEvent{}
 	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, shared.HistoryEventFilterTypeAllEvent)
@@ -222,7 +257,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 		s.Nil(err)
 		events = append(events, event)
 	}
-	s.Equal(1, len(events))
+	s.Equal(2, len(events))
 }
 
 func (s *historyEventIteratorSuite) TestIterator_Error() {
@@ -345,6 +380,54 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	s.Equal(workflowResult, decodedResult)
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
+	createResponse := &shared.StartWorkflowExecutionResponse{
+		RunId: common.StringPtr(runID),
+	}
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
+
+	filterType := shared.HistoryEventFilterTypeCloseEvent
+	eventType := shared.EventTypeWorkflowExecutionCompleted
+	workflowResult := time.Hour * 59
+	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	events := []*shared.HistoryEvent{
+		&shared.HistoryEvent{
+			EventType: &eventType,
+			WorkflowExecutionCompletedEventAttributes: &shared.WorkflowExecutionCompletedEventAttributes{
+				Result: encodedResult,
+			},
+		},
+	}
+
+	blobData := serializeEvents(events)
+	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
+	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
+		RawHistory: []*shared.DataBlob{
+			blobData,
+		},
+		NextPageToken: nil,
+	}
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), getRequest, gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
+
+	workflowRun, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                              workflowID,
+			TaskList:                        tasklist,
+			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
+			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+		}, workflowType,
+	)
+	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
+	s.Equal(workflowRun.GetRunID(), runID)
+	decodedResult := time.Minute
+	err = workflowRun.Get(context.Background(), &decodedResult)
+	s.Nil(err)
+	s.Equal(workflowResult, decodedResult)
+}
+
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
 	alreadyStartedErr := &shared.WorkflowExecutionAlreadyStartedError{
 		RunId:          common.StringPtr(runID),
@@ -397,6 +480,62 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	s.Equal(workflowResult, decodedResult)
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError_RawHistory() {
+	alreadyStartedErr := &shared.WorkflowExecutionAlreadyStartedError{
+		RunId:          common.StringPtr(runID),
+		Message:        common.StringPtr("Already Started"),
+		StartRequestId: common.StringPtr(uuid.NewRandom().String()),
+	}
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, alreadyStartedErr).Times(1)
+
+	eventType := shared.EventTypeWorkflowExecutionCompleted
+	workflowResult := time.Hour * 59
+	encodedResult, _ := encodeArg(nil, workflowResult)
+	events := []*shared.HistoryEvent{
+		{
+			EventType: &eventType,
+			WorkflowExecutionCompletedEventAttributes: &shared.WorkflowExecutionCompletedEventAttributes{
+				Result: encodedResult,
+			},
+		},
+	}
+
+	blobData := serializeEvents(events)
+
+	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
+		RawHistory: []*shared.DataBlob{
+			blobData,
+		},
+		NextPageToken: nil,
+	}
+	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(getResponse, nil).Times(1)
+	getHistory.Do(func(ctx interface{}, getRequest *shared.GetWorkflowExecutionHistoryRequest, opt1 interface{}, opt2 interface{}, opt3 interface{}) {
+		workflowID := getRequest.Execution.WorkflowId
+		s.NotNil(workflowID)
+		s.NotEmpty(*workflowID)
+	})
+
+	workflowRun, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                              workflowID,
+			TaskList:                        tasklist,
+			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
+			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+		}, workflowType,
+	)
+	s.Nil(err)
+	s.Equal(workflowRun.GetID(), workflowID)
+	s.Equal(workflowRun.GetRunID(), runID)
+	decodedResult := time.Minute
+	err = workflowRun.Get(context.Background(), &decodedResult)
+	s.Nil(err)
+	s.Equal(workflowResult, decodedResult)
+}
+
 // Test for the bug in ExecuteWorkflow.
 // When Options.ID was empty then GetWorkflowExecutionHistory was called with an empty WorkflowID.
 func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
@@ -418,6 +557,59 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 					},
 				},
 			},
+		},
+		NextPageToken: nil,
+	}
+	var wid *string
+	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
+	getHistory.Do(func(ctx interface{}, getRequest *shared.GetWorkflowExecutionHistoryRequest, opt1 interface{}, opt2 interface{}, opt3 interface{}) {
+		wid = getRequest.Execution.WorkflowId
+		s.NotNil(wid)
+		s.NotEmpty(*wid)
+	})
+
+	workflowRun, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			TaskList:                        tasklist,
+			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
+			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+		}, workflowType,
+	)
+	s.Nil(err)
+	s.Equal(workflowRun.GetRunID(), runID)
+	decodedResult := time.Minute
+	err = workflowRun.Get(context.Background(), &decodedResult)
+	s.Nil(err)
+	s.Equal(workflowResult, decodedResult)
+	s.Equal(workflowRun.GetID(), *wid)
+}
+
+// Test for the bug in ExecuteWorkflow in the case of raw history returned from API.
+// When Options.ID was empty then GetWorkflowExecutionHistory was called with an empty WorkflowID.
+func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
+	createResponse := &shared.StartWorkflowExecutionResponse{
+		RunId: common.StringPtr(runID),
+	}
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
+
+	eventType := shared.EventTypeWorkflowExecutionCompleted
+	workflowResult := time.Hour * 59
+	encodedResult, _ := encodeArg(nil, workflowResult)
+	events := []*shared.HistoryEvent{
+		{
+			EventType: &eventType,
+			WorkflowExecutionCompletedEventAttributes: &shared.WorkflowExecutionCompletedEventAttributes{
+				Result: encodedResult,
+			},
+		},
+	}
+
+	blobData := serializeEvents(events)
+	getResponse := &shared.GetWorkflowExecutionHistoryResponse{
+		RawHistory: []*shared.DataBlob{
+			blobData,
 		},
 		NextPageToken: nil,
 	}
@@ -1136,4 +1328,14 @@ func (s *workflowClientTestSuite) TestGetSearchAttributes() {
 	s.service.EXPECT().GetSearchAttributes(gomock.Any(), gomock.Any()).Return(nil, responseErr)
 	resp, err = s.client.GetSearchAttributes(context.Background())
 	s.Equal(responseErr, err)
+}
+
+func serializeEvents(events []*shared.HistoryEvent) *shared.DataBlob {
+
+	blob, _ := serializer.SerializeBatchEvents(events, shared.EncodingTypeThriftRW)
+
+	return &shared.DataBlob{
+		EncodingType: shared.EncodingTypeThriftRW.Ptr(),
+		Data:         blob.Data,
+	}
 }

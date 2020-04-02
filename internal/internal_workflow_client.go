@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/cadence/internal/common/serializer"
 	"reflect"
 	"time"
 
@@ -511,6 +512,18 @@ func (wc *workflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 					})
 					defer cancel()
 					response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request, opt...)
+
+					if err1 != nil {
+						return err1
+					}
+
+					if response.RawHistory != nil {
+						history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, filterType)
+						if err != nil {
+							return err
+						}
+						response.History = history
+					}
 					return err1
 				}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 

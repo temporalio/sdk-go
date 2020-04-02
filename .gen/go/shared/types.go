@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/thriftrw/ptr"
 	"go.uber.org/thriftrw/wire"
 	"math"
 	"strconv"
@@ -14494,10 +14495,40 @@ func (v *GetWorkflowExecutionHistoryRequest) GetHistoryEventFilterType() (o Hist
 }
 
 type GetWorkflowExecutionHistoryResponse struct {
-	History       *History `json:"history,omitempty"`
-	NextPageToken []byte   `json:"nextPageToken,omitempty"`
-	Archived      *bool    `json:"archived,omitempty"`
+	History       *History    `json:"history,omitempty"`
+	RawHistory    []*DataBlob `json:"rawHistory,omitempty"`
+	NextPageToken []byte      `json:"nextPageToken,omitempty"`
+	Archived      *bool       `json:"archived,omitempty"`
 }
+
+type _List_DataBlob_ValueList []*DataBlob
+
+func (v _List_DataBlob_ValueList) ForEach(f func(wire.Value) error) error {
+	for i, x := range v {
+		if x == nil {
+			return fmt.Errorf("invalid [%v]: value is nil", i)
+		}
+		w, err := x.ToWire()
+		if err != nil {
+			return err
+		}
+		err = f(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v _List_DataBlob_ValueList) Size() int {
+	return len(v)
+}
+
+func (_List_DataBlob_ValueList) ValueType() wire.Type {
+	return wire.TStruct
+}
+
+func (_List_DataBlob_ValueList) Close() {}
 
 // ToWire translates a GetWorkflowExecutionHistoryResponse struct into a Thrift-level intermediate
 // representation. This intermediate representation may be serialized
@@ -14516,7 +14547,7 @@ type GetWorkflowExecutionHistoryResponse struct {
 //   }
 func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -14530,12 +14561,20 @@ func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 10, Value: w}
 		i++
 	}
+	if v.RawHistory != nil {
+		w, err = wire.NewValueList(_List_DataBlob_ValueList(v.RawHistory)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
 	if v.NextPageToken != nil {
 		w, err = wire.NewValueBinary(v.NextPageToken), error(nil)
 		if err != nil {
 			return w, err
 		}
-		fields[i] = wire.Field{ID: 20, Value: w}
+		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
 	if v.Archived != nil {
@@ -14543,7 +14582,7 @@ func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 		if err != nil {
 			return w, err
 		}
-		fields[i] = wire.Field{ID: 30, Value: w}
+		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
 
@@ -14554,6 +14593,30 @@ func _History_Read(w wire.Value) (*History, error) {
 	var v History
 	err := v.FromWire(w)
 	return &v, err
+}
+
+func _DataBlob_Read(w wire.Value) (*DataBlob, error) {
+	var v DataBlob
+	err := v.FromWire(w)
+	return &v, err
+}
+
+func _List_DataBlob_Read(l wire.ValueList) ([]*DataBlob, error) {
+	if l.ValueType() != wire.TStruct {
+		return nil, nil
+	}
+
+	o := make([]*DataBlob, 0, l.Size())
+	err := l.ForEach(func(x wire.Value) error {
+		i, err := _DataBlob_Read(x)
+		if err != nil {
+			return err
+		}
+		o = append(o, i)
+		return nil
+	})
+	l.Close()
+	return o, err
 }
 
 // FromWire deserializes a GetWorkflowExecutionHistoryResponse struct from its Thrift-level
@@ -14587,6 +14650,14 @@ func (v *GetWorkflowExecutionHistoryResponse) FromWire(w wire.Value) error {
 
 			}
 		case 20:
+			if field.Value.Type() == wire.TList {
+				v.RawHistory, err = _List_DataBlob_Read(field.Value.GetList())
+				if err != nil {
+					return err
+				}
+
+			}
+		case 30:
 			if field.Value.Type() == wire.TBinary {
 				v.NextPageToken, err = field.Value.GetBinary(), error(nil)
 				if err != nil {
@@ -14594,7 +14665,7 @@ func (v *GetWorkflowExecutionHistoryResponse) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 30:
+		case 40:
 			if field.Value.Type() == wire.TBool {
 				var x bool
 				x, err = field.Value.GetBool(), error(nil)
@@ -14617,10 +14688,14 @@ func (v *GetWorkflowExecutionHistoryResponse) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.History != nil {
 		fields[i] = fmt.Sprintf("History: %v", v.History)
+		i++
+	}
+	if v.RawHistory != nil {
+		fields[i] = fmt.Sprintf("RawHistory: %v", v.RawHistory)
 		i++
 	}
 	if v.NextPageToken != nil {
@@ -14635,12 +14710,30 @@ func (v *GetWorkflowExecutionHistoryResponse) String() string {
 	return fmt.Sprintf("GetWorkflowExecutionHistoryResponse{%v}", strings.Join(fields[:i], ", "))
 }
 
+func _List_DataBlob_Equals(lhs, rhs []*DataBlob) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+
+	for i, lv := range lhs {
+		rv := rhs[i]
+		if !lv.Equals(rv) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Equals returns true if all the fields of this GetWorkflowExecutionHistoryResponse match the
 // provided GetWorkflowExecutionHistoryResponse.
 //
 // This function performs a deep comparison.
 func (v *GetWorkflowExecutionHistoryResponse) Equals(rhs *GetWorkflowExecutionHistoryResponse) bool {
 	if !((v.History == nil && rhs.History == nil) || (v.History != nil && rhs.History != nil && v.History.Equals(rhs.History))) {
+		return false
+	}
+	if !((v.RawHistory == nil && rhs.RawHistory == nil) || (v.RawHistory != nil && rhs.RawHistory != nil && _List_DataBlob_Equals(v.RawHistory, rhs.RawHistory))) {
 		return false
 	}
 	if !((v.NextPageToken == nil && rhs.NextPageToken == nil) || (v.NextPageToken != nil && rhs.NextPageToken != nil && bytes.Equal(v.NextPageToken, rhs.NextPageToken))) {
@@ -17294,6 +17387,116 @@ func (v *IndexedValueType) UnmarshalJSON(text []byte) error {
 	default:
 		return fmt.Errorf("invalid JSON value %q (%T) to unmarshal into %q", t, t, "IndexedValueType")
 	}
+}
+
+type InternalDataInconsistencyError struct {
+	Message string `json:"message,required"`
+}
+
+// ToWire translates a InternalDataInconsistencyError struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *InternalDataInconsistencyError) ToWire() (wire.Value, error) {
+	var (
+		fields [1]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	w, err = wire.NewValueString(v.Message), error(nil)
+	if err != nil {
+		return w, err
+	}
+	fields[i] = wire.Field{ID: 1, Value: w}
+	i++
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a InternalDataInconsistencyError struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a InternalDataInconsistencyError struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v InternalDataInconsistencyError
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *InternalDataInconsistencyError) FromWire(w wire.Value) error {
+	var err error
+
+	messageIsSet := false
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 1:
+			if field.Value.Type() == wire.TBinary {
+				v.Message, err = field.Value.GetString(), error(nil)
+				if err != nil {
+					return err
+				}
+				messageIsSet = true
+			}
+		}
+	}
+
+	if !messageIsSet {
+		return errors.New("field Message of InternalDataInconsistencyError is required")
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a InternalDataInconsistencyError
+// struct.
+func (v *InternalDataInconsistencyError) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [1]string
+	i := 0
+	fields[i] = fmt.Sprintf("Message: %v", v.Message)
+	i++
+
+	return fmt.Sprintf("InternalDataInconsistencyError{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this InternalDataInconsistencyError match the
+// provided InternalDataInconsistencyError.
+//
+// This function performs a deep comparison.
+func (v *InternalDataInconsistencyError) Equals(rhs *InternalDataInconsistencyError) bool {
+	if !(v.Message == rhs.Message) {
+		return false
+	}
+
+	return true
+}
+
+func (v *InternalDataInconsistencyError) Error() string {
+	return v.String()
 }
 
 type InternalServiceError struct {
@@ -24138,12 +24341,6 @@ func (v *ReapplyEventsRequest) ToWire() (wire.Value, error) {
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
 
-func _DataBlob_Read(w wire.Value) (*DataBlob, error) {
-	var v DataBlob
-	err := v.FromWire(w)
-	return &v, err
-}
-
 // FromWire deserializes a ReapplyEventsRequest struct from its Thrift-level
 // representation. The Thrift-level representation may be obtained
 // from a ThriftRW protocol implementation.
@@ -24979,6 +25176,146 @@ func (v *RecordMarkerDecisionAttributes) GetMarkerName() (o string) {
 	return
 }
 
+type RefreshWorkflowTasksRequest struct {
+	Domain    *string            `json:"domain,omitempty"`
+	Execution *WorkflowExecution `json:"execution,omitempty"`
+}
+
+// ToWire translates a RefreshWorkflowTasksRequest struct into a Thrift-level intermediate
+// representation. This intermediate representation may be serialized
+// into bytes using a ThriftRW protocol implementation.
+//
+// An error is returned if the struct or any of its fields failed to
+// validate.
+//
+//   x, err := v.ToWire()
+//   if err != nil {
+//     return err
+//   }
+//
+//   if err := binaryProtocol.Encode(x, writer); err != nil {
+//     return err
+//   }
+func (v *RefreshWorkflowTasksRequest) ToWire() (wire.Value, error) {
+	var (
+		fields [2]wire.Field
+		i      int = 0
+		w      wire.Value
+		err    error
+	)
+
+	if v.Domain != nil {
+		w, err = wire.NewValueString(*(v.Domain)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 10, Value: w}
+		i++
+	}
+	if v.Execution != nil {
+		w, err = v.Execution.ToWire()
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 20, Value: w}
+		i++
+	}
+
+	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
+}
+
+// FromWire deserializes a RefreshWorkflowTasksRequest struct from its Thrift-level
+// representation. The Thrift-level representation may be obtained
+// from a ThriftRW protocol implementation.
+//
+// An error is returned if we were unable to build a RefreshWorkflowTasksRequest struct
+// from the provided intermediate representation.
+//
+//   x, err := binaryProtocol.Decode(reader, wire.TStruct)
+//   if err != nil {
+//     return nil, err
+//   }
+//
+//   var v RefreshWorkflowTasksRequest
+//   if err := v.FromWire(x); err != nil {
+//     return nil, err
+//   }
+//   return &v, nil
+func (v *RefreshWorkflowTasksRequest) FromWire(w wire.Value) error {
+	var err error
+
+	for _, field := range w.GetStruct().Fields {
+		switch field.ID {
+		case 10:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.Domain = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 20:
+			if field.Value.Type() == wire.TStruct {
+				v.Execution, err = _WorkflowExecution_Read(field.Value)
+				if err != nil {
+					return err
+				}
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// String returns a readable string representation of a RefreshWorkflowTasksRequest
+// struct.
+func (v *RefreshWorkflowTasksRequest) String() string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	var fields [2]string
+	i := 0
+	if v.Domain != nil {
+		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
+		i++
+	}
+	if v.Execution != nil {
+		fields[i] = fmt.Sprintf("Execution: %v", v.Execution)
+		i++
+	}
+
+	return fmt.Sprintf("RefreshWorkflowTasksRequest{%v}", strings.Join(fields[:i], ", "))
+}
+
+// Equals returns true if all the fields of this RefreshWorkflowTasksRequest match the
+// provided RefreshWorkflowTasksRequest.
+//
+// This function performs a deep comparison.
+func (v *RefreshWorkflowTasksRequest) Equals(rhs *RefreshWorkflowTasksRequest) bool {
+	if !_String_EqualsPtr(v.Domain, rhs.Domain) {
+		return false
+	}
+	if !((v.Execution == nil && rhs.Execution == nil) || (v.Execution != nil && rhs.Execution != nil && v.Execution.Equals(rhs.Execution))) {
+		return false
+	}
+
+	return true
+}
+
+// GetDomain returns the value of Domain if it is set or its
+// zero value if it is unset.
+func (v *RefreshWorkflowTasksRequest) GetDomain() (o string) {
+	if v.Domain != nil {
+		return *v.Domain
+	}
+
+	return
+}
+
 type RegisterDomainRequest struct {
 	Name                                   *string                            `json:"name,omitempty"`
 	Description                            *string                            `json:"description,omitempty"`
@@ -25051,7 +25388,10 @@ func (v *RegisterDomainRequest) ToWire() (wire.Value, error) {
 		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
-	if v.EmitMetric != nil {
+	if v.EmitMetric == nil {
+		v.EmitMetric = ptr.Bool(true)
+	}
+	{
 		w, err = wire.NewValueBool(*(v.EmitMetric)), error(nil)
 		if err != nil {
 			return w, err
@@ -25296,6 +25636,10 @@ func (v *RegisterDomainRequest) FromWire(w wire.Value) error {
 		}
 	}
 
+	if v.EmitMetric == nil {
+		v.EmitMetric = ptr.Bool(true)
+	}
+
 	return nil
 }
 
@@ -25465,7 +25809,7 @@ func (v *RegisterDomainRequest) GetEmitMetric() (o bool) {
 	if v.EmitMetric != nil {
 		return *v.EmitMetric
 	}
-
+	o = true
 	return
 }
 

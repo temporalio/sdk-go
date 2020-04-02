@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/cadence/internal/common/serializer"
 	"io/ioutil"
 	"math"
 	"time"
@@ -281,6 +282,15 @@ func ReplayWorkflowExecution(ctx context.Context, service workflowserviceclient.
 	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
 	if err != nil {
 		return err
+	}
+
+	if hResponse.RawHistory != nil {
+		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, shared.HistoryEventFilterTypeAllEvent)
+		if err != nil {
+			return err
+		}
+
+		hResponse.History = history
 	}
 
 	return replayWorkflowHistory(logger, service, domain, hResponse.History)
