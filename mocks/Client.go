@@ -27,7 +27,6 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
-
 	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
