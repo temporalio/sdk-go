@@ -37,15 +37,11 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
-	filterpb "go.temporal.io/temporal-proto/filter"
 	namespacepb "go.temporal.io/temporal-proto/namespace"
-	querypb "go.temporal.io/temporal-proto/query"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
@@ -234,9 +230,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil),
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
@@ -249,9 +245,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 			ScheduledEventId: 5,
 			StartedEventId:   6,
 		}),
-		createTestEventDecisionTaskScheduled(8, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(8, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &decisionpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(10, &eventpb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 8,
 			StartedEventId:   9,
 		}),
@@ -276,9 +272,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil),
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
@@ -307,9 +303,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil),
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
@@ -339,9 +335,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(nil),
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
@@ -386,7 +382,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 			TaskList: &tasklistpb.TaskList{Name: taskList},
 			Input:    testEncodeFunctionArgs(params.DataConverter),
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 	}
 

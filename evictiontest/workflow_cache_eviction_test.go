@@ -37,16 +37,10 @@ import (
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-
 	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	namespacepb "go.temporal.io/temporal-proto/namespace"
-	querypb "go.temporal.io/temporal-proto/query"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/atomic"
@@ -102,7 +96,7 @@ func createTestEventWorkflowExecutionStarted(eventID int64, attr *eventpb.Workfl
 		Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskScheduled(eventID int64, attr *decisionpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
+func createTestEventDecisionTaskScheduled(eventID int64, attr *eventpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  eventpb.EventTypeDecisionTaskScheduled,
@@ -114,7 +108,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			TaskList: &tasklistpb.TaskList{Name: "tasklist"},
 		}),
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 	}
 
 	var taskCounter atomic.Int32 // lambda variable to keep count

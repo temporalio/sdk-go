@@ -24,6 +24,7 @@ package worker
 import (
 	"context"
 
+	eventpb "go.temporal.io/temporal-proto/event"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/zap"
 

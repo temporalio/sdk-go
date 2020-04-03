@@ -34,12 +34,8 @@ import (
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	namespacepb "go.temporal.io/temporal-proto/namespace"
-	querypb "go.temporal.io/temporal-proto/query"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
@@ -251,9 +247,9 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				WorkflowType:                        &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
 			EventType: eventpb.EventTypeMarkerRecorded,
@@ -263,9 +259,9 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &decisionpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
 			EventType: eventpb.EventTypeMarkerRecorded,
@@ -275,7 +271,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
@@ -391,9 +387,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				WorkflowType:                        &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &decisionpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
 			EventType: eventpb.EventTypeMarkerRecorded,
@@ -403,9 +399,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &decisionpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
 			EventType: eventpb.EventTypeMarkerRecorded,
@@ -415,7 +411,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
