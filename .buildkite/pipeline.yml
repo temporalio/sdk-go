@@ -1,4 +1,9 @@
 steps:
+  - label: "fossa analyze"
+    agents:
+      queue: "init"
+      docker: "*"
+    command: ".buildkite/scripts/fossa.sh"
   - label: ":golang: unit-test"
     agents:
       queue: "workers"
