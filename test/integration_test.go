@@ -32,7 +32,15 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/goleak"
@@ -188,7 +196,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 		"test-activity-retry-on-start2close-timeout",
 		ts.workflows.ActivityRetryOnTimeout,
 		&expected,
-		enums.TimeoutTypeStartToClose)
+		eventpb.TimeoutTypeStartToClose)
 
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -272,7 +280,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
-		QueryConsistencyLevel: enums.QueryConsistencyLevelStrong,
+		QueryConsistencyLevel: querypb.QueryConsistencyLevelStrong,
 	})
 	ts.Nil(err)
 	ts.NotNil(value)
@@ -377,7 +385,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(enums.WorkflowExecutionStatusTerminated, info.GetStatus(), info)
+			ts.Equal(executionpb.WorkflowExecutionStatusTerminated, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -394,7 +402,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(enums.WorkflowExecutionStatusCompleted, info.GetStatus(), info)
+			ts.Equal(executionpb.WorkflowExecutionStatusCompleted, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -490,7 +498,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enums.HistoryEventFilterTypeAllEvent)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HistoryEventFilterTypeAllEvent)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

@@ -28,7 +28,15 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/client"
@@ -108,11 +116,11 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 }
 
 // DescribeTaskList provides a mock function with given fields: ctx, tasklist, tasklistType
-func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
+func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	ret := _m.Called(ctx, tasklist, tasklistType)
 
 	var r0 *workflowservice.DescribeTaskListResponse
-	if rf, ok := ret.Get(0).(func(context.Context, string, enums.TaskListType) *workflowservice.DescribeTaskListResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, tasklistpb.TaskListType) *workflowservice.DescribeTaskListResponse); ok {
 		r0 = rf(ctx, tasklist, tasklistType)
 	} else {
 		if ret.Get(0) != nil {
@@ -121,7 +129,7 @@ func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklis
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, enums.TaskListType) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, string, tasklistpb.TaskListType) error); ok {
 		r1 = rf(ctx, tasklist, tasklistType)
 	} else {
 		r1 = ret.Error(1)
@@ -219,11 +227,11 @@ func (_m *Client) GetWorkflow(ctx context.Context, workflowID string, runID stri
 }
 
 // GetWorkflowHistory provides a mock function with given fields: ctx, workflowID, runID, isLongPoll, filterType
-func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) client.HistoryEventIterator {
+func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType filterpb.HistoryEventFilterType) client.HistoryEventIterator {
 	ret := _m.Called(ctx, workflowID, runID, isLongPoll, filterType)
 
 	var r0 internal.HistoryEventIterator
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, enums.HistoryEventFilterType) internal.HistoryEventIterator); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, bool, filterpb.HistoryEventFilterType) internal.HistoryEventIterator); ok {
 		r0 = rf(ctx, workflowID, runID, isLongPoll, filterType)
 	} else {
 		if ret.Get(0) != nil {

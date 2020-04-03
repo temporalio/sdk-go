@@ -24,9 +24,15 @@ import (
 	"container/list"
 	"fmt"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
-
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal/internal/common/util"
 )
 
@@ -43,7 +49,7 @@ type (
 		getState() decisionState
 		getID() decisionID
 		isDone() bool
-		getDecision() *commonproto.Decision // return nil if there is no decision in current state
+		getDecision() *decisionpb.Decision // return nil if there is no decision in current state
 		cancel()
 
 		handleStartedEvent()
@@ -70,23 +76,23 @@ type (
 
 	activityDecisionStateMachine struct {
 		*decisionStateMachineBase
-		attributes *commonproto.ScheduleActivityTaskDecisionAttributes
+		attributes *decisionpb.ScheduleActivityTaskDecisionAttributes
 	}
 
 	timerDecisionStateMachine struct {
 		*decisionStateMachineBase
-		attributes *commonproto.StartTimerDecisionAttributes
+		attributes *decisionpb.StartTimerDecisionAttributes
 		canceled   bool
 	}
 
 	childWorkflowDecisionStateMachine struct {
 		*decisionStateMachineBase
-		attributes *commonproto.StartChildWorkflowExecutionDecisionAttributes
+		attributes *decisionpb.StartChildWorkflowExecutionDecisionAttributes
 	}
 
 	naiveDecisionStateMachine struct {
 		*decisionStateMachineBase
-		decision *commonproto.Decision
+		decision *decisionpb.Decision
 	}
 
 	// only possible state transition is: CREATED->SENT->INITIATED->COMPLETED
@@ -227,7 +233,7 @@ func (h *decisionsHelper) newDecisionStateMachineBase(decisionType decisionType,
 	}
 }
 
-func (h *decisionsHelper) newActivityDecisionStateMachine(attributes *commonproto.ScheduleActivityTaskDecisionAttributes) *activityDecisionStateMachine {
+func (h *decisionsHelper) newActivityDecisionStateMachine(attributes *decisionpb.ScheduleActivityTaskDecisionAttributes) *activityDecisionStateMachine {
 	base := h.newDecisionStateMachineBase(decisionTypeActivity, attributes.GetActivityId())
 	return &activityDecisionStateMachine{
 		decisionStateMachineBase: base,
@@ -235,7 +241,7 @@ func (h *decisionsHelper) newActivityDecisionStateMachine(attributes *commonprot
 	}
 }
 
-func (h *decisionsHelper) newTimerDecisionStateMachine(attributes *commonproto.StartTimerDecisionAttributes) *timerDecisionStateMachine {
+func (h *decisionsHelper) newTimerDecisionStateMachine(attributes *decisionpb.StartTimerDecisionAttributes) *timerDecisionStateMachine {
 	base := h.newDecisionStateMachineBase(decisionTypeTimer, attributes.GetTimerId())
 	return &timerDecisionStateMachine{
 		decisionStateMachineBase: base,
@@ -243,7 +249,7 @@ func (h *decisionsHelper) newTimerDecisionStateMachine(attributes *commonproto.S
 	}
 }
 
-func (h *decisionsHelper) newChildWorkflowDecisionStateMachine(attributes *commonproto.StartChildWorkflowExecutionDecisionAttributes) *childWorkflowDecisionStateMachine {
+func (h *decisionsHelper) newChildWorkflowDecisionStateMachine(attributes *decisionpb.StartChildWorkflowExecutionDecisionAttributes) *childWorkflowDecisionStateMachine {
 	base := h.newDecisionStateMachineBase(decisionTypeChildWorkflow, attributes.GetWorkflowId())
 	return &childWorkflowDecisionStateMachine{
 		decisionStateMachineBase: base,
@@ -251,7 +257,7 @@ func (h *decisionsHelper) newChildWorkflowDecisionStateMachine(attributes *commo
 	}
 }
 
-func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType, id string, decision *commonproto.Decision) *naiveDecisionStateMachine {
+func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType, id string, decision *decisionpb.Decision) *naiveDecisionStateMachine {
 	base := h.newDecisionStateMachineBase(decisionType, id)
 	return &naiveDecisionStateMachine{
 		decisionStateMachineBase: base,
@@ -259,33 +265,33 @@ func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType
 	}
 }
 
-func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *commonproto.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
-	d := createNewDecision(enums.DecisionTypeRecordMarker)
-	d.Attributes = &commonproto.Decision_RecordMarkerDecisionAttributes{RecordMarkerDecisionAttributes: attributes}
+func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *decisionpb.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
+	d := createNewDecision(decisionpb.DecisionTypeRecordMarker)
+	d.Attributes = &decisionpb.Decision_RecordMarkerDecisionAttributes{RecordMarkerDecisionAttributes: attributes}
 	return &markerDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
 	}
 }
 
-func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(enums.DecisionTypeRequestCancelExternalWorkflowExecution)
-	d.Attributes = &commonproto.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: attributes}
+func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
+	d := createNewDecision(decisionpb.DecisionTypeRequestCancelExternalWorkflowExecution)
+	d.Attributes = &decisionpb.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &cancelExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeCancellation, cancellationID, d),
 	}
 }
 
-func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *commonproto.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(enums.DecisionTypeSignalExternalWorkflowExecution)
-	d.Attributes = &commonproto.Decision_SignalExternalWorkflowExecutionDecisionAttributes{SignalExternalWorkflowExecutionDecisionAttributes: attributes}
+func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *decisionpb.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
+	d := createNewDecision(decisionpb.DecisionTypeSignalExternalWorkflowExecution)
+	d.Attributes = &decisionpb.Decision_SignalExternalWorkflowExecutionDecisionAttributes{SignalExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &signalExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
 	}
 }
 
-func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *commonproto.UpsertWorkflowSearchAttributesDecisionAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
-	d := createNewDecision(enums.DecisionTypeUpsertWorkflowSearchAttributes)
-	d.Attributes = &commonproto.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: attributes}
+func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
+	d := createNewDecision(decisionpb.DecisionTypeUpsertWorkflowSearchAttributes)
+	d.Attributes = &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: attributes}
 	return &upsertSearchAttributesDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeUpsertSearchAttributes, upsertID, d),
 	}
@@ -427,15 +433,15 @@ func (d *decisionStateMachineBase) String() string {
 		d.id, d.state, d.isDone(), d.history)
 }
 
-func (d *activityDecisionStateMachine) getDecision() *commonproto.Decision {
+func (d *activityDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(enums.DecisionTypeScheduleActivityTask)
-		decision.Attributes = &commonproto.Decision_ScheduleActivityTaskDecisionAttributes{ScheduleActivityTaskDecisionAttributes: d.attributes}
+		decision := createNewDecision(decisionpb.DecisionTypeScheduleActivityTask)
+		decision.Attributes = &decisionpb.Decision_ScheduleActivityTaskDecisionAttributes{ScheduleActivityTaskDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(enums.DecisionTypeRequestCancelActivityTask)
-		decision.Attributes = &commonproto.Decision_RequestCancelActivityTaskDecisionAttributes{RequestCancelActivityTaskDecisionAttributes: &commonproto.RequestCancelActivityTaskDecisionAttributes{
+		decision := createNewDecision(decisionpb.DecisionTypeRequestCancelActivityTask)
+		decision.Attributes = &decisionpb.Decision_RequestCancelActivityTaskDecisionAttributes{RequestCancelActivityTaskDecisionAttributes: &decisionpb.RequestCancelActivityTaskDecisionAttributes{
 			ActivityId: d.attributes.ActivityId,
 		}}
 		return decision
@@ -489,15 +495,15 @@ func (d *timerDecisionStateMachine) handleCancelFailedEvent() {
 	}
 }
 
-func (d *timerDecisionStateMachine) getDecision() *commonproto.Decision {
+func (d *timerDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(enums.DecisionTypeStartTimer)
-		decision.Attributes = &commonproto.Decision_StartTimerDecisionAttributes{StartTimerDecisionAttributes: d.attributes}
+		decision := createNewDecision(decisionpb.DecisionTypeStartTimer)
+		decision.Attributes = &decisionpb.Decision_StartTimerDecisionAttributes{StartTimerDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(enums.DecisionTypeCancelTimer)
-		decision.Attributes = &commonproto.Decision_CancelTimerDecisionAttributes{CancelTimerDecisionAttributes: &commonproto.CancelTimerDecisionAttributes{
+		decision := createNewDecision(decisionpb.DecisionTypeCancelTimer)
+		decision.Attributes = &decisionpb.Decision_CancelTimerDecisionAttributes{CancelTimerDecisionAttributes: &decisionpb.CancelTimerDecisionAttributes{
 			TimerId: d.attributes.TimerId,
 		}}
 		return decision
@@ -506,15 +512,15 @@ func (d *timerDecisionStateMachine) getDecision() *commonproto.Decision {
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) getDecision() *commonproto.Decision {
+func (d *childWorkflowDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(enums.DecisionTypeStartChildWorkflowExecution)
-		decision.Attributes = &commonproto.Decision_StartChildWorkflowExecutionDecisionAttributes{StartChildWorkflowExecutionDecisionAttributes: d.attributes}
+		decision := createNewDecision(decisionpb.DecisionTypeStartChildWorkflowExecution)
+		decision.Attributes = &decisionpb.Decision_StartChildWorkflowExecutionDecisionAttributes{StartChildWorkflowExecutionDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterStarted:
-		decision := createNewDecision(enums.DecisionTypeRequestCancelExternalWorkflowExecution)
-		decision.Attributes = &commonproto.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
+		decision := createNewDecision(decisionpb.DecisionTypeRequestCancelExternalWorkflowExecution)
+		decision.Attributes = &decisionpb.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: &decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes{
 			Namespace:         d.attributes.Namespace,
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
@@ -581,7 +587,7 @@ func (d *childWorkflowDecisionStateMachine) handleCompletionEvent() {
 	}
 }
 
-func (d *naiveDecisionStateMachine) getDecision() *commonproto.Decision {
+func (d *naiveDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
 		return d.decision
@@ -711,7 +717,7 @@ func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
 	h.decisions[decision.getID()] = element
 }
 
-func (h *decisionsHelper) scheduleActivityTask(attributes *commonproto.ScheduleActivityTaskDecisionAttributes) decisionStateMachine {
+func (h *decisionsHelper) scheduleActivityTask(attributes *decisionpb.ScheduleActivityTaskDecisionAttributes) decisionStateMachine {
 	decision := h.newActivityDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
@@ -752,16 +758,16 @@ func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID strin
 	decision.handleCancelFailedEvent()
 }
 
-func (h *decisionsHelper) getActivityID(event *commonproto.HistoryEvent) string {
+func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
-	case enums.EventTypeActivityTaskCanceled:
+	case eventpb.EventTypeActivityTaskCanceled:
 		scheduledEventID = event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId()
-	case enums.EventTypeActivityTaskCompleted:
+	case eventpb.EventTypeActivityTaskCompleted:
 		scheduledEventID = event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId()
-	case enums.EventTypeActivityTaskFailed:
+	case eventpb.EventTypeActivityTaskFailed:
 		scheduledEventID = event.GetActivityTaskFailedEventAttributes().GetScheduledEventId()
-	case enums.EventTypeActivityTaskTimedOut:
+	case eventpb.EventTypeActivityTaskTimedOut:
 		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
 		panicIllegalState(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
@@ -781,7 +787,7 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 		panic(err)
 	}
 
-	recordMarker := &commonproto.RecordMarkerDecisionAttributes{
+	recordMarker := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: versionMarkerName,
 		Details:    details, // Keep
 	}
@@ -793,7 +799,7 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 
 func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
-	attributes := &commonproto.RecordMarkerDecisionAttributes{
+	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: sideEffectMarkerName,
 		Details:    data,
 	}
@@ -804,7 +810,7 @@ func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte
 
 func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result []byte) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
-	attributes := &commonproto.RecordMarkerDecisionAttributes{
+	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: localActivityMarkerName,
 		Details:    result,
 	}
@@ -815,7 +821,7 @@ func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result []
 
 func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data []byte) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
-	attributes := &commonproto.RecordMarkerDecisionAttributes{
+	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: mutableSideEffectMarkerName,
 		Details:    data,
 	}
@@ -824,7 +830,7 @@ func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID stri
 	return decision
 }
 
-func (h *decisionsHelper) startChildWorkflowExecution(attributes *commonproto.StartChildWorkflowExecutionDecisionAttributes) decisionStateMachine {
+func (h *decisionsHelper) startChildWorkflowExecution(attributes *decisionpb.StartChildWorkflowExecutionDecisionAttributes) decisionStateMachine {
 	decision := h.newChildWorkflowDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
@@ -873,7 +879,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, work
 	if len(cancellationID) == 0 {
 		panic("cancellation on external workflow should use cancellation ID")
 	}
-	attributes := &commonproto.RequestCancelExternalWorkflowExecutionDecisionAttributes{
+	attributes := &decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes{
 		Namespace:         namespace,
 		WorkflowId:        workflowID,
 		RunId:             runID,
@@ -929,9 +935,9 @@ func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(ini
 }
 
 func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input []byte, signalID string, childWorkflowOnly bool) decisionStateMachine {
-	attributes := &commonproto.SignalExternalWorkflowExecutionDecisionAttributes{
+	attributes := &decisionpb.SignalExternalWorkflowExecutionDecisionAttributes{
 		Namespace: namespace,
-		Execution: &commonproto.WorkflowExecution{
+		Execution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -945,8 +951,8 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID,
 	return decision
 }
 
-func (h *decisionsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonproto.SearchAttributes) decisionStateMachine {
-	attributes := &commonproto.UpsertWorkflowSearchAttributesDecisionAttributes{
+func (h *decisionsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) decisionStateMachine {
+	attributes := &decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes{
 		SearchAttributes: searchAttr,
 	}
 	decision := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
@@ -980,7 +986,7 @@ func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
 	return signalID
 }
 
-func (h *decisionsHelper) startTimer(attributes *commonproto.StartTimerDecisionAttributes) decisionStateMachine {
+func (h *decisionsHelper) startTimer(attributes *decisionpb.StartTimerDecisionAttributes) decisionStateMachine {
 	decision := h.newTimerDecisionStateMachine(attributes)
 	h.addDecision(decision)
 	return decision
@@ -1031,8 +1037,8 @@ func (h *decisionsHelper) handleChildWorkflowExecutionCanceled(workflowID string
 	return decision
 }
 
-func (h *decisionsHelper) getDecisions(markAsSent bool) []*commonproto.Decision {
-	var result []*commonproto.Decision
+func (h *decisionsHelper) getDecisions(markAsSent bool) []*decisionpb.Decision {
+	var result []*decisionpb.Decision
 	for curr := h.orderedDecisions.Front(); curr != nil; {
 		next := curr.Next() // get next item here as we might need to remove curr in the loop
 		d := curr.Value.(decisionStateMachine)

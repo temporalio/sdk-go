@@ -35,8 +35,16 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -132,7 +140,7 @@ type (
 
 		callbackChannel chan testCallbackHandle
 		testTimeout     time.Duration
-		header          *commonproto.Header
+		header          *commonpb.Header
 
 		counterID        int
 		activities       map[string]*testActivityHandle
@@ -528,7 +536,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(enums.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
+			return nil, NewTimeoutError(eventpb.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -1044,7 +1052,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	return
 }
 
-func fromProtoRetryPolicy(p *commonproto.RetryPolicy) *RetryPolicy {
+func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
 		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
@@ -1055,7 +1063,7 @@ func fromProtoRetryPolicy(p *commonproto.RetryPolicy) *RetryPolicy {
 	}
 }
 
-func getRetryBackoffFromProtoRetryPolicy(prp *commonproto.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
 	if prp == nil {
 		return noRetryBackoff
 	}
@@ -1152,7 +1160,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(enums.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
+			err = NewTimeoutError(eventpb.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))
@@ -1557,20 +1565,20 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 
 func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, namespace string, params executeActivityParams) *workflowservice.PollForActivityTaskResponse {
 	task := &workflowservice.PollForActivityTaskResponse{
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
 		ActivityId:                    activityID,
 		TaskToken:                     []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
-		ActivityType:                  &commonproto.ActivityType{Name: params.ActivityType.Name},
+		ActivityType:                  &commonpb.ActivityType{Name: params.ActivityType.Name},
 		Input:                         params.Input,
 		ScheduledTimestamp:            time.Now().UnixNano(),
 		ScheduleToCloseTimeoutSeconds: params.ScheduleToCloseTimeoutSeconds,
 		StartedTimestamp:              time.Now().UnixNano(),
 		StartToCloseTimeoutSeconds:    params.StartToCloseTimeoutSeconds,
 		HeartbeatTimeoutSeconds:       params.HeartbeatTimeoutSeconds,
-		WorkflowType: &commonproto.WorkflowType{
+		WorkflowType: &commonpb.WorkflowType{
 			Name: workflowTypeName,
 		},
 		WorkflowNamespace: namespace,

@@ -26,7 +26,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -187,37 +195,37 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		current  *commonproto.SearchAttributes
-		upsert   *commonproto.SearchAttributes
-		expected *commonproto.SearchAttributes
+		current  *commonpb.SearchAttributes
+		upsert   *commonpb.SearchAttributes
+		expected *commonpb.SearchAttributes
 	}{
 		{
 			name:     "currentIsNil",
 			current:  nil,
-			upsert:   &commonproto.SearchAttributes{},
+			upsert:   &commonpb.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name:     "currentIsEmpty",
-			current:  &commonproto.SearchAttributes{IndexedFields: make(map[string][]byte)},
-			upsert:   &commonproto.SearchAttributes{},
+			current:  &commonpb.SearchAttributes{IndexedFields: make(map[string][]byte)},
+			upsert:   &commonpb.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name: "normalMerge",
-			current: &commonproto.SearchAttributes{
+			current: &commonpb.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":     []byte(`1`),
 					"CustomKeywordField": []byte(`keyword`),
 				},
 			},
-			upsert: &commonproto.SearchAttributes{
+			upsert: &commonpb.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":  []byte(`2`),
 					"CustomBoolField": []byte(`true`),
 				},
 			},
-			expected: &commonproto.SearchAttributes{
+			expected: &commonpb.SearchAttributes{
 				IndexedFields: map[string][]byte{
 					"CustomIntField":     []byte(`2`),
 					"CustomKeywordField": []byte(`keyword`),

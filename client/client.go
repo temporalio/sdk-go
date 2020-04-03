@@ -27,7 +27,15 @@ package client
 import (
 	"context"
 
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/encoded"
@@ -189,7 +197,7 @@ type (
 		//			}
 		//			events = append(events, event)
 		//		}
-		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType filterpb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return activity.ErrResultPending to
@@ -346,7 +354,7 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error

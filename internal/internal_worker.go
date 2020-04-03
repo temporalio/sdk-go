@@ -44,8 +44,16 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -1137,7 +1145,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // ReplayWorkflowHistory executes a single decision task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *commonproto.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *eventpb.History) error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -1180,7 +1188,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
 func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution WorkflowExecution) error {
-	sharedExecution := &commonproto.WorkflowExecution{
+	sharedExecution := &executionpb.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
 	}
@@ -1196,7 +1204,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *commonproto.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *eventpb.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {
@@ -1206,7 +1214,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("at least 3 events expected in the history")
 	}
 	first := events[0]
-	if first.GetEventType() != enums.EventTypeWorkflowExecutionStarted {
+	if first.GetEventType() != eventpb.EventTypeWorkflowExecutionStarted {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
 	last := events[len(events)-1]
@@ -1216,7 +1224,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("corrupted WorkflowExecutionStarted")
 	}
 	workflowType := attr.WorkflowType
-	execution := &commonproto.WorkflowExecution{
+	execution := &executionpb.WorkflowExecution{
 		RunId:      uuid.NewRandom().String(),
 		WorkflowId: "ReplayId",
 	}
@@ -1257,7 +1265,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return err
 	}
 
-	if last.GetEventType() != enums.EventTypeWorkflowExecutionCompleted && last.GetEventType() != enums.EventTypeWorkflowExecutionContinuedAsNew {
+	if last.GetEventType() != eventpb.EventTypeWorkflowExecutionCompleted && last.GetEventType() != eventpb.EventTypeWorkflowExecutionContinuedAsNew {
 		return nil
 	}
 	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
@@ -1265,8 +1273,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == enums.DecisionTypeContinueAsNewWorkflowExecution {
-					if last.GetEventType() == enums.EventTypeWorkflowExecutionContinuedAsNew {
+				if d.GetDecisionType() == decisionpb.DecisionTypeContinueAsNewWorkflowExecution {
+					if last.GetEventType() == eventpb.EventTypeWorkflowExecutionContinuedAsNew {
 						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
 						if bytes.Equal(inputA, inputB) {
@@ -1274,8 +1282,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 						}
 					}
 				}
-				if d.GetDecisionType() == enums.DecisionTypeCompleteWorkflowExecution {
-					if last.GetEventType() == enums.EventTypeWorkflowExecutionCompleted {
+				if d.GetDecisionType() == decisionpb.DecisionTypeCompleteWorkflowExecution {
+					if last.GetEventType() == eventpb.EventTypeWorkflowExecutionCompleted {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
 						if bytes.Equal(resultA, resultB) {
@@ -1289,13 +1297,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	return err
 }
 
-func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonproto.History, error) {
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.History, error) {
 	reader, err := os.Open(jsonfileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var deserializedHistory commonproto.History
+	var deserializedHistory eventpb.History
 	err = jsonpb.Unmarshal(reader, &deserializedHistory)
 
 	if err != nil {
@@ -1307,7 +1315,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 	}
 
 	// Caller is potentially asking for subset of history instead of all history events
-	var events []*commonproto.HistoryEvent
+	var events []*eventpb.HistoryEvent
 	for _, event := range deserializedHistory.Events {
 		events = append(events, event)
 		if event.GetEventId() == lastEventID {
@@ -1315,7 +1323,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*commonprot
 			break
 		}
 	}
-	history := &commonproto.History{Events: events}
+	history := &eventpb.History{Events: events}
 
 	return history, nil
 }

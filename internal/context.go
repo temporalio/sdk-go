@@ -25,8 +25,15 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"
@@ -176,7 +183,7 @@ var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
-var ErrDeadlineExceeded = NewTimeoutError(enums.TimeoutTypeScheduleToClose)
+var ErrDeadlineExceeded = NewTimeoutError(eventpb.TimeoutTypeScheduleToClose)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.

@@ -28,7 +28,9 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -156,7 +158,7 @@ type (
 		//			}
 		//			events = append(events, event)
 		//		}
-		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType filterpb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return acitivity.activity.ErrResultPending to
@@ -304,7 +306,7 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
 		CloseConnection() error
@@ -644,27 +646,27 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 	}
 }
 
-func (p WorkflowIDReusePolicy) toProto() enums.WorkflowIdReusePolicy {
+func (p WorkflowIDReusePolicy) toProto() commonpb.WorkflowIdReusePolicy {
 	switch p {
 	case WorkflowIDReusePolicyAllowDuplicate:
-		return enums.WorkflowIdReusePolicyAllowDuplicate
+		return commonpb.WorkflowIdReusePolicyAllowDuplicate
 	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		return enums.WorkflowIdReusePolicyAllowDuplicateFailedOnly
+		return commonpb.WorkflowIdReusePolicyAllowDuplicateFailedOnly
 	case WorkflowIDReusePolicyRejectDuplicate:
-		return enums.WorkflowIdReusePolicyRejectDuplicate
+		return commonpb.WorkflowIdReusePolicyRejectDuplicate
 	default:
 		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
 	}
 }
 
-func (p ParentClosePolicy) toProto() enums.ParentClosePolicy {
+func (p ParentClosePolicy) toProto() commonpb.ParentClosePolicy {
 	switch p {
 	case ParentClosePolicyAbandon:
-		return enums.ParentClosePolicyAbandon
+		return commonpb.ParentClosePolicyAbandon
 	case ParentClosePolicyRequestCancel:
-		return enums.ParentClosePolicyRequestCancel
+		return commonpb.ParentClosePolicyRequestCancel
 	case ParentClosePolicyTerminate:
-		return enums.ParentClosePolicyTerminate
+		return commonpb.ParentClosePolicyTerminate
 	default:
 		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}

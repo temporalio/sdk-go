@@ -31,8 +31,16 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 )
 
 type (
@@ -50,7 +58,7 @@ type (
 		logger             *zap.Logger
 		scope              tally.Scope
 		contextPropagators []ContextPropagator
-		header             *commonproto.Header
+		header             *commonpb.Header
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -150,7 +158,7 @@ func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) 
 
 // SetHeader sets the headers for this WorkflowTestSuite. If you don't set header, test suite will not pass headers to
 // the workflow
-func (s *WorkflowTestSuite) SetHeader(header *commonproto.Header) {
+func (s *WorkflowTestSuite) SetHeader(header *commonpb.Header) {
 	s.header = header
 }
 
@@ -296,7 +304,7 @@ func (t *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
 // This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
-var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", enums.ChildWorkflowExecutionFailedCauseWorkflowAlreadyRunning)
+var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", eventpb.ChildWorkflowExecutionFailedCauseWorkflowAlreadyRunning)
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to

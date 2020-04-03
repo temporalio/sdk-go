@@ -21,8 +21,15 @@
 package workflow
 
 import (
-	"go.temporal.io/temporal-proto/enums"
-
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal/internal"
 )
 
@@ -126,7 +133,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *TimeoutError {
 	return internal.NewTimeoutError(timeoutType, details...)
 }
 

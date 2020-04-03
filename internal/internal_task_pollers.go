@@ -34,8 +34,15 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
@@ -100,8 +107,8 @@ type (
 	}
 
 	historyIteratorImpl struct {
-		iteratorFunc  func(nextPageToken []byte) (*commonproto.History, []byte, error)
-		execution     *commonproto.WorkflowExecution
+		iteratorFunc  func(nextPageToken []byte) (*eventpb.History, []byte, error)
+		execution     *executionpb.WorkflowExecution
 		nextPageToken []byte
 		namespace     string
 		service       workflowservice.WorkflowServiceClient
@@ -374,8 +381,8 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				}
 			case *workflowservice.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
-					request.StickyAttributes = &commonproto.StickyExecutionAttributes{
-						WorkerTaskList:                &commonproto.TaskList{Name: getWorkerTaskList(wtp.stickyUUID)},
+					request.StickyAttributes = &decisionpb.StickyExecutionAttributes{
+						WorkerTaskList:                &tasklistpb.TaskList{Name: getWorkerTaskList(wtp.stickyUUID)},
 						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
 				} else {
@@ -566,13 +573,13 @@ WaitResult:
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 
-func (wtp *workflowTaskPoller) release(kind enums.TaskListKind) {
+func (wtp *workflowTaskPoller) release(kind tasklistpb.TaskListKind) {
 	if wtp.disableStickyExecution {
 		return
 	}
 
 	wtp.requestLock.Lock()
-	if kind == enums.TaskListKindSticky {
+	if kind == tasklistpb.TaskListKindSticky {
 		wtp.pendingStickyPollCount--
 	} else {
 		wtp.pendingRegularPollCount--
@@ -580,8 +587,8 @@ func (wtp *workflowTaskPoller) release(kind enums.TaskListKind) {
 	wtp.requestLock.Unlock()
 }
 
-func (wtp *workflowTaskPoller) updateBacklog(taskListKind enums.TaskListKind, backlogCountHint int64) {
-	if taskListKind == enums.TaskListKindNormal || wtp.disableStickyExecution {
+func (wtp *workflowTaskPoller) updateBacklog(taskListKind tasklistpb.TaskListKind, backlogCountHint int64) {
+	if taskListKind == tasklistpb.TaskListKindNormal || wtp.disableStickyExecution {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -599,20 +606,20 @@ func (wtp *workflowTaskPoller) updateBacklog(taskListKind enums.TaskListKind, ba
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollForDecisionTaskRequest) {
 	taskListName := wtp.taskListName
-	taskListKind := enums.TaskListKindNormal
+	taskListKind := tasklistpb.TaskListKindNormal
 	if !wtp.disableStickyExecution {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskListName = getWorkerTaskList(wtp.stickyUUID)
-			taskListKind = enums.TaskListKindSticky
+			taskListKind = tasklistpb.TaskListKindSticky
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	}
 
-	taskList := &commonproto.TaskList{
+	taskList := &tasklistpb.TaskList{
 		Name: taskListName,
 		Kind: taskListKind,
 	}
@@ -692,7 +699,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollForD
 	return task
 }
 
-func (h *historyIteratorImpl) GetNextPage() (*commonproto.History, error) {
+func (h *historyIteratorImpl) GetNextPage() (*eventpb.History, error) {
 	if h.iteratorFunc == nil {
 		h.iteratorFunc = newGetHistoryPageFunc(
 			context.Background(),
@@ -723,11 +730,11 @@ func newGetHistoryPageFunc(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
 	namespace string,
-	execution *commonproto.WorkflowExecution,
+	execution *executionpb.WorkflowExecution,
 	atDecisionTaskCompletedEventID int64,
 	metricsScope tally.Scope,
-) func(nextPageToken []byte) (*commonproto.History, []byte, error) {
-	return func(nextPageToken []byte) (*commonproto.History, []byte, error) {
+) func(nextPageToken []byte) (*eventpb.History, []byte, error) {
+	return func(nextPageToken []byte) (*eventpb.History, []byte, error) {
 		metricsScope.Counter(metrics.WorkflowGetHistoryCounter).Inc(1)
 		startTime := time.Now()
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
@@ -757,7 +764,7 @@ func newGetHistoryPageFunc(
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
 			first := h.Events[0].GetEventId() // eventIds start from 1
 			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != enums.EventTypeDecisionTaskCompleted {
+			if h.Events[len(h.Events)-1].GetEventType() != eventpb.EventTypeDecisionTaskCompleted {
 				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
 					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
 			}
@@ -792,9 +799,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	})
 	request := &workflowservice.PollForActivityTaskRequest{
 		Namespace:        atp.namespace,
-		TaskList:         &commonproto.TaskList{Name: atp.taskListName},
+		TaskList:         &tasklistpb.TaskList{Name: atp.taskListName},
 		Identity:         atp.identity,
-		TaskListMetadata: &commonproto.TaskListMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
+		TaskListMetadata: &tasklistpb.TaskListMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
 	response, err := atp.service.PollForActivityTask(ctx, request)

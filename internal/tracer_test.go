@@ -28,9 +28,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaeger_config "github.com/uber/jaeger-client-go/config"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.uber.org/zap"
-
-	commonproto "go.temporal.io/temporal-proto/common"
 )
 
 func TestTracingContextPropagator(t *testing.T) {
@@ -43,7 +50,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	span := tracer.StartSpan("test-operation")
 	ctx := context.Background()
 	ctx = opentracing.ContextWithSpan(ctx, span)
-	header := &commonproto.Header{
+	header := &commonpb.Header{
 		Fields: map[string][]byte{},
 	}
 
@@ -62,7 +69,7 @@ func TestTracingContextPropagatorNoSpan(t *testing.T) {
 	t.Parallel()
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
-	header := &commonproto.Header{
+	header := &commonpb.Header{
 		Fields: map[string][]byte{},
 	}
 	err := ctxProp.Inject(context.Background(), NewHeaderWriter(header))
@@ -83,7 +90,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	span := tracer.StartSpan("test-operation")
 	assert.NotNil(t, span.Context())
 	ctx := contextWithSpan(Background(), span.Context())
-	header := &commonproto.Header{
+	header := &commonpb.Header{
 		Fields: map[string][]byte{},
 	}
 
@@ -107,7 +114,7 @@ func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	t.Parallel()
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
-	header := &commonproto.Header{
+	header := &commonpb.Header{
 		Fields: map[string][]byte{},
 	}
 	err := ctxProp.InjectFromWorkflow(Background(), NewHeaderWriter(header))

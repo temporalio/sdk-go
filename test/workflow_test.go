@@ -26,9 +26,16 @@ import (
 	"math/rand"
 	"time"
 
-	"go.temporal.io/temporal-proto/enums"
-
 	"go.temporal.io/temporal"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/worker"
@@ -97,12 +104,12 @@ func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, 
 	return []string{"fail", "fail"}, nil
 }
 
-func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enums.TimeoutType) ([]string, error) {
+func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType eventpb.TimeoutType) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
 	switch timeoutType {
-	case enums.TimeoutTypeScheduleToClose:
+	case eventpb.TimeoutTypeScheduleToClose:
 		opts.ScheduleToCloseTimeout = time.Second
-	case enums.TimeoutTypeStartToClose:
+	case eventpb.TimeoutTypeStartToClose:
 		opts.StartToCloseTimeout = time.Second
 	}
 
@@ -153,7 +160,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if terr.TimeoutType() != enums.TimeoutTypeHeartbeat {
+	if terr.TimeoutType() != eventpb.TimeoutTypeHeartbeat {
 		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", terr.TimeoutType())
 	}
 

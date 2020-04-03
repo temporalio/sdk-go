@@ -31,9 +31,16 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.uber.org/zap"
-
-	commonproto "go.temporal.io/temporal-proto/common"
 )
 
 type (
@@ -62,7 +69,7 @@ type (
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
 		OriginalTaskListName          string
-		RetryPolicy                   *commonproto.RetryPolicy
+		RetryPolicy                   *commonpb.RetryPolicy
 	}
 
 	localActivityOptions struct {
@@ -75,7 +82,7 @@ type (
 		ActivityType  ActivityType
 		Input         []byte
 		DataConverter DataConverter
-		Header        *commonproto.Header
+		Header        *commonpb.Header
 	}
 
 	executeLocalActivityParams struct {
@@ -212,7 +219,7 @@ func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error
 	return p, nil
 }
 
-func validateRetryPolicy(p *commonproto.RetryPolicy) error {
+func validateRetryPolicy(p *commonpb.RetryPolicy) error {
 	if p == nil {
 		return nil
 	}

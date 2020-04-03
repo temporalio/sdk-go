@@ -27,8 +27,15 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 )
@@ -143,26 +150,26 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*commonproto.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+	testEvents := []*eventpb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enums.EventTypeDecisionTaskFailed,
+			EventType: eventpb.EventTypeDecisionTaskFailed,
 		},
 		{
 			EventId:   5,
-			EventType: enums.EventTypeWorkflowExecutionSignaled,
+			EventType: eventpb.EventTypeWorkflowExecutionSignaled,
 		},
-		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &decisionpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
 
 	historyIterator := &historyIteratorImpl{
-		iteratorFunc: func(nextToken []byte) (*commonproto.History, []byte, error) {
-			return &commonproto.History{
+		iteratorFunc: func(nextToken []byte) (*eventpb.History, []byte, error) {
+			return &eventpb.History{
 				Events: testEvents[3:],
 			}, nil, nil
 		},
@@ -177,7 +184,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	s.NoError(err)
 	s.Equal(3, len(events))
-	s.Equal(enums.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
-	s.Equal(enums.EventTypeDecisionTaskStarted, events[2].GetEventType())
+	s.Equal(eventpb.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
+	s.Equal(eventpb.EventTypeDecisionTaskStarted, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

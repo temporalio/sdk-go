@@ -24,34 +24,41 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	namespacepb "go.temporal.io/temporal-proto/namespace"
+	querypb "go.temporal.io/temporal-proto/query"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	versionpb "go.temporal.io/temporal-proto/version"
 )
 
 func TestHeaderWriter(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		initial  *commonproto.Header
-		expected *commonproto.Header
+		initial  *commonpb.Header
+		expected *commonpb.Header
 		vals     map[string][]byte
 	}{
 		{
 			"no values",
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{},
 			},
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{},
 			},
 			map[string][]byte{},
 		},
 		{
 			"add values",
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{},
 			},
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
@@ -64,12 +71,12 @@ func TestHeaderWriter(t *testing.T) {
 		},
 		{
 			"overwrite values",
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("unexpected"),
 				},
 			},
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
@@ -99,13 +106,13 @@ func TestHeaderReader(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
-		header  *commonproto.Header
+		header  *commonpb.Header
 		keys    map[string]struct{}
 		isError bool
 	}{
 		{
 			"valid values",
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
@@ -116,7 +123,7 @@ func TestHeaderReader(t *testing.T) {
 		},
 		{
 			"invalid values",
-			&commonproto.Header{
+			&commonpb.Header{
 				Fields: map[string][]byte{
 					"key1": []byte("val1"),
 					"key2": []byte("val2"),
