@@ -262,7 +262,7 @@ func (h *decisionsHelper) newNaiveDecisionStateMachine(decisionType decisionType
 }
 
 func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *decisionpb.RecordMarkerDecisionAttributes) *markerDecisionStateMachine {
-	d := createNewDecision(decisionpb.DecisionTypeRecordMarker)
+	d := createNewDecision(decisionpb.DecisionType_RecordMarker)
 	d.Attributes = &decisionpb.Decision_RecordMarkerDecisionAttributes{RecordMarkerDecisionAttributes: attributes}
 	return &markerDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeMarker, id, d),
@@ -270,7 +270,7 @@ func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *d
 }
 
 func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(decisionpb.DecisionTypeRequestCancelExternalWorkflowExecution)
+	d := createNewDecision(decisionpb.DecisionType_RequestCancelExternalWorkflowExecution)
 	d.Attributes = &decisionpb.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &cancelExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeCancellation, cancellationID, d),
@@ -278,7 +278,7 @@ func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *deci
 }
 
 func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *decisionpb.SignalExternalWorkflowExecutionDecisionAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(decisionpb.DecisionTypeSignalExternalWorkflowExecution)
+	d := createNewDecision(decisionpb.DecisionType_SignalExternalWorkflowExecution)
 	d.Attributes = &decisionpb.Decision_SignalExternalWorkflowExecutionDecisionAttributes{SignalExternalWorkflowExecutionDecisionAttributes: attributes}
 	return &signalExternalWorkflowDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeSignal, signalID, d),
@@ -286,7 +286,7 @@ func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *deci
 }
 
 func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
-	d := createNewDecision(decisionpb.DecisionTypeUpsertWorkflowSearchAttributes)
+	d := createNewDecision(decisionpb.DecisionType_UpsertWorkflowSearchAttributes)
 	d.Attributes = &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: attributes}
 	return &upsertSearchAttributesDecisionStateMachine{
 		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(decisionTypeUpsertSearchAttributes, upsertID, d),
@@ -432,11 +432,11 @@ func (d *decisionStateMachineBase) String() string {
 func (d *activityDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(decisionpb.DecisionTypeScheduleActivityTask)
+		decision := createNewDecision(decisionpb.DecisionType_ScheduleActivityTask)
 		decision.Attributes = &decisionpb.Decision_ScheduleActivityTaskDecisionAttributes{ScheduleActivityTaskDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(decisionpb.DecisionTypeRequestCancelActivityTask)
+		decision := createNewDecision(decisionpb.DecisionType_RequestCancelActivityTask)
 		decision.Attributes = &decisionpb.Decision_RequestCancelActivityTaskDecisionAttributes{RequestCancelActivityTaskDecisionAttributes: &decisionpb.RequestCancelActivityTaskDecisionAttributes{
 			ActivityId: d.attributes.ActivityId,
 		}}
@@ -494,11 +494,11 @@ func (d *timerDecisionStateMachine) handleCancelFailedEvent() {
 func (d *timerDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(decisionpb.DecisionTypeStartTimer)
+		decision := createNewDecision(decisionpb.DecisionType_StartTimer)
 		decision.Attributes = &decisionpb.Decision_StartTimerDecisionAttributes{StartTimerDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(decisionpb.DecisionTypeCancelTimer)
+		decision := createNewDecision(decisionpb.DecisionType_CancelTimer)
 		decision.Attributes = &decisionpb.Decision_CancelTimerDecisionAttributes{CancelTimerDecisionAttributes: &decisionpb.CancelTimerDecisionAttributes{
 			TimerId: d.attributes.TimerId,
 		}}
@@ -511,11 +511,11 @@ func (d *timerDecisionStateMachine) getDecision() *decisionpb.Decision {
 func (d *childWorkflowDecisionStateMachine) getDecision() *decisionpb.Decision {
 	switch d.state {
 	case decisionStateCreated:
-		decision := createNewDecision(decisionpb.DecisionTypeStartChildWorkflowExecution)
+		decision := createNewDecision(decisionpb.DecisionType_StartChildWorkflowExecution)
 		decision.Attributes = &decisionpb.Decision_StartChildWorkflowExecutionDecisionAttributes{StartChildWorkflowExecutionDecisionAttributes: d.attributes}
 		return decision
 	case decisionStateCanceledAfterStarted:
-		decision := createNewDecision(decisionpb.DecisionTypeRequestCancelExternalWorkflowExecution)
+		decision := createNewDecision(decisionpb.DecisionType_RequestCancelExternalWorkflowExecution)
 		decision.Attributes = &decisionpb.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes{RequestCancelExternalWorkflowExecutionDecisionAttributes: &decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes{
 			Namespace:         d.attributes.Namespace,
 			WorkflowId:        d.attributes.WorkflowId,
@@ -757,13 +757,13 @@ func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID strin
 func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
-	case eventpb.EventTypeActivityTaskCanceled:
+	case eventpb.EventType_ActivityTaskCanceled:
 		scheduledEventID = event.GetActivityTaskCanceledEventAttributes().GetScheduledEventId()
-	case eventpb.EventTypeActivityTaskCompleted:
+	case eventpb.EventType_ActivityTaskCompleted:
 		scheduledEventID = event.GetActivityTaskCompletedEventAttributes().GetScheduledEventId()
-	case eventpb.EventTypeActivityTaskFailed:
+	case eventpb.EventType_ActivityTaskFailed:
 		scheduledEventID = event.GetActivityTaskFailedEventAttributes().GetScheduledEventId()
-	case eventpb.EventTypeActivityTaskTimedOut:
+	case eventpb.EventType_ActivityTaskTimedOut:
 		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
 		panicIllegalState(fmt.Sprintf("unexpected event type %v", event.GetEventType()))

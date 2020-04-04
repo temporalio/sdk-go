@@ -530,7 +530,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(eventpb.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
+			return nil, NewTimeoutError(eventpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -1154,7 +1154,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(eventpb.TimeoutTypeStartToClose, context.DeadlineExceeded.Error())
+			err = NewTimeoutError(eventpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))

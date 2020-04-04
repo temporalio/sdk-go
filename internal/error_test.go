@@ -93,7 +93,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(eventpb.TimeoutTypeScheduleToStart)
+	timeoutErr := NewTimeoutError(eventpb.TimeoutType_ScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
@@ -105,9 +105,9 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, eventpb.TimeoutTypeHeartbeat)
-	testTimeoutErrorDetails(t, eventpb.TimeoutTypeScheduleToClose)
-	testTimeoutErrorDetails(t, eventpb.TimeoutTypeStartToClose)
+	testTimeoutErrorDetails(t, eventpb.TimeoutType_Heartbeat)
+	testTimeoutErrorDetails(t, eventpb.TimeoutType_ScheduleToClose)
+	testTimeoutErrorDetails(t, eventpb.TimeoutType_StartToClose)
 }
 
 func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
@@ -417,7 +417,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &eventpb.SignalExternalWorkflowExecutionFailedEventAttributes{
 		InitiatedEventId: initiatedEventID,
-		Cause:            eventpb.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution,
+		Cause:            eventpb.WorkflowExecutionFailedCause_UnknownExternalWorkflowExecution,
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)

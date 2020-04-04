@@ -149,11 +149,11 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 		createTestEventDecisionTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: eventpb.EventTypeDecisionTaskFailed,
+			EventType: eventpb.EventType_DecisionTaskFailed,
 		},
 		{
 			EventId:   5,
-			EventType: eventpb.EventTypeWorkflowExecutionSignaled,
+			EventType: eventpb.EventType_WorkflowExecutionSignaled,
 		},
 		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
@@ -177,7 +177,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	s.NoError(err)
 	s.Equal(3, len(events))
-	s.Equal(eventpb.EventTypeWorkflowExecutionSignaled, events[1].GetEventType())
-	s.Equal(eventpb.EventTypeDecisionTaskStarted, events[2].GetEventType())
+	s.Equal(eventpb.EventType_WorkflowExecutionSignaled, events[1].GetEventType())
+	s.Equal(eventpb.EventType_DecisionTaskStarted, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

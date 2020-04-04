@@ -2822,7 +2822,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(eventpb.TimeoutTypeStartToClose, testErrorDetails1)
+		return NewTimeoutError(eventpb.TimeoutType_StartToClose, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {
@@ -2833,7 +2833,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:          time.Second,
 				BackoffCoefficient:       1.1,
 				MaximumAttempts:          3,
-				NonRetriableErrorReasons: []string{"temporalInternal:Timeout TimeoutTypeStartToClose"},
+				NonRetriableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2850,7 +2850,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)
@@ -2865,7 +2865,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	err = timeoutErr.Details(&details)
 	s.NoError(err)
@@ -2896,7 +2896,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutTypeStartToClose, timeoutErr.TimeoutType())
+	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)

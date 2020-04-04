@@ -3,7 +3,7 @@
     {
       "eventId": 1,
       "timestamp": 1574721098274980000,
-      "eventType": "EventTypeWorkflowExecutionStarted",
+      "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "taskId": 22020314,
       "workflowExecutionStartedEventAttributes": {
@@ -29,7 +29,7 @@
     {
       "eventId": 2,
       "timestamp": 1574721098274995000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 22020315,
       "decisionTaskScheduledEventAttributes": {
@@ -43,7 +43,7 @@
     {
       "eventId": 3,
       "timestamp": 1574721098289590000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 22020320,
       "decisionTaskStartedEventAttributes": {
@@ -55,7 +55,7 @@
     {
       "eventId": 4,
       "timestamp": 1574721098297975000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 22020323,
       "decisionTaskCompletedEventAttributes": {
@@ -68,7 +68,7 @@
     {
       "eventId": 5,
       "timestamp": 1574721098298006000,
-      "eventType": "EventTypeMarkerRecorded",
+      "eventType": "MarkerRecorded",
       "version": -24,
       "taskId": 22020324,
       "markerRecordedEventAttributes": {
@@ -80,7 +80,7 @@
     {
       "eventId": 6,
       "timestamp": 1574721098298848000,
-      "eventType": "EventTypeUpsertWorkflowSearchAttributes",
+      "eventType": "UpsertWorkflowSearchAttributes",
       "version": -24,
       "taskId": 22020325,
       "upsertWorkflowSearchAttributesEventAttributes": {
@@ -95,7 +95,7 @@
     {
       "eventId": 7,
       "timestamp": 1574721098298863000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "taskId": 22020326,
       "activityTaskScheduledEventAttributes": {
@@ -119,7 +119,7 @@
     {
       "eventId": 8,
       "timestamp": 1574721098309137000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version": -24,
       "taskId": 22020331,
       "activityTaskStartedEventAttributes": {
@@ -132,7 +132,7 @@
     {
       "eventId": 9,
       "timestamp": 1574721098324013000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version": -24,
       "taskId": 22020334,
       "activityTaskCompletedEventAttributes": {

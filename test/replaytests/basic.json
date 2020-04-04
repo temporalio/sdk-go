@@ -3,7 +3,7 @@
     {
       "eventId": 1,
       "timestamp": 1574668217480891000,
-      "eventType": "EventTypeWorkflowExecutionStarted",
+      "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "taskId": 22037765,
       "workflowExecutionStartedEventAttributes": {
@@ -29,7 +29,7 @@
     {
       "eventId": 2,
       "timestamp": 1574668217480902000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 22037766,
       "decisionTaskScheduledEventAttributes": {
@@ -43,7 +43,7 @@
     {
       "eventId": 3,
       "timestamp": 1574668217487857000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 22037771,
       "decisionTaskStartedEventAttributes": {
@@ -55,7 +55,7 @@
     {
       "eventId": 4,
       "timestamp": 1574668217494708000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 22037774,
       "decisionTaskCompletedEventAttributes": {
@@ -68,7 +68,7 @@
     {
       "eventId": 5,
       "timestamp": 1574668217494738000,
-      "eventType": "EventTypeMarkerRecorded",
+      "eventType": "MarkerRecorded",
       "version": -24,
       "taskId": 22037775,
       "markerRecordedEventAttributes": {
@@ -80,7 +80,7 @@
     {
       "eventId": 6,
       "timestamp": 1574668217494746000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "taskId": 22037776,
       "activityTaskScheduledEventAttributes": {
@@ -104,7 +104,7 @@
     {
       "eventId": 7,
       "timestamp": 1574668217499019000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version": -24,
       "taskId": 22037780,
       "activityTaskStartedEventAttributes": {
@@ -117,7 +117,7 @@
     {
       "eventId": 8,
       "timestamp": 1574668217506323000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version": -24,
       "taskId": 22037783,
       "activityTaskCompletedEventAttributes": {
@@ -130,7 +130,7 @@
     {
       "eventId": 9,
       "timestamp": 1574668217506339000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 22037785,
       "decisionTaskScheduledEventAttributes": {
@@ -144,7 +144,7 @@
     {
       "eventId": 10,
       "timestamp": 1574668217511740000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 22037789,
       "decisionTaskStartedEventAttributes": {
@@ -156,7 +156,7 @@
     {
       "eventId": 11,
       "timestamp": 1574668217517648000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 22037792,
       "decisionTaskCompletedEventAttributes": {
@@ -169,7 +169,7 @@
     {
       "eventId": 12,
       "timestamp": 1574668217517674000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "taskId": 22037793,
       "activityTaskScheduledEventAttributes": {
@@ -193,7 +193,7 @@
     {
       "eventId": 13,
       "timestamp": 1574668217522350000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version": -24,
       "taskId": 22037797,
       "activityTaskStartedEventAttributes": {
@@ -206,7 +206,7 @@
     {
       "eventId": 14,
       "timestamp": 1574668217526033000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version": -24,
       "taskId": 22037800,
       "activityTaskCompletedEventAttributes": {
@@ -219,7 +219,7 @@
     {
       "eventId": 15,
       "timestamp": 1574668217526044000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 22037802,
       "decisionTaskScheduledEventAttributes": {
@@ -233,7 +233,7 @@
     {
       "eventId": 16,
       "timestamp": 1574668217532466000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 22037806,
       "decisionTaskStartedEventAttributes": {
@@ -245,7 +245,7 @@
     {
       "eventId": 17,
       "timestamp": 1574668217537539000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 22037809,
       "decisionTaskCompletedEventAttributes": {
@@ -258,7 +258,7 @@
     {
       "eventId": 18,
       "timestamp": 1574668217537563000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "taskId": 22037810,
       "activityTaskScheduledEventAttributes": {
@@ -282,7 +282,7 @@
     {
       "eventId": 19,
       "timestamp": 1574668217541289000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version": -24,
       "taskId": 22037814,
       "activityTaskStartedEventAttributes": {
@@ -295,7 +295,7 @@
     {
       "eventId": 20,
       "timestamp": 1574668217546721000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version": -24,
       "taskId": 22037817,
       "activityTaskCompletedEventAttributes": {
@@ -308,7 +308,7 @@
     {
       "eventId": 21,
       "timestamp": 1574668217546746000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 22037819,
       "decisionTaskScheduledEventAttributes": {

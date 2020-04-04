@@ -182,7 +182,7 @@ func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *T
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(eventpb.TimeoutTypeHeartbeat, details...)
+	return NewTimeoutError(eventpb.TimeoutType_Heartbeat, details...)
 }
 
 // NewCanceledError creates CanceledError instance

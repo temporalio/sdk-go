@@ -272,7 +272,7 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 }
 
 func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
-	// "reason" is a string like "temporalInternal:Timeout TimeoutTypeStartToClose"
+	// "reason" is a string like "temporalInternal:Timeout StartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
 	if timeoutType, found := eventpb.TimeoutType_value[timeoutTypeStr]; found {
 		return eventpb.TimeoutType(timeoutType), nil
