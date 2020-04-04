@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal-proto/enums"
+	eventpb "go.temporal.io/temporal-proto/event"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
@@ -121,16 +121,16 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError(enums.TimeoutTypeScheduleToStart, val)
+	timeoutErr1 := NewTimeoutError(eventpb.TimeoutTypeScheduleToStart, val)
 	reason, data := getErrorDetails(timeoutErr1, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeScheduleToStart), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeScheduleToStart), reason)
 	require.Equal(t, val.values, data)
 
-	timeoutErr2 := NewTimeoutError(enums.TimeoutTypeHeartbeat, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError(eventpb.TimeoutTypeHeartbeat, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
 	reason, data = getErrorDetails(timeoutErr2, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeHeartbeat), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeHeartbeat), reason)
 	require.Equal(t, val2, data)
 }
 
@@ -140,7 +140,7 @@ func TestConstructError_TimeoutError(t *testing.T) {
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)
 
-	reason := fmt.Sprintf("%v %v", errReasonTimeout, enums.TimeoutTypeHeartbeat)
+	reason := fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeHeartbeat)
 	constructedErr := constructError(reason, details, dc)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
@@ -152,11 +152,11 @@ func TestConstructError_TimeoutError(t *testing.T) {
 
 	// Backward compatibility test
 	reason = errReasonTimeout
-	details, err = dc.ToData(enums.TimeoutTypeHeartbeat)
+	details, err = dc.ToData(eventpb.TimeoutTypeHeartbeat)
 	require.NoError(t, err)
 	constructedErr = constructError(reason, details, dc)
 	timeoutErr, ok = constructedErr.(*TimeoutError)
 	require.True(t, ok)
-	require.Equal(t, enums.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
+	require.Equal(t, eventpb.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
 	require.False(t, timeoutErr.HasDetails())
 }

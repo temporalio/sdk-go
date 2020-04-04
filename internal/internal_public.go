@@ -30,7 +30,7 @@ package internal
 import (
 	"time"
 
-	commonproto "go.temporal.io/temporal-proto/common"
+	eventpb "go.temporal.io/temporal-proto/event"
 	"go.temporal.io/temporal-proto/workflowservice"
 )
 
@@ -40,7 +40,7 @@ type (
 	// HistoryIterator iterator through history events
 	HistoryIterator interface {
 		// GetNextPage returns next page of history events
-		GetNextPage() (*commonproto.History, error)
+		GetNextPage() (*eventpb.History, error)
 		// Reset resets the internal state so next GetNextPage() call will return first page of events from beginning.
 		Reset()
 		// HasNextPage returns if there are more page of events

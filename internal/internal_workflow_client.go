@@ -32,9 +32,14 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
+	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 
 	"go.temporal.io/temporal/internal/common"
@@ -120,7 +125,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Next() (*commonproto.HistoryEvent, error)
+		Next() (*eventpb.HistoryEvent, error)
 	}
 
 	// historyEventIteratorImpl is the implementation of HistoryEventIterator
@@ -129,7 +134,7 @@ type (
 		initialized bool
 		// local cached histroy events and corresponding comsuming index
 		nextEventIndex int
-		events         []*commonproto.HistoryEvent
+		events         []*eventpb.HistoryEvent
 		// token to get next page of history events
 		nexttoken []byte
 		// err when getting next page of history events
@@ -209,8 +214,8 @@ func (wc *WorkflowClient) StartWorkflow(
 		Namespace:                           wc.namespace,
 		RequestId:                           uuid.New(),
 		WorkflowId:                          workflowID,
-		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
-		TaskList:                            &commonproto.TaskList{Name: options.TaskList},
+		WorkflowType:                        &commonpb.WorkflowType{Name: workflowType.Name},
+		TaskList:                            &tasklistpb.TaskList{Name: options.TaskList},
 		Input:                               input,
 		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
 		TaskStartToCloseTimeoutSeconds:      decisionTaskTimeout,
@@ -280,7 +285,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enums.HistoryEventFilterTypeCloseEvent)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HistoryEventFilterTypeCloseEvent)
 	}
 
 	return &workflowRunImpl{
@@ -301,7 +306,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enums.HistoryEventFilterTypeCloseEvent)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HistoryEventFilterTypeCloseEvent)
 	}
 
 	return &workflowRunImpl{
@@ -323,7 +328,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -399,8 +404,8 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		Namespace:                           wc.namespace,
 		RequestId:                           uuid.New(),
 		WorkflowId:                          workflowID,
-		WorkflowType:                        &commonproto.WorkflowType{Name: workflowType.Name},
-		TaskList:                            &commonproto.TaskList{Name: options.TaskList},
+		WorkflowType:                        &commonpb.WorkflowType{Name: workflowType.Name},
+		TaskList:                            &tasklistpb.TaskList{Name: options.TaskList},
 		Input:                               input,
 		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
 		TaskStartToCloseTimeoutSeconds:      decisionTaskTimeout,
@@ -449,7 +454,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -471,7 +476,7 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -493,13 +498,13 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 // GetWorkflowHistory return a channel which contains the history events of a given workflow
 func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
-	isLongPoll bool, filterType enums.HistoryEventFilterType) HistoryEventIterator {
+	isLongPoll bool, filterType filterpb.HistoryEventFilterType) HistoryEventIterator {
 
 	namespace := wc.namespace
 	paginate := func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 		request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 			Namespace: namespace,
-			Execution: &commonproto.WorkflowExecution{
+			Execution: &executionpb.WorkflowExecution{
 				WorkflowId: workflowID,
 				RunId:      runID,
 			},
@@ -770,7 +775,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		Execution: &commonproto.WorkflowExecution{
+		Execution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -837,12 +842,12 @@ type QueryWorkflowWithOptionsRequest struct {
 	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
 	// QueryRejectConditionNotOpen will reject queries to workflows which are not open
 	// QueryRejectConditionNotCompletedCleanly will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...)
-	QueryRejectCondition enums.QueryRejectCondition
+	QueryRejectCondition querypb.QueryRejectCondition
 
 	// QueryConsistencyLevel is an optional field used to control the consistency level.
 	// QueryConsistencyLevelEventual means that query will eventually reflect up to date state of a workflow.
 	// QueryConsistencyLevelStrong means that query will reflect a workflow state of having applied all events which came before the query.
-	QueryConsistencyLevel enums.QueryConsistencyLevel
+	QueryConsistencyLevel querypb.QueryConsistencyLevel
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -852,7 +857,7 @@ type QueryWorkflowWithOptionsResponse struct {
 	QueryResult Value
 
 	// QueryRejected contains information about the query rejection.
-	QueryRejected *commonproto.QueryRejected
+	QueryRejected *querypb.QueryRejected
 }
 
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
@@ -872,11 +877,11 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 	req := &workflowservice.QueryWorkflowRequest{
 		Namespace: wc.namespace,
-		Execution: &commonproto.WorkflowExecution{
+		Execution: &executionpb.WorkflowExecution{
 			WorkflowId: request.WorkflowID,
 			RunId:      request.RunID,
 		},
-		Query: &commonproto.WorkflowQuery{
+		Query: &querypb.WorkflowQuery{
 			QueryType: request.QueryType,
 			QueryArgs: input,
 		},
@@ -917,10 +922,10 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enums.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
+func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	request := &workflowservice.DescribeTaskListRequest{
 		Namespace:    wc.namespace,
-		TaskList:     &commonproto.TaskList{Name: taskList},
+		TaskList:     &tasklistpb.TaskList{Name: taskList},
 		TaskListType: taskListType,
 	}
 
@@ -949,8 +954,8 @@ func (wc *WorkflowClient) CloseConnection() error {
 	return wc.connectionCloser.Close()
 }
 
-func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonproto.Header {
-	header := &commonproto.Header{
+func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Header {
+	header := &commonpb.Header{
 		Fields: make(map[string][]byte),
 	}
 	writer := NewHeaderWriter(header)
@@ -1054,7 +1059,7 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 	return false
 }
 
-func (iter *historyEventIteratorImpl) Next() (*commonproto.HistoryEvent, error) {
+func (iter *historyEventIteratorImpl) Next() (*eventpb.HistoryEvent, error) {
 	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
 		panic("HistoryEventIterator Next() called without checking HasNext()")
@@ -1095,7 +1100,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	}
 
 	switch closeEvent.GetEventType() {
-	case enums.EventTypeWorkflowExecutionCompleted:
+	case eventpb.EventTypeWorkflowExecutionCompleted:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
@@ -1105,19 +1110,19 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 			return errors.New("value parameter is not a pointer")
 		}
 		err = deSerializeFunctionResult(workflowRun.workflowFn, attributes.Result, valuePtr, workflowRun.dataConverter, workflowRun.registry)
-	case enums.EventTypeWorkflowExecutionFailed:
+	case eventpb.EventTypeWorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)
-	case enums.EventTypeWorkflowExecutionCanceled:
+	case eventpb.EventTypeWorkflowExecutionCanceled:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
 		err = NewCanceledError(details)
-	case enums.EventTypeWorkflowExecutionTerminated:
+	case eventpb.EventTypeWorkflowExecutionTerminated:
 		err = newTerminatedError()
-	case enums.EventTypeWorkflowExecutionTimedOut:
+	case eventpb.EventTypeWorkflowExecutionTimedOut:
 		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
 		err = NewTimeoutError(attributes.GetTimeoutType())
-	case enums.EventTypeWorkflowExecutionContinuedAsNew:
+	case eventpb.EventTypeWorkflowExecutionContinuedAsNew:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)
@@ -1127,7 +1132,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	return err
 }
 
-func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonproto.Memo, error) {
+func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -1140,10 +1145,10 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpro
 		}
 		memo[k] = memoBytes
 	}
-	return &commonproto.Memo{Fields: memo}, nil
+	return &commonpb.Memo{Fields: memo}, nil
 }
 
-func serializeSearchAttributes(input map[string]interface{}) (*commonproto.SearchAttributes, error) {
+func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -1156,5 +1161,5 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonproto.Searc
 		}
 		attr[k] = attrBytes
 	}
-	return &commonproto.SearchAttributes{IndexedFields: attr}, nil
+	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }

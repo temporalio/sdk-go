@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.temporal.io/temporal-proto/enums"
+	eventpb "go.temporal.io/temporal-proto/event"
 )
 
 /*
@@ -97,7 +97,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
-		timeoutType enums.TimeoutType
+		timeoutType eventpb.TimeoutType
 		details     Values
 	}
 
@@ -171,7 +171,7 @@ func NewCustomError(reason string, details ...interface{}) *CustomError {
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
-func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *TimeoutError {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &TimeoutError{timeoutType: timeoutType, details: d}
@@ -182,7 +182,7 @@ func NewTimeoutError(timeoutType enums.TimeoutType, details ...interface{}) *Tim
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(enums.TimeoutTypeHeartbeat, details...)
+	return NewTimeoutError(eventpb.TimeoutTypeHeartbeat, details...)
 }
 
 // NewCanceledError creates CanceledError instance
@@ -277,7 +277,7 @@ func (e *TimeoutError) Error() string {
 }
 
 // TimeoutType return timeout type of this error
-func (e *TimeoutError) TimeoutType() enums.TimeoutType {
+func (e *TimeoutError) TimeoutType() eventpb.TimeoutType {
 	return e.timeoutType
 }
 

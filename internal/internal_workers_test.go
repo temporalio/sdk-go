@@ -29,9 +29,13 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
@@ -137,16 +141,16 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 
 	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
-		ActivityType:                  &commonproto.ActivityType{Name: "test"},
+		ActivityType:                  &commonpb.ActivityType{Name: "test"},
 		ActivityId:                    uuid.New(),
 		ScheduledTimestamp:            time.Now().UnixNano(),
 		ScheduleToCloseTimeoutSeconds: 1,
 		StartedTimestamp:              time.Now().UnixNano(),
 		StartToCloseTimeoutSeconds:    1,
-		WorkflowType: &commonproto.WorkflowType{
+		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},
 		WorkflowNamespace: "namespace",
@@ -232,58 +236,58 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	}
 
 	taskList := "long-running-decision-tl"
-	testEvents := []*commonproto.HistoryEvent{
+	testEvents := []*eventpb.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EventTypeWorkflowExecutionStarted,
-			Attributes: &commonproto.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &commonproto.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &commonproto.TaskList{Name: taskList},
+			EventType: eventpb.EventTypeWorkflowExecutionStarted,
+			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
+				TaskList:                            &tasklistpb.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
 				TaskStartToCloseTimeoutSeconds:      2,
-				WorkflowType:                        &commonproto.WorkflowType{Name: "long-running-decision-workflow-type"},
+				WorkflowType:                        &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: enums.EventTypeMarkerRecorded,
-			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
+			EventType: eventpb.EventTypeMarkerRecorded,
+			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: enums.EventTypeMarkerRecorded,
-			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
+			EventType: eventpb.EventTypeMarkerRecorded,
+			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: "long-running-decision-workflow-id",
 			RunId:      "long-running-decision-workflow-run-id",
 		},
-		WorkflowType: &commonproto.WorkflowType{
+		WorkflowType: &commonpb.WorkflowType{
 			Name: "long-running-decision-workflow-type",
 		},
 		PreviousStartedEventId: 0,
 		StartedEventId:         3,
-		History:                &commonproto.History{Events: testEvents[0:3]},
+		History:                &eventpb.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
@@ -296,15 +300,15 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		switch respondCounter {
 		case 1:
 			s.Equal(1, len(request.Decisions))
-			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:7]
 			return &workflowservice.RespondDecisionTaskCompletedResponse{DecisionTask: task}, nil
 		case 2:
 			s.Equal(2, len(request.Decisions))
-			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
-			s.Equal(enums.DecisionTypeCompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
+			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionTypeCompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
 			task.PreviousStartedEventId = 7
 			task.StartedEventId = 11
 			task.History.Events = testEvents[7:11]
@@ -372,58 +376,58 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	}
 
 	taskList := "multiple-local-activities-tl"
-	testEvents := []*commonproto.HistoryEvent{
+	testEvents := []*eventpb.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EventTypeWorkflowExecutionStarted,
-			Attributes: &commonproto.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &commonproto.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &commonproto.TaskList{Name: taskList},
+			EventType: eventpb.EventTypeWorkflowExecutionStarted,
+			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
+				TaskList:                            &tasklistpb.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
 				TaskStartToCloseTimeoutSeconds:      3,
-				WorkflowType:                        &commonproto.WorkflowType{Name: "multiple-local-activities-workflow-type"},
+				WorkflowType:                        &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: enums.EventTypeMarkerRecorded,
-			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
+			EventType: eventpb.EventTypeMarkerRecorded,
+			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &commonproto.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: enums.EventTypeMarkerRecorded,
-			Attributes: &commonproto.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &commonproto.MarkerRecordedEventAttributes{
+			EventType: eventpb.EventTypeMarkerRecorded,
+			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &commonproto.DecisionTaskScheduledEventAttributes{TaskList: &commonproto.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &commonproto.WorkflowExecution{
+		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: "multiple-local-activities-workflow-id",
 			RunId:      "multiple-local-activities-workflow-run-id",
 		},
-		WorkflowType: &commonproto.WorkflowType{
+		WorkflowType: &commonpb.WorkflowType{
 			Name: "multiple-local-activities-workflow-type",
 		},
 		PreviousStartedEventId: 0,
 		StartedEventId:         3,
-		History:                &commonproto.History{Events: testEvents[0:3]},
+		History:                &eventpb.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
 	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
@@ -436,7 +440,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		switch respondCounter {
 		case 1:
 			s.Equal(3, len(request.Decisions))
-			s.Equal(enums.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:11]

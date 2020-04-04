@@ -36,7 +36,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -175,7 +175,7 @@ type (
 		queryHandlers                       map[string]func([]byte) ([]byte, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       DataConverter
-		retryPolicy                         *commonproto.RetryPolicy
+		retryPolicy                         *commonpb.RetryPolicy
 		cronSchedule                        string
 		contextPropagators                  []ContextPropagator
 		memo                                map[string]interface{}
@@ -187,7 +187,7 @@ type (
 		workflowOptions
 		workflowType         *WorkflowType
 		input                []byte
-		header               *commonproto.Header
+		header               *commonpb.Header
 		attempt              int32     // used by test framework to support child workflow retry
 		scheduledTime        time.Time // used by test framework to support child workflow retry
 		lastCompletionResult []byte    // used by test framework to support cron
@@ -445,7 +445,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	return interceptor, envInterceptor
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonproto.Header, input []byte) {
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input []byte) {
 	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}
@@ -1230,8 +1230,8 @@ func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 	return options.contextPropagators
 }
 
-func getHeadersFromContext(ctx Context) *commonproto.Header {
-	header := &commonproto.Header{
+func getHeadersFromContext(ctx Context) *commonpb.Header {
+	header := &commonpb.Header{
 		Fields: make(map[string][]byte),
 	}
 	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)

@@ -37,8 +37,10 @@ import (
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	eventpb "go.temporal.io/temporal-proto/event"
+	executionpb "go.temporal.io/temporal-proto/execution"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/atomic"
@@ -87,26 +89,26 @@ func TestWorkersTestSuite(t *testing.T) {
 	suite.Run(t, new(CacheEvictionSuite))
 }
 
-func createTestEventWorkflowExecutionStarted(eventID int64, attr *commonproto.WorkflowExecutionStartedEventAttributes) *commonproto.HistoryEvent {
-	return &commonproto.HistoryEvent{
+func createTestEventWorkflowExecutionStarted(eventID int64, attr *eventpb.WorkflowExecutionStartedEventAttributes) *eventpb.HistoryEvent {
+	return &eventpb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  enums.EventTypeWorkflowExecutionStarted,
-		Attributes: &commonproto.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
+		EventType:  eventpb.EventTypeWorkflowExecutionStarted,
+		Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskScheduled(eventID int64, attr *commonproto.DecisionTaskScheduledEventAttributes) *commonproto.HistoryEvent {
-	return &commonproto.HistoryEvent{
+func createTestEventDecisionTaskScheduled(eventID int64, attr *eventpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
+	return &eventpb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  enums.EventTypeDecisionTaskScheduled,
-		Attributes: &commonproto.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
+		EventType:  eventpb.EventTypeDecisionTaskScheduled,
+		Attributes: &eventpb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
 }
 
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
-	testEvents := []*commonproto.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &commonproto.WorkflowExecutionStartedEventAttributes{
-			TaskList: &commonproto.TaskList{Name: "tasklist"},
+	testEvents := []*eventpb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+			TaskList: &tasklistpb.TaskList{Name: "tasklist"},
 		}),
-		createTestEventDecisionTaskScheduled(2, &commonproto.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 	}
 
 	var taskCounter atomic.Int32 // lambda variable to keep count
@@ -122,9 +124,9 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		// after polling it or giving an error
 		ret := &workflowservice.PollForDecisionTaskResponse{
 			TaskToken:              make([]byte, 5),
-			WorkflowExecution:      &commonproto.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
-			WorkflowType:           &commonproto.WorkflowType{Name: "testReplayWorkflow"},
-			History:                &commonproto.History{Events: testEvents},
+			WorkflowExecution:      &executionpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+			WorkflowType:           &commonpb.WorkflowType{Name: "testReplayWorkflow"},
+			History:                &eventpb.History{Events: testEvents},
 			PreviousStartedEventId: 5}
 		return ret, nil
 	}

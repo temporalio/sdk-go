@@ -28,10 +28,11 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
+	"go.uber.org/zap"
+
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
-	"go.uber.org/zap"
 )
 
 var (
@@ -691,8 +692,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	return result
 }
 
-func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonproto.Header {
-	header := &commonproto.Header{
+func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Header {
+	header := &commonpb.Header{
 		Fields: make(map[string][]byte),
 	}
 	writer := NewHeaderWriter(header)
@@ -716,8 +717,8 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID             string
 	ParentWorkflowNamespace             string
 	ParentWorkflowExecution             *WorkflowExecution
-	Memo                                *commonproto.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
-	SearchAttributes                    *commonproto.SearchAttributes // Value can be decoded using DefaultDataConverter.
+	Memo                                *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
+	SearchAttributes                    *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
 	BinaryChecksum                      string
 }
 
@@ -1421,14 +1422,14 @@ func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	return ctx1
 }
 
-func convertRetryPolicy(retryPolicy *RetryPolicy) *commonproto.RetryPolicy {
+func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
 	if retryPolicy.BackoffCoefficient == 0 {
 		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
 	}
-	return &commonproto.RetryPolicy{
+	return &commonpb.RetryPolicy{
 		MaximumIntervalInSeconds:    common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
 		InitialIntervalInSeconds:    common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
 		BackoffCoefficient:          retryPolicy.BackoffCoefficient,

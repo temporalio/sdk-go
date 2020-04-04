@@ -35,7 +35,7 @@ import (
 	"github.com/uber-go/tally"
 	"google.golang.org/grpc/metadata"
 
-	"go.temporal.io/temporal-proto/enums"
+	eventpb "go.temporal.io/temporal-proto/event"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -271,11 +271,11 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }
 
-func getTimeoutTypeFromErrReason(reason string) (enums.TimeoutType, error) {
+func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
 	// "reason" is a string like "temporalInternal:Timeout TimeoutTypeStartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	if timeoutType, found := enums.TimeoutType_value[timeoutTypeStr]; found {
-		return enums.TimeoutType(timeoutType), nil
+	if timeoutType, found := eventpb.TimeoutType_value[timeoutTypeStr]; found {
+		return eventpb.TimeoutType(timeoutType), nil
 	}
 
 	// this happens when the timeout error reason is constructed by an prior constructed by prior client version

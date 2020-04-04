@@ -34,7 +34,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
 
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
 
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -94,7 +94,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
-		Execute(env workflowEnvironment, header *commonproto.Header, input []byte)
+		Execute(env workflowEnvironment, header *commonpb.Header, input []byte)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to workflowDefinition
 		OnDecisionTaskStarted()

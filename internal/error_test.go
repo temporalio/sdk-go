@@ -26,10 +26,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
+	"go.uber.org/zap"
 )
 
 const (
@@ -92,7 +93,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(enums.TimeoutTypeScheduleToStart)
+	timeoutErr := NewTimeoutError(eventpb.TimeoutTypeScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
@@ -104,12 +105,12 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, enums.TimeoutTypeHeartbeat)
-	testTimeoutErrorDetails(t, enums.TimeoutTypeScheduleToClose)
-	testTimeoutErrorDetails(t, enums.TimeoutTypeStartToClose)
+	testTimeoutErrorDetails(t, eventpb.TimeoutTypeHeartbeat)
+	testTimeoutErrorDetails(t, eventpb.TimeoutTypeScheduleToClose)
+	testTimeoutErrorDetails(t, eventpb.TimeoutTypeStartToClose)
 }
 
-func testTimeoutErrorDetails(t *testing.T, timeoutType enums.TimeoutType) {
+func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   getDefaultDataConverter(),
@@ -119,7 +120,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enums.TimeoutType) {
 	activityID := "activityID"
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityDecisionStateMachine(
-		&commonproto.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
+		&decisionpb.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r []byte, e error) {
@@ -128,7 +129,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enums.TimeoutType) {
 	})
 	context.decisionsHelper.addDecision(di)
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
-	event := createTestEventActivityTaskTimedOut(7, &commonproto.ActivityTaskTimedOutEventAttributes{
+	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
 		Details:          encodedDetails1,
 		ScheduledEventId: 5,
 		StartedEventId:   6,
@@ -403,7 +404,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	signalID := "signalID"
 	context.decisionsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	di := h.newSignalExternalWorkflowStateMachine(
-		&commonproto.SignalExternalWorkflowExecutionDecisionAttributes{},
+		&decisionpb.SignalExternalWorkflowExecutionDecisionAttributes{},
 		signalID,
 	)
 	di.state = decisionStateInitiated
@@ -414,9 +415,9 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	})
 	context.decisionsHelper.addDecision(di)
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
-	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &commonproto.SignalExternalWorkflowExecutionFailedEventAttributes{
+	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &eventpb.SignalExternalWorkflowExecutionFailedEventAttributes{
 		InitiatedEventId: initiatedEventID,
-		Cause:            enums.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution,
+		Cause:            eventpb.SignalExternalWorkflowExecutionFailedCauseUnknownExternalWorkflowExecution,
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)
@@ -432,7 +433,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
-	header := &commonproto.Header{
+	header := &commonpb.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
 	}
 

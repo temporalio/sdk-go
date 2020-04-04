@@ -23,7 +23,7 @@ package internal
 import (
 	"context"
 
-	commonproto "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 // HeaderWriter is an interface to write information to temporal headers
@@ -55,7 +55,7 @@ type ContextPropagator interface {
 }
 
 type headerReader struct {
-	header *commonproto.Header
+	header *commonpb.Header
 }
 
 func (hr *headerReader) ForEachKey(handler func(string, []byte) error) error {
@@ -71,12 +71,12 @@ func (hr *headerReader) ForEachKey(handler func(string, []byte) error) error {
 }
 
 // NewHeaderReader returns a header reader interface
-func NewHeaderReader(header *commonproto.Header) HeaderReader {
+func NewHeaderReader(header *commonpb.Header) HeaderReader {
 	return &headerReader{header}
 }
 
 type headerWriter struct {
-	header *commonproto.Header
+	header *commonpb.Header
 }
 
 func (hw *headerWriter) Set(key string, value []byte) {
@@ -87,7 +87,7 @@ func (hw *headerWriter) Set(key string, value []byte) {
 }
 
 // NewHeaderWriter returns a header writer interface
-func NewHeaderWriter(header *commonproto.Header) HeaderWriter {
+func NewHeaderWriter(header *commonpb.Header) HeaderWriter {
 	if header != nil && header.Fields == nil {
 		header.Fields = make(map[string][]byte)
 	}

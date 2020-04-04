@@ -25,8 +25,8 @@ import (
 	"fmt"
 	"reflect"
 
-	commonproto "go.temporal.io/temporal-proto/common"
-	"go.temporal.io/temporal-proto/enums"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	eventpb "go.temporal.io/temporal-proto/event"
 )
 
 func anyToString(d interface{}) string {
@@ -78,73 +78,73 @@ func valueToString(v reflect.Value) string {
 }
 
 // HistoryEventToString convert HistoryEvent to string
-func HistoryEventToString(e *commonproto.HistoryEvent) string {
+func HistoryEventToString(e *eventpb.HistoryEvent) string {
 	var data interface{}
 	switch e.GetEventType() {
-	case enums.EventTypeWorkflowExecutionStarted:
+	case eventpb.EventTypeWorkflowExecutionStarted:
 		data = e.GetWorkflowExecutionStartedEventAttributes()
 
-	case enums.EventTypeWorkflowExecutionCompleted:
+	case eventpb.EventTypeWorkflowExecutionCompleted:
 		data = e.GetWorkflowExecutionCompletedEventAttributes()
 
-	case enums.EventTypeWorkflowExecutionFailed:
+	case eventpb.EventTypeWorkflowExecutionFailed:
 		data = e.GetWorkflowExecutionFailedEventAttributes()
 
-	case enums.EventTypeWorkflowExecutionTimedOut:
+	case eventpb.EventTypeWorkflowExecutionTimedOut:
 		data = e.GetWorkflowExecutionTimedOutEventAttributes()
 
-	case enums.EventTypeDecisionTaskScheduled:
+	case eventpb.EventTypeDecisionTaskScheduled:
 		data = e.GetDecisionTaskScheduledEventAttributes()
 
-	case enums.EventTypeDecisionTaskStarted:
+	case eventpb.EventTypeDecisionTaskStarted:
 		data = e.GetDecisionTaskStartedEventAttributes()
 
-	case enums.EventTypeDecisionTaskCompleted:
+	case eventpb.EventTypeDecisionTaskCompleted:
 		data = e.GetDecisionTaskCompletedEventAttributes()
 
-	case enums.EventTypeDecisionTaskTimedOut:
+	case eventpb.EventTypeDecisionTaskTimedOut:
 		data = e.GetDecisionTaskTimedOutEventAttributes()
 
-	case enums.EventTypeActivityTaskScheduled:
+	case eventpb.EventTypeActivityTaskScheduled:
 		data = e.GetActivityTaskScheduledEventAttributes()
 
-	case enums.EventTypeActivityTaskStarted:
+	case eventpb.EventTypeActivityTaskStarted:
 		data = e.GetActivityTaskStartedEventAttributes()
 
-	case enums.EventTypeActivityTaskCompleted:
+	case eventpb.EventTypeActivityTaskCompleted:
 		data = e.GetActivityTaskCompletedEventAttributes()
 
-	case enums.EventTypeActivityTaskFailed:
+	case eventpb.EventTypeActivityTaskFailed:
 		data = e.GetActivityTaskFailedEventAttributes()
 
-	case enums.EventTypeActivityTaskTimedOut:
+	case eventpb.EventTypeActivityTaskTimedOut:
 		data = e.GetActivityTaskTimedOutEventAttributes()
 
-	case enums.EventTypeActivityTaskCancelRequested:
+	case eventpb.EventTypeActivityTaskCancelRequested:
 		data = e.GetActivityTaskCancelRequestedEventAttributes()
 
-	case enums.EventTypeRequestCancelActivityTaskFailed:
+	case eventpb.EventTypeRequestCancelActivityTaskFailed:
 		data = e.GetRequestCancelActivityTaskFailedEventAttributes()
 
-	case enums.EventTypeActivityTaskCanceled:
+	case eventpb.EventTypeActivityTaskCanceled:
 		data = e.GetActivityTaskCanceledEventAttributes()
 
-	case enums.EventTypeTimerStarted:
+	case eventpb.EventTypeTimerStarted:
 		data = e.GetTimerStartedEventAttributes()
 
-	case enums.EventTypeTimerFired:
+	case eventpb.EventTypeTimerFired:
 		data = e.GetTimerFiredEventAttributes()
 
-	case enums.EventTypeCancelTimerFailed:
+	case eventpb.EventTypeCancelTimerFailed:
 		data = e.GetCancelTimerFailedEventAttributes()
 
-	case enums.EventTypeTimerCanceled:
+	case eventpb.EventTypeTimerCanceled:
 		data = e.GetTimerCanceledEventAttributes()
 
-	case enums.EventTypeMarkerRecorded:
+	case eventpb.EventTypeMarkerRecorded:
 		data = e.GetMarkerRecordedEventAttributes()
 
-	case enums.EventTypeWorkflowExecutionTerminated:
+	case eventpb.EventTypeWorkflowExecutionTerminated:
 		data = e.GetWorkflowExecutionTerminatedEventAttributes()
 
 	default:
@@ -155,28 +155,28 @@ func HistoryEventToString(e *commonproto.HistoryEvent) string {
 }
 
 // DecisionToString convert Decision to string
-func DecisionToString(d *commonproto.Decision) string {
+func DecisionToString(d *decisionpb.Decision) string {
 	var data interface{}
 	switch d.GetDecisionType() {
-	case enums.DecisionTypeScheduleActivityTask:
+	case decisionpb.DecisionTypeScheduleActivityTask:
 		data = d.GetScheduleActivityTaskDecisionAttributes()
 
-	case enums.DecisionTypeRequestCancelActivityTask:
+	case decisionpb.DecisionTypeRequestCancelActivityTask:
 		data = d.GetRequestCancelActivityTaskDecisionAttributes()
 
-	case enums.DecisionTypeStartTimer:
+	case decisionpb.DecisionTypeStartTimer:
 		data = d.GetStartTimerDecisionAttributes()
 
-	case enums.DecisionTypeCancelTimer:
+	case decisionpb.DecisionTypeCancelTimer:
 		data = d.GetCancelTimerDecisionAttributes()
 
-	case enums.DecisionTypeCompleteWorkflowExecution:
+	case decisionpb.DecisionTypeCompleteWorkflowExecution:
 		data = d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-	case enums.DecisionTypeFailWorkflowExecution:
+	case decisionpb.DecisionTypeFailWorkflowExecution:
 		data = d.GetFailWorkflowExecutionDecisionAttributes()
 
-	case enums.DecisionTypeRecordMarker:
+	case decisionpb.DecisionTypeRecordMarker:
 		data = d.GetRecordMarkerDecisionAttributes()
 
 	default:
