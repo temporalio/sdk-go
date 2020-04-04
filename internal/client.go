@@ -649,11 +649,11 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 func (p WorkflowIDReusePolicy) toProto() commonpb.WorkflowIdReusePolicy {
 	switch p {
 	case WorkflowIDReusePolicyAllowDuplicate:
-		return commonpb.WorkflowIdReusePolicyAllowDuplicate
+		return commonpb.WorkflowIdReusePolicy_AllowDuplicate
 	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		return commonpb.WorkflowIdReusePolicyAllowDuplicateFailedOnly
+		return commonpb.WorkflowIdReusePolicy_AllowDuplicateFailedOnly
 	case WorkflowIDReusePolicyRejectDuplicate:
-		return commonpb.WorkflowIdReusePolicyRejectDuplicate
+		return commonpb.WorkflowIdReusePolicy_RejectDuplicate
 	default:
 		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
 	}
@@ -662,11 +662,11 @@ func (p WorkflowIDReusePolicy) toProto() commonpb.WorkflowIdReusePolicy {
 func (p ParentClosePolicy) toProto() commonpb.ParentClosePolicy {
 	switch p {
 	case ParentClosePolicyAbandon:
-		return commonpb.ParentClosePolicyAbandon
+		return commonpb.ParentClosePolicy_Abandon
 	case ParentClosePolicyRequestCancel:
-		return commonpb.ParentClosePolicyRequestCancel
+		return commonpb.ParentClosePolicy_RequestCancel
 	case ParentClosePolicyTerminate:
-		return commonpb.ParentClosePolicyTerminate
+		return commonpb.ParentClosePolicy_Terminate
 	default:
 		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}

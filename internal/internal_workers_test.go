@@ -239,7 +239,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	testEvents := []*eventpb.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: eventpb.EventTypeWorkflowExecutionStarted,
+			EventType: eventpb.EventType_WorkflowExecutionStarted,
 			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
 				TaskList:                            &tasklistpb.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
@@ -252,7 +252,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: eventpb.EventTypeMarkerRecorded,
+			EventType: eventpb.EventType_MarkerRecorded,
 			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
@@ -264,7 +264,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: eventpb.EventTypeMarkerRecorded,
+			EventType: eventpb.EventType_MarkerRecorded,
 			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
@@ -300,15 +300,15 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		switch respondCounter {
 		case 1:
 			s.Equal(1, len(request.Decisions))
-			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionType_RecordMarker, request.Decisions[0].GetDecisionType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:7]
 			return &workflowservice.RespondDecisionTaskCompletedResponse{DecisionTask: task}, nil
 		case 2:
 			s.Equal(2, len(request.Decisions))
-			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
-			s.Equal(decisionpb.DecisionTypeCompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
+			s.Equal(decisionpb.DecisionType_RecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionType_CompleteWorkflowExecution, request.Decisions[1].GetDecisionType())
 			task.PreviousStartedEventId = 7
 			task.StartedEventId = 11
 			task.History.Events = testEvents[7:11]
@@ -379,7 +379,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	testEvents := []*eventpb.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: eventpb.EventTypeWorkflowExecutionStarted,
+			EventType: eventpb.EventType_WorkflowExecutionStarted,
 			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
 				TaskList:                            &tasklistpb.TaskList{Name: taskList},
 				ExecutionStartToCloseTimeoutSeconds: 10,
@@ -392,7 +392,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
-			EventType: eventpb.EventTypeMarkerRecorded,
+			EventType: eventpb.EventType_MarkerRecorded,
 			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
@@ -404,7 +404,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		createTestEventDecisionTaskCompleted(8, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
-			EventType: eventpb.EventTypeMarkerRecorded,
+			EventType: eventpb.EventType_MarkerRecorded,
 			Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
@@ -440,7 +440,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		switch respondCounter {
 		case 1:
 			s.Equal(3, len(request.Decisions))
-			s.Equal(decisionpb.DecisionTypeRecordMarker, request.Decisions[0].GetDecisionType())
+			s.Equal(decisionpb.DecisionType_RecordMarker, request.Decisions[0].GetDecisionType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:11]

@@ -3,7 +3,7 @@
     {
       "eventId": 1,
       "timestamp": 1561506494525296000,
-      "eventType": "EventTypeWorkflowExecutionStarted",
+      "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "taskId": 50331648,
       "workflowExecutionStartedEventAttributes": {
@@ -26,7 +26,7 @@
     {
       "eventId": 2,
       "timestamp": 1561506494525315000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 50331649,
       "decisionTaskScheduledEventAttributes": {
@@ -40,7 +40,7 @@
     {
       "eventId": 3,
       "timestamp": 1561506524119673000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 50331654,
       "decisionTaskStartedEventAttributes": {
@@ -52,7 +52,7 @@
     {
       "eventId": 4,
       "timestamp": 1561506524134556000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 50331657,
       "decisionTaskCompletedEventAttributes": {
@@ -65,7 +65,7 @@
     {
       "eventId": 5,
       "timestamp": 1561506524134580000,
-      "eventType": "EventTypeStartChildWorkflowExecutionInitiated",
+      "eventType": "StartChildWorkflowExecutionInitiated",
       "version": -24,
       "taskId": 50331658,
       "startChildWorkflowExecutionInitiatedEventAttributes": {
@@ -81,14 +81,14 @@
         "executionStartToCloseTimeoutSeconds": 60,
         "taskStartToCloseTimeoutSeconds": 10,
         "decisionTaskCompletedEventId": 4,
-        "workflowIdReusePolicy": "WorkflowIdReusePolicyAllowDuplicateFailedOnly",
+        "workflowIdReusePolicy": "AllowDuplicateFailedOnly",
         "header": {}
       }
     },
     {
       "eventId": 6,
       "timestamp": 1561506524150629000,
-      "eventType": "EventTypeChildWorkflowExecutionStarted",
+      "eventType": "ChildWorkflowExecutionStarted",
       "version": -24,
       "taskId": 50331660,
       "childWorkflowExecutionStartedEventAttributes": {
@@ -107,7 +107,7 @@
     {
       "eventId": 7,
       "timestamp": 1561506524150637000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 50331663,
       "decisionTaskScheduledEventAttributes": {
@@ -121,7 +121,7 @@
     {
       "eventId": 8,
       "timestamp": 1561506524166038000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 50331667,
       "decisionTaskStartedEventAttributes": {
@@ -133,7 +133,7 @@
     {
       "eventId": 9,
       "timestamp": 1561506524177688000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 50331670,
       "decisionTaskCompletedEventAttributes": {
@@ -146,7 +146,7 @@
     {
       "eventId": 10,
       "timestamp": 1561506524177725000,
-      "eventType": "EventTypeSignalExternalWorkflowExecutionInitiated",
+      "eventType": "SignalExternalWorkflowExecutionInitiated",
       "version": -24,
       "taskId": 50331671,
       "signalExternalWorkflowExecutionInitiatedEventAttributes": {
@@ -165,7 +165,7 @@
     {
       "eventId": 11,
       "timestamp": 1561506524254684000,
-      "eventType": "EventTypeExternalWorkflowExecutionSignaled",
+      "eventType": "ExternalWorkflowExecutionSignaled",
       "version": -24,
       "taskId": 50331673,
       "externalWorkflowExecutionSignaledEventAttributes": {
@@ -181,7 +181,7 @@
     {
       "eventId": 12,
       "timestamp": 1561506524254689000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 50331676,
       "decisionTaskScheduledEventAttributes": {
@@ -195,7 +195,7 @@
     {
       "eventId": 13,
       "timestamp": 1561506524259702000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 50331680,
       "decisionTaskStartedEventAttributes": {
@@ -207,7 +207,7 @@
     {
       "eventId": 14,
       "timestamp": 1561506524264877000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 50331683,
       "decisionTaskCompletedEventAttributes": {
@@ -220,7 +220,7 @@
     {
       "eventId": 15,
       "timestamp": 1561506524402360000,
-      "eventType": "EventTypeChildWorkflowExecutionCompleted",
+      "eventType": "ChildWorkflowExecutionCompleted",
       "version": -24,
       "taskId": 50331684,
       "childWorkflowExecutionCompletedEventAttributes": {
@@ -240,7 +240,7 @@
     {
       "eventId": 16,
       "timestamp": 1561506524402364000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "taskId": 50331687,
       "decisionTaskScheduledEventAttributes": {
@@ -254,7 +254,7 @@
     {
       "eventId": 17,
       "timestamp": 1561506524410406000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "taskId": 50331691,
       "decisionTaskStartedEventAttributes": {
@@ -266,7 +266,7 @@
     {
       "eventId": 18,
       "timestamp": 1561506524417332000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "taskId": 50331694,
       "decisionTaskCompletedEventAttributes": {
@@ -279,7 +279,7 @@
     {
       "eventId": 19,
       "timestamp": 1561506524417344000,
-      "eventType": "EventTypeWorkflowExecutionCompleted",
+      "eventType": "WorkflowExecutionCompleted",
       "version": -24,
       "taskId": 50331695,
       "workflowExecutionCompletedEventAttributes": {

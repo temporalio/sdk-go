@@ -3,7 +3,7 @@
     {
       "eventId": 1,
       "timestamp": 1528336257159337100,
-      "eventType": "EventTypeWorkflowExecutionStarted",
+      "eventType": "WorkflowExecutionStarted",
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
           "name": "testReplayWorkflowFromFile"
@@ -19,7 +19,7 @@
     {
       "eventId": 2,
       "timestamp": 1528336257159349200,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "decisionTaskScheduledEventAttributes": {
         "taskList": {
           "name": "taskList1"
@@ -31,7 +31,7 @@
     {
       "eventId": 3,
       "timestamp": 1528336257174772700,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "decisionTaskStartedEventAttributes": {
         "scheduledEventId": 2,
         "identity": "50114@user-C02WC08UHTDG@taskList1",
@@ -41,7 +41,7 @@
     {
       "eventId": 4,
       "timestamp": 1528336257188460300,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "decisionTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
         "startedEventId": 3,
@@ -51,7 +51,7 @@
     {
       "eventId": 5,
       "timestamp": 1528336257188469200,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "activityTaskScheduledEventAttributes": {
         "activityId": "0",
         "activityType": {
@@ -71,7 +71,7 @@
     {
       "eventId":6,
       "timestamp":1558126757393919000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version":-24,
       "taskId":33554446,
       "activityTaskStartedEventAttributes":{
@@ -84,7 +84,7 @@
     {
       "eventId":7,
       "timestamp":1558126757403468000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version":-24,
       "taskId":33554447,
       "activityTaskCompletedEventAttributes":{
@@ -97,7 +97,7 @@
     {
       "eventId":8,
       "timestamp":1558126757403476000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version":-24,
       "taskId":33554450,
       "decisionTaskScheduledEventAttributes":{
@@ -111,7 +111,7 @@
     {
       "eventId":9,
       "timestamp":1558126757410564000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version":-24,
       "taskId":33554454,
       "decisionTaskStartedEventAttributes":{
@@ -123,7 +123,7 @@
     {
       "eventId":10,
       "timestamp":1558126757491491000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version":-24,
       "taskId":33554457,
       "decisionTaskCompletedEventAttributes":{
@@ -136,7 +136,7 @@
     {
       "eventId":11,
       "timestamp":1558126757491513000,
-      "eventType": "EventTypeWorkflowExecutionCompleted",
+      "eventType": "WorkflowExecutionCompleted",
       "version":-24,
       "taskId":33554458,
       "workflowExecutionCompletedEventAttributes":{

@@ -175,7 +175,7 @@ var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
-var ErrDeadlineExceeded = NewTimeoutError(eventpb.TimeoutTypeScheduleToClose)
+var ErrDeadlineExceeded = NewTimeoutError(eventpb.TimeoutType_ScheduleToClose)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.

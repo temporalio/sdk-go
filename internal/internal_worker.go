@@ -1208,7 +1208,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("at least 3 events expected in the history")
 	}
 	first := events[0]
-	if first.GetEventType() != eventpb.EventTypeWorkflowExecutionStarted {
+	if first.GetEventType() != eventpb.EventType_WorkflowExecutionStarted {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
 	last := events[len(events)-1]
@@ -1259,7 +1259,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return err
 	}
 
-	if last.GetEventType() != eventpb.EventTypeWorkflowExecutionCompleted && last.GetEventType() != eventpb.EventTypeWorkflowExecutionContinuedAsNew {
+	if last.GetEventType() != eventpb.EventType_WorkflowExecutionCompleted && last.GetEventType() != eventpb.EventType_WorkflowExecutionContinuedAsNew {
 		return nil
 	}
 	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
@@ -1267,8 +1267,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == decisionpb.DecisionTypeContinueAsNewWorkflowExecution {
-					if last.GetEventType() == eventpb.EventTypeWorkflowExecutionContinuedAsNew {
+				if d.GetDecisionType() == decisionpb.DecisionType_ContinueAsNewWorkflowExecution {
+					if last.GetEventType() == eventpb.EventType_WorkflowExecutionContinuedAsNew {
 						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
 						if bytes.Equal(inputA, inputB) {
@@ -1276,8 +1276,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 						}
 					}
 				}
-				if d.GetDecisionType() == decisionpb.DecisionTypeCompleteWorkflowExecution {
-					if last.GetEventType() == eventpb.EventTypeWorkflowExecutionCompleted {
+				if d.GetDecisionType() == decisionpb.DecisionType_CompleteWorkflowExecution {
+					if last.GetEventType() == eventpb.EventType_WorkflowExecutionCompleted {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
 						if bytes.Equal(resultA, resultB) {

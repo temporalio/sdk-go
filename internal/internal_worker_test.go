@@ -558,7 +558,7 @@ func createWorkerWithThrottle(
 	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc DataConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
-	namespaceStatus := namespacepb.NamespaceStatusRegistered
+	namespaceStatus := namespacepb.NamespaceStatus_Registered
 	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
 		NamespaceInfo: &namespacepb.NamespaceInfo{
 			Name:   namespace,

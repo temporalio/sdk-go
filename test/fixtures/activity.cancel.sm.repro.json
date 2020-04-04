@@ -3,7 +3,7 @@
     {
       "eventId": 1,
       "timestamp": 1563844217060613000,
-      "eventType": "EventTypeWorkflowExecutionStarted",
+      "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
@@ -20,7 +20,7 @@
     {
       "eventId": 2,
       "timestamp": 1563844217060620000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "decisionTaskScheduledEventAttributes": {
         "taskList": {
@@ -33,7 +33,7 @@
     {
       "eventId": 3,
       "timestamp": 1563844217066914000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "decisionTaskStartedEventAttributes": {
         "scheduledEventId": 2,
@@ -44,7 +44,7 @@
     {
       "eventId": 4,
       "timestamp": 1563844217073526000,
-      "eventType": "EventTypeDecisionTaskCompleted",
+      "eventType": "DecisionTaskCompleted",
       "version": -24,
       "decisionTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
@@ -55,7 +55,7 @@
     {
       "eventId": 5,
       "timestamp": 1563844217073598000,
-      "eventType": "EventTypeTimerStarted",
+      "eventType": "TimerStarted",
       "version": -24,
       "timerStartedEventAttributes": {
         "timerId": "0",
@@ -66,7 +66,7 @@
     {
       "eventId": 6,
       "timestamp": 1563844217073620000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
         "activityId": "1",
@@ -87,7 +87,7 @@
     {
       "eventId": 7,
       "timestamp": 1563844217073670000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
         "activityId": "2",
@@ -108,7 +108,7 @@
     {
       "eventId": 8,
       "timestamp": 1563844217073679000,
-      "eventType": "EventTypeActivityTaskScheduled",
+      "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
         "activityId": "3",
@@ -129,7 +129,7 @@
     {
       "eventId": 9,
       "timestamp": 1563844217080804000,
-      "eventType": "EventTypeActivityTaskStarted",
+      "eventType": "ActivityTaskStarted",
       "version": -24,
       "activityTaskStartedEventAttributes": {
         "scheduledEventId": 6,
@@ -141,7 +141,7 @@
     {
       "eventId": 10,
       "timestamp": 1563844222089088000,
-      "eventType": "EventTypeActivityTaskCompleted",
+      "eventType": "ActivityTaskCompleted",
       "version": -24,
       "activityTaskCompletedEventAttributes": {
         "result": "IkhFTExPIgo=",
@@ -153,7 +153,7 @@
     {
       "eventId": 11,
       "timestamp": 1563844222089104000,
-      "eventType": "EventTypeDecisionTaskScheduled",
+      "eventType": "DecisionTaskScheduled",
       "version": -24,
       "decisionTaskScheduledEventAttributes": {
         "taskList": {
@@ -166,7 +166,7 @@
     {
       "eventId": 12,
       "timestamp": 1563844222096052000,
-      "eventType": "EventTypeDecisionTaskStarted",
+      "eventType": "DecisionTaskStarted",
       "version": -24,
       "decisionTaskStartedEventAttributes": {
         "scheduledEventId": 11,
@@ -177,7 +177,7 @@
     {
       "eventId": 13,
       "timestamp": 1563844222102892000,
-      "eventType": "EventTypeDecisionTaskFailed",
+      "eventType": "DecisionTaskFailed",
       "version": -24,
       "decisionTaskFailedEventAttributes": {
         "scheduledEventId": 11,
@@ -190,7 +190,7 @@
     {
       "eventId": 14,
       "timestamp": 1563844227061245000,
-      "eventType": "EventTypeWorkflowExecutionTimedOut",
+      "eventType": "WorkflowExecutionTimedOut",
       "version": -24,
       "workflowExecutionTimedOutEventAttributes": {
         "timeoutType": "TimeoutTypeStartToClose"

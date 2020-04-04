@@ -121,16 +121,16 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError(eventpb.TimeoutTypeScheduleToStart, val)
+	timeoutErr1 := NewTimeoutError(eventpb.TimeoutType_ScheduleToStart, val)
 	reason, data := getErrorDetails(timeoutErr1, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeScheduleToStart), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_ScheduleToStart), reason)
 	require.Equal(t, val.values, data)
 
-	timeoutErr2 := NewTimeoutError(eventpb.TimeoutTypeHeartbeat, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError(eventpb.TimeoutType_Heartbeat, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
 	reason, data = getErrorDetails(timeoutErr2, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeHeartbeat), reason)
+	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_Heartbeat), reason)
 	require.Equal(t, val2, data)
 }
 
@@ -140,7 +140,7 @@ func TestConstructError_TimeoutError(t *testing.T) {
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)
 
-	reason := fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutTypeHeartbeat)
+	reason := fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_Heartbeat)
 	constructedErr := constructError(reason, details, dc)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
@@ -152,11 +152,11 @@ func TestConstructError_TimeoutError(t *testing.T) {
 
 	// Backward compatibility test
 	reason = errReasonTimeout
-	details, err = dc.ToData(eventpb.TimeoutTypeHeartbeat)
+	details, err = dc.ToData(eventpb.TimeoutType_Heartbeat)
 	require.NoError(t, err)
 	constructedErr = constructError(reason, details, dc)
 	timeoutErr, ok = constructedErr.(*TimeoutError)
 	require.True(t, ok)
-	require.Equal(t, eventpb.TimeoutTypeHeartbeat, timeoutErr.TimeoutType())
+	require.Equal(t, eventpb.TimeoutType_Heartbeat, timeoutErr.TimeoutType())
 	require.False(t, timeoutErr.HasDetails())
 }

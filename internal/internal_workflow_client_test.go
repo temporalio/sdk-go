@@ -157,7 +157,7 @@ func (s *historyEventIteratorSuite) TearDownTest() {
 }
 
 func (s *historyEventIteratorSuite) TestIterator_NoError() {
-	filterType := filterpb.HistoryEventFilterTypeAllEvent
+	filterType := filterpb.HistoryEventFilterType_AllEvent
 	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
 	response1 := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -184,7 +184,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
 
 	var events []*eventpb.HistoryEvent
-	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterTypeAllEvent)
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterType_AllEvent)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		s.Nil(err)
@@ -194,7 +194,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 }
 
 func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
-	filterType := filterpb.HistoryEventFilterTypeAllEvent
+	filterType := filterpb.HistoryEventFilterType_AllEvent
 	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
 	response1 := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -218,7 +218,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
 
 	var events []*eventpb.HistoryEvent
-	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterTypeAllEvent)
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterType_AllEvent)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		s.Nil(err)
@@ -228,7 +228,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 }
 
 func (s *historyEventIteratorSuite) TestIterator_Error() {
-	filterType := filterpb.HistoryEventFilterTypeAllEvent
+	filterType := filterpb.HistoryEventFilterType_AllEvent
 	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
 	response1 := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -244,7 +244,7 @@ func (s *historyEventIteratorSuite) TestIterator_Error() {
 
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
 
-	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterTypeAllEvent)
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterpb.HistoryEventFilterType_AllEvent)
 
 	s.True(iter.HasNext())
 	event, err := iter.Next()
@@ -308,8 +308,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionCompleted
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
@@ -351,7 +351,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
 
-	eventType := eventpb.EventTypeWorkflowExecutionCompleted
+	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(nil, workflowResult)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -401,7 +401,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	eventType := eventpb.EventTypeWorkflowExecutionCompleted
+	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(nil, workflowResult)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -448,8 +448,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionCanceled
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionCanceled
 	details := "some details"
 	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
@@ -495,8 +495,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionFailed
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
 	dataConverter := getDefaultDataConverter()
@@ -543,8 +543,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Terminated() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionTerminated
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionTerminated
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -583,9 +583,9 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionTimedOut
-	timeType := eventpb.TimeoutTypeScheduleToStart
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionTimedOut
+	timeType := eventpb.TimeoutType_ScheduleToStart
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -631,8 +631,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
 	newRunID := "some other random run ID"
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType1 := eventpb.EventTypeWorkflowExecutionContinuedAsNew
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType1 := eventpb.EventType_WorkflowExecutionContinuedAsNew
 	getRequest1 := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse1 := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -651,7 +651,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
-	eventType2 := eventpb.EventTypeWorkflowExecutionCompleted
+	eventType2 := eventpb.EventType_WorkflowExecutionCompleted
 	getRequest2 := getGetWorkflowExecutionHistoryRequest(filterType)
 	getRequest2.Execution.RunId = newRunID
 	getResponse2 := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -689,8 +689,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 }
 
 func (s *workflowRunSuite) TestGetWorkflow() {
-	filterType := filterpb.HistoryEventFilterTypeCloseEvent
-	eventType := eventpb.EventTypeWorkflowExecutionCompleted
+	filterType := filterpb.HistoryEventFilterType_CloseEvent
+	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
