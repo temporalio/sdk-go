@@ -182,7 +182,7 @@
       "decisionTaskFailedEventAttributes": {
         "scheduledEventId": 11,
         "startedEventId": 12,
-        "cause": "DecisionTaskFailedCauseWorkflowWorkerUnhandledFailure",
+        "cause": "WorkflowWorkerUnhandledFailure",
         "details": "aW52YWxpZCBzdGF0ZSB0cmFuc2l0aW9uOiBhdHRlbXB0IHRvIGNhbmNlbCwgRGVjaXNpb25UeXBlOiBBY3Rpdml0eSwgSUQ6IDMsIHN0YXRlPUNhbmNlbGVkQWZ0ZXJJbml0aWF0ZWQsIGlzRG9uZSgpPWZhbHNlLCBoaXN0b3J5PVtDcmVhdGVkIGhhbmRsZURlY2lzaW9uU2VudCBEZWNpc2lvblNlbnQgaGFuZGxlSW5pdGlhdGVkRXZlbnQgSW5pdGlhdGVkIGNhbmNlbCBDYW5jZWxlZEFmdGVySW5pdGlhdGVkXQ==",
         "identity": "97228@samar-C02XG22GJGH6@tl-1"
       }
@@ -193,7 +193,7 @@
       "eventType": "WorkflowExecutionTimedOut",
       "version": -24,
       "workflowExecutionTimedOutEventAttributes": {
-        "timeoutType": "TimeoutTypeStartToClose"
+        "timeoutType": "StartToClose"
       }
     }
   ]
