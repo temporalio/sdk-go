@@ -1512,10 +1512,12 @@ func (v *ActivityTaskScheduledEventAttributes) GetDecisionTaskCompletedEventId()
 }
 
 type ActivityTaskStartedEventAttributes struct {
-	ScheduledEventId *int64  `json:"scheduledEventId,omitempty"`
-	Identity         *string `json:"identity,omitempty"`
-	RequestId        *string `json:"requestId,omitempty"`
-	Attempt          *int32  `json:"attempt,omitempty"`
+	ScheduledEventId   *int64  `json:"scheduledEventId,omitempty"`
+	Identity           *string `json:"identity,omitempty"`
+	RequestId          *string `json:"requestId,omitempty"`
+	Attempt            *int32  `json:"attempt,omitempty"`
+	LastFailureReason  *string `json:"lastFailureReason,omitempty"`
+	LastFailureDetails []byte  `json:"lastFailureDetails,omitempty"`
 }
 
 // ToWire translates a ActivityTaskStartedEventAttributes struct into a Thrift-level intermediate
@@ -1535,7 +1537,7 @@ type ActivityTaskStartedEventAttributes struct {
 //   }
 func (v *ActivityTaskStartedEventAttributes) ToWire() (wire.Value, error) {
 	var (
-		fields [4]wire.Field
+		fields [6]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -1571,6 +1573,22 @@ func (v *ActivityTaskStartedEventAttributes) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 40, Value: w}
+		i++
+	}
+	if v.LastFailureReason != nil {
+		w, err = wire.NewValueString(*(v.LastFailureReason)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 50, Value: w}
+		i++
+	}
+	if v.LastFailureDetails != nil {
+		w, err = wire.NewValueBinary(v.LastFailureDetails), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 60, Value: w}
 		i++
 	}
 
@@ -1639,6 +1657,24 @@ func (v *ActivityTaskStartedEventAttributes) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 50:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.LastFailureReason = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 60:
+			if field.Value.Type() == wire.TBinary {
+				v.LastFailureDetails, err = field.Value.GetBinary(), error(nil)
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -1652,7 +1688,7 @@ func (v *ActivityTaskStartedEventAttributes) String() string {
 		return "<nil>"
 	}
 
-	var fields [4]string
+	var fields [6]string
 	i := 0
 	if v.ScheduledEventId != nil {
 		fields[i] = fmt.Sprintf("ScheduledEventId: %v", *(v.ScheduledEventId))
@@ -1668,6 +1704,14 @@ func (v *ActivityTaskStartedEventAttributes) String() string {
 	}
 	if v.Attempt != nil {
 		fields[i] = fmt.Sprintf("Attempt: %v", *(v.Attempt))
+		i++
+	}
+	if v.LastFailureReason != nil {
+		fields[i] = fmt.Sprintf("LastFailureReason: %v", *(v.LastFailureReason))
+		i++
+	}
+	if v.LastFailureDetails != nil {
+		fields[i] = fmt.Sprintf("LastFailureDetails: %v", v.LastFailureDetails)
 		i++
 	}
 
@@ -1689,6 +1733,12 @@ func (v *ActivityTaskStartedEventAttributes) Equals(rhs *ActivityTaskStartedEven
 		return false
 	}
 	if !_I32_EqualsPtr(v.Attempt, rhs.Attempt) {
+		return false
+	}
+	if !_String_EqualsPtr(v.LastFailureReason, rhs.LastFailureReason) {
+		return false
+	}
+	if !((v.LastFailureDetails == nil && rhs.LastFailureDetails == nil) || (v.LastFailureDetails != nil && rhs.LastFailureDetails != nil && bytes.Equal(v.LastFailureDetails, rhs.LastFailureDetails))) {
 		return false
 	}
 
@@ -1730,6 +1780,16 @@ func (v *ActivityTaskStartedEventAttributes) GetRequestId() (o string) {
 func (v *ActivityTaskStartedEventAttributes) GetAttempt() (o int32) {
 	if v.Attempt != nil {
 		return *v.Attempt
+	}
+
+	return
+}
+
+// GetLastFailureReason returns the value of LastFailureReason if it is set or its
+// zero value if it is unset.
+func (v *ActivityTaskStartedEventAttributes) GetLastFailureReason() (o string) {
+	if v.LastFailureReason != nil {
+		return *v.LastFailureReason
 	}
 
 	return
@@ -12896,7 +12956,9 @@ func (v *EncodingType) UnmarshalJSON(text []byte) error {
 }
 
 type EntityNotExistsError struct {
-	Message string `json:"message,required"`
+	Message        string  `json:"message,required"`
+	CurrentCluster *string `json:"currentCluster,omitempty"`
+	ActiveCluster  *string `json:"activeCluster,omitempty"`
 }
 
 // ToWire translates a EntityNotExistsError struct into a Thrift-level intermediate
@@ -12916,7 +12978,7 @@ type EntityNotExistsError struct {
 //   }
 func (v *EntityNotExistsError) ToWire() (wire.Value, error) {
 	var (
-		fields [1]wire.Field
+		fields [3]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -12928,6 +12990,22 @@ func (v *EntityNotExistsError) ToWire() (wire.Value, error) {
 	}
 	fields[i] = wire.Field{ID: 1, Value: w}
 	i++
+	if v.CurrentCluster != nil {
+		w, err = wire.NewValueString(*(v.CurrentCluster)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 2, Value: w}
+		i++
+	}
+	if v.ActiveCluster != nil {
+		w, err = wire.NewValueString(*(v.ActiveCluster)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 3, Value: w}
+		i++
+	}
 
 	return wire.NewValueStruct(wire.Struct{Fields: fields[:i]}), nil
 }
@@ -12964,6 +13042,26 @@ func (v *EntityNotExistsError) FromWire(w wire.Value) error {
 				}
 				messageIsSet = true
 			}
+		case 2:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.CurrentCluster = &x
+				if err != nil {
+					return err
+				}
+
+			}
+		case 3:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.ActiveCluster = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -12981,10 +13079,18 @@ func (v *EntityNotExistsError) String() string {
 		return "<nil>"
 	}
 
-	var fields [1]string
+	var fields [3]string
 	i := 0
 	fields[i] = fmt.Sprintf("Message: %v", v.Message)
 	i++
+	if v.CurrentCluster != nil {
+		fields[i] = fmt.Sprintf("CurrentCluster: %v", *(v.CurrentCluster))
+		i++
+	}
+	if v.ActiveCluster != nil {
+		fields[i] = fmt.Sprintf("ActiveCluster: %v", *(v.ActiveCluster))
+		i++
+	}
 
 	return fmt.Sprintf("EntityNotExistsError{%v}", strings.Join(fields[:i], ", "))
 }
@@ -12997,8 +13103,34 @@ func (v *EntityNotExistsError) Equals(rhs *EntityNotExistsError) bool {
 	if !(v.Message == rhs.Message) {
 		return false
 	}
+	if !_String_EqualsPtr(v.CurrentCluster, rhs.CurrentCluster) {
+		return false
+	}
+	if !_String_EqualsPtr(v.ActiveCluster, rhs.ActiveCluster) {
+		return false
+	}
 
 	return true
+}
+
+// GetCurrentCluster returns the value of CurrentCluster if it is set or its
+// zero value if it is unset.
+func (v *EntityNotExistsError) GetCurrentCluster() (o string) {
+	if v.CurrentCluster != nil {
+		return *v.CurrentCluster
+	}
+
+	return
+}
+
+// GetActiveCluster returns the value of ActiveCluster if it is set or its
+// zero value if it is unset.
+func (v *EntityNotExistsError) GetActiveCluster() (o string) {
+	if v.ActiveCluster != nil {
+		return *v.ActiveCluster
+	}
+
+	return
 }
 
 func (v *EntityNotExistsError) Error() string {
@@ -14213,6 +14345,7 @@ type GetWorkflowExecutionHistoryRequest struct {
 	NextPageToken          []byte                  `json:"nextPageToken,omitempty"`
 	WaitForNewEvent        *bool                   `json:"waitForNewEvent,omitempty"`
 	HistoryEventFilterType *HistoryEventFilterType `json:"HistoryEventFilterType,omitempty"`
+	SkipArchival           *bool                   `json:"skipArchival,omitempty"`
 }
 
 // ToWire translates a GetWorkflowExecutionHistoryRequest struct into a Thrift-level intermediate
@@ -14232,7 +14365,7 @@ type GetWorkflowExecutionHistoryRequest struct {
 //   }
 func (v *GetWorkflowExecutionHistoryRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [6]wire.Field
+		fields [7]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -14284,6 +14417,14 @@ func (v *GetWorkflowExecutionHistoryRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 60, Value: w}
+		i++
+	}
+	if v.SkipArchival != nil {
+		w, err = wire.NewValueBool(*(v.SkipArchival)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 70, Value: w}
 		i++
 	}
 
@@ -14374,6 +14515,16 @@ func (v *GetWorkflowExecutionHistoryRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 70:
+			if field.Value.Type() == wire.TBool {
+				var x bool
+				x, err = field.Value.GetBool(), error(nil)
+				v.SkipArchival = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -14387,7 +14538,7 @@ func (v *GetWorkflowExecutionHistoryRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [6]string
+	var fields [7]string
 	i := 0
 	if v.Domain != nil {
 		fields[i] = fmt.Sprintf("Domain: %v", *(v.Domain))
@@ -14411,6 +14562,10 @@ func (v *GetWorkflowExecutionHistoryRequest) String() string {
 	}
 	if v.HistoryEventFilterType != nil {
 		fields[i] = fmt.Sprintf("HistoryEventFilterType: %v", *(v.HistoryEventFilterType))
+		i++
+	}
+	if v.SkipArchival != nil {
+		fields[i] = fmt.Sprintf("SkipArchival: %v", *(v.SkipArchival))
 		i++
 	}
 
@@ -14448,6 +14603,9 @@ func (v *GetWorkflowExecutionHistoryRequest) Equals(rhs *GetWorkflowExecutionHis
 		return false
 	}
 	if !_HistoryEventFilterType_EqualsPtr(v.HistoryEventFilterType, rhs.HistoryEventFilterType) {
+		return false
+	}
+	if !_Bool_EqualsPtr(v.SkipArchival, rhs.SkipArchival) {
 		return false
 	}
 
@@ -14489,6 +14647,16 @@ func (v *GetWorkflowExecutionHistoryRequest) GetWaitForNewEvent() (o bool) {
 func (v *GetWorkflowExecutionHistoryRequest) GetHistoryEventFilterType() (o HistoryEventFilterType) {
 	if v.HistoryEventFilterType != nil {
 		return *v.HistoryEventFilterType
+	}
+
+	return
+}
+
+// GetSkipArchival returns the value of SkipArchival if it is set or its
+// zero value if it is unset.
+func (v *GetWorkflowExecutionHistoryRequest) GetSkipArchival() (o bool) {
+	if v.SkipArchival != nil {
+		return *v.SkipArchival
 	}
 
 	return
@@ -14566,7 +14734,7 @@ func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 		if err != nil {
 			return w, err
 		}
-		fields[i] = wire.Field{ID: 20, Value: w}
+		fields[i] = wire.Field{ID: 11, Value: w}
 		i++
 	}
 	if v.NextPageToken != nil {
@@ -14574,7 +14742,7 @@ func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 		if err != nil {
 			return w, err
 		}
-		fields[i] = wire.Field{ID: 30, Value: w}
+		fields[i] = wire.Field{ID: 20, Value: w}
 		i++
 	}
 	if v.Archived != nil {
@@ -14582,7 +14750,7 @@ func (v *GetWorkflowExecutionHistoryResponse) ToWire() (wire.Value, error) {
 		if err != nil {
 			return w, err
 		}
-		fields[i] = wire.Field{ID: 40, Value: w}
+		fields[i] = wire.Field{ID: 30, Value: w}
 		i++
 	}
 
@@ -14649,7 +14817,7 @@ func (v *GetWorkflowExecutionHistoryResponse) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 20:
+		case 11:
 			if field.Value.Type() == wire.TList {
 				v.RawHistory, err = _List_DataBlob_Read(field.Value.GetList())
 				if err != nil {
@@ -14657,7 +14825,7 @@ func (v *GetWorkflowExecutionHistoryResponse) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 30:
+		case 20:
 			if field.Value.Type() == wire.TBinary {
 				v.NextPageToken, err = field.Value.GetBinary(), error(nil)
 				if err != nil {
@@ -14665,7 +14833,7 @@ func (v *GetWorkflowExecutionHistoryResponse) FromWire(w wire.Value) error {
 				}
 
 			}
-		case 40:
+		case 30:
 			if field.Value.Type() == wire.TBool {
 				var x bool
 				x, err = field.Value.GetBool(), error(nil)
@@ -25884,9 +26052,10 @@ func (v *RegisterDomainRequest) GetVisibilityArchivalURI() (o string) {
 }
 
 type RemoveTaskRequest struct {
-	ShardID *int32 `json:"shardID,omitempty"`
-	Type    *int32 `json:"type,omitempty"`
-	TaskID  *int64 `json:"taskID,omitempty"`
+	ShardID             *int32 `json:"shardID,omitempty"`
+	Type                *int32 `json:"type,omitempty"`
+	TaskID              *int64 `json:"taskID,omitempty"`
+	VisibilityTimestamp *int64 `json:"visibilityTimestamp,omitempty"`
 }
 
 // ToWire translates a RemoveTaskRequest struct into a Thrift-level intermediate
@@ -25906,7 +26075,7 @@ type RemoveTaskRequest struct {
 //   }
 func (v *RemoveTaskRequest) ToWire() (wire.Value, error) {
 	var (
-		fields [3]wire.Field
+		fields [4]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -25934,6 +26103,14 @@ func (v *RemoveTaskRequest) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 30, Value: w}
+		i++
+	}
+	if v.VisibilityTimestamp != nil {
+		w, err = wire.NewValueI64(*(v.VisibilityTimestamp)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 40, Value: w}
 		i++
 	}
 
@@ -25992,6 +26169,16 @@ func (v *RemoveTaskRequest) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 40:
+			if field.Value.Type() == wire.TI64 {
+				var x int64
+				x, err = field.Value.GetI64(), error(nil)
+				v.VisibilityTimestamp = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -26005,7 +26192,7 @@ func (v *RemoveTaskRequest) String() string {
 		return "<nil>"
 	}
 
-	var fields [3]string
+	var fields [4]string
 	i := 0
 	if v.ShardID != nil {
 		fields[i] = fmt.Sprintf("ShardID: %v", *(v.ShardID))
@@ -26017,6 +26204,10 @@ func (v *RemoveTaskRequest) String() string {
 	}
 	if v.TaskID != nil {
 		fields[i] = fmt.Sprintf("TaskID: %v", *(v.TaskID))
+		i++
+	}
+	if v.VisibilityTimestamp != nil {
+		fields[i] = fmt.Sprintf("VisibilityTimestamp: %v", *(v.VisibilityTimestamp))
 		i++
 	}
 
@@ -26035,6 +26226,9 @@ func (v *RemoveTaskRequest) Equals(rhs *RemoveTaskRequest) bool {
 		return false
 	}
 	if !_I64_EqualsPtr(v.TaskID, rhs.TaskID) {
+		return false
+	}
+	if !_I64_EqualsPtr(v.VisibilityTimestamp, rhs.VisibilityTimestamp) {
 		return false
 	}
 
@@ -26066,6 +26260,16 @@ func (v *RemoveTaskRequest) GetType() (o int32) {
 func (v *RemoveTaskRequest) GetTaskID() (o int64) {
 	if v.TaskID != nil {
 		return *v.TaskID
+	}
+
+	return
+}
+
+// GetVisibilityTimestamp returns the value of VisibilityTimestamp if it is set or its
+// zero value if it is unset.
+func (v *RemoveTaskRequest) GetVisibilityTimestamp() (o int64) {
+	if v.VisibilityTimestamp != nil {
+		return *v.VisibilityTimestamp
 	}
 
 	return
@@ -43080,6 +43284,7 @@ type WorkflowExecutionInfo struct {
 	Memo             *Memo                         `json:"memo,omitempty"`
 	SearchAttributes *SearchAttributes             `json:"searchAttributes,omitempty"`
 	AutoResetPoints  *ResetPoints                  `json:"autoResetPoints,omitempty"`
+	TaskList         *string                       `json:"taskList,omitempty"`
 }
 
 // ToWire translates a WorkflowExecutionInfo struct into a Thrift-level intermediate
@@ -43099,7 +43304,7 @@ type WorkflowExecutionInfo struct {
 //   }
 func (v *WorkflowExecutionInfo) ToWire() (wire.Value, error) {
 	var (
-		fields [12]wire.Field
+		fields [13]wire.Field
 		i      int = 0
 		w      wire.Value
 		err    error
@@ -43199,6 +43404,14 @@ func (v *WorkflowExecutionInfo) ToWire() (wire.Value, error) {
 			return w, err
 		}
 		fields[i] = wire.Field{ID: 110, Value: w}
+		i++
+	}
+	if v.TaskList != nil {
+		w, err = wire.NewValueString(*(v.TaskList)), error(nil)
+		if err != nil {
+			return w, err
+		}
+		fields[i] = wire.Field{ID: 120, Value: w}
 		i++
 	}
 
@@ -43341,6 +43554,16 @@ func (v *WorkflowExecutionInfo) FromWire(w wire.Value) error {
 				}
 
 			}
+		case 120:
+			if field.Value.Type() == wire.TBinary {
+				var x string
+				x, err = field.Value.GetString(), error(nil)
+				v.TaskList = &x
+				if err != nil {
+					return err
+				}
+
+			}
 		}
 	}
 
@@ -43354,7 +43577,7 @@ func (v *WorkflowExecutionInfo) String() string {
 		return "<nil>"
 	}
 
-	var fields [12]string
+	var fields [13]string
 	i := 0
 	if v.Execution != nil {
 		fields[i] = fmt.Sprintf("Execution: %v", v.Execution)
@@ -43404,6 +43627,10 @@ func (v *WorkflowExecutionInfo) String() string {
 		fields[i] = fmt.Sprintf("AutoResetPoints: %v", v.AutoResetPoints)
 		i++
 	}
+	if v.TaskList != nil {
+		fields[i] = fmt.Sprintf("TaskList: %v", *(v.TaskList))
+		i++
+	}
 
 	return fmt.Sprintf("WorkflowExecutionInfo{%v}", strings.Join(fields[:i], ", "))
 }
@@ -43447,6 +43674,9 @@ func (v *WorkflowExecutionInfo) Equals(rhs *WorkflowExecutionInfo) bool {
 		return false
 	}
 	if !((v.AutoResetPoints == nil && rhs.AutoResetPoints == nil) || (v.AutoResetPoints != nil && rhs.AutoResetPoints != nil && v.AutoResetPoints.Equals(rhs.AutoResetPoints))) {
+		return false
+	}
+	if !_String_EqualsPtr(v.TaskList, rhs.TaskList) {
 		return false
 	}
 
@@ -43508,6 +43738,16 @@ func (v *WorkflowExecutionInfo) GetParentDomainId() (o string) {
 func (v *WorkflowExecutionInfo) GetExecutionTime() (o int64) {
 	if v.ExecutionTime != nil {
 		return *v.ExecutionTime
+	}
+
+	return
+}
+
+// GetTaskList returns the value of TaskList if it is set or its
+// zero value if it is unset.
+func (v *WorkflowExecutionInfo) GetTaskList() (o string) {
+	if v.TaskList != nil {
+		return *v.TaskList
 	}
 
 	return
