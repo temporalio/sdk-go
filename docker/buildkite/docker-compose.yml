@@ -41,6 +41,19 @@ services:
         aliases:
           - temporal
 
+  build:
+    build:
+      context: ../../
+      dockerfile: ./docker/buildkite/Dockerfile
+    environment:
+      - "GO111MODULE=on"
+    volumes:
+      - ../../:/go/src/go.temporal.io/temporal
+    networks:
+      services-network:
+        aliases:
+          - build
+
   integ-test:
     build:
       context: ../../
