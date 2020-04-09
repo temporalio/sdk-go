@@ -76,7 +76,7 @@ cover_ci: $(COVER_ROOT)/cover.out
 # it a whitelist of every file in every package that we want linted, per package.
 #
 # so lint + this golint func works like:
-# - itrate over all lintable dirs (outputs "./folder/")
+# - iterate over all lintable dirs (outputs "./folder/")
 # - find .go files in a dir (via wildcard, so not recursively)
 # - filter to only files in LINT_SRC
 # - if it's not empty, run golint against the list
