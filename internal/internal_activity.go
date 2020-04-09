@@ -38,7 +38,7 @@ import (
 type (
 	// activity is an interface of an activity implementation.
 	activity interface {
-		Execute(ctx context.Context, input []byte) ([]byte, error)
+		Execute(ctx context.Context, input *commonpb.Payload) (*commonpb.Payload, error)
 		ActivityType() ActivityType
 		GetFunction() interface{}
 	}
@@ -72,7 +72,7 @@ type (
 	executeActivityParams struct {
 		activityOptions
 		ActivityType  ActivityType
-		Input         []byte
+		Input         *commonpb.Payload
 		DataConverter DataConverter
 		Header        *commonpb.Header
 	}
@@ -317,7 +317,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) ([]byte, error) {
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) (*commonpb.Payload, error) {
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
@@ -327,7 +327,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 			fnName, resultSize)
 	}
 
-	var result []byte
+	var result *commonpb.Payload
 	var err error
 
 	// Parse result
@@ -355,7 +355,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result []byte, err error) {
+func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result *commonpb.Payload, err error) {
 	// results contain all results including error
 	resultSize := len(results)
 
@@ -388,7 +388,7 @@ func serializeResults(f interface{}, results []interface{}, dataConverter DataCo
 	return
 }
 
-func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interface{}, dataConverter DataConverter) error {
+func deSerializeFnResultFromFnType(fnType reflect.Type, result *commonpb.Payload, to interface{}, dataConverter DataConverter) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expecting only function type but got type: %v", fnType)
 	}
@@ -408,7 +408,7 @@ func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interf
 	return nil
 }
 
-func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter DataConverter, registry *registry) error {
+func deSerializeFunctionResult(f interface{}, result *commonpb.Payload, to interface{}, dataConverter DataConverter, registry *registry) error {
 	fType := reflect.TypeOf(f)
 	if dataConverter == nil {
 		dataConverter = getDefaultDataConverter()

@@ -21,7 +21,20 @@
 package internal
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+)
+
+const (
+	encodingMetadata     = "encoding"
+	encodingMetadataRaw  = "raw"
+	encodingMetadataJson = "json"
+	encodingMetadataGob  = "gob"
+	nameMetadata         = "name"
 )
 
 type (
@@ -57,20 +70,28 @@ type (
 		// FromData implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromData(input []byte, valuePtr ...interface{}) error
+
+		ToDataP(value ...interface{}) (*commonpb.Payload, error)
+		FromDataP(input *commonpb.Payload, valuePtr ...interface{}) error
 	}
 
-	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
+	// defaultDataConverter uses JSON.
 	defaultDataConverter struct{}
 )
 
-var defaultJSONDataConverter = &defaultDataConverter{}
-
 // DefaultDataConverter is default data converter used by Temporal worker
-var DefaultDataConverter = getDefaultDataConverter()
+var (
+	DefaultDataConverter = &defaultDataConverter{}
+
+	ErrEncodingIsNotSet       = errors.New("payload encoding metadata is not set")
+	ErrEncodingIsNotSupported = errors.New("payload encoding metadata is not supported")
+	ErrUnableToJsonEncode     = errors.New("unable to encode to JSON")
+	ErrUnableToJsonDecode     = errors.New("unable to decode from JSON")
+)
 
 // getDefaultDataConverter return default data converter used by Temporal worker
 func getDefaultDataConverter() DataConverter {
-	return defaultJSONDataConverter
+	return DefaultDataConverter
 }
 
 func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
@@ -96,4 +117,61 @@ func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
 	encoder := &jsonEncoding{}
 
 	return encoder.Unmarshal(data, to)
+}
+
+func (dc *defaultDataConverter) ToDataP(args ...interface{}) (*commonpb.Payload, error) {
+	payload := &commonpb.Payload{}
+
+	for i, arg := range args {
+		var payloadItem *commonpb.PayloadItem
+		if isTypeByteSlice(reflect.TypeOf(arg)) {
+			payloadItem = &commonpb.PayloadItem{
+				Metadata: map[string][]byte{
+					encodingMetadata: []byte(encodingMetadataRaw),
+					nameMetadata:     []byte(fmt.Sprintf("args[%d]", i)),
+				},
+				Data: arg.([]byte),
+			}
+		} else {
+			data, err := json.Marshal(arg)
+			if err != nil {
+				return nil, fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToJsonEncode, err)
+			}
+			payloadItem = &commonpb.PayloadItem{
+				Metadata: map[string][]byte{
+					encodingMetadata: []byte(encodingMetadataJson),
+					nameMetadata:     []byte(fmt.Sprintf("args[%d]", i)),
+				},
+				Data: data,
+			}
+		}
+		payload.Items = append(payload.Items, payloadItem)
+	}
+
+	return payload, nil
+}
+
+func (dc *defaultDataConverter) FromDataP(payload *commonpb.Payload, to ...interface{}) error {
+	for i, payloadItem := range payload.GetItems() {
+		encoding, ok := payloadItem.GetMetadata()[encodingMetadata]
+
+		if !ok {
+			return fmt.Errorf("args[%d]: %w", i, ErrEncodingIsNotSet)
+		}
+
+		e := string(encoding)
+		if e == encodingMetadataRaw {
+			reflect.ValueOf(to[i]).Elem().SetBytes(payloadItem.GetData())
+			return nil
+		} else if e == encodingMetadataJson {
+			err := json.Unmarshal(payloadItem.GetData(), to[i])
+			if err != nil {
+				return fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToJsonDecode, err)
+			}
+		} else {
+			return fmt.Errorf("args[%d], encoding %q: %w", i, e, ErrEncodingIsNotSupported)
+		}
+	}
+
+	return nil
 }

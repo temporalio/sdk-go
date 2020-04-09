@@ -73,7 +73,7 @@ type (
 	testActivityHandle struct {
 		callback         resultHandler
 		activityType     string
-		heartbeatDetails []byte
+		heartbeatDetails *commonpb.Payload
 	}
 
 	testWorkflowHandle struct {
@@ -173,8 +173,8 @@ type (
 		openSessions   map[string]*SessionInfo
 
 		workflowCancelHandler func()
-		signalHandler         func(name string, input []byte)
-		queryHandler          func(string, []byte) ([]byte, error)
+		signalHandler         func(name string, input *commonpb.Payload)
+		queryHandler          func(string, *commonpb.Payload) (*commonpb.Payload, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isTestCompleted  bool
@@ -185,7 +185,7 @@ type (
 		dataConverter    DataConverter
 		executionTimeout time.Duration
 
-		heartbeatDetails []byte
+		heartbeatDetails *commonpb.Payload
 
 		workerStopChannel  chan struct{}
 		sessionEnvironment *testSessionEnvironmentImpl
@@ -257,7 +257,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	env.setStartTime(time.Now())
 
 	// put current workflow as a running workflow so child can send signal to parent
-	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result []byte, err error) {}}
+	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result *commonpb.Payload, err error) {}}
 
 	if env.logger == nil {
 		logger, _ := zap.NewDevelopment()
@@ -430,7 +430,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	env.executeWorkflowInternal(0, workflowType.Name, input)
 }
 
-func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input []byte) {
+func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input *commonpb.Payload) {
 	env.locker.Lock()
 	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
@@ -1242,7 +1242,7 @@ func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallW
 }
 
 // Execute executes the activity code.
-func (a *activityExecutorWrapper) Execute(ctx context.Context, input []byte) ([]byte, error) {
+func (a *activityExecutorWrapper) Execute(ctx context.Context, input *commonpb.Payload) (*commonpb.Payload, error) {
 	activityInfo := GetActivityInfo(ctx)
 	dc := getDataConverterFromActivityCtx(ctx)
 	if a.env.onActivityStartedListener != nil {
@@ -1283,7 +1283,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 }
 
 // Execute executes the workflow code.
-func (w *workflowExecutorWrapper) Execute(ctx Context, input []byte) (result []byte, err error) {
+func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payload) (result []byte, err error) {
 	env := w.env
 	if env.isChildWorkflow() && env.onChildWorkflowStartedListener != nil {
 		env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
@@ -1359,7 +1359,7 @@ func (m *mockWrapper) getCtxArg(ctx interface{}) []interface{} {
 	return nil
 }
 
-func (m *mockWrapper) getMockReturn(ctx interface{}, input []byte) (retArgs mock.Arguments) {
+func (m *mockWrapper) getMockReturn(ctx interface{}, input *commonpb.Payload) (retArgs mock.Arguments) {
 	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
 		// no mock
 		return nil
@@ -1463,7 +1463,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
 	}
 }
 
-func (m *mockWrapper) executeMock(ctx interface{}, input []byte, mockRet mock.Arguments) (result []byte, err error) {
+func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payload, mockRet mock.Arguments) (result []byte, err error) {
 	// have to handle panics here to support calling ExecuteChildWorkflow(...).GetChildWorkflowExecution().Get(...)
 	// when a child is mocked.
 	defer func() {
@@ -1640,11 +1640,11 @@ func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input []byte)) {
+func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payload)) {
 	env.signalHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string, []byte) ([]byte, error)) {
+func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *commonpb.Payload) (*commonpb.Payload, error)) {
 	env.queryHandler = handler
 }
 
@@ -1652,7 +1652,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
 		childEnv := childHandle.env
-		childEnv.cancelWorkflow(func(result []byte, err error) {})
+		childEnv.cancelWorkflow(func(result *commonpb.Payload, err error) {})
 		return
 	}
 }
@@ -1709,7 +1709,7 @@ func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	return false
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payload, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -1776,7 +1776,7 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 	return nil
 }
 
-func (env *testWorkflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payload, error), callback resultHandler) {
 	callback(f())
 }
 
@@ -1865,8 +1865,8 @@ func (env *testWorkflowEnvironmentImpl) RemoveSession(sessionID string) {
 	delete(env.openSessions, sessionID)
 }
 
-func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) []byte {
-	blob, err := env.GetDataConverter().ToData(value)
+func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payload {
+	blob, err := env.GetDataConverter().ToDataP(value)
 	if err != nil {
 		panic(err)
 	}

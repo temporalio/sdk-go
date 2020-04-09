@@ -23,11 +23,18 @@ package internal
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/temporal-proto/common"
+)
+
+var (
+	ErrUnableToGobEncode = errors.New("unable to encode to gob")
+	ErrUnableToGobDecode = errors.New("unable to encode from gob")
 )
 
 func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
@@ -109,6 +116,51 @@ func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) er
 				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
 		}
 	}
+	return nil
+}
+
+func (dc *defaultDataConverter) ToDataP(args ...interface{}) (*commonpb.Payload, error) {
+	payload := &commonpb.Payload{}
+
+	for i, arg := range args {
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		if err := enc.Encode(arg); err != nil {
+			return nil, fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToGobEncode, err)
+		}
+
+		payloadItem := &commonpb.PayloadItem{
+			Metadata: map[string][]byte{
+				encodingMetadata: []byte(encodingMetadataGob),
+				nameMetadata:     []byte(fmt.Sprintf("args[%d]", i)),
+			},
+			Data: buf.Bytes(),
+		}
+		payload.Items = append(payload.Items, payloadItem)
+	}
+
+	return payload, nil
+}
+
+func (dc *defaultDataConverter) FromDataP(payload *commonpb.Payload, to ...interface{}) error {
+	for i, payloadItem := range payload.GetItems() {
+		encoding, ok := payloadItem.GetMetadata()[encodingMetadata]
+
+		if !ok {
+			return fmt.Errorf("args[%d]: %w", i, ErrEncodingIsNotSet)
+		}
+
+		e := string(encoding)
+		if e == encodingMetadataGob {
+			dec := gob.NewDecoder(bytes.NewBuffer(payloadItem.GetData()))
+			if err := dec.Decode(to[i]); err != nil {
+				return fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToGobDecode, err)
+			}
+		} else {
+			return fmt.Errorf("args[%d], encoding %q: %w", i, e, ErrEncodingIsNotSupported)
+		}
+	}
+
 	return nil
 }
 

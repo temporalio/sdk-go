@@ -40,10 +40,12 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
 
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
@@ -740,15 +742,15 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 }
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc DataConverter, args []interface{}) ([]byte, error) {
+func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payload, error) {
 	if dc == nil {
-		return getDefaultDataConverter().ToData(args...)
+		return getDefaultDataConverter().ToDataP(args...)
 	}
-	return dc.ToData(args...)
+	return dc.ToDataP(args...)
 }
 
 // decode multiple arguments(arguments to a function).
-func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []reflect.Value, err error) {
+func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (result []reflect.Value, err error) {
 	r, err := decodeArgsToValues(dc, fnType, data)
 	if err != nil {
 		return
@@ -759,7 +761,7 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []re
 	return
 }
 
-func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data []byte) (result []interface{}, err error) {
+func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (result []interface{}, err error) {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -772,7 +774,7 @@ argsLoop:
 		arg := reflect.New(argT).Interface()
 		result = append(result, arg)
 	}
-	err = dc.FromData(data, result...)
+	err = dc.FromDataP(data, result...)
 	if err != nil {
 		return
 	}
@@ -780,19 +782,19 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc DataConverter, arg interface{}) ([]byte, error) {
+func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payload, error) {
 	if dc == nil {
-		return getDefaultDataConverter().ToData(arg)
+		return getDefaultDataConverter().ToDataP(arg)
 	}
-	return dc.ToData(arg)
+	return dc.ToDataP(arg)
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc DataConverter, data []byte, to interface{}) error {
+func decodeArg(dc DataConverter, data *commonpb.Payload, to interface{}) error {
 	if dc == nil {
-		return getDefaultDataConverter().FromData(data, to)
+		return getDefaultDataConverter().FromDataP(data, to)
 	}
-	return dc.FromData(data, to)
+	return dc.FromDataP(data, to)
 }
 
 func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {
@@ -840,22 +842,19 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) Execute(ctx Context, input []byte) ([]byte, error) {
+func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payload) ([]byte, error) {
 	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
 	fnType := reflect.TypeOf(we.fn)
-	if fnType.NumIn() == 2 && isTypeByteSlice(fnType.In(1)) {
-		// Do not deserialize input if workflow has a single byte slice argument (besides ctx)
-		args = append(args, input)
-	} else {
-		decoded, err := decodeArgsToValues(dataConverter, fnType, input)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"unable to decode the workflow function input bytes with error: %v, function name: %v",
-				err, we.workflowType)
-		}
-		args = append(args, decoded...)
+
+	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"unable to decode the workflow function input bytes with error: %v, function name: %v",
+			err, we.workflowType)
 	}
+	args = append(args, decoded...)
+
 	envInterceptor := getEnvInterceptor(ctx)
 	envInterceptor.fn = we.fn
 	results := envInterceptor.interceptorChainHead.ExecuteWorkflow(ctx, we.workflowType, args...)
@@ -876,7 +875,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 	return ae.fn
 }
 
-func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, error) {
+func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload) (*commonpb.Payload, error) {
 	fnType := reflect.TypeOf(ae.fn)
 	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
@@ -886,24 +885,20 @@ func (ae *activityExecutor) Execute(ctx context.Context, input []byte) ([]byte, 
 		args = append(args, reflect.ValueOf(ctx))
 	}
 
-	if fnType.NumIn() == 1 && isTypeByteSlice(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(input))
-	} else {
-		decoded, err := decodeArgs(dataConverter, fnType, input)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"unable to decode the activity function input bytes with error: %v for function name: %v",
-				err, ae.name)
-		}
-		args = append(args, decoded...)
+	decoded, err := decodeArgs(dataConverter, fnType, input)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"unable to decode the activity function input bytes with error: %v for function name: %v",
+			err, ae.name)
 	}
+	args = append(args, decoded...)
 
 	fnValue := reflect.ValueOf(ae.fn)
 	retValues := fnValue.Call(args)
 	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
 }
 
-func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) ([]byte, error) {
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payload, error) {
 	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
@@ -1269,17 +1264,17 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 			for _, d := range completeReq.Decisions {
 				if d.GetDecisionType() == decisionpb.DecisionType_ContinueAsNewWorkflowExecution {
 					if last.GetEventType() == eventpb.EventType_WorkflowExecutionContinuedAsNew {
-						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().Input
-						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().Input
-						if bytes.Equal(inputA, inputB) {
+						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().GetInput()
+						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
+						if proto.Equal(inputA, inputB) {
 							return nil
 						}
 					}
 				}
 				if d.GetDecisionType() == decisionpb.DecisionType_CompleteWorkflowExecution {
 					if last.GetEventType() == eventpb.EventType_WorkflowExecutionCompleted {
-						resultA := last.GetWorkflowExecutionCompletedEventAttributes().Result
-						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().Result
+						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
+						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 						if bytes.Equal(resultA, resultB) {
 							return nil
 						}

@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -239,7 +240,7 @@ type testTimerWorkflow struct {
 	t *testing.T
 }
 
-func (w *testTimerWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
+func (w *testTimerWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result []byte, err error) {
 	// Start a timer.
 	t := NewTimer(ctx, 1)
 
@@ -298,7 +299,7 @@ func testAct(_ context.Context) (string, error) {
 	return "test", nil
 }
 
-func (w *testActivityCancelWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
+func (w *testActivityCancelWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result []byte, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,

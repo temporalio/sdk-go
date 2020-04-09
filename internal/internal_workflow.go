@@ -61,7 +61,7 @@ type (
 	}
 
 	futureImpl struct {
-		value   interface{}
+		value   interface{} // *commonpb.Payload
 		err     error
 		ready   bool
 		channel *channelImpl
@@ -93,7 +93,7 @@ type (
 	// All time manipulation should use current time returned by GetTime(ctx) method.
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.
 	workflow interface {
-		Execute(ctx Context, input []byte) (result []byte, err error)
+		Execute(ctx Context, input *commonpb.Payload) (result []byte, err error)
 	}
 
 	sendCallback struct {
@@ -172,7 +172,7 @@ type (
 		workflowID                          string
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
-		queryHandlers                       map[string]func([]byte) ([]byte, error)
+		queryHandlers                       map[string]func(*commonpb.Payload) (*commonpb.Payload, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       DataConverter
 		retryPolicy                         *commonpb.RetryPolicy
@@ -186,11 +186,11 @@ type (
 	executeWorkflowParams struct {
 		workflowOptions
 		workflowType         *WorkflowType
-		input                []byte
+		input                *commonpb.Payload
 		header               *commonpb.Header
-		attempt              int32     // used by test framework to support child workflow retry
-		scheduledTime        time.Time // used by test framework to support child workflow retry
-		lastCompletionResult []byte    // used by test framework to support cron
+		attempt              int32             // used by test framework to support child workflow retry
+		scheduledTime        time.Time         // used by test framework to support child workflow retry
+		lastCompletionResult *commonpb.Payload // used by test framework to support cron
 	}
 
 	// decodeFutureImpl
@@ -304,17 +304,12 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 
-	if blob, ok := f.value.([]byte); ok && !isTypeByteSlice(reflect.TypeOf(value)) {
+	if blob, ok := f.value.(*commonpb.Payload); ok {
 		if err := decodeArg(getDataConverterFromWorkflowContext(ctx), blob, value); err != nil {
 			return err
 		}
-		return f.err
 	}
 
-	fv := reflect.ValueOf(f.value)
-	if fv.IsValid() {
-		rf.Elem().Set(fv)
-	}
 	return f.err
 }
 
@@ -445,7 +440,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	return interceptor, envInterceptor
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input []byte) {
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payload) {
 	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}
@@ -479,7 +474,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *common
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result []byte) {
+	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result *commonpb.Payload) {
 		eo := getWorkflowEnvOptions(d.rootCtx)
 		// We don't want this code to be blocked ever, using sendAsync().
 		ch := eo.getSignalChannel(d.rootCtx, name).(*channelImpl)
@@ -489,7 +484,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *common
 		}
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs []byte) ([]byte, error) {
+	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error) {
 		eo := getWorkflowEnvOptions(d.rootCtx)
 		handler, ok := eo.queryHandlers[queryType]
 		if !ok {
@@ -1117,7 +1112,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, []byte, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payload, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1204,7 +1199,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions = *options
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
-		newOptions.queryHandlers = make(map[string]func([]byte) ([]byte, error))
+		newOptions.queryHandlers = make(map[string]func(*commonpb.Payload) (*commonpb.Payload, error))
 	}
 	if newOptions.dataConverter == nil {
 		newOptions.dataConverter = getDefaultDataConverter()
@@ -1281,7 +1276,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 
-	err := deSerializeFunctionResult(d.fn, d.futureImpl.value.([]byte), value, getDataConverterFromWorkflowContext(ctx), d.channel.env.GetRegistry())
+	err := deSerializeFunctionResult(d.fn, d.futureImpl.value.(*commonpb.Payload), value, getDataConverterFromWorkflowContext(ctx), d.channel.env.GetRegistry())
 	if err != nil {
 		return err
 	}
@@ -1333,7 +1328,7 @@ func (h *queryHandler) validateHandlerFn() error {
 	return nil
 }
 
-func (h *queryHandler) execute(input []byte) (result []byte, err error) {
+func (h *queryHandler) execute(input *commonpb.Payload) (result *commonpb.Payload, err error) {
 	// if query handler panic, convert it to error
 	defer func() {
 		if p := recover(); p != nil {
@@ -1352,15 +1347,11 @@ func (h *queryHandler) execute(input []byte) (result []byte, err error) {
 	fnType := reflect.TypeOf(h.fn)
 	var args []reflect.Value
 
-	if fnType.NumIn() == 1 && isTypeByteSlice(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(input))
-	} else {
-		decoded, err := decodeArgs(h.dataConverter, fnType, input)
-		if err != nil {
-			return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %v", h.queryType, err)
-		}
-		args = append(args, decoded...)
+	decoded, err := decodeArgs(h.dataConverter, fnType, input)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %v", h.queryType, err)
 	}
+	args = append(args, decoded...)
 
 	// invoke the query handler with arguments.
 	fnValue := reflect.ValueOf(h.fn)

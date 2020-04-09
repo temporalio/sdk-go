@@ -32,6 +32,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 
 	decisionpb "go.temporal.io/temporal-proto/decision"
@@ -129,7 +130,7 @@ type (
 	}
 
 	localActivityResult struct {
-		result  []byte
+		result  *commonpb.Payload
 		err     error
 		task    *localActivityTask
 		backoff time.Duration
@@ -518,7 +519,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
-	var laResult []byte
+	var laResult *commonpb.Payload
 	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {

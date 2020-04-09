@@ -53,7 +53,7 @@ var errShutdown = errors.New("worker shutting down")
 
 type (
 	// resultHandler that returns result
-	resultHandler   func(result []byte, err error)
+	resultHandler   func(result *commonpb.Payload, err error)
 	laResultHandler func(lar *localActivityResultWrapper)
 
 	localActivityResultWrapper struct {
@@ -69,7 +69,7 @@ type (
 		asyncActivityClient
 		localActivityClient
 		workflowTimerClient
-		SideEffect(f func() ([]byte, error), callback resultHandler)
+		SideEffect(f func() (*commonpb.Payload, error), callback resultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
 		Complete(result []byte, err error)
@@ -79,9 +79,9 @@ type (
 		ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
-		RegisterSignalHandler(handler func(name string, input []byte))
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input []byte, arg interface{}, childWorkflowOnly bool, callback resultHandler)
-		RegisterQueryHandler(handler func(queryType string, queryArgs []byte) ([]byte, error))
+		RegisterSignalHandler(handler func(name string, input *commonpb.Payload))
+		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payload, arg interface{}, childWorkflowOnly bool, callback resultHandler)
+		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value
 		GetDataConverter() DataConverter
@@ -94,7 +94,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
-		Execute(env workflowEnvironment, header *commonpb.Header, input []byte)
+		Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payload)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to workflowDefinition
 		OnDecisionTaskStarted()

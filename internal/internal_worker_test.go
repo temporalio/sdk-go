@@ -731,7 +731,7 @@ type activitiesCallingOptionsWorkflow struct {
 	t *testing.T
 }
 
-func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.Payload) (result []byte, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
@@ -1354,7 +1354,7 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) []byte {
+func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payload {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)
