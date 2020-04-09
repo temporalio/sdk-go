@@ -61,8 +61,8 @@ type (
 	// RegisterActivityOptions consists of options for registering an activity
 	RegisterActivityOptions struct {
 		// When an activity is a function the name is an actual activity type name.
-		// When activity is part of a structure then each member of the structure becomes an activity with
-		// this Name + activity function name.
+		// When an activity is part of a structure then each member of the structure becomes an activity with
+		// this Name as a prefix + activity function name.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
 	}
