@@ -580,12 +580,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		if err := validateFnFormat(method.Type, false); err != nil {
 			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
 		}
-		prefix := options.Name
-		registerName := name
-		if len(prefix) == 0 {
-			prefix = structType.Elem().Name() + "_"
-		}
-		registerName = prefix + name
+		registerName := options.Name + name
 		if !options.DisableAlreadyRegisteredCheck {
 			if _, ok := r.getActivityFn(registerName); ok {
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
