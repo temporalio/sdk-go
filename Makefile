@@ -103,7 +103,7 @@ staticcheck: $(ALL_SRC)
 
 errcheck: $(ALL_SRC)
 	GO111MODULE=off go get -u github.com/kisielk/errcheck
-#	errcheck ./...
+	errcheck ./...
 
 fmt:
 	@gofmt -w $(ALL_SRC)
