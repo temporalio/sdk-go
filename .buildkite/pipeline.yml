@@ -1,9 +1,9 @@
 steps:
-  - label: ":golang: build"
+  - label: ":golang: check"
     agents:
       queue: "default"
       docker: "*"
-    command: "make"
+    command: "make check"
     plugins:
       - docker-compose#v3.1.0:
           run: build

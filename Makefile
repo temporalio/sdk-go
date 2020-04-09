@@ -1,7 +1,7 @@
 .PHONY: test bins clean cover cover-ci check errcheck staticcheck lint fmt
 
 # default target
-default: check
+default: check test
 
 IMPORT_ROOT := go.temporal.io/temporal
 
@@ -25,15 +25,15 @@ LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
-copyright $(BUILD)/copyright: $(ALL_SRC)
+copyright $(BUILD)/copyright:
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
 	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
 
 $(BUILD)/dummy:
-	go build -i -o $@ internal/cmd/dummy/dummy.go
+	go build -o $@ internal/cmd/dummy/dummy.go
 
-bins: $(ALL_SRC) $(BUILD)/copyright lint $(BUILD)/dummy
+bins: $(BUILD)/copyright $(BUILD)/dummy
 
 unit-test: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
@@ -76,7 +76,7 @@ cover_ci: $(COVER_ROOT)/cover.out
 # it a whitelist of every file in every package that we want linted, per package.
 #
 # so lint + this golint func works like:
-# - iterate over all lintable dirs (outputs "./folder/")
+# - itrate over all lintable dirs (outputs "./folder/")
 # - find .go files in a dir (via wildcard, so not recursively)
 # - filter to only files in LINT_SRC
 # - if it's not empty, run golint against the list
@@ -111,4 +111,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: fmt lint errcheck staticcheck copyright test
+check: lint errcheck staticcheck copyright bins
