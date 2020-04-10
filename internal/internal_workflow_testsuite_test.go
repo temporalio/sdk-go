@@ -1752,15 +1752,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	})
 
 	env.ExecuteWorkflow(workflowFn)
-	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount)
-	s.Equal(1, completedCount)
-	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
 	err := env.GetWorkflowResult(&result)
 	s.NoError(err)
+	env.AssertExpectations(s.T())
+	s.Equal(2, startedCount)
+	s.Equal(1, completedCount)
+	s.Equal(1, canceledCount)
 	s.Equal("hello mock", result)
 	s.True(localActivityFnCancelled.Load())
 }
