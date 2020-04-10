@@ -1714,7 +1714,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
-		f.Get(ctx, nil)
+		err := f.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
 		// Hack to avoid race condition. Never do anything similar in real production code
 		for startedCount.Load() < 2 {
 			time.Sleep(100 * time.Millisecond)
@@ -1726,8 +1729,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 			return "", err2
 		}
 
-		err := f.Get(ctx, &result)
-		return result, err
+		err3 := f.Get(ctx, &result)
+		return result, err3
 	}
 
 	env := s.NewTestWorkflowEnvironment()
