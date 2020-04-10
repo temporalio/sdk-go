@@ -43,8 +43,6 @@ var (
 	errNamespaceNotSet               = errors.New("namespace is not set")
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
-	errActivityParamsBadRequest      = errors.New("missing activity parameters through context, check ActivityOptions")
-	errWorkflowOptionBadRequest      = errors.New("missing workflow options through context, check WorkflowOptions")
 	errSearchAttributesNotSet        = errors.New("search attributes is empty")
 )
 
@@ -402,11 +400,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	}
 	// Validate context options.
 	options := getActivityOptions(ctx)
-	options, err = getValidatedActivityOptions(ctx)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
-	}
 
 	// Validate session state.
 	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
@@ -637,12 +630,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		mainSettable.Set(nil, err)
 		return result
 	}
-	options, err := getValidatedWorkflowOptions(ctx)
-	if err != nil {
-		executionSettable.Set(nil, err)
-		mainSettable.Set(nil, err)
-		return result
-	}
+
+	options := getWorkflowEnvOptions(ctx)
 	options.dataConverter = dc
 	options.contextPropagators = workflowOptionsFromCtx.contextPropagators
 	options.memo = workflowOptionsFromCtx.memo
