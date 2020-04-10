@@ -443,8 +443,10 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	err := workflow.ExecuteActivity(ctx, "RetryTimeoutStableErrorActivity").Get(ctx, nil)
+	// Test calling activity by method pointer
+	// As Go allows nil receiver pointers it works fine
+	var a *Activities
+	err := workflow.ExecuteActivity(ctx, a.RetryTimeoutStableErrorActivity).Get(ctx, nil)
 
 	cerr, ok := err.(*temporal.CustomError)
 	if !ok {
