@@ -97,7 +97,7 @@ type (
 	// All time manipulation should use current time returned by GetTime(ctx) method.
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.
 	workflow interface {
-		Execute(ctx Context, input *commonpb.Payload) (result []byte, err error)
+		Execute(ctx Context, input *commonpb.Payload) (result *commonpb.Payload, err error)
 	}
 
 	sendCallback struct {

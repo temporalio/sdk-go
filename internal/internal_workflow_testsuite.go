@@ -638,7 +638,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 }
 
 func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayDuration time.Duration) {
-	timerCallback := func(result []byte, err error) {
+	timerCallback := func(result *commonpb.Payload, err error) {
 		f()
 	}
 	if delayDuration == 0 {
@@ -771,7 +771,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) Complete(result []byte, err error) {
+func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payload, err error) {
 	if env.isTestCompleted {
 		env.logger.Debug("Workflow already completed.")
 		return
@@ -833,11 +833,11 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	params := h.params
 
 	// pass down the last completion result
-	var result []byte
+	var result *commonpb.Payload
 	if env.testResult != nil {
 		_ = env.testResult.Get(&result)
 	}
-	if len(result) == 0 {
+	if result == nil {
 		// not successful run this time, carry over from whatever previous run pass to this run.
 		result = env.workflowInfo.lastCompletionResult
 	}
@@ -885,7 +885,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	if taskToken == nil {
 		return errors.New("nil task token provided")
 	}
-	var data []byte
+	var data *commonpb.Payload
 	if result != nil {
 		var encodeErr error
 		data, encodeErr = encodeArg(env.GetDataConverter(), result)
@@ -960,7 +960,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 				}
 			} else if panicErr != nil {
 				reason := errReasonPanic
-				details, _ := env.GetDataConverter().ToData(fmt.Sprintf("%v", panicErr))
+				details, _ := env.GetDataConverter().ToDataP(fmt.Sprintf("%v", panicErr))
 				result = &workflowservice.RespondActivityTaskFailedRequest{
 					Reason:  reason,
 					Details: details,
@@ -1142,7 +1142,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 
 	delete(env.activities, activityID)
 
-	var blob []byte
+	var blob *commonpb.Payload
 	var err error
 
 	switch request := result.(type) {
@@ -1191,7 +1191,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 	delete(env.localActivities, activityID)
 	// If error is present do not return value
-	if result.err != nil && len(result.result) > 0 {
+	if result.err != nil && result.result != nil {
 		result.result = nil
 	}
 	// Always return CancelledError for cancelled tasks
@@ -1266,8 +1266,8 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input *commonpb.P
 	return a.activityExecutor.Execute(ctx, input)
 }
 
-// Execute executes the activity code.
-func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inputArgs []interface{}) ([]byte, error) {
+// ExecuteWithActualArgs executes the activity code.
+func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inputArgs []interface{}) (*commonpb.Payload, error) {
 	activityInfo := GetActivityInfo(ctx)
 	if a.env.onLocalActivityStartedListener != nil {
 		waitCh := make(chan struct{})
@@ -1287,7 +1287,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 }
 
 // Execute executes the workflow code.
-func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payload) (result []byte, err error) {
+func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payload) (result *commonpb.Payload, err error) {
 	env := w.env
 	if env.isChildWorkflow() && env.onChildWorkflowStartedListener != nil {
 		env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
@@ -1414,7 +1414,7 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	return nil
 }
 
-func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
+func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payload, error) {
 	fnName := m.name
 	mockRetLen := len(mockRet)
 	fnType := reflect.TypeOf(m.fn)
@@ -1467,7 +1467,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) ([]byte, error) {
 	}
 }
 
-func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payload, mockRet mock.Arguments) (result []byte, err error) {
+func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payload, mockRet mock.Arguments) (result *commonpb.Payload, err error) {
 	// have to handle panics here to support calling ExecuteChildWorkflow(...).GetChildWorkflowExecution().Get(...)
 	// when a child is mocked.
 	defer func() {
@@ -1492,7 +1492,7 @@ func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payload, mock
 	return m.getMockValue(mockRet)
 }
 
-func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []interface{}, mockRet mock.Arguments) ([]byte, error) {
+func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []interface{}, mockRet mock.Arguments) (*commonpb.Payload, error) {
 	fnName := m.name
 	// check if mock returns function which must match to the actual function.
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {

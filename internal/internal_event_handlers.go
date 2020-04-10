@@ -1074,7 +1074,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		weh.mutableSideEffect[fixedID] = []byte(result)
 		return nil
 	default:
-		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
+		return fmt.Errorf("unknown marker name \"%v\" for eventId \"%v\"",
 			attributes.GetMarkerName(), eventID)
 	}
 }

@@ -735,7 +735,7 @@ type activitiesCallingOptionsWorkflow struct {
 	t *testing.T
 }
 
-func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.Payload) (result []byte, err error) {
+func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.Payload) (result *commonpb.Payload, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,

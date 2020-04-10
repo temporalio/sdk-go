@@ -846,7 +846,7 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payload) ([]byte, error) {
+func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payload) (*commonpb.Payload, error) {
 	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
 	fnType := reflect.TypeOf(we.fn)

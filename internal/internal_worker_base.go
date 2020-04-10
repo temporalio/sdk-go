@@ -76,7 +76,7 @@ type (
 		SideEffect(f func() (*commonpb.Payload, error), callback resultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
-		Complete(result []byte, err error)
+		Complete(result *commonpb.Payload, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler)

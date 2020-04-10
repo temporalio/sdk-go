@@ -989,7 +989,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	return reportErr
 }
 
-func convertActivityResultToRespondRequest(identity string, taskToken, result []byte, err error,
+func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payload, err error,
 	dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
