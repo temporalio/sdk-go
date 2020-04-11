@@ -121,7 +121,7 @@ type (
 	historyEventIteratorImpl struct {
 		// whether this iterator is initialized
 		initialized bool
-		// local cached histroy events and corresponding comsuming index
+		// local cached history events and corresponding consuming index
 		nextEventIndex int
 		events         []*s.HistoryEvent
 		// token to get next page of history events
