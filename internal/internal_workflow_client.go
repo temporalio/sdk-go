@@ -56,8 +56,7 @@ var _ Client = (*WorkflowClient)(nil)
 var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
-	defaultDecisionTaskTimeoutInSecs = 10
-	defaultGetHistoryTimeoutInSecs   = 25
+	defaultGetHistoryTimeoutInSecs = 65
 )
 
 var (
@@ -172,17 +171,7 @@ func (wc *WorkflowClient) StartWorkflow(
 	}
 
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
-	if executionTimeout <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-
 	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
-	if decisionTaskTimeout < 0 {
-		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
-	}
-	if decisionTaskTimeout == 0 {
-		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
-	}
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, wc.dataConverter, wc.registry)
@@ -369,17 +358,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
-	if executionTimeout <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-
 	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
-	if decisionTaskTimeout < 0 {
-		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
-	}
-	if decisionTaskTimeout == 0 {
-		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
-	}
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, wc.dataConverter, wc.registry)
