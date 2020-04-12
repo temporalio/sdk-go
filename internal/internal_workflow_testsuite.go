@@ -28,6 +28,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	decisionpb "go.temporal.io/temporal-proto/decision"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"reflect"
 	"strings"
 	"sync"
@@ -60,6 +62,10 @@ const (
 	defaultTestRunID            = "default-test-run-id"
 	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
+
+	// These are copied from service implementation
+	reservedTaskListPrefix = "/__temporal_sys/"
+	maxIDLengthLimit       = 1000
 )
 
 type (
@@ -238,7 +244,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
-			ExecutionStartToCloseTimeoutSeconds: 1,
+			ExecutionStartToCloseTimeoutSeconds: 60 * 24 * 365 * 10,
 			TaskStartToCloseTimeoutSeconds:      1,
 		},
 		registry: r,
@@ -331,6 +337,10 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workerOptions = env.workerOptions
 	childEnv.dataConverter = params.dataConverter
 	childEnv.registry = env.registry
+
+	if len(params.taskListName) == 0 {
+		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task list name", "", "")
+	}
 
 	if params.workflowID == "" {
 		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
@@ -492,7 +502,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		panic(err)
 	}
 
-	params := executeActivityParams{
+	parameters := executeActivityParams{
 		activityOptions: activityOptions{
 			ScheduleToCloseTimeoutSeconds: 600,
 			StartToCloseTimeoutSeconds:    600,
@@ -502,13 +512,28 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		Header:       env.header,
 	}
 
+	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	if parameters.ActivityID == "" {
+		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
+	} else {
+		scheduleTaskAttr.ActivityId = parameters.ActivityID
+	}
+	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
+	scheduleTaskAttr.TaskList = &tasklistpb.TaskList{Name: parameters.TaskListName}
+	scheduleTaskAttr.Input = parameters.Input
+	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
+	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
+	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = parameters.ScheduleToStartTimeoutSeconds
+	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
+	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.Header = parameters.Header
+
 	task := newTestActivityTask(
 		defaultTestWorkflowID,
 		defaultTestRunID,
 		"0",
-		defaultTestWorkflowTypeName,
 		defaultTestNamespace,
-		params,
+		scheduleTaskAttr,
 	)
 
 	task.HeartbeatDetails = env.heartbeatDetails
@@ -911,20 +936,34 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
-	var activityID string
+	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
 	if parameters.ActivityID == "" {
-		activityID = getStringID(env.nextID())
+		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
 	} else {
-		activityID = parameters.ActivityID
+		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
+	activityID := scheduleTaskAttr.GetActivityId()
+	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
+	scheduleTaskAttr.TaskList = &tasklistpb.TaskList{Name: parameters.TaskListName}
+	scheduleTaskAttr.Input = parameters.Input
+	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
+	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
+	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = parameters.ScheduleToStartTimeoutSeconds
+	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
+	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.Header = parameters.Header
+	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().ExecutionStartToCloseTimeoutSeconds)
 	activityInfo := &activityInfo{activityID: activityID}
+	if err != nil {
+		callback(nil, err)
+		return activityInfo
+	}
 	task := newTestActivityTask(
 		defaultTestWorkflowID,
 		defaultTestRunID,
-		activityInfo.activityID,
 		defaultTestWorkflowTypeName,
 		defaultTestNamespace,
-		parameters,
+		scheduleTaskAttr,
 	)
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
@@ -961,6 +1000,169 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	}()
 
 	return activityInfo
+}
+
+// Copy of the server function func (v *decisionAttrValidator) validateActivityScheduleAttributes
+func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
+	attributes *decisionpb.ScheduleActivityTaskDecisionAttributes,
+	wfTimeout int32,
+) error {
+
+	//if err := v.validateCrossNamespaceCall(
+	//	namespaceID,
+	//	targetNamespaceID,
+	//); err != nil {
+	//	return err
+	//}
+
+	if attributes == nil {
+		return serviceerror.NewInvalidArgument("ScheduleActivityTaskDecisionAttributes is not set on decision.")
+	}
+
+	defaultTaskListName := ""
+	if _, err := env.validatedTaskList(attributes.TaskList, defaultTaskListName); err != nil {
+		return err
+	}
+
+	if attributes.GetActivityId() == "" {
+		return serviceerror.NewInvalidArgument("ActivityId is not set on decision.")
+	}
+
+	if attributes.ActivityType == nil || attributes.ActivityType.GetName() == "" {
+		return serviceerror.NewInvalidArgument("ActivityType is not set on decision.")
+	}
+
+	if err := env.validateRetryPolicy(attributes.RetryPolicy); err != nil {
+		return err
+	}
+
+	if len(attributes.GetActivityId()) > maxIDLengthLimit {
+		return serviceerror.NewInvalidArgument("ActivityID exceeds length limit.")
+	}
+
+	if len(attributes.GetActivityType().GetName()) > maxIDLengthLimit {
+		return serviceerror.NewInvalidArgument("ActivityType exceeds length limit.")
+	}
+
+	if len(attributes.GetNamespace()) > maxIDLengthLimit {
+		return serviceerror.NewInvalidArgument("Namespace exceeds length limit.")
+	}
+
+	// Only attempt to deduce and fill in unspecified timeouts only when all timeouts are non-negative.
+	if attributes.GetScheduleToCloseTimeoutSeconds() < 0 || attributes.GetScheduleToStartTimeoutSeconds() < 0 ||
+		attributes.GetStartToCloseTimeoutSeconds() < 0 || attributes.GetHeartbeatTimeoutSeconds() < 0 {
+		return serviceerror.NewInvalidArgument("A valid timeout may not be negative.")
+	}
+
+	// ensure activity timeout never larger than workflow timeout
+	if attributes.GetScheduleToCloseTimeoutSeconds() > wfTimeout {
+		attributes.ScheduleToCloseTimeoutSeconds = wfTimeout
+	}
+	if attributes.GetScheduleToStartTimeoutSeconds() > wfTimeout {
+		attributes.ScheduleToStartTimeoutSeconds = wfTimeout
+	}
+	if attributes.GetStartToCloseTimeoutSeconds() > wfTimeout {
+		attributes.StartToCloseTimeoutSeconds = wfTimeout
+	}
+	if attributes.GetHeartbeatTimeoutSeconds() > wfTimeout {
+		attributes.HeartbeatTimeoutSeconds = wfTimeout
+	}
+
+	validScheduleToClose := attributes.GetScheduleToCloseTimeoutSeconds() > 0
+	validScheduleToStart := attributes.GetScheduleToStartTimeoutSeconds() > 0
+	validStartToClose := attributes.GetStartToCloseTimeoutSeconds() > 0
+
+	if validScheduleToClose {
+		if !validScheduleToStart {
+			attributes.ScheduleToStartTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
+		}
+		if !validStartToClose {
+			attributes.StartToCloseTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
+		}
+	} else if validScheduleToStart && validStartToClose {
+		attributes.ScheduleToCloseTimeoutSeconds = attributes.GetScheduleToStartTimeoutSeconds() + attributes.GetStartToCloseTimeoutSeconds()
+		if attributes.GetScheduleToCloseTimeoutSeconds() > wfTimeout {
+			attributes.ScheduleToCloseTimeoutSeconds = wfTimeout
+		}
+	} else {
+		// Deduction failed as there's not enough information to fill in missing timeouts.
+		return serviceerror.NewInvalidArgument("A valid ScheduleToCloseTimeout is not set on decision.")
+	}
+	// ensure activity's SCHEDULE_TO_START and SCHEDULE_TO_CLOSE is as long as expiration on retry policy
+	p := attributes.RetryPolicy
+	if p != nil {
+		expiration := p.GetExpirationIntervalInSeconds()
+		if expiration == 0 {
+			expiration = wfTimeout
+		}
+		if attributes.GetScheduleToStartTimeoutSeconds() < expiration {
+			attributes.ScheduleToStartTimeoutSeconds = expiration
+		}
+		if attributes.GetScheduleToCloseTimeoutSeconds() < expiration {
+			attributes.ScheduleToCloseTimeoutSeconds = expiration
+		}
+	}
+	return nil
+}
+
+// Copy of the service func (v *decisionAttrValidator) validatedTaskList
+func (env *testWorkflowEnvironmentImpl) validatedTaskList(
+	taskList *tasklistpb.TaskList,
+	defaultVal string,
+) (*tasklistpb.TaskList, error) {
+
+	if taskList == nil {
+		taskList = &tasklistpb.TaskList{}
+	}
+
+	if taskList.GetName() == "" {
+		if defaultVal == "" {
+			return taskList, serviceerror.NewInvalidArgument("missing task list name")
+		}
+		taskList.Name = defaultVal
+		return taskList, nil
+	}
+
+	name := taskList.GetName()
+	if len(name) > maxIDLengthLimit {
+		return taskList, serviceerror.NewInvalidArgument(fmt.Sprintf("task list name exceeds length limit of %v", maxIDLengthLimit))
+	}
+
+	if strings.HasPrefix(name, reservedTaskListPrefix) {
+		return taskList, serviceerror.NewInvalidArgument(fmt.Sprintf("task list name cannot start with reserved prefix %v", reservedTaskListPrefix))
+	}
+
+	return taskList, nil
+}
+
+// copy of the service func ValidateRetryPolicy(policy *commonpb.RetryPolicy)
+func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.RetryPolicy) error {
+	if policy == nil {
+		// nil policy is valid which means no retry
+		return nil
+	}
+	if policy.GetInitialIntervalInSeconds() <= 0 {
+		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds must be greater than 0 on retry policy.")
+	}
+	if policy.GetBackoffCoefficient() < 1 {
+		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
+	}
+	if policy.GetMaximumIntervalInSeconds() < 0 {
+		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than 0 on retry policy.")
+	}
+	if policy.GetMaximumIntervalInSeconds() > 0 && policy.GetMaximumIntervalInSeconds() < policy.GetInitialIntervalInSeconds() {
+		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
+	}
+	if policy.GetMaximumAttempts() < 0 {
+		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
+	}
+	if policy.GetExpirationIntervalInSeconds() < 0 {
+		return serviceerror.NewInvalidArgument("ExpirationIntervalInSeconds cannot be less than 0 on retry policy.")
+	}
+	if policy.GetMaximumAttempts() == 0 && policy.GetExpirationIntervalInSeconds() == 0 {
+		return serviceerror.NewInvalidArgument("MaximumAttempts and ExpirationIntervalInSeconds are both 0. At least one of them must be specified.")
+	}
+	return nil
 }
 
 func (env *testWorkflowEnvironmentImpl) getActivityHandle(activityID string) (*testActivityHandle, bool) {
@@ -1559,7 +1761,9 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	return taskHandler
 }
 
-func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, namespace string, params executeActivityParams) *workflowservice.PollForActivityTaskResponse {
+func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
+	attr *decisionpb.ScheduleActivityTaskDecisionAttributes) *workflowservice.PollForActivityTaskResponse {
+	activityID := attr.GetActivityId()
 	task := &workflowservice.PollForActivityTaskResponse{
 		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
@@ -1567,18 +1771,18 @@ func newTestActivityTask(workflowID, runID, activityID, workflowTypeName, namesp
 		},
 		ActivityId:                    activityID,
 		TaskToken:                     []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
-		ActivityType:                  &commonpb.ActivityType{Name: params.ActivityType.Name},
-		Input:                         params.Input,
+		ActivityType:                  &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
+		Input:                         attr.GetInput(),
 		ScheduledTimestamp:            time.Now().UnixNano(),
-		ScheduleToCloseTimeoutSeconds: params.ScheduleToCloseTimeoutSeconds,
+		ScheduleToCloseTimeoutSeconds: attr.GetScheduleToCloseTimeoutSeconds(),
 		StartedTimestamp:              time.Now().UnixNano(),
-		StartToCloseTimeoutSeconds:    params.StartToCloseTimeoutSeconds,
-		HeartbeatTimeoutSeconds:       params.HeartbeatTimeoutSeconds,
+		StartToCloseTimeoutSeconds:    attr.GetStartToCloseTimeoutSeconds(),
+		HeartbeatTimeoutSeconds:       attr.GetHeartbeatTimeoutSeconds(),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: workflowTypeName,
 		},
 		WorkflowNamespace: namespace,
-		Header:            params.Header,
+		Header:            attr.GetHeader(),
 	}
 	return task
 }
@@ -1976,6 +2180,19 @@ func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{})
 
 func (env *testWorkflowEnvironmentImpl) GetRegistry() *registry {
 	return env.registry
+}
+
+func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWorkflowOptions) {
+	wf := env.workflowInfo
+	if options.ExecutionStartToCloseTimeout > 0 {
+		wf.ExecutionStartToCloseTimeoutSeconds = common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
+	}
+	if options.DecisionTaskStartToCloseTimeout > 0 {
+		wf.TaskStartToCloseTimeoutSeconds = common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
+	}
+	if len(options.TaskList) > 0 {
+		wf.TaskListName = options.TaskList
+	}
 }
 
 func newTestSessionEnvironment(testWorkflowEnvironment *testWorkflowEnvironmentImpl,

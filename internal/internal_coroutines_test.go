@@ -1226,17 +1226,15 @@ func TestChainedFuture(t *testing.T) {
 	activityFn := func(arg int) (int, error) {
 		return arg, nil
 	}
-	workflowFn := func(ctx Context) (int, error) {
+	workflowFn := func(ctx Context) (out int, err error) {
 		ctx = WithActivityOptions(ctx, ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    time.Minute,
+			ScheduleToCloseTimeout: time.Minute,
 		})
 		f := ExecuteActivity(ctx, activityFn, 5)
-		var out int
 		fut, set := NewFuture(ctx)
 		set.Chain(f)
-		require.NoError(t, fut.Get(ctx, &out))
-		return out, nil
+		err = fut.Get(ctx, &out)
+		return
 	}
 
 	s := WorkflowTestSuite{}

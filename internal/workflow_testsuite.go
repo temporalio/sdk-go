@@ -488,6 +488,13 @@ func (t *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestW
 	return t
 }
 
+// SetStartWorkflowOptions sets StartWorkflowOptions used to specify workflow execution timeout and task list.
+// Note that StartWorkflowOptions is defined in an internal package, use client.StartWorkflowOptions instead.
+func (t *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowOptions) *TestWorkflowEnvironment {
+	t.impl.setStartWorkflowOptions(options)
+	return t
+}
+
 // SetDataConverter sets data converter.
 func (t *TestWorkflowEnvironment) SetDataConverter(dataConverter DataConverter) *TestWorkflowEnvironment {
 	t.impl.setDataConverter(dataConverter)

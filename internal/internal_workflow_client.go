@@ -166,10 +166,6 @@ func (wc *WorkflowClient) StartWorkflow(
 		workflowID = uuid.NewRandom().String()
 	}
 
-	if options.TaskList == "" {
-		return nil, errors.New("missing TaskList")
-	}
-
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
 	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
 
@@ -351,10 +347,6 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 
 	if workflowID == "" {
 		workflowID = uuid.NewRandom().String()
-	}
-
-	if options.TaskList == "" {
-		return nil, errors.New("missing TaskList")
 	}
 
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())

@@ -40,7 +40,6 @@ import (
 )
 
 var (
-	errNamespaceNotSet               = errors.New("namespace is not set")
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
 	errSearchAttributesNotSet        = errors.New("search attributes is empty")
@@ -836,11 +835,6 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.namespace == "" {
-		settable.Set(nil, errNamespaceNotSet)
-		return future
-	}
-
 	if workflowID == "" {
 		settable.Set(nil, errWorkflowIDNotSet)
 		return future
@@ -883,11 +877,6 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
-
-	if options.namespace == "" {
-		settable.Set(nil, errNamespaceNotSet)
-		return future
-	}
 
 	if workflowID == "" {
 		settable.Set(nil, errWorkflowIDNotSet)
@@ -961,8 +950,12 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
-	wfOptions.namespace = cwo.Namespace
-	wfOptions.taskListName = cwo.TaskList
+	if len(cwo.Namespace) > 0 {
+		wfOptions.namespace = cwo.Namespace
+	}
+	if len(cwo.TaskList) > 0 {
+		wfOptions.taskListName = cwo.TaskList
+	}
 	wfOptions.workflowID = cwo.WorkflowID
 	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds())
 	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds())
@@ -986,6 +979,9 @@ func WithWorkflowNamespace(ctx Context, name string) Context {
 
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
+	if len(name) == 0 {
+		panic("empty task list name")
+	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskListName = name
 	return ctx1
@@ -1335,7 +1331,9 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
 
-	eap.TaskListName = options.TaskList
+	if len(options.TaskList) > 0 {
+		eap.TaskListName = options.TaskList
+	}
 	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
 	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
 	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
