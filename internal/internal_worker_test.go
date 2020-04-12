@@ -408,7 +408,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	s.NoError(err)
 }
 
-func (s *internalWorkerTestSuite) TestDecisionTaskHandler_WithDataConverter() {
+func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
@@ -445,7 +445,7 @@ func (s *internalWorkerTestSuite) TestCreateWorker() {
 	worker.Stop()
 }
 
-func (s *internalWorkerTestSuite) TestCreateWorker_WithDataConverter() {
+func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker := createWorkerWithDataConverter(s.service)
 	err := worker.Start()
 	require.NoError(s.T(), err)
@@ -636,7 +636,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity() {
 	s.testCompleteActivityHelper(ClientOptions{})
 }
 
-func (s *internalWorkerTestSuite) TestCompleteActivity_WithDataConverter() {
+func (s *internalWorkerTestSuite) TestCompleteActivityWithDataConverter() {
 	opt := ClientOptions{DataConverter: newTestDataConverter()}
 	s.testCompleteActivityHelper(opt)
 }
@@ -687,7 +687,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 	require.NotNil(s.T(), heartbeatRequest)
 }
 
-func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_WithDataConverter() {
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter() {
 	t := s.T()
 	dc := newTestDataConverter()
 	opt := ClientOptions{Namespace: "testNamespace", DataConverter: dc}
@@ -1030,7 +1030,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
 }
 
-func TestActivityErrorWithDetails_WithDataConverter(t *testing.T) {
+func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
@@ -1093,7 +1093,7 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
 }
 
-func TestActivityCancelledError_WithDataConverter(t *testing.T) {
+func TestActivityCancelledErrorWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityCancelledErrorHelper(ctx, t, dc)
@@ -1122,7 +1122,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 	require.Equal(t, 2, r.V)
 }
 
-func TestActivityExecutionVariousTypes_WithDataConverter(t *testing.T) {
+func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
 		dataConverter: dc,

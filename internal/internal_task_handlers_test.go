@@ -327,7 +327,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
 
-func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted_WithDataConverter() {
+func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
 	params := workerExecutionParameters{
 		TaskList:      testWorkflowTaskTasklist,
 		Identity:      "test-id-1",

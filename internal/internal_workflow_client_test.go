@@ -886,7 +886,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
 
-func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
+func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	dc := newTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)

@@ -90,7 +90,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	env.AssertExpectations(s.T())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter() {
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter() {
 	mockActivity := func(ctx context.Context, msg string) (string, error) {
 		return "mock_" + msg, nil
 	}
@@ -618,7 +618,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 	s.Equal("hello_activity hello_world", actualResult)
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic_WithDataConverter() {
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		var helloActivityResult string
