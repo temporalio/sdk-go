@@ -1694,6 +1694,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCancelled atomic.Bool
+	var startedCount, completedCount, canceledCount atomic.Int32
+
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
 	}
@@ -1711,30 +1713,30 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
-		NewSelector(ctx).
-			AddFuture(f, func(f Future) {
-				cancel()
-			}).
-			AddFuture(f2, func(f Future) {
-
-			}).
-			Select(ctx)
+		err := f.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		// Hack to avoid race condition. Never do anything similar in real production code
+		for startedCount.Load() < 2 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		cancel()
 
 		err2 := f2.Get(ctx, nil)
 		if _, ok := err2.(*CanceledError); !ok {
 			return "", err2
 		}
 
-		err := f.Get(ctx, &result)
-		return result, err
+		err3 := f.Get(ctx, &result)
+		return result, err3
 	}
 
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	var startedCount, completedCount, canceledCount int
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount++
+		startedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
@@ -1743,23 +1745,23 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount++
+		completedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount++
+		canceledCount.Inc()
 	})
 
 	env.ExecuteWorkflow(workflowFn)
-	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount)
-	s.Equal(1, completedCount)
-	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
 	err := env.GetWorkflowResult(&result)
 	s.NoError(err)
+	env.AssertExpectations(s.T())
+	s.Equal(int32(2), startedCount.Load())
+	s.Equal(int32(1), completedCount.Load())
+	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
 	s.True(localActivityFnCancelled.Load())
 }

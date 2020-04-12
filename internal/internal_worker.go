@@ -181,9 +181,11 @@ type (
 
 		StickyScheduleToStartTimeout time.Duration
 
-		// NonDeterministicWorkflowPolicy is used for configuring how client's decision task handler deals with
-		// mismatched history events (presumably arising from non-deterministic workflow definitions).
-		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
+		// WorkflowPanicPolicy is used for configuring how client's decision task handler deals with workflow
+		// code panicking which includes non backwards compatible changes to the workflow code without appropriate
+		// versioning (see workflow.GetVersion).
+		// The default behavior is to block workflow execution until the problem is fixed.
+		WorkflowPanicPolicy WorkflowPanicPolicy
 
 		DataConverter DataConverter
 
@@ -1339,7 +1341,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		DisableStickyExecution:               options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
-		NonDeterministicWorkflowPolicy:       options.NonDeterministicWorkflowPolicy,
+		WorkflowPanicPolicy:                  options.NonDeterministicWorkflowPolicy,
 		DataConverter:                        client.dataConverter,
 		WorkerStopTimeout:                    options.WorkerStopTimeout,
 		ContextPropagators:                   client.contextPropagators,
