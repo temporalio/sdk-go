@@ -54,6 +54,9 @@ func (g jsonEncoding) Marshal(objs []interface{}) ([]byte, error) {
 
 // Unmarshal decodes a byte array into the passed in objects
 func (g jsonEncoding) Unmarshal(data []byte, objs []interface{}) error {
+	if len(data) == 0 {
+		return nil
+	}
 	dec := json.NewDecoder(bytes.NewBuffer(data))
 	for i, obj := range objs {
 		if err := dec.Decode(obj); err != nil {

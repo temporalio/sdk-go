@@ -1188,7 +1188,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.backoff = getRetryBackoff(result, env.Now())
+		lar.backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
@@ -1391,8 +1391,12 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	mockFnType := reflect.TypeOf(mockFn)
 	if mockFnType != nil && mockFnType.Kind() == reflect.Func {
 		if mockFnType != fnType {
-			panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
-				fnName, fnType, mockFnType))
+			fnName := getFunctionName(m.fn)
+			// mockDummyActivity is used to register mocks by name
+			if fnName != "mockDummyActivity" {
+				panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
+					fnName, fnType, mockFnType))
+			}
 		}
 		return mockFn
 	}
@@ -1507,10 +1511,12 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	}
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
 		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-			Name: sessionCreationActivityName,
+			Name:                          sessionCreationActivityName,
+			DisableAlreadyRegisteredCheck: true,
 		})
 		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-			Name: sessionCompletionActivityName,
+			Name:                          sessionCompletionActivityName,
+			DisableAlreadyRegisteredCheck: true,
 		})
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
@@ -1625,10 +1631,11 @@ func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
-	env.registry.RegisterActivity(a)
+	env.registry.RegisterActivityWithOptions(a, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	options.DisableAlreadyRegisteredCheck = true
 	env.registry.RegisterActivityWithOptions(a, options)
 }
 
