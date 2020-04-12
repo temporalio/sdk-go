@@ -559,11 +559,11 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		}),
 	}
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -594,11 +594,11 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		createTestEventDecisionTaskStarted(7),
 	}
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	for _, startEventID := range []int64{0, 3} {
@@ -635,11 +635,11 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		}),
 	}
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	testCases := []struct {
@@ -755,12 +755,12 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	stopC := make(chan struct{})
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
-		WorkerStopChannel:              stopC,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
+		WorkerStopChannel:   stopC,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -783,7 +783,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 
 	// now, create a new task handler with fail nondeterministic workflow policy
 	// and verify that it handles the mismatching history correctly.
-	params.NonDeterministicWorkflowPolicy = NonDeterministicWorkflowPolicyFailWorkflow
+	params.WorkflowPanicPolicy = FailWorkflow
 	failOnNondeterminismTaskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, err = failOnNondeterminismTaskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -799,7 +799,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.True(len(response.Decisions) > 0)
 	closeDecision := response.Decisions[len(response.Decisions)-1]
 	t.Equal(closeDecision.DecisionType, decisionpb.DecisionType_FailWorkflowExecution)
-	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().Reason, "NonDeterministicWorkflowPolicyFailWorkflow")
+	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().Reason, "FailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
@@ -818,11 +818,11 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	}
 	task := createWorkflowTask(testEvents, 3, "ReturnPanicWorkflow")
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -847,11 +847,11 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	}
 	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -900,11 +900,11 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	}
 	task := createWorkflowTask(testEvents, 3, workflowType)
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -933,11 +933,11 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	taskList := "taskList"
 	params := workerExecutionParameters{
-		Namespace:                      testNamespace,
-		TaskList:                       taskList,
-		Identity:                       "test-id-1",
-		Logger:                         zap.NewNop(),
-		NonDeterministicWorkflowPolicy: NonDeterministicWorkflowPolicyBlockWorkflow,
+		Namespace:           testNamespace,
+		TaskList:            taskList,
+		Identity:            "test-id-1",
+		Logger:              zap.NewNop(),
+		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)

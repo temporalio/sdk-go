@@ -137,8 +137,8 @@ type (
 
 		// Optional: Sets how decision worker deals with non-deterministic history events
 		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow definition changes).
-		// default: NonDeterministicWorkflowPolicyBlockWorkflow, which just logs error but reply nothing back to server
-		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
+		// default: BlockWorkflow, which just logs error but reply nothing back to server
+		NonDeterministicWorkflowPolicy WorkflowPanicPolicy
 
 		// Optional: worker graceful shutdown timeout
 		// default: 0s
@@ -166,27 +166,24 @@ type (
 	}
 )
 
-// NonDeterministicWorkflowPolicy is an enum for configuring how client's decision task handler deals with
+// WorkflowPanicPolicy is used for configuring how worker deals with workflow
 // mismatched history events (presumably arising from non-deterministic workflow definitions).
-type NonDeterministicWorkflowPolicy int
+type WorkflowPanicPolicy int
 
 const (
-	// NonDeterministicWorkflowPolicyBlockWorkflow is the default policy for handling detected non-determinism.
-	// This option simply logs to console with an error message that non-determinism is detected, but
-	// does *NOT* reply anything back to the server.
-	// It is chosen as default for backward compatibility reasons because it preserves the old behavior
-	// for handling non-determinism that we had before NonDeterministicWorkflowPolicy type was added to
-	// allow more configurability.
-	NonDeterministicWorkflowPolicyBlockWorkflow NonDeterministicWorkflowPolicy = iota
-	// NonDeterministicWorkflowPolicyFailWorkflow behaves exactly the same as Ignore, up until the very
-	// end of processing a decision task.
-	// Whereas default does *NOT* reply anything back to the server, fail workflow replies back with a request
-	// to fail the workflow execution.
-	NonDeterministicWorkflowPolicyFailWorkflow
-
-	// ReplayNamespace is namespace for replay because startEvent doesn't contain it
-	ReplayNamespace = "ReplayNamespace"
+	// BlockWorkflow is the default policy for handling workflow panics and detected non-determinism.
+	// This option causes workflow to get stuck in the workflow task retry loop.
+	// It is expected that after the problem is discovered and fixed the workflows are going to continue
+	// without any additional manual intervention.
+	BlockWorkflow WorkflowPanicPolicy = iota
+	// FailWorkflow immediately fails workflow execution if workflow code throws panic or detects non-determinism.
+	// This feature is convenient during development.
+	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
+	FailWorkflow
 )
+
+// ReplayNamespace is namespace for replay because startEvent doesn't contain it
+const ReplayNamespace = "ReplayNamespace"
 
 // IsReplayNamespace checks if the namespace is from replay
 func IsReplayNamespace(dn string) bool {
