@@ -205,12 +205,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	var r *registry
 	if parentRegistry == nil {
 		r = newRegistry()
-		r.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-			Name: sessionCreationActivityName,
-		})
-		r.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-			Name: sessionCompletionActivityName,
-		})
 	} else {
 		r = parentRegistry
 	}
@@ -377,16 +371,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
-	if options.BackgroundActivityContext != nil {
-		env.workerOptions.BackgroundActivityContext = options.BackgroundActivityContext
-	}
-	// Uncomment when resourceID is exposed to user.
-	// if options.SessionResourceID != "" {
-	// 	env.workerOptions.SessionResourceID = options.SessionResourceID
-	// }
-	if options.MaxConcurrentSessionExecutionSize != 0 {
-		env.workerOptions.MaxConcurrentSessionExecutionSize = options.MaxConcurrentSessionExecutionSize
-	}
+	env.workerOptions = options
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 }
 
@@ -1520,7 +1505,13 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	if params.UserContext == nil {
 		params.UserContext = context.Background()
 	}
-	if env.sessionEnvironment == nil {
+	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
+		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name: sessionCreationActivityName,
+		})
+		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name: sessionCompletionActivityName,
+		})
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
@@ -1545,15 +1536,16 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		}
 		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction()}
 
-		// Special handling for session creation and completion activities.
-		// If real creation activity is used, it will block timers from autofiring.
-		if ae.name == sessionCreationActivityName {
-			ae.fn = sessionCreationActivityForTest
+		if env.sessionEnvironment != nil {
+			// Special handling for session creation and completion activities.
+			// If real creation activity is used, it will block timers from autofiring.
+			if ae.name == sessionCreationActivityName {
+				ae.fn = sessionCreationActivityForTest
+			}
+			if ae.name == sessionCompletionActivityName {
+				ae.fn = sessionCompletionActivityForTest
+			}
 		}
-		if ae.name == sessionCompletionActivityName {
-			ae.fn = sessionCompletionActivityForTest
-		}
-
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
