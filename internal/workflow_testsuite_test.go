@@ -101,6 +101,7 @@ func TestUnregisteredActivity(t *testing.T) {
 	t.Parallel()
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(helloWorldAct)
 	workflow := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, ActivityOptions{
 			ScheduleToStartTimeout: time.Minute,

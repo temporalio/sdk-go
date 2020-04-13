@@ -205,12 +205,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	var r *registry
 	if parentRegistry == nil {
 		r = newRegistry()
-		r.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-			Name: sessionCreationActivityName,
-		})
-		r.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-			Name: sessionCompletionActivityName,
-		})
 	} else {
 		r = parentRegistry
 	}
@@ -377,16 +371,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
-	if options.BackgroundActivityContext != nil {
-		env.workerOptions.BackgroundActivityContext = options.BackgroundActivityContext
-	}
-	// Uncomment when resourceID is exposed to user.
-	// if options.SessionResourceID != "" {
-	// 	env.workerOptions.SessionResourceID = options.SessionResourceID
-	// }
-	if options.MaxConcurrentSessionExecutionSize != 0 {
-		env.workerOptions.MaxConcurrentSessionExecutionSize = options.MaxConcurrentSessionExecutionSize
-	}
+	env.workerOptions = options
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
 }
 
@@ -1203,7 +1188,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.backoff = getRetryBackoff(result, env.Now())
+		lar.backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
@@ -1406,8 +1391,12 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	mockFnType := reflect.TypeOf(mockFn)
 	if mockFnType != nil && mockFnType.Kind() == reflect.Func {
 		if mockFnType != fnType {
-			panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
-				fnName, fnType, mockFnType))
+			fnName := getFunctionName(m.fn)
+			// mockDummyActivity is used to register mocks by name
+			if fnName != "mockDummyActivity" {
+				panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
+					fnName, fnType, mockFnType))
+			}
 		}
 		return mockFn
 	}
@@ -1520,7 +1509,15 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	if params.UserContext == nil {
 		params.UserContext = context.Background()
 	}
-	if env.sessionEnvironment == nil {
+	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
+		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name:                          sessionCreationActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
+		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name:                          sessionCompletionActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
@@ -1545,15 +1542,16 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		}
 		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction()}
 
-		// Special handling for session creation and completion activities.
-		// If real creation activity is used, it will block timers from autofiring.
-		if ae.name == sessionCreationActivityName {
-			ae.fn = sessionCreationActivityForTest
+		if env.sessionEnvironment != nil {
+			// Special handling for session creation and completion activities.
+			// If real creation activity is used, it will block timers from autofiring.
+			if ae.name == sessionCreationActivityName {
+				ae.fn = sessionCreationActivityForTest
+			}
+			if ae.name == sessionCompletionActivityName {
+				ae.fn = sessionCompletionActivityForTest
+			}
 		}
-		if ae.name == sessionCompletionActivityName {
-			ae.fn = sessionCompletionActivityForTest
-		}
-
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
@@ -1633,10 +1631,11 @@ func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
-	env.registry.RegisterActivity(a)
+	env.registry.RegisterActivityWithOptions(a, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+	options.DisableAlreadyRegisteredCheck = true
 	env.registry.RegisterActivityWithOptions(a, options)
 }
 

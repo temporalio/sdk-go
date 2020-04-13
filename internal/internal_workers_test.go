@@ -70,8 +70,9 @@ func (ath noResponseActivityTaskHandler) BlockedOnExecuteCalled() error {
 type (
 	WorkersTestSuite struct {
 		suite.Suite
-		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceClient
+		mockCtrl      *gomock.Controller
+		service       *workflowservicemock.MockWorkflowServiceClient
+		dataConverter DataConverter
 	}
 )
 
@@ -79,6 +80,7 @@ type (
 func (s *WorkersTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.dataConverter = getDefaultDataConverter()
 }
 
 func (s *WorkersTestSuite) TearDownTest() {
@@ -491,7 +493,7 @@ func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID strin
 	}
 
 	// encode marker data
-	markerData, err := encodeArg(nil, lamd)
+	markerData, err := encodeArg(s.dataConverter, lamd)
 	s.NoError(err)
 	return markerData
 }

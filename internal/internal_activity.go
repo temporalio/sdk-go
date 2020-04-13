@@ -392,49 +392,6 @@ func serializeResults(f interface{}, results []interface{}, dataConverter DataCo
 	return
 }
 
-func deSerializeFnResultFromFnType(fnType reflect.Type, result []byte, to interface{}, dataConverter DataConverter) error {
-	if fnType.Kind() != reflect.Func {
-		return fmt.Errorf("expecting only function type but got type: %v", fnType)
-	}
-
-	// We already validated during registration that it either have (result, error) (or) just error.
-	if fnType.NumOut() <= 1 {
-		return nil
-	} else if fnType.NumOut() == 2 {
-		if result == nil {
-			return nil
-		}
-		err := decodeArg(dataConverter, result, to)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func deSerializeFunctionResult(f interface{}, result []byte, to interface{}, dataConverter DataConverter, registry *registry) error {
-	fType := reflect.TypeOf(f)
-	if dataConverter == nil {
-		dataConverter = getDefaultDataConverter()
-	}
-
-	switch getKind(fType) {
-	case reflect.Func:
-		// We already validated that it either have (result, error) (or) just error.
-		return deSerializeFnResultFromFnType(fType, result, to, dataConverter)
-
-	case reflect.String:
-		// If we know about this function through registration then we will try to return corresponding result type.
-		fnName := reflect.ValueOf(f).String()
-		if fnRegistered, ok := registry.getActivityFn(fnName); ok {
-			return deSerializeFnResultFromFnType(reflect.TypeOf(fnRegistered), result, to, dataConverter)
-		}
-	}
-
-	// For everything we return result.
-	return decodeArg(dataConverter, result, to)
-}
-
 func setActivityParametersIfNotExist(ctx Context) Context {
 	params := getActivityOptions(ctx)
 	var newParams activityOptions
