@@ -184,7 +184,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 }
 
 // GetSignalChannel returns channel corresponding to the signal name.
-func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
+func GetSignalChannel(ctx Context, signalName string) ReadChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
 

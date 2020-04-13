@@ -49,8 +49,8 @@ var (
 )
 
 type (
-	// SendChannel is a write only view of the Channel
-	SendChannel interface {
+	// WriteChannel is a write only view of the Channel
+	WriteChannel interface {
 		// Send blocks until the data is sent.
 		Send(ctx Context, v interface{})
 
@@ -61,8 +61,8 @@ type (
 		Close()
 	}
 
-	// ReceiveChannel is a read only view of the Channel
-	ReceiveChannel interface {
+	// ReadChannel is a read only view of the Channel
+	ReadChannel interface {
 		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
 		// Returns false when Channel is closed.
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
@@ -82,15 +82,15 @@ type (
 	// Channel must be used instead of native go channel by workflow code.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	Channel interface {
-		SendChannel
-		ReceiveChannel
+		WriteChannel
+		ReadChannel
 	}
 
 	// Selector must be used instead of native go select by workflow code.
-	// Use workflow.NewSelector(ctx) method to create a Selector instance.
+	// Create through workflow.NewSelector(ctx).
 	Selector interface {
-		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
-		AddSend(c SendChannel, v interface{}, f func()) Selector
+		AddReceive(c ReadChannel, f func(c ReadChannel, more bool)) Selector
+		AddSend(c WriteChannel, v interface{}, f func()) Selector
 		AddFuture(future Future, f func(f Future)) Selector
 		AddDefault(f func())
 		Select(ctx Context)
@@ -1054,12 +1054,12 @@ func withContextPropagators(ctx Context, contextPropagators []ContextPropagator)
 }
 
 // GetSignalChannel returns channel corresponding to the signal name.
-func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
+func GetSignalChannel(ctx Context, signalName string) ReadChannel {
 	i := getWorkflowInterceptor(ctx)
 	return i.GetSignalChannel(ctx, signalName)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
+func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) ReadChannel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 

@@ -238,10 +238,10 @@ func propagateCancel(parent Context, child canceler) {
 	} else {
 		go func() {
 			s := NewSelector(parent)
-			s.AddReceive(parent.Done(), func(c ReceiveChannel, more bool) {
+			s.AddReceive(parent.Done(), func(c ReadChannel, more bool) {
 				child.cancel(false, parent.Err())
 			})
-			s.AddReceive(child.Done(), func(c ReceiveChannel, more bool) {})
+			s.AddReceive(child.Done(), func(c ReadChannel, more bool) {})
 			s.Select(parent)
 		}()
 	}
