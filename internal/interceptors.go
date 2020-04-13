@@ -63,7 +63,7 @@ type WorkflowInterceptor interface {
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
-	GetSignalChannel(ctx Context, signalName string) ReadChannel
+	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
 	SideEffect(ctx Context, f func(ctx Context) interface{}) Value
 	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value
 	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
@@ -146,7 +146,7 @@ func (t *WorkflowInterceptorBase) UpsertSearchAttributes(ctx Context, attributes
 }
 
 // GetSignalChannel forwards to t.Next
-func (t *WorkflowInterceptorBase) GetSignalChannel(ctx Context, signalName string) ReadChannel {
+func (t *WorkflowInterceptorBase) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return t.Next.GetSignalChannel(ctx, signalName)
 }
 

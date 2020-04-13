@@ -34,15 +34,15 @@ type (
 
 	// Channel must be used instead of native go channel by workflow code.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
-	// Channel extends both ReadChanel and WriteChannel. Prefer to use one of these interfaces
+	// Channel extends both ReadChanel and SendChannel. Prefer to use one of these interfaces
 	// to share Channel with consumers or producers.
 	Channel = internal.Channel
 
-	// ReadChannel is a read only view of the Channel
-	ReadChannel = internal.ReadChannel
+	// ReceiveChannel is a read only view of the Channel
+	ReadChannel = internal.ReceiveChannel
 
-	// WriteChannel is a write only view of the Channel
-	WriteChannel = internal.WriteChannel
+	// SendChannel is a write only view of the Channel
+	WriteChannel = internal.SendChannel
 
 	// Selector must be used instead of native go select by workflow code.
 	// Use workflow.NewSelector(ctx) method to create a Selector instance.

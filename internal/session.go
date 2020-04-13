@@ -332,7 +332,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 	var creationErr error
 	var creationResponse sessionCreationResponse
 	s := NewSelector(creationCtx)
-	s.AddReceive(tasklistChan, func(c ReadChannel, more bool) {
+	s.AddReceive(tasklistChan, func(c ReceiveChannel, more bool) {
 		c.Receive(creationCtx, &creationResponse)
 	})
 	s.AddFuture(creationFuture, func(f Future) {

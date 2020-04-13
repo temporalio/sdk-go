@@ -146,7 +146,7 @@ func splitJoinActivityWorkflow(ctx Context, testPanic bool) (result string, err 
 	c1.Receive(ctx, nil)
 	// Use selector to test it
 	selected := false
-	NewSelector(ctx).AddReceive(c2, func(c ReadChannel, more bool) {
+	NewSelector(ctx).AddReceive(c2, func(c ReceiveChannel, more bool) {
 		if !more {
 			panic("more should be true")
 		}
@@ -494,7 +494,7 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	// Read on a selector.
 	ch2 := GetSignalChannel(ctx, "testSig2")
 	s := NewSelector(ctx)
-	s.AddReceive(ch2, func(c ReadChannel, more bool) {
+	s.AddReceive(ch2, func(c ReceiveChannel, more bool) {
 		c.Receive(ctx, &v)
 		result += v
 	})
@@ -505,7 +505,7 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	// Read on a selector inside the callback, multiple times.
 	ch2 = GetSignalChannel(ctx, "testSig2")
 	s = NewSelector(ctx)
-	s.AddReceive(ch2, func(c ReadChannel, more bool) {
+	s.AddReceive(ch2, func(c ReceiveChannel, more bool) {
 		for i := 0; i < 4; i++ {
 			c.Receive(ctx, &v)
 			result += v
@@ -602,7 +602,7 @@ func receiveWithSelectorCorruptSignalWorkflowTest(ctx Context) ([]message, error
 	// Read on a selector
 	ch := GetSignalChannel(ctx, "channelExpectingTypeMessage")
 	s := NewSelector(ctx)
-	s.AddReceive(ch, func(c ReadChannel, more bool) {
+	s.AddReceive(ch, func(c ReceiveChannel, more bool) {
 		var m message
 		ch.Receive(ctx, &m)
 		result = append(result, m)
@@ -799,7 +799,7 @@ func closeChannelInSelectTest(ctx Context) error {
 	s.AddSend(sendCh, struct{}{}, func() {
 		panic("callback for sendCh should not be executed")
 	})
-	s.AddReceive(receiveCh, func(c ReadChannel, m bool) {
+	s.AddReceive(receiveCh, func(c ReceiveChannel, m bool) {
 		c.Receive(ctx, &v)
 	})
 	s.Select(ctx)
