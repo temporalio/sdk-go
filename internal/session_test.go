@@ -84,6 +84,7 @@ func (s *SessionTestSuite) TestCreationCompletion() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
@@ -136,6 +137,7 @@ func (s *SessionTestSuite) TestCreationWithClosedSessionContext() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
@@ -169,6 +171,7 @@ func (s *SessionTestSuite) TestCreationWithFailedSessionContext() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
@@ -283,6 +286,7 @@ func (s *SessionTestSuite) TestRecreation() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
@@ -314,6 +318,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
 	env.RegisterWorkflow(workflowFn)
 	env.SetWorkerOptions(WorkerOptions{
 		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
+		EnableSessionWorker:               true,
 	})
 	env.ExecuteWorkflow(workflowFn)
 
@@ -356,6 +361,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 	env.RegisterWorkflow(workflowFn)
 	env.SetWorkerOptions(WorkerOptions{
 		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
+		EnableSessionWorker:               true,
 	})
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity)
 	env.ExecuteWorkflow(workflowFn)
@@ -390,6 +396,7 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterActivity(testSessionActivity)
 
 	var taskListUsed []string
@@ -444,6 +451,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterActivity(testSessionActivity)
 
 	var taskListUsed []string
@@ -562,6 +570,7 @@ func (s *SessionTestSuite) TestCompletionFailed() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(errors.New("some random error")).Once()
@@ -589,6 +598,7 @@ func (s *SessionTestSuite) TestUserTimerWithinSession() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(workflowFn)
 
@@ -626,6 +636,7 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterActivity(testSessionActivity)
 	env.OnActivity(testSessionActivity, mock.Anything, mock.Anything).Return("", errors.New("some random error"))
 	env.ExecuteWorkflow(workflowFn)

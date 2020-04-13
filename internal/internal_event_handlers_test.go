@@ -90,7 +90,7 @@ func TestDecodedValue(t *testing.T) {
 	testDecodeValueHelper(t, env)
 }
 
-func TestDecodedValue_WithDataConverter(t *testing.T) {
+func TestDecodedValueWithDataConverter(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
 		dataConverter: newTestDataConverter(),

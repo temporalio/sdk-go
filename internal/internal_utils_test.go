@@ -53,7 +53,7 @@ func TestNewValues(t *testing.T) {
 		Age:  heartbeatDetail2,
 	}
 	details = append(details, heartbeatDetail, heartbeatDetail2, heartbeatDetail3)
-	data, err := encodeArgs(nil, details)
+	data, err := encodeArgs(getDefaultDataConverter(), details)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +69,7 @@ func TestNewValues(t *testing.T) {
 func TestNewValue(t *testing.T) {
 	t.Parallel()
 	heartbeatDetail := "status-report-to-workflow"
-	data, err := encodeArg(nil, heartbeatDetail)
+	data, err := encodeArg(getDefaultDataConverter(), heartbeatDetail)
 	if err != nil {
 		panic(err)
 	}

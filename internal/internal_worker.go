@@ -742,9 +742,6 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 
 // encode multiple arguments(arguments to a function).
 func encodeArgs(dc DataConverter, args []interface{}) ([]byte, error) {
-	if dc == nil {
-		return getDefaultDataConverter().ToData(args...)
-	}
 	return dc.ToData(args...)
 }
 
@@ -761,9 +758,6 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data []byte) (result []re
 }
 
 func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data []byte) (result []interface{}, err error) {
-	if dc == nil {
-		dc = getDefaultDataConverter()
-	}
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -782,17 +776,11 @@ argsLoop:
 
 // encode single value(like return parameter).
 func encodeArg(dc DataConverter, arg interface{}) ([]byte, error) {
-	if dc == nil {
-		return getDefaultDataConverter().ToData(arg)
-	}
 	return dc.ToData(arg)
 }
 
 // decode single value(like return parameter).
 func decodeArg(dc DataConverter, data []byte, to interface{}) error {
-	if dc == nil {
-		return getDefaultDataConverter().FromData(data, to)
-	}
 	return dc.FromData(data, to)
 }
 
