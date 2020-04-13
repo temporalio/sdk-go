@@ -246,13 +246,13 @@ func TestNotBlockingSelect(t *testing.T) {
 		c2 := NewBufferedChannel(ctx, 1)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
@@ -295,13 +295,13 @@ func TestBlockingSelect(t *testing.T) {
 
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c2-%v", v))
@@ -336,7 +336,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 		c1 := NewChannel(ctx)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v int
 				c.Receive(ctx, &v)
@@ -380,7 +380,7 @@ func TestSelectOnClosedChannel(t *testing.T) {
 
 		selector := NewNamedSelector(ctx, "waiting for channel")
 
-		selector.AddReceive(c, func(f Channel, more bool) {
+		selector.AddReceive(c, func(f ReceiveChannel, more bool) {
 			var n int
 
 			if !more {
@@ -420,13 +420,13 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 		c2 := NewBufferedChannel(ctx, 100)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)

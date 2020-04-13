@@ -124,8 +124,8 @@ type (
 
 	// Single case statement of the Select
 	selectCase struct {
-		channel     *channelImpl                // Channel of this case.
-		receiveFunc *func(c Channel, more bool) // function to call when channel has a message. nil for send case.
+		channel     *channelImpl                       // Channel of this case.
+		receiveFunc *func(c ReceiveChannel, more bool) // function to call when channel has a message. nil for send case.
 
 		sendFunc   *func()         // function to call when channel accepted a message. nil for receive case.
 		sendValue  *interface{}    // value to send to the channel. Used only for send case.
@@ -971,12 +971,12 @@ func (d *dispatcherImpl) StackTrace() string {
 	return result
 }
 
-func (s *selectorImpl) AddReceive(c Channel, f func(c Channel, more bool)) Selector {
+func (s *selectorImpl) AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), receiveFunc: &f})
 	return s
 }
 
-func (s *selectorImpl) AddSend(c Channel, v interface{}, f func()) Selector {
+func (s *selectorImpl) AddSend(c SendChannel, v interface{}, f func()) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), sendFunc: &f, sendValue: &v})
 	return s
 }
@@ -1246,7 +1246,7 @@ func getHeadersFromContext(ctx Context) *commonpb.Header {
 }
 
 // getSignalChannel finds the associated channel for the signal.
-func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Channel {
+func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
 	}

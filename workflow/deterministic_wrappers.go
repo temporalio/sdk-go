@@ -36,6 +36,12 @@ type (
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	Channel = internal.Channel
 
+	// ReceiveChannel is a read only view of the Channel
+	ReceiveChannel = internal.ReceiveChannel
+
+	// SendChannel is a write only view of the Channel
+	SendChannel = internal.SendChannel
+
 	// Selector must be used instead of native go select by workflow code.
 	// Use workflow.NewSelector(ctx) method to create a Selector instance.
 	Selector = internal.Selector
