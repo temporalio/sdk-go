@@ -62,7 +62,7 @@ type (
 
 	localActivityResultWrapper struct {
 		err     error
-		result  []byte
+		result  *commonpb.Payload
 		attempt int32
 		backoff time.Duration
 	}

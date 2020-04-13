@@ -145,8 +145,6 @@ type (
 		ActivityID   string        `json:"activityId,omitempty"`
 		ActivityType string        `json:"activityType,omitempty"`
 		ErrReason    string        `json:"errReason,omitempty"`
-		ErrJSON      string        `json:"errJson,omitempty"` // string instead of []byte so the encoded blob is human readable
-		ResultJSON   string        `json:"resultJson,omitempty"`
 		ReplayTime   time.Time     `json:"replayTime,omitempty"`
 		Attempt      int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
 		Backoff      time.Duration `json:"backoff,omitempty"` // retry backoff duration
@@ -1079,33 +1077,36 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	}
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData []byte) error {
-	var lamd localActivityMarkerData
-	if err := newEncodedValue(markerData, weh.dataConverter).Get(&lamd); err != nil {
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payload) error {
+	laMarkerData := &localActivityMarkerData{}
+	laResult := &commonpb.Payload{}
+	laError := &commonpb.Payload{}
+
+	if err := weh.dataConverter.FromDataP(markerData, laMarkerData, laResult, laError); err != nil {
 		return err
 	}
 
-	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
-		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
+	if la, ok := weh.pendingLaTasks[laMarkerData.ActivityID]; ok {
+		if len(laMarkerData.ActivityType) > 0 && laMarkerData.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, string(markerData))
+			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, laMarkerData.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
-		delete(weh.pendingLaTasks, lamd.ActivityID)
-		delete(weh.unstartedLaTasks, lamd.ActivityID)
+		weh.decisionsHelper.recordLocalActivityMarker(laMarkerData.ActivityID, markerData)
+		delete(weh.pendingLaTasks, laMarkerData.ActivityID)
+		delete(weh.unstartedLaTasks, laMarkerData.ActivityID)
 		lar := &localActivityResultWrapper{}
-		if len(lamd.ErrReason) > 0 {
-			lar.attempt = lamd.Attempt
-			lar.backoff = lamd.Backoff
-			lar.err = constructError(lamd.ErrReason, []byte(lamd.ErrJSON), weh.GetDataConverter())
+		if len(laMarkerData.ErrReason) > 0 {
+			lar.attempt = laMarkerData.Attempt
+			lar.backoff = laMarkerData.Backoff
+			lar.err = constructError(laMarkerData.ErrReason, laError, weh.GetDataConverter())
 		} else {
-			lar.result = []byte(lamd.ResultJSON)
+			lar.result = laResult
 		}
 		la.callback(lar)
 
 		// update time
-		weh.SetCurrentReplayTime(lamd.ReplayTime)
+		weh.SetCurrentReplayTime(laMarkerData.ReplayTime)
 
 		// resume workflow execution after apply local activity result
 		weh.workflowDefinition.OnDecisionTaskStarted()
@@ -1116,23 +1117,29 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
 	// convert local activity result and error to marker data
-	lamd := localActivityMarkerData{
+	laMarkerData := &localActivityMarkerData{
 		ActivityID:   lar.task.activityID,
 		ActivityType: lar.task.params.ActivityType,
 		ReplayTime:   weh.currentReplayTime.Add(time.Since(weh.currentLocalTime)),
 		Attempt:      lar.task.attempt,
 	}
+	var laResult, laError *commonpb.Payload
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
-		lamd.ErrReason = errReason
-		lamd.ErrJSON = string(errDetails)
-		lamd.Backoff = lar.backoff
+		laMarkerData.ErrReason = errReason
+		laMarkerData.Backoff = lar.backoff
+
+		laError = errDetails
 	} else {
-		lamd.ResultJSON = string(lar.result)
+		laResult = lar.result
 	}
 
 	// encode marker data
-	markerData, err := weh.encodeArg(lamd)
+	markerData, err := weh.GetDataConverter().ToDataP(
+		NameValuePair{Name: "MarkerData", Value: laMarkerData},
+		NameValuePair{Name: "Result", Value: laResult},
+		NameValuePair{Name: "Error", Value: laError},
+	)
 	if err != nil {
 		return err
 	}

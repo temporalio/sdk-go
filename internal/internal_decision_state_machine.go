@@ -808,7 +808,7 @@ func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data []byte
 	return decision
 }
 
-func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result []byte) decisionStateMachine {
+func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result *commonpb.Payload) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: localActivityMarkerName,
