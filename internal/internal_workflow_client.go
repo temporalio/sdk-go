@@ -1113,7 +1113,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		err = deSerializeFunctionResult(workflowRun.workflowFn, attributes.Result, valuePtr, workflowRun.dataConverter, workflowRun.registry)
+		err = workflowRun.dataConverter.FromDataP(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)

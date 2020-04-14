@@ -7,7 +7,7 @@
       "version": -24,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "ActivityCancelRepro-fm"
+          "name": "ActivityCancelRepro"
         },
         "taskList": {
           "name": "tl-1"

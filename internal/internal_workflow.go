@@ -1279,8 +1279,8 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 	if rf.Type().Kind() != reflect.Ptr {
 		return errors.New("value parameter is not a pointer")
 	}
-
-	err := deSerializeFunctionResult(d.fn, d.futureImpl.value.(*commonpb.Payload), value, getDataConverterFromWorkflowContext(ctx), d.channel.env.GetRegistry())
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	err := dataConverter.FromDataP(d.futureImpl.value.(*commonpb.Payload), value)
 	if err != nil {
 		return err
 	}

@@ -78,8 +78,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.RegisterActivity(testActivityHello)
-	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Once()
+	env.OnActivity("testActivityHello", mock.Anything, mock.Anything).Return(mockActivity).Once()
 	env.RegisterWorkflow(testWorkflowHello)
 	env.ExecuteWorkflow(testWorkflowHello)
 
@@ -91,7 +90,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	env.AssertExpectations(s.T())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction_WithDataConverter() {
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter() {
 	mockActivity := func(ctx context.Context, msg string) (string, error) {
 		return "mock_" + msg, nil
 	}
@@ -619,7 +618,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 	s.Equal("hello_activity hello_world", actualResult)
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic_WithDataConverter() {
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		var helloActivityResult string
@@ -1695,6 +1694,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCancelled atomic.Bool
+	var startedCount, completedCount, canceledCount atomic.Int32
+
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
 	}
@@ -1712,30 +1713,30 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
-		NewSelector(ctx).
-			AddFuture(f, func(f Future) {
-				cancel()
-			}).
-			AddFuture(f2, func(f Future) {
-
-			}).
-			Select(ctx)
+		err := f.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		// Hack to avoid race condition. Never do anything similar in real production code
+		for startedCount.Load() < 2 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		cancel()
 
 		err2 := f2.Get(ctx, nil)
 		if _, ok := err2.(*CanceledError); !ok {
 			return "", err2
 		}
 
-		err := f.Get(ctx, &result)
-		return result, err
+		err3 := f.Get(ctx, &result)
+		return result, err3
 	}
 
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	var startedCount, completedCount, canceledCount int
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount++
+		startedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
@@ -1744,23 +1745,23 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount++
+		completedCount.Inc()
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount++
+		canceledCount.Inc()
 	})
 
 	env.ExecuteWorkflow(workflowFn)
-	env.AssertExpectations(s.T())
-	s.Equal(2, startedCount)
-	s.Equal(1, completedCount)
-	s.Equal(1, canceledCount)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	var result string
 	err := env.GetWorkflowResult(&result)
 	s.NoError(err)
+	env.AssertExpectations(s.T())
+	s.Equal(int32(2), startedCount.Load())
+	s.Equal(int32(1), completedCount.Load())
+	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
 	s.True(localActivityFnCancelled.Load())
 }
@@ -2091,7 +2092,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
 				}
 
 				// continue as new
-				return NewContinueAsNewError(ctx, "this-workflow-fn")
+				return NewContinueAsNewError(ctx, "this-workflow")
 			}
 
 			for i := range fanoutChs {

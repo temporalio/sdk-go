@@ -182,9 +182,11 @@ type (
 
 		StickyScheduleToStartTimeout time.Duration
 
-		// NonDeterministicWorkflowPolicy is used for configuring how client's decision task handler deals with
-		// mismatched history events (presumably arising from non-deterministic workflow definitions).
-		NonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
+		// WorkflowPanicPolicy is used for configuring how client's decision task handler deals with workflow
+		// code panicking which includes non backwards compatible changes to the workflow code without appropriate
+		// versioning (see workflow.GetVersion).
+		// The default behavior is to block workflow execution until the problem is fixed.
+		WorkflowPanicPolicy WorkflowPanicPolicy
 
 		DataConverter DataConverter
 
@@ -581,12 +583,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		if err := validateFnFormat(method.Type, false); err != nil {
 			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
 		}
-		prefix := options.Name
-		registerName := name
-		if len(prefix) == 0 {
-			prefix = structType.Elem().Name() + "_"
-		}
-		registerName = prefix + name
+		registerName := options.Name + name
 		if !options.DisableAlreadyRegisteredCheck {
 			if _, ok := r.getActivityFn(registerName); ok {
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
@@ -746,9 +743,6 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 
 // encode multiple arguments(arguments to a function).
 func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payload, error) {
-	if dc == nil {
-		return getDefaultDataConverter().ToDataP(args...)
-	}
 	return dc.ToDataP(args...)
 }
 
@@ -765,9 +759,6 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (
 }
 
 func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (result []interface{}, err error) {
-	if dc == nil {
-		dc = getDefaultDataConverter()
-	}
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -786,17 +777,11 @@ argsLoop:
 
 // encode single value(like return parameter).
 func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payload, error) {
-	if dc == nil {
-		return getDefaultDataConverter().ToDataP(arg)
-	}
 	return dc.ToDataP(arg)
 }
 
 // decode single value(like return parameter).
 func decodeArg(dc DataConverter, data *commonpb.Payload, to interface{}) error {
-	if dc == nil {
-		return getDefaultDataConverter().FromDataP(data, to)
-	}
 	return dc.FromDataP(data, to)
 }
 
@@ -1350,7 +1335,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		DisableStickyExecution:               options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
-		NonDeterministicWorkflowPolicy:       options.NonDeterministicWorkflowPolicy,
+		WorkflowPanicPolicy:                  options.NonDeterministicWorkflowPolicy,
 		DataConverter:                        client.dataConverter,
 		WorkerStopTimeout:                    options.WorkerStopTimeout,
 		ContextPropagators:                   client.contextPropagators,
@@ -1469,7 +1454,16 @@ func getFunctionName(i interface{}) string {
 	}
 	fullName := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 	elements := strings.Split(fullName, ".")
-	return elements[len(elements)-1]
+	shortName := elements[len(elements)-1]
+	// This allows to call activities by method pointer
+	// Compiler adds -fm suffix to a function name which has a receiver
+	// Note that this works even if struct pointer used to get the function is nil
+	// It is possible because nil receivers are allowed.
+	// For example:
+	// var a *Activities
+	// ExecuteActivity(ctx, a.Foo)
+	// will call this function which is going to return "Foo"
+	return strings.TrimSuffix(shortName, "-fm")
 }
 
 func getActivityFunctionName(r *registry, i interface{}) string {

@@ -272,6 +272,7 @@ type (
 		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicemock.MockWorkflowServiceClient
 		workflowClient        Client
+		dataConverter         DataConverter
 	}
 )
 
@@ -301,6 +302,7 @@ func (s *workflowRunSuite) SetupTest() {
 		Identity:     identity,
 	}
 	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
+	s.dataConverter = getDefaultDataConverter()
 }
 
 func (s *workflowRunSuite) TearDownTest() {
@@ -358,7 +360,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(nil, workflowResult)
+	encodedResult, _ := encodeArg(s.dataConverter, workflowResult)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
 			Events: []*eventpb.HistoryEvent{
@@ -408,7 +410,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(nil, workflowResult)
+	encodedResult, _ := encodeArg(s.dataConverter, workflowResult)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
 			Events: []*eventpb.HistoryEvent{
@@ -748,9 +750,10 @@ func getGetWorkflowExecutionHistoryRequest(filterType filterpb.HistoryEventFilte
 type (
 	workflowClientTestSuite struct {
 		suite.Suite
-		mockCtrl *gomock.Controller
-		service  *workflowservicemock.MockWorkflowServiceClient
-		client   Client
+		mockCtrl      *gomock.Controller
+		service       *workflowservicemock.MockWorkflowServiceClient
+		client        Client
+		dataConverter DataConverter
 	}
 )
 
@@ -768,6 +771,7 @@ func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 	s.client = NewServiceClient(s.service, nil, ClientOptions{})
+	s.dataConverter = getDefaultDataConverter()
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -882,7 +886,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
 
-func (s *workflowClientTestSuite) TestStartWorkflow_WithDataConverter() {
+func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	dc := newTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)
@@ -988,27 +992,27 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	var input1 map[string]interface{}
-	result1, err := getWorkflowMemo(input1, nil)
+	result1, err := getWorkflowMemo(input1, s.dataConverter)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]interface{})
-	result2, err := getWorkflowMemo(input1, nil)
+	result2, err := getWorkflowMemo(input1, s.dataConverter)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.Fields))
 
 	input1["t1"] = "v1"
-	result3, err := getWorkflowMemo(input1, nil)
+	result3, err := getWorkflowMemo(input1, s.dataConverter)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	_ = decodeArg(nil, result3.Fields["t1"], &resultString)
+	_ = decodeArg(s.dataConverter, result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
-	_, err = getWorkflowMemo(input1, nil)
+	_, err = getWorkflowMemo(input1, s.dataConverter)
 	s.Error(err)
 }
 
@@ -1030,7 +1034,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
-	_ = decodeArg(nil, result3.IndexedFields["t1"], &resultString)
+	_ = decodeArg(s.dataConverter, result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

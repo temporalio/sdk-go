@@ -121,19 +121,19 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace                      string
-		metricsScope                   *metrics.TaggedScope
-		ppMgr                          pressurePointMgr
-		logger                         *zap.Logger
-		identity                       string
-		enableLoggingInReplay          bool
-		disableStickyExecution         bool
-		registry                       *registry
-		laTunnel                       *localActivityTunnel
-		nonDeterministicWorkflowPolicy NonDeterministicWorkflowPolicy
-		dataConverter                  DataConverter
-		contextPropagators             []ContextPropagator
-		tracer                         opentracing.Tracer
+		namespace              string
+		metricsScope           *metrics.TaggedScope
+		ppMgr                  pressurePointMgr
+		logger                 *zap.Logger
+		identity               string
+		enableLoggingInReplay  bool
+		disableStickyExecution bool
+		registry               *registry
+		laTunnel               *localActivityTunnel
+		workflowPanicPolicy    WorkflowPanicPolicy
+		dataConverter          DataConverter
+		contextPropagators     []ContextPropagator
+		tracer                 opentracing.Tracer
 	}
 
 	activityProvider func(name string) activity
@@ -378,18 +378,18 @@ func isPreloadMarkerEvent(event *eventpb.HistoryEvent) bool {
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:                      params.Namespace,
-		logger:                         params.Logger,
-		ppMgr:                          ppMgr,
-		metricsScope:                   metrics.NewTaggedScope(params.MetricsScope),
-		identity:                       params.Identity,
-		enableLoggingInReplay:          params.EnableLoggingInReplay,
-		disableStickyExecution:         params.DisableStickyExecution,
-		registry:                       registry,
-		nonDeterministicWorkflowPolicy: params.NonDeterministicWorkflowPolicy,
-		dataConverter:                  params.DataConverter,
-		contextPropagators:             params.ContextPropagators,
-		tracer:                         params.Tracer,
+		namespace:              params.Namespace,
+		logger:                 params.Logger,
+		ppMgr:                  ppMgr,
+		metricsScope:           metrics.NewTaggedScope(params.MetricsScope),
+		identity:               params.Identity,
+		enableLoggingInReplay:  params.EnableLoggingInReplay,
+		disableStickyExecution: params.DisableStickyExecution,
+		registry:               registry,
+		workflowPanicPolicy:    params.WorkflowPanicPolicy,
+		dataConverter:          params.DataConverter,
+		contextPropagators:     params.ContextPropagators,
+		tracer:                 params.Tracer,
 	}
 }
 
@@ -927,11 +927,11 @@ ProcessEvents:
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.Error(nonDeterministicErr))
 
-		switch w.wth.nonDeterministicWorkflowPolicy {
-		case NonDeterministicWorkflowPolicyFailWorkflow:
+		switch w.wth.workflowPanicPolicy {
+		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewCustomError("NonDeterministicWorkflowPolicyFailWorkflow", nonDeterministicErr.Error()))
-		case NonDeterministicWorkflowPolicyBlockWorkflow:
+			eventHandler.Complete(nil, NewCustomError("FailWorkflow", nonDeterministicErr.Error()))
+		case BlockWorkflow:
 			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
 			// workflow timeout.
@@ -962,7 +962,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		return false
 	}
 
-	retryBackoff := getRetryBackoff(lar, time.Now())
+	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
 	if retryBackoff > 0 && retryBackoff <= w.GetDecisionTimeout() {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
@@ -1000,14 +1000,14 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult, now time.Time) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
 	p := lar.task.retryPolicy
 	var errReason string
 	if len(p.NonRetriableErrorReasons) > 0 {
 		if lar.err == ErrDeadlineExceeded {
 			errReason = "timeout:" + eventpb.TimeoutType_ScheduleToClose.String()
 		} else {
-			errReason, _ = getErrorDetails(lar.err, nil)
+			errReason, _ = getErrorDetails(lar.err, dataConverter)
 		}
 	}
 	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, now, lar.task.expireTime)

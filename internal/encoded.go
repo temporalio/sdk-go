@@ -130,7 +130,9 @@ func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
 		reflect.ValueOf(to[0]).Elem().SetBytes(data)
 		return nil
 	}
-
+	if len(data) == 0 {
+		return nil
+	}
 	encoder := &jsonEncoding{}
 
 	return encoder.Unmarshal(data, to)

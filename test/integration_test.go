@@ -166,7 +166,7 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	// See https://grokbase.com/p/gg/golang-nuts/153jjj8dgg/go-nuts-fm-suffix-in-function-name-what-does-it-mean
 	// for explanation of -fm postfix.
 	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
-		ts.tracer.GetTrace("Basic-fm"))
+		ts.tracer.GetTrace("Basic"))
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -372,7 +372,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.NoError(err)
 	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
 	ts.Equal("memoVal, searchAttrVal", result)
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess-fm"))
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess"))
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {

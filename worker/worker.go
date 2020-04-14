@@ -165,24 +165,23 @@ type (
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
-	// NonDeterministicWorkflowPolicy is an enum for configuring how client's decision task handler deals with
-	// mismatched history events (presumably arising from non-deterministic workflow definitions).
-	NonDeterministicWorkflowPolicy = internal.NonDeterministicWorkflowPolicy
+	// WorkflowPanicPolicy is used for configuring how worker deals with workflow
+	// code panicking which includes non backwards compatible changes to the workflow code without appropriate
+	// versioning (see workflow.GetVersion).
+	// The default behavior is to block workflow execution until the problem is fixed.
+	WorkflowPanicPolicy = internal.WorkflowPanicPolicy
 )
 
 const (
-	// NonDeterministicWorkflowPolicyBlockWorkflow is the default policy for handling detected non-determinism.
-	// This option simply logs to console with an error message that non-determinism is detected, but
-	// does *NOT* reply anything back to the server.
-	// It is chosen as default for backward compatibility reasons because it preserves the old behavior
-	// for handling non-determinism that we had before NonDeterministicWorkflowPolicy type was added to
-	// allow more configurability.
-	NonDeterministicWorkflowPolicyBlockWorkflow = internal.NonDeterministicWorkflowPolicyBlockWorkflow
-	// NonDeterministicWorkflowPolicyFailWorkflow behaves exactly the same as Ignore, up until the very
-	// end of processing a decision task.
-	// Whereas default does *NOT* reply anything back to the server, fail workflow replies back with a request
-	// to fail the workflow execution.
-	NonDeterministicWorkflowPolicyFailWorkflow = internal.NonDeterministicWorkflowPolicyFailWorkflow
+	// BlockWorkflow is the default WorkflowPanicPolicy policy for handling workflow panics and detected non-determinism.
+	// This option causes workflow to get stuck in the workflow task retry loop.
+	// It is expected that after the problem is discovered and fixed the workflows are going to continue
+	// without any additional manual intervention.
+	BlockWorkflow = internal.BlockWorkflow
+	// FailWorkflow WorkflowPanicPolicy immediately fails workflow execution if workflow code throws panic or
+	// detects non-determinism. This feature is convenient during development.
+	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
+	FailWorkflow = internal.FailWorkflow
 )
 
 // New creates an instance of worker for managing workflow and activity executions.

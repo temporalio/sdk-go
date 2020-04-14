@@ -113,6 +113,9 @@ func (tdc *testDataConverter) ToData(value ...interface{}) ([]byte, error) {
 }
 
 func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) error {
+	if len(input) == 0 {
+		return nil
+	}
 	dec := gob.NewDecoder(bytes.NewBuffer(input))
 	for i, obj := range valuePtr {
 		if err := dec.Decode(obj); err != nil {
