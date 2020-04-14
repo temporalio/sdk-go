@@ -37,8 +37,8 @@ import (
 )
 
 var (
-	ErrUnableToGobEncode = errors.New("unable to encode to gob")
-	ErrUnableToGobDecode = errors.New("unable to encode from gob")
+	ErrUnableToEncodeGob = errors.New("unable to encode to gob")
+	ErrUnableToDecodeGob = errors.New("unable to encode from gob")
 )
 
 func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
@@ -100,40 +100,14 @@ func newTestDataConverter() DataConverter {
 	return &testDataConverter{}
 }
 
-func (tdc *testDataConverter) ToData(value ...interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	for i, obj := range value {
-		if err := enc.Encode(obj); err != nil {
-			return nil, fmt.Errorf(
-				"unable to encode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-func (tdc *testDataConverter) FromData(input []byte, valuePtr ...interface{}) error {
-	if len(input) == 0 {
-		return nil
-	}
-	dec := gob.NewDecoder(bytes.NewBuffer(input))
-	for i, obj := range valuePtr {
-		if err := dec.Decode(obj); err != nil {
-			return fmt.Errorf(
-				"unable to decode argument: %d, %v, with gob error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return nil
-}
-
-func (dc *defaultDataConverter) ToDataP(args ...interface{}) (*commonpb.Payload, error) {
+func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
 	payload := &commonpb.Payload{}
 
-	for i, arg := range args {
+	for i, arg := range values {
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
 		if err := enc.Encode(arg); err != nil {
-			return nil, fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToGobEncode, err)
+			return nil, fmt.Errorf("values[%d]: %w: %v", i, ErrUnableToEncodeGob, err)
 		}
 
 		payloadItem := &commonpb.PayloadItem{
@@ -149,7 +123,7 @@ func (dc *defaultDataConverter) ToDataP(args ...interface{}) (*commonpb.Payload,
 	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromDataP(payload *commonpb.Payload, to ...interface{}) error {
+func (dc *testDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
 	for i, payloadItem := range payload.GetItems() {
 		encoding, ok := payloadItem.GetMetadata()[encodingMetadata]
 
@@ -160,8 +134,8 @@ func (dc *defaultDataConverter) FromDataP(payload *commonpb.Payload, to ...inter
 		e := string(encoding)
 		if e == encodingMetadataGob {
 			dec := gob.NewDecoder(bytes.NewBuffer(payloadItem.GetData()))
-			if err := dec.Decode(to[i]); err != nil {
-				return fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToGobDecode, err)
+			if err := dec.Decode(valuePtrs[i]); err != nil {
+				return fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToDecodeGob, err)
 			}
 		} else {
 			return fmt.Errorf("args[%d], encoding %q: %w", i, e, ErrEncodingIsNotSupported)

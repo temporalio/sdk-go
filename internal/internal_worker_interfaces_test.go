@@ -33,6 +33,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 
 	namespacepb "go.temporal.io/temporal-proto/namespace"
@@ -148,8 +149,13 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	return ActivityType{Name: activityName}
 }
 
-func (ga greeterActivity) Execute(context.Context, []byte) ([]byte, error) {
-	return []byte("World"), nil
+func (ga greeterActivity) Execute(context.Context, *commonpb.Payload) (*commonpb.Payload, error) {
+	return &commonpb.Payload{Items: []*commonpb.PayloadItem{{
+		Metadata: map[string][]byte{
+			encodingMetadata: []byte(encodingMetadataRaw),
+		},
+		Data: []byte("World"),
+	}}}, nil
 }
 
 func (ga greeterActivity) GetFunction() interface{} {

@@ -944,7 +944,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := json.Unmarshal(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
@@ -979,7 +979,7 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := json.Unmarshal(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
@@ -1034,7 +1034,8 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
-	_ = decodeArg(s.dataConverter, result3.IndexedFields["t1"], &resultString)
+
+	_ = json.Unmarshal(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

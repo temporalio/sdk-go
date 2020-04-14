@@ -142,7 +142,7 @@ func (s *internalWorkerTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
-func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) []byte {
+func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),
@@ -303,6 +303,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
+	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
@@ -320,7 +321,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
-			Result:                       []byte("some-incorrect-result"),
+			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
@@ -335,6 +336,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
+	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
@@ -352,7 +354,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
-			Result:                       []byte("some-incorrect-result"),
+			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
@@ -830,7 +832,9 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.P
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, testActivityResult{}, r2Struct)
 
-	return []byte("Done"), nil
+	done, _ := DefaultDataConverter.ToData("Done")
+
+	return done, nil
 }
 
 // test testActivityNoResult

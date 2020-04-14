@@ -282,7 +282,10 @@ func (w *testTimerWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result *c
 	_, isCancelErr = err4.(*CanceledError)
 	require.True(w.t, isCancelErr)
 
-	return []byte("workflow-completed"), nil
+	completed, err5 := DefaultDataConverter.ToData("workflow-completed")
+	require.NoError(w.t, err5)
+
+	return completed, nil
 }
 
 func TestTimerWorkflow(t *testing.T) {
@@ -333,7 +336,11 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, _ *commonpb.Payload) (
 	require.NotNil(w.t, err2)
 	_, ok := err2.(*CanceledError)
 	require.True(w.t, ok)
-	return []byte("workflow-completed"), nil
+
+	completed, err5 := DefaultDataConverter.ToData("workflow-completed")
+	require.NoError(w.t, err5)
+
+	return completed, nil
 }
 
 func TestActivityCancellation(t *testing.T) {

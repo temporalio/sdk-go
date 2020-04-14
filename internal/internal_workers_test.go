@@ -486,7 +486,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	s.Equal(2, localActivityCalledCount)
 }
 
-func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) []byte {
+func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),

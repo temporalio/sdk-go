@@ -1362,7 +1362,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = NewValue(valBytes).Get(&result)
+		_ = json.Unmarshal(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
