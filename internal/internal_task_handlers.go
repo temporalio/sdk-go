@@ -598,7 +598,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		return nil, errors.New("first history event is not WorkflowExecutionStarted")
 	}
 	taskList := attributes.TaskList
-	if taskList == nil || len(taskList.Name) == 0 {
+	if taskList == nil || taskList.Name == "" {
 		return nil, errors.New("nil or empty TaskList in WorkflowExecutionStarted event")
 	}
 

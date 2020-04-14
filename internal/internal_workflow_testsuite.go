@@ -338,7 +338,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.dataConverter = params.dataConverter
 	childEnv.registry = env.registry
 
-	if len(params.taskListName) == 0 {
+	if params.taskListName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task list name", "", "")
 	}
 

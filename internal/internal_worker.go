@@ -257,7 +257,7 @@ func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespac
 		return nil
 	}
 
-	if len(namespace) == 0 {
+	if namespace == "" {
 		return errors.New("namespace cannot be empty")
 	}
 
@@ -1536,7 +1536,7 @@ func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = getDefaultDataConverter()
 	}
-	if len(client.namespace) == 0 {
+	if client.namespace == "" {
 		client.namespace = DefaultNamespace
 	}
 	if client.tracer == nil {

@@ -988,7 +988,7 @@ func WithWorkflowNamespace(ctx Context, name string) Context {
 
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
-	if len(name) == 0 {
+	if name == "" {
 		panic("empty task list name")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
