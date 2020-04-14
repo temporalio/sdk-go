@@ -128,7 +128,7 @@ type (
 		taskList           string
 		dataConverter      DataConverter
 		attempt            int32 // starts from 0.
-		heartbeatDetails   []byte
+		heartbeatDetails   *commonpb.Payload
 		workflowType       *WorkflowType
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}

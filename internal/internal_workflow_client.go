@@ -477,7 +477,7 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
+func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details *commonpb.Payload) error {
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &executionpb.WorkflowExecution{
@@ -561,7 +561,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		return errors.New("invalid task token provided")
 	}
 
-	var data []byte
+	var data *commonpb.Payload
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -582,7 +582,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
-	var data []byte
+	var data *commonpb.Payload
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -872,7 +872,7 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - EntityNotExistError
 //  - QueryFailError
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
-	var input []byte
+	var input *commonpb.Payload
 	if len(request.Args) > 0 {
 		var err error
 		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
@@ -1141,7 +1141,7 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 		return nil, nil
 	}
 
-	memo := make(map[string][]byte)
+	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
 		memoBytes, err := encodeArg(dc, v)
 		if err != nil {

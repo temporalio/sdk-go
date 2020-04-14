@@ -30,6 +30,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -145,7 +146,7 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 // HasHeartbeatDetails checks if there is heartbeat details from last attempt.
 func HasHeartbeatDetails(ctx context.Context) bool {
 	env := getActivityEnv(ctx)
-	return len(env.heartbeatDetails) > 0
+	return env.heartbeatDetails != nil
 }
 
 // GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
@@ -155,7 +156,7 @@ func HasHeartbeatDetails(ctx context.Context) bool {
 // retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
 func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 	env := getActivityEnv(ctx)
-	if len(env.heartbeatDetails) == 0 {
+	if env.heartbeatDetails == nil {
 		return ErrNoData
 	}
 	encoded := newEncodedValues(env.heartbeatDetails, env.dataConverter)
@@ -197,7 +198,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 		// no-op for local activity
 		return
 	}
-	var data []byte
+	var data *commonpb.Payload
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) != 1 || details[0] != nil {
@@ -217,7 +218,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
-	Heartbeat(details []byte) error
+	Heartbeat(details *commonpb.Payload) error
 	Close(flushBufferedHeartbeat bool)
 	GetClient(namespace string, options ClientOptions) Client
 }

@@ -31,6 +31,7 @@ package client
 import (
 	"context"
 
+	commonpb "go.temporal.io/temporal-proto/common"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -174,7 +175,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details *commonpb.Payload) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		// - workflow ID of the workflow.
@@ -434,7 +435,7 @@ var _ internal.NamespaceClient = NamespaceClient(nil)
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data []byte) encoded.Value {
+func NewValue(data *commonpb.Payload) encoded.Value {
 	return internal.NewValue(data)
 }
 
@@ -445,6 +446,6 @@ func NewValue(data []byte) encoded.Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data []byte) encoded.Values {
+func NewValues(data *commonpb.Payload) encoded.Values {
 	return internal.NewValues(data)
 }

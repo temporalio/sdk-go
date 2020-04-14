@@ -27,7 +27,6 @@ package internal
 // All code in this file is private to the package.
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -808,7 +807,7 @@ func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interfa
 	if rf := reflect.ValueOf(toValuePtr); rf.Type().Kind() != reflect.Ptr {
 		return errors.New("value parameter provided is not a pointer")
 	}
-	if data, ok := from.([]byte); ok {
+	if data, ok := from.(*commonpb.Payload); ok {
 		if err := decodeArg(dc, data, toValuePtr); err != nil {
 			return err
 		}
@@ -1279,7 +1278,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 					if last.GetEventType() == eventpb.EventType_WorkflowExecutionCompleted {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
-						if bytes.Equal(resultA, resultB) {
+						if proto.Equal(resultA, resultB) {
 							return nil
 						}
 					}

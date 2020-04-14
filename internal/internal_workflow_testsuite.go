@@ -1080,7 +1080,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	aew := &activityExecutorWrapper{activityExecutor: ae, env: env}
 
 	// substitute the local activity function so we could replace with mock if it is supplied.
-	params.ActivityFn = func(ctx context.Context, inputArgs ...interface{}) ([]byte, error) {
+	params.ActivityFn = func(ctx context.Context, inputArgs ...interface{}) (*commonpb.Payload, error) {
 		return aew.ExecuteWithActualArgs(ctx, params.InputArgs)
 	}
 
@@ -1179,7 +1179,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
 	activityID := result.task.activityID
 	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
-	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, string(result.result)),
+	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, result.result),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
 
 	activityInfo := env.getActivityInfo(activityID, activityType)

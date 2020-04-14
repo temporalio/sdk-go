@@ -1020,7 +1020,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result []byte, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payload, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

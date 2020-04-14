@@ -60,7 +60,7 @@ type (
 	}
 
 	workflowResult struct {
-		workflowResult []byte
+		workflowResult *commonpb.Payload
 		error          error
 	}
 
