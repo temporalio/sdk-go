@@ -415,13 +415,17 @@ func continueAsNewWorkflowTest(ctx Context) error {
 
 func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
+	env.SetStartWorkflowOptions(StartWorkflowOptions{
+		ExecutionStartToCloseTimeout:    100 * time.Second,
+		DecisionTaskStartToCloseTimeout: 5 * time.Second,
+	})
 	env.ExecuteWorkflow(continueAsNewWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
 	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.workflowType.Name)
-	s.EqualValues(1, resultErr.params.executionStartToCloseTimeoutSeconds)
-	s.EqualValues(1, resultErr.params.taskStartToCloseTimeoutSeconds)
+	s.EqualValues(100, resultErr.params.executionStartToCloseTimeoutSeconds)
+	s.EqualValues(5, resultErr.params.taskStartToCloseTimeoutSeconds)
 	s.EqualValues("default-test-tasklist", resultErr.params.taskListName)
 }
 

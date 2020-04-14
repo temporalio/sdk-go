@@ -56,8 +56,7 @@ var _ Client = (*WorkflowClient)(nil)
 var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
-	defaultDecisionTaskTimeoutInSecs = 10
-	defaultGetHistoryTimeoutInSecs   = 25
+	defaultGetHistoryTimeoutInSecs = 65
 )
 
 var (
@@ -167,22 +166,8 @@ func (wc *WorkflowClient) StartWorkflow(
 		workflowID = uuid.NewRandom().String()
 	}
 
-	if options.TaskList == "" {
-		return nil, errors.New("missing TaskList")
-	}
-
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
-	if executionTimeout <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-
 	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
-	if decisionTaskTimeout < 0 {
-		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
-	}
-	if decisionTaskTimeout == 0 {
-		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
-	}
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, wc.dataConverter, wc.registry)
@@ -364,22 +349,8 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		workflowID = uuid.NewRandom().String()
 	}
 
-	if options.TaskList == "" {
-		return nil, errors.New("missing TaskList")
-	}
-
 	executionTimeout := common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
-	if executionTimeout <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-
 	decisionTaskTimeout := common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
-	if decisionTaskTimeout < 0 {
-		return nil, errors.New("negative DecisionTaskStartToCloseTimeout provided")
-	}
-	if decisionTaskTimeout == 0 {
-		decisionTaskTimeout = defaultDecisionTaskTimeoutInSecs
-	}
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, wc.dataConverter, wc.registry)
@@ -620,7 +591,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - InternalServiceError
 //  - EntityNotExistError
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListClosedWorkflowExecutionsResponse
@@ -644,7 +615,7 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - InternalServiceError
 //  - EntityNotExistError
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListOpenWorkflowExecutionsResponse
@@ -664,7 +635,7 @@ func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 
 // ListWorkflow implementation
 func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListWorkflowExecutionsResponse
@@ -684,7 +655,7 @@ func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowser
 
 // ListArchivedWorkflow implementation
 func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ListArchivedWorkflowExecutionsResponse
@@ -716,7 +687,7 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 
 // ScanWorkflow implementation
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.ScanWorkflowExecutionsResponse
@@ -736,7 +707,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 
 // CountWorkflow implementation
 func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
-	if len(request.GetNamespace()) == 0 {
+	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
 	var response *workflowservice.CountWorkflowExecutionsResponse

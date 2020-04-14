@@ -36,7 +36,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/robfig/cron"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -1148,49 +1147,6 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 		return nil, nil, err
 	}
 	return &WorkflowType{Name: fnName}, input, nil
-}
-
-func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
-	p := getWorkflowEnvOptions(ctx)
-	if p == nil {
-		// We need task list as a compulsory parameter. This can be removed after registration
-		return nil, errWorkflowOptionBadRequest
-	}
-	info := GetWorkflowInfo(ctx)
-	if p.namespace == "" {
-		// default to use current workflow's namespace
-		p.namespace = info.Namespace
-	}
-	if p.taskListName == "" {
-		// default to use current workflow's task list
-		p.taskListName = info.TaskListName
-	}
-	if p.taskStartToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("missing or negative DecisionTaskStartToCloseTimeout")
-	}
-	if p.taskStartToCloseTimeoutSeconds == 0 {
-		p.taskStartToCloseTimeoutSeconds = defaultDecisionTaskTimeoutInSecs
-	}
-	if p.executionStartToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-	if err := validateRetryPolicy(p.retryPolicy); err != nil {
-		return nil, err
-	}
-	if err := validateCronSchedule(p.cronSchedule); err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
-func validateCronSchedule(cronSchedule string) error {
-	if len(cronSchedule) == 0 {
-		return nil
-	}
-
-	_, err := cron.ParseStandard(cronSchedule)
-	return err
 }
 
 func getWorkflowEnvOptions(ctx Context) *workflowOptions {

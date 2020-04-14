@@ -170,39 +170,6 @@ func getLocalActivityOptions(ctx Context) *localActivityOptions {
 	return opts.(*localActivityOptions)
 }
 
-func getValidatedActivityOptions(ctx Context) (*activityOptions, error) {
-	p := getActivityOptions(ctx)
-	if p == nil {
-		// We need task list as a compulsory parameter. This can be removed after registration
-		return nil, errActivityParamsBadRequest
-	}
-	if p.TaskListName == "" {
-		// We default to origin task list name.
-		p.TaskListName = p.OriginalTaskListName
-	}
-	if p.ScheduleToStartTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or negative ScheduleToStartTimeoutSeconds")
-	}
-	if p.StartToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or negative StartToCloseTimeoutSeconds")
-	}
-	if p.ScheduleToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
-	}
-	if p.ScheduleToCloseTimeoutSeconds == 0 {
-		// This is a optional parameter, we default to sum of the other two timeouts.
-		p.ScheduleToCloseTimeoutSeconds = p.ScheduleToStartTimeoutSeconds + p.StartToCloseTimeoutSeconds
-	}
-	if p.HeartbeatTimeoutSeconds < 0 {
-		return nil, errors.New("invalid negative HeartbeatTimeoutSeconds")
-	}
-	if err := validateRetryPolicy(p.RetryPolicy); err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
 func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error) {
 	p := getLocalActivityOptions(ctx)
 	if p == nil {
@@ -213,37 +180,6 @@ func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error
 	}
 
 	return p, nil
-}
-
-func validateRetryPolicy(p *commonpb.RetryPolicy) error {
-	if p == nil {
-		return nil
-	}
-
-	if p.GetInitialIntervalInSeconds() <= 0 {
-		return errors.New("missing or negative InitialIntervalInSeconds on retry policy")
-	}
-	if p.GetMaximumIntervalInSeconds() < 0 {
-		return errors.New("negative MaximumIntervalInSeconds on retry policy is invalid")
-	}
-	if p.GetMaximumIntervalInSeconds() == 0 {
-		// if not set, default to 100x of initial interval
-		p.MaximumIntervalInSeconds = 100 * p.GetInitialIntervalInSeconds()
-	}
-	if p.GetMaximumAttempts() < 0 {
-		return errors.New("negative MaximumAttempts on retry policy is invalid")
-	}
-	if p.GetExpirationIntervalInSeconds() < 0 {
-		return errors.New("ExpirationIntervalInSeconds cannot be less than 0 on retry policy")
-	}
-	if p.GetBackoffCoefficient() < 1 {
-		return errors.New("BackoffCoefficient on retry policy cannot be less than 1.0")
-	}
-	if p.GetMaximumAttempts() == 0 && p.GetExpirationIntervalInSeconds() == 0 {
-		return errors.New("both MaximumAttempts and ExpirationIntervalInSeconds on retry policy are not set, at least one of them must be set")
-	}
-
-	return nil
 }
 
 func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {

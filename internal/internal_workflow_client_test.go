@@ -27,7 +27,6 @@ package internal
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -232,7 +231,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 	s.Equal(1, len(events))
 }
 
-func (s *historyEventIteratorSuite) TestIterator_Error() {
+func (s *historyEventIteratorSuite) TestIteratorError() {
 	filterType := filterpb.HistoryEventFilterType_AllEvent
 	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
 	response1 := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -799,33 +798,6 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
-		options, workflowType)
-	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
-}
-
-func (s *workflowClientTestSuite) TestSignalWithStartWorkflow_Error() {
-	signalName := "my signal"
-	signalInput := []byte("my signal input")
-	options := StartWorkflowOptions{}
-
-	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
-		options, workflowType)
-	s.Equal(errors.New("missing TaskList"), err)
-	s.Nil(resp)
-
-	options.TaskList = tasklist
-	resp, err = s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
-		options, workflowType)
-	s.NotNil(err)
-	s.Nil(resp)
-
-	options.ExecutionStartToCloseTimeout = timeoutInSeconds
-	createResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
-		RunId: runID,
-	}
-	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
-	resp, err = s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
