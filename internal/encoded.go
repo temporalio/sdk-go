@@ -109,6 +109,10 @@ func getDefaultDataConverter() DataConverter {
 }
 
 func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
 	payload := &commonpb.Payload{}
 
 	for i, value := range values {
@@ -160,7 +164,15 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 }
 
 func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
+	if payload == nil {
+		return nil
+	}
+
 	for i, payloadItem := range payload.GetItems() {
+		if i >= len(valuePtrs) {
+			break
+		}
+
 		metadata := payloadItem.GetMetadata()
 		if metadata == nil {
 			return fmt.Errorf("payload item %d: %w", i, ErrMetadataIsNotSet)

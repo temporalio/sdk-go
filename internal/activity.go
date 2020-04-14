@@ -204,12 +204,13 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	var data *commonpb.Payload
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
-	if len(details) != 1 || details[0] != nil {
+	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
 		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
 		if err != nil {
 			panic(err)
 		}
 	}
+
 	err = env.serviceInvoker.Heartbeat(data)
 	if err != nil {
 		log := GetActivityLogger(ctx)
