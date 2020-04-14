@@ -984,7 +984,7 @@ func (aw *AggregatedWorker) Start() error {
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.
-				if !isInterfaceNil(aw.workflowWorker) {
+				if !isInterfaceNil(aw.workflowWorker) && len(aw.registry.getRegisteredWorkflowTypes()) > 0 {
 					aw.workflowWorker.Stop()
 				}
 				return err
