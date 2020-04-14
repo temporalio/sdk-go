@@ -25,6 +25,8 @@
 package workflow
 
 import (
+	commonpb "go.temporal.io/temporal-proto/common"
+
 	"go.temporal.io/temporal/internal"
 )
 
@@ -111,7 +113,7 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // The main usage of RecreateSession is for long sessions that are splited into multiple runs. At the end of
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
-func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
+func RecreateSession(ctx Context, recreateToken *commonpb.Payload, sessionOptions *SessionOptions) (Context, error) {
 	return internal.RecreateSession(ctx, recreateToken, sessionOptions)
 }
 

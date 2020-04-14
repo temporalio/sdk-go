@@ -708,7 +708,7 @@ func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payl
 }
 
 func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payload, error) {
-	return wc.GetDataConverter().ToDataP(arg)
+	return wc.GetDataConverter().ToData(arg)
 }
 
 func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payload) Value {
@@ -1081,7 +1081,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 	laResult := &commonpb.Payload{}
 	laError := &commonpb.Payload{}
 
-	if err := weh.dataConverter.FromDataP(markerData, laMarkerData, laResult, laError); err != nil {
+	if err := weh.dataConverter.FromData(markerData, laMarkerData, laResult, laError); err != nil {
 		return err
 	}
 
@@ -1134,7 +1134,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	}
 
 	// encode marker data
-	markerData, err := weh.GetDataConverter().ToDataP(
+	markerData, err := weh.GetDataConverter().ToData(
 		NameValuePair{Name: "MarkerData", Value: laMarkerData},
 		NameValuePair{Name: "Result", Value: laResult},
 		NameValuePair{Name: "Error", Value: laError},

@@ -743,7 +743,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 
 // encode multiple arguments(arguments to a function).
 func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payload, error) {
-	return dc.ToDataP(args...)
+	return dc.ToData(args...)
 }
 
 // decode multiple arguments(arguments to a function).
@@ -768,7 +768,7 @@ argsLoop:
 		arg := reflect.New(argT).Interface()
 		result = append(result, arg)
 	}
-	err = dc.FromDataP(data, result...)
+	err = dc.FromData(data, result...)
 	if err != nil {
 		return
 	}
@@ -777,12 +777,12 @@ argsLoop:
 
 // encode single value(like return parameter).
 func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payload, error) {
-	return dc.ToDataP(arg)
+	return dc.ToData(arg)
 }
 
 // decode single value(like return parameter).
 func decodeArg(dc DataConverter, data *commonpb.Payload, to interface{}) error {
-	return dc.FromDataP(data, to)
+	return dc.FromData(data, to)
 }
 
 func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {

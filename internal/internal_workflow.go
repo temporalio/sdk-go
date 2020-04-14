@@ -1280,7 +1280,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
-	err := dataConverter.FromDataP(d.futureImpl.value.(*commonpb.Payload), value)
+	err := dataConverter.FromData(d.futureImpl.value.(*commonpb.Payload), value)
 	if err != nil {
 		return err
 	}

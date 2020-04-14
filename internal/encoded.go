@@ -73,13 +73,10 @@ type (
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter interface {
 		// ToData implements conversion of a list of values.
-		ToData(value ...interface{}) ([]byte, error)
+		ToData(value ...interface{}) (*commonpb.Payload, error)
 		// FromData implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
-		FromData(input []byte, valuePtr ...interface{}) error
-
-		ToDataP(value ...interface{}) (*commonpb.Payload, error)
-		FromDataP(input *commonpb.Payload, valuePtr ...interface{}) error
+		FromData(input *commonpb.Payload, valuePtr ...interface{}) error
 	}
 
 	// defaultDataConverter uses JSON.
@@ -111,34 +108,7 @@ func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
-	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
-		return r[0].([]byte), nil
-	}
-
-	encoder := &jsonEncoding{}
-
-	data, err := encoder.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
-	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
-		reflect.ValueOf(to[0]).Elem().SetBytes(data)
-		return nil
-	}
-	if len(data) == 0 {
-		return nil
-	}
-	encoder := &jsonEncoding{}
-
-	return encoder.Unmarshal(data, to)
-}
-
-func (dc *defaultDataConverter) ToDataP(values ...interface{}) (*commonpb.Payload, error) {
+func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
 	payload := &commonpb.Payload{}
 
 	for i, value := range values {
@@ -189,7 +159,7 @@ func (dc *defaultDataConverter) ToDataP(values ...interface{}) (*commonpb.Payloa
 	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromDataP(payload *commonpb.Payload, valuePtrs ...interface{}) error {
+func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
 	for i, payloadItem := range payload.GetItems() {
 		metadata := payloadItem.GetMetadata()
 		if metadata == nil {

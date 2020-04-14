@@ -945,7 +945,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 				}
 			} else if panicErr != nil {
 				reason := errReasonPanic
-				details, _ := env.GetDataConverter().ToDataP(fmt.Sprintf("%v", panicErr))
+				details, _ := env.GetDataConverter().ToData(fmt.Sprintf("%v", panicErr))
 				result = &workflowservice.RespondActivityTaskFailedRequest{
 					Reason:  reason,
 					Details: details,
@@ -1869,7 +1869,7 @@ func (env *testWorkflowEnvironmentImpl) RemoveSession(sessionID string) {
 }
 
 func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payload {
-	blob, err := env.GetDataConverter().ToDataP(value)
+	blob, err := env.GetDataConverter().ToData(value)
 	if err != nil {
 		panic(err)
 	}
