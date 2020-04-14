@@ -971,30 +971,29 @@ func (aw *AggregatedWorker) Start() error {
 
 	if !isInterfaceNil(aw.workflowWorker) {
 		if len(aw.registry.getRegisteredWorkflowTypes()) == 0 {
-			aw.logger.Warn(
-				"Starting worker without any workflows. Workflows must be registered before start.",
-			)
-		}
-		if err := aw.workflowWorker.Start(); err != nil {
-			return err
+			aw.logger.Info("No workflows registered. Skipping workflow worker start")
+		} else {
+			if err := aw.workflowWorker.Start(); err != nil {
+				return err
+			}
 		}
 	}
 	if !isInterfaceNil(aw.activityWorker) {
 		if len(aw.registry.getRegisteredActivities()) == 0 {
-			aw.logger.Warn(
-				"Starting worker without any activities. Activities must be registered before start.",
-			)
-		}
-		if err := aw.activityWorker.Start(); err != nil {
-			// stop workflow worker.
-			if !isInterfaceNil(aw.workflowWorker) {
-				aw.workflowWorker.Stop()
+			aw.logger.Info("No activities registered. Skipping activity worker start")
+		} else {
+			if err := aw.activityWorker.Start(); err != nil {
+				// stop workflow worker.
+				if !isInterfaceNil(aw.workflowWorker) {
+					aw.workflowWorker.Stop()
+				}
+				return err
 			}
-			return err
 		}
 	}
 
-	if !isInterfaceNil(aw.sessionWorker) {
+	if !isInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
+		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
 			if !isInterfaceNil(aw.workflowWorker) {
