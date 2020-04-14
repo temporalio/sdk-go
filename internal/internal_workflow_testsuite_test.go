@@ -2067,8 +2067,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
 		doneCh := NewBufferedChannel(ctx, 100)
 		selector := NewSelector(ctx)
 
-		selector.AddReceive(signalCh, func(c Channel, more bool) {
-		}).AddReceive(doneCh, func(c Channel, more bool) {
+		selector.AddReceive(signalCh, func(c ReceiveChannel, more bool) {
+		}).AddReceive(doneCh, func(c ReceiveChannel, more bool) {
 			var doneSignal string
 			c.Receive(ctx, &doneSignal)
 		})
@@ -2480,7 +2480,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 		var signal string
 		s.AddFuture(timeout, func(f Future) {
 			signal = "timeout"
-		}).AddReceive(ch, func(c Channel, more bool) {
+		}).AddReceive(ch, func(c ReceiveChannel, more bool) {
 			c.Receive(ctx, &signal)
 		}).Select(ctx)
 
