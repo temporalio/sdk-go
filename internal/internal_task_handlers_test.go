@@ -836,7 +836,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.EqualValues("temporalInternal:Panic", attr.GetReason())
 	var details string
 	_ = DefaultDataConverter.FromData(attr.GetDetails(), &details)
-	t.True(strings.HasPrefix(details, "\"panicError"), details)
+	t.True(strings.HasPrefix(details, "panicError"), details)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
@@ -999,7 +999,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 0)
-	answer, _ := DefaultDataConverter.ToData(fmt.Sprintf("\"%v\"\n", startingQueryValue))
+	answer, _ := DefaultDataConverter.ToData(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
@@ -1019,7 +1019,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 1)
-	answer, _ = DefaultDataConverter.ToData(fmt.Sprintf("\"%v\"\n", "signal data"))
+	answer, _ = DefaultDataConverter.ToData("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,

@@ -100,13 +100,32 @@ var (
 	ErrUnableToDecodeJSON     = errors.New("unable to decode JSON")
 	ErrUnableToDecodeProto    = errors.New("unable to decode protobuf")
 	ErrUnableToSet            = errors.New("unable to set []byte value")
-	ErrValuePtrIsNotProto     = fmt.Errorf("payload has encoding %q but value pointer doesn't implement \"proto.Unmarshaler\"", encodingMetadataProto)
+	ErrWrongPayloadEncoding   = errors.New("payload encoding doesn't match value pointer type")
 )
 
 // getDefaultDataConverter return default data converter used by Temporal worker
 func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
+
+// var typeOfByteSlice = reflect.TypeOf(([]byte)(nil))
+//
+// func isTypeByteSlice(value interface{}) bool {
+// 	inType := reflect.TypeOf(value)
+// 	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
+// }
+//
+// func protoMarshalerType(value interface{}) proto.Marshaler {
+// 	inType := reflect.TypeOf(value)
+// 	typeOfProtoMarshaler := reflect.TypeOf((*proto.Marshaler)(nil))
+// 	if inType == typeOfProtoMarshaler {
+// 		return value.(proto.Marshaler)
+// 	} else if reflect.PtrTo(inType) == typeOfProtoMarshaler {
+// 		valuePtr := &value
+// 		return interface{}(valuePtr).(proto.Marshaler)
+// 	}
+// 	return nil
+// }
 
 func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
 	if len(values) == 0 {
@@ -123,18 +142,18 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 		}
 
 		var payloadItem *commonpb.PayloadItem
-		if isTypeByteSlice(reflect.TypeOf(nvp.Value)) {
+		if bytes, isByteSlice := nvp.Value.([]byte); isByteSlice {
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
 					encodingMetadata: []byte(encodingMetadataRaw),
 					nameMetadata:     []byte(nvp.Name),
 				},
-				Data: nvp.Value.([]byte),
+				Data: bytes,
 			}
 		} else if protoValue, isProto := nvp.Value.(proto.Marshaler); isProto {
 			data, err := protoValue.Marshal()
 			if err != nil {
-				return nil, fmt.Errorf("%q: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
+				return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
 			}
 
 			payloadItem = &commonpb.PayloadItem{
@@ -147,7 +166,7 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 		} else {
 			data, err := json.Marshal(nvp.Value)
 			if err != nil {
-				return nil, fmt.Errorf("%q: %w: %v", nvp.Name, ErrUnableToEncodeJSON, err)
+				return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeJSON, err)
 			}
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
@@ -189,33 +208,78 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 		if e, ok := metadata[encodingMetadata]; ok {
 			encoding = string(e)
 		} else {
-			return fmt.Errorf("%q: %w", name, ErrEncodingIsNotSet)
+			return fmt.Errorf("%s: %w", name, ErrEncodingIsNotSet)
 		}
 
 		switch encoding {
 		case encodingMetadataRaw:
 			valueBytes := reflect.ValueOf(valuePtrs[i]).Elem()
 			if !valueBytes.CanSet() {
-				return fmt.Errorf("%q: %w", name, ErrUnableToSet)
+				return fmt.Errorf("%s: %w", name, ErrUnableToSet)
 			}
 			valueBytes.SetBytes(payloadItem.GetData())
 		case encodingMetadataJson:
 			err := json.Unmarshal(payloadItem.GetData(), valuePtrs[i])
 			if err != nil {
-				return fmt.Errorf("%q: %w: %v", name, ErrUnableToDecodeJSON, err)
+				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
 			}
 		case encodingMetadataProto:
-			valuePtr, isProto := valuePtrs[i].(proto.Unmarshaler)
-			if !isProto {
-				return fmt.Errorf("%q: %w", name, ErrValuePtrIsNotProto)
-			}
+			// valuePtr, isProto := valuePtrs[i].(proto.Unmarshaler)
+			valuePtr := &commonpb.Payload{}
+			// if valuePtr == nil {
+			// 	return fmt.Errorf("%s is of type %s, encodig: %s: %w", name, reflect.TypeOf(name), encodingMetadataProto, ErrWrongPayloadEncoding)
+			// }
 			err := valuePtr.Unmarshal(payloadItem.GetData())
 			if err != nil {
-				return fmt.Errorf("%q: %w: %v", name, ErrUnableToDecodeProto, err)
+				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeProto, err)
 			}
+
+			p := reflect.ValueOf(valuePtrs[i])
+			v := p.Elem()
+			v.Set(reflect.ValueOf(valuePtr))
+
+			//valuePtrs[i] = &valuePtr
 		default:
-			return fmt.Errorf("%q, encoding %q: %w", name, encoding, ErrEncodingIsNotSupported)
+			return fmt.Errorf("%s, encoding %s: %w", name, encoding, ErrEncodingIsNotSupported)
 		}
+	}
+
+	return nil
+}
+
+func unmarshaler3(valuePtr interface{}) *commonpb.Payload {
+	v := reflect.ValueOf(valuePtr) //**proto
+
+	v = v.Elem() //*proto
+
+	t := v.Type().Elem() //proto
+	u := reflect.New(t)  //of type *proto
+	i := u.Interface()   // of type *proto
+	return i.(*commonpb.Payload)
+}
+
+func unmarshaler2(valuePtr interface{}) proto.Unmarshaler {
+	v := reflect.ValueOf(valuePtr) //**proto
+
+	v = v.Elem() //*proto
+
+	t := v.Type().Elem() //proto
+	u := reflect.New(t)  //of type *proto
+	i := u.Interface()   // of type *proto
+	return i.(proto.Unmarshaler)
+
+}
+
+func unmarshaler(valuePtr interface{}) proto.Unmarshaler {
+	v := reflect.ValueOf(valuePtr)
+
+	for v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	if u, isU := v.Interface().(proto.Unmarshaler); isU {
+		u = reflect.New(v.Type().Elem()).Interface().(proto.Unmarshaler)
+		return u
 	}
 
 	return nil

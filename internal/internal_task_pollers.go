@@ -75,13 +75,14 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		namespace    string
-		taskListName string
-		identity     string
-		service      workflowservice.WorkflowServiceClient
-		taskHandler  WorkflowTaskHandler
-		metricsScope tally.Scope
-		logger       *zap.Logger
+		namespace     string
+		taskListName  string
+		identity      string
+		service       workflowservice.WorkflowServiceClient
+		taskHandler   WorkflowTaskHandler
+		metricsScope  tally.Scope
+		logger        *zap.Logger
+		dataConverter DataConverter
 
 		stickyUUID                   string
 		disableStickyExecution       bool
@@ -227,6 +228,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		taskHandler:                  taskHandler,
 		metricsScope:                 params.MetricsScope,
 		logger:                       params.Logger,
+		dataConverter:                params.DataConverter,
 		stickyUUID:                   uuid.New(),
 		disableStickyExecution:       params.DisableStickyExecution,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
@@ -342,7 +344,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.Error(taskErr))
 		// convert err to DecisionTaskFailed
-		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity)
+		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
 	} else {
 		wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
 	}

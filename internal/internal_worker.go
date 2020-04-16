@@ -808,12 +808,6 @@ func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interfa
 	return nil
 }
 
-var typeOfByteSlice = reflect.TypeOf(([]byte)(nil))
-
-func isTypeByteSlice(inType reflect.Type) bool {
-	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
-}
-
 func newRegistry() *registry {
 	return &registry{
 		workflowFuncMap:  make(map[string]interface{}),
@@ -838,7 +832,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payload) (*comm
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"unable to decode the workflow function input bytes with error: %v, function name: %v",
+			"unable to decode the workflow function input payload with error: %v, function name: %v",
 			err, we.workflowType)
 	}
 	args = append(args, decoded...)

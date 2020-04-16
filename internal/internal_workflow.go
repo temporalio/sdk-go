@@ -65,7 +65,7 @@ type (
 	}
 
 	futureImpl struct {
-		value   interface{} // *commonpb.Payload
+		value   interface{}
 		err     error
 		ready   bool
 		channel *channelImpl
@@ -312,8 +312,13 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 		if err := decodeArg(getDataConverterFromWorkflowContext(ctx), blob, value); err != nil {
 			return err
 		}
+		return f.err
 	}
 
+	fv := reflect.ValueOf(f.value)
+	if fv.IsValid() {
+		rf.Elem().Set(fv)
+	}
 	return f.err
 }
 

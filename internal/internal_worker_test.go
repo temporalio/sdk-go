@@ -149,7 +149,11 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 
 	// encode marker data
-	markerData, err := encodeArg(s.dataConverter, lamd)
+	markerData, err := s.dataConverter.ToData(
+		NameValuePair{Name: "MarkerData", Value: lamd},
+		NameValuePair{Name: "Result", Value: nil},
+		NameValuePair{Name: "Error", Value: nil},
+	)
 	s.NoError(err)
 	return markerData
 }
@@ -730,7 +734,7 @@ type activitiesCallingOptionsWorkflow struct {
 	t *testing.T
 }
 
-func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.Payload) (result *commonpb.Payload, err error) {
+func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
@@ -832,9 +836,7 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input *commonpb.P
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, testActivityResult{}, r2Struct)
 
-	done, _ := DefaultDataConverter.ToData("Done")
-
-	return done, nil
+	return []byte("Done"), nil
 }
 
 // test testActivityNoResult

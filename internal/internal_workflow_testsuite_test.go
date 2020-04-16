@@ -38,7 +38,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -1392,47 +1391,80 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoTypes() {
 	var actualValues []string
-	retVal := &executionpb.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
 
 	// Passing one argument
-	activitySingleFn := func(ctx context.Context, wf *executionpb.WorkflowExecution) (*executionpb.WorkflowExecution, error) {
-		actualValues = append(actualValues, wf.GetWorkflowId())
-		actualValues = append(actualValues, wf.GetRunId())
-		return retVal, nil
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
+		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
+		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
 	}
 
-	input := &executionpb.WorkflowExecution{WorkflowId: "wID1", RunId: "rID1"}
+	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input1")}}}
+	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
-	blob, err := env.ExecuteActivity(activitySingleFn, input)
+	blob, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 	s.NoError(err)
-	var ret *executionpb.WorkflowExecution
+	s.EqualValues([]string{"input1", "input2"}, actualValues)
+
+	var ret *commonpb.Payload
 	_ = blob.Get(&ret)
-	s.Equal(retVal, ret)
+	s.Equal(&commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
 
 	// Passing more than one argument
-	activityDoubleArgFn := func(ctx context.Context, wf *executionpb.WorkflowExecution, t *commonpb.WorkflowType) (*executionpb.WorkflowExecution, error) {
-		actualValues = append(actualValues, wf.GetWorkflowId())
-		actualValues = append(actualValues, wf.GetRunId())
-		actualValues = append(actualValues, t.GetName())
-		return retVal, nil
+	// activityDoubleArgFn := func(ctx context.Context, wf executionpb.WorkflowExecution, t *commonpb.WorkflowType) (*executionpb.WorkflowExecution, error) {
+	// 	actualValues = append(actualValues, wf.GetWorkflowId())
+	// 	actualValues = append(actualValues, wf.GetRunId())
+	// 	actualValues = append(actualValues, t.GetName())
+	// 	return retVal, nil
+	// }
+	//
+	// input = &executionpb.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
+	// wt := &commonpb.WorkflowType{Name: "wType"}
+	// env = s.NewTestActivityEnvironment()
+	// env.RegisterActivity(activityDoubleArgFn)
+	// blob, err = env.ExecuteActivity(activityDoubleArgFn, *input, wt)
+	// s.NoError(err)
+	// _ = blob.Get(&ret)
+	// s.Equal(retVal, ret)
+
+	// expectedValues := []string{
+	// 	"input1",
+	// 	"input2",
+	// 	"wID2",
+	// 	"rID3",
+	// 	"wType",
+	// }
+	// s.EqualValues(expectedValues, actualValues)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
+	var actualValues []string
+	retVal := "retVal"
+
+	activitySingleFn := func(ctx context.Context, s1 string, s2 *string, s3 **string) (*string, error) {
+		actualValues = append(actualValues, s1)
+		actualValues = append(actualValues, *s2)
+		actualValues = append(actualValues, **s3)
+		return &retVal, nil
 	}
 
-	input = &executionpb.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
-	wt := &commonpb.WorkflowType{Name: "wType"}
-	env = s.NewTestActivityEnvironment()
-	env.RegisterActivity(activityDoubleArgFn)
-	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
+	s1 := "s1"
+	s2 := "s2"
+	s3 := "s3"
+	s3Ptr := &s3
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activitySingleFn)
+	blob, err := env.ExecuteActivity(activitySingleFn, s1, &s2, &s3Ptr)
 	s.NoError(err)
+	var ret *string
 	_ = blob.Get(&ret)
-	s.Equal(retVal, ret)
+	s.Equal(retVal, *ret)
 
 	expectedValues := []string{
-		"wID1",
-		"rID1",
-		"wID2",
-		"rID3",
-		"wType",
+		"s1",
+		"s2",
+		"s3",
 	}
 	s.EqualValues(expectedValues, actualValues)
 }

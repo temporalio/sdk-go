@@ -35,7 +35,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common/metrics"
@@ -244,7 +243,7 @@ type testTimerWorkflow struct {
 	t *testing.T
 }
 
-func (w *testTimerWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result *commonpb.Payload, err error) {
+func (w *testTimerWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
 	// Start a timer.
 	t := NewTimer(ctx, 1)
 
@@ -282,10 +281,7 @@ func (w *testTimerWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result *c
 	_, isCancelErr = err4.(*CanceledError)
 	require.True(w.t, isCancelErr)
 
-	completed, err5 := DefaultDataConverter.ToData("workflow-completed")
-	require.NoError(w.t, err5)
-
-	return completed, nil
+	return []byte("workflow-completed"), nil
 }
 
 func TestTimerWorkflow(t *testing.T) {
@@ -306,7 +302,7 @@ func testAct(_ context.Context) (string, error) {
 	return "test", nil
 }
 
-func (w *testActivityCancelWorkflow) Execute(ctx Context, _ *commonpb.Payload) (result *commonpb.Payload, err error) {
+func (w *testActivityCancelWorkflow) Execute(ctx Context, _ []byte) (result []byte, err error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
@@ -337,10 +333,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, _ *commonpb.Payload) (
 	_, ok := err2.(*CanceledError)
 	require.True(w.t, ok)
 
-	completed, err5 := DefaultDataConverter.ToData("workflow-completed")
-	require.NoError(w.t, err5)
-
-	return completed, nil
+	return []byte("workflow-completed"), nil
 }
 
 func TestActivityCancellation(t *testing.T) {

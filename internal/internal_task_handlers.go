@@ -1472,7 +1472,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity)
+		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.dataConverter)
 	}
 
 	// complete decision task
@@ -1554,8 +1554,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 }
 
-func errorToFailDecisionTask(taskToken []byte, err error, identity string) *workflowservice.RespondDecisionTaskFailedRequest {
-	_, details := getErrorDetails(err, nil)
+func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
+	_, details := getErrorDetails(err, dataConverter)
 	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure,
