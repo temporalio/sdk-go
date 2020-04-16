@@ -870,7 +870,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	decoded, err := decodeArgs(dataConverter, fnType, input)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"unable to decode the activity function input bytes with error: %v for function name: %v",
+			"unable to decode the activity function input payload with error: %v for function name: %v",
 			err, ae.name)
 	}
 	args = append(args, decoded...)

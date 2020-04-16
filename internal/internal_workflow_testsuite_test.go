@@ -1389,55 +1389,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	// mix no-mock and mock is not support
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoTypes() {
-	var actualValues []string
-
-	// Passing one argument
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
-		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
-		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
-	}
-
-	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input1")}}}
-	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
-	env := s.NewTestActivityEnvironment()
-	env.RegisterActivity(activitySingleFn)
-	blob, err := env.ExecuteActivity(activitySingleFn, input1, input2)
-	s.NoError(err)
-	s.EqualValues([]string{"input1", "input2"}, actualValues)
-
-	var ret *commonpb.Payload
-	_ = blob.Get(&ret)
-	s.Equal(&commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
-
-	// Passing more than one argument
-	// activityDoubleArgFn := func(ctx context.Context, wf executionpb.WorkflowExecution, t *commonpb.WorkflowType) (*executionpb.WorkflowExecution, error) {
-	// 	actualValues = append(actualValues, wf.GetWorkflowId())
-	// 	actualValues = append(actualValues, wf.GetRunId())
-	// 	actualValues = append(actualValues, t.GetName())
-	// 	return retVal, nil
-	// }
-	//
-	// input = &executionpb.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
-	// wt := &commonpb.WorkflowType{Name: "wType"}
-	// env = s.NewTestActivityEnvironment()
-	// env.RegisterActivity(activityDoubleArgFn)
-	// blob, err = env.ExecuteActivity(activityDoubleArgFn, *input, wt)
-	// s.NoError(err)
-	// _ = blob.Get(&ret)
-	// s.Equal(retVal, ret)
-
-	// expectedValues := []string{
-	// 	"input1",
-	// 	"input2",
-	// 	"wID2",
-	// 	"rID3",
-	// 	"wType",
-	// }
-	// s.EqualValues(expectedValues, actualValues)
-}
-
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 	var actualValues []string
 	retVal := "retVal"
@@ -1455,10 +1406,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 	s3Ptr := &s3
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
-	blob, err := env.ExecuteActivity(activitySingleFn, s1, &s2, &s3Ptr)
+	payload, err := env.ExecuteActivity(activitySingleFn, s1, &s2, &s3Ptr)
 	s.NoError(err)
 	var ret *string
-	_ = blob.Get(&ret)
+	_ = payload.Get(&ret)
 	s.Equal(retVal, *ret)
 
 	expectedValues := []string{
@@ -1467,6 +1418,49 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 		"s3",
 	}
 	s.EqualValues(expectedValues, actualValues)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
+	var actualValues []string
+
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
+		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
+		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
+	}
+
+	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input1")}}} // This will be JSON
+	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activitySingleFn)
+	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+	s.NoError(err)
+	s.EqualValues([]string{"input1", "input2"}, actualValues)
+
+	var ret *commonpb.Payload
+	_ = payload.Get(&ret)
+	s.Equal(&commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
+}
+
+// TODO: all proto types should be supported and this test should be removed.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
+	var actualValues []string
+
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
+		actualValues = append(actualValues, wf1.Name)
+		actualValues = append(actualValues, wf1.Name)
+		return &commonpb.WorkflowType{Name: "result"}, nil
+	}
+
+	input1 := commonpb.WorkflowType{Name: "input1"}
+	input2 := &commonpb.WorkflowType{Name: "input2"}
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activitySingleFn)
+	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+	s.NotNil(err)
+	s.Contains(err.Error(), "invalid value pointer type: values[1] is of type *common.WorkflowType but must be *common.Payload to support proto encodig") // errors.Is doesn't work here because wrpapping is not implemented correctly on all layers so far.
+	s.Len(actualValues, 0)
+	s.Nil(payload)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {
