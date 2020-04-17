@@ -174,27 +174,27 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	invoker3.Close(false)
 
 	// simulate batch picks before expiry, without any progress specified.
-	// waitCh2 := make(chan struct{})
-	// service4 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	// invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2, make(chan struct{}))
-	// ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
-	// 	serviceInvoker: invoker4,
-	// 	logger:         getLogger()})
-	// service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
-	// service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
-	// 	Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
-	// 		require.Nil(s.T(), request.Details)
-	// 		waitCh2 <- struct{}{}
-	// 	}).Times(1)
-	//
-	// RecordActivityHeartbeat(ctx, nil)
-	// RecordActivityHeartbeat(ctx, nil)
-	// RecordActivityHeartbeat(ctx, nil)
-	// RecordActivityHeartbeat(ctx, nil)
-	// <-waitCh2
-	// invoker4.Close(false)
+	waitCh2 := make(chan struct{})
+	service4 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2, make(chan struct{}))
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker4,
+		logger:         getLogger()})
+	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+	service4.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
+			require.Nil(s.T(), request.Details)
+			waitCh2 <- struct{}{}
+		}).Times(1)
+
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	RecordActivityHeartbeat(ctx, nil)
+	<-waitCh2
+	invoker4.Close(false)
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {

@@ -131,9 +131,13 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 				Data: bytes,
 			}
 		} else if protoValue, isProto := nvp.Value.(proto.Marshaler); isProto {
-			data, err := protoValue.Marshal()
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
+			var data []byte
+			if !isInterfaceNil(protoValue) {
+				var err error
+				data, err = protoValue.Marshal()
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
+				}
 			}
 
 			payloadItem = &commonpb.PayloadItem{

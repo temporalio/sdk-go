@@ -1081,7 +1081,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 	laResult := &commonpb.Payload{}
 	laError := &commonpb.Payload{}
 
-	if err := weh.dataConverter.FromData(markerData, laMarkerData, laResult, laError); err != nil {
+	if err := weh.dataConverter.FromData(markerData, laMarkerData, &laResult, &laError); err != nil {
 		return err
 	}
 

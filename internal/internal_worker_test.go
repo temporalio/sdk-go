@@ -151,8 +151,8 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	// encode marker data
 	markerData, err := s.dataConverter.ToData(
 		NameValuePair{Name: "MarkerData", Value: lamd},
-		NameValuePair{Name: "Result", Value: nil},
-		NameValuePair{Name: "Error", Value: nil},
+		NameValuePair{Name: "Result", Value: (*commonpb.Payload)(nil)},
+		NameValuePair{Name: "Error", Value: (*commonpb.Payload)(nil)},
 	)
 	s.NoError(err)
 	return markerData
