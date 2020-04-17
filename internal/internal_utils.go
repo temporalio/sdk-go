@@ -235,8 +235,7 @@ func constructError(reason string, details *commonpb.Payload, dataConverter Data
 	case errReasonGeneric:
 		// errors created other than using NewCustomError() API.
 		var msg string
-		details := newEncodedValues(details, dataConverter)
-		_ = details.Get(&msg)
+		_ = dataConverter.FromData(details, &msg)
 		return &GenericError{err: msg}
 	case errReasonCanceled:
 		details := newEncodedValues(details, dataConverter)

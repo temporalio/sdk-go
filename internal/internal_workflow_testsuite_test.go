@@ -1425,17 +1425,22 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
 		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[encodingMetadata]))
 		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
 		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
 	}
 
-	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input1")}}} // This will be JSON
+	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
+		Metadata: map[string][]byte{
+			encodingMetadata: []byte("someencoding"),
+		},
+		Data: []byte("input1")}}}
 	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 	s.NoError(err)
-	s.EqualValues([]string{"input1", "input2"}, actualValues)
+	s.EqualValues([]string{"input1", "someencoding", "input2"}, actualValues)
 
 	var ret *commonpb.Payload
 	_ = payload.Get(&ret)
@@ -1458,7 +1463,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 	s.NotNil(err)
-	s.Contains(err.Error(), "invalid value pointer type: values[1] is of type *common.WorkflowType but must be *common.Payload to support proto encodig") // errors.Is doesn't work here because wrpapping is not implemented correctly on all layers so far.
+	s.IsType(&GenericError{}, err)
+	// errors.Is doesn't work here because err is *GenericError not error.
+	s.Contains(err.Error(), "invalid value pointer type: values[1] is of type *common.WorkflowType but must be *common.Payload to support proto encodig")
 	s.Len(actualValues, 0)
 	s.Nil(payload)
 }

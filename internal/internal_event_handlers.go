@@ -1077,11 +1077,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payload) error {
-	laMarkerData := &localActivityMarkerData{}
-	laResult := &commonpb.Payload{}
-	laError := &commonpb.Payload{}
+	laMarkerData := localActivityMarkerData{}
+	var laResult, laError *commonpb.Payload
 
-	if err := weh.dataConverter.FromData(markerData, laMarkerData, &laResult, &laError); err != nil {
+	if err := weh.dataConverter.FromData(markerData, &laMarkerData, &laResult, &laError); err != nil {
 		return err
 	}
 
@@ -1116,7 +1115,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
 	// convert local activity result and error to marker data
-	laMarkerData := &localActivityMarkerData{
+	laMarkerData := localActivityMarkerData{
 		ActivityID:   lar.task.activityID,
 		ActivityType: lar.task.params.ActivityType,
 		ReplayTime:   weh.currentReplayTime.Add(time.Since(weh.currentLocalTime)),

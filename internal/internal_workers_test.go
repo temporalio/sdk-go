@@ -215,7 +215,6 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 }
 
 func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
-	//s.T().Skip()
 	localActivityCalledCount := 0
 	localActivitySleep := func(duration time.Duration) error {
 		time.Sleep(duration)

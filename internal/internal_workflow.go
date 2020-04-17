@@ -1358,7 +1358,7 @@ func (h *queryHandler) execute(input *commonpb.Payload) (result *commonpb.Payloa
 
 	decoded, err := decodeArgs(h.dataConverter, fnType, input)
 	if err != nil {
-		return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %v", h.queryType, err)
+		return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %w", h.queryType, err)
 	}
 	args = append(args, decoded...)
 
