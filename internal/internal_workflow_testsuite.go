@@ -819,8 +819,9 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 
 	// pass down the last completion result
 	var result *commonpb.Payload
-	if env.testResult != nil {
-		_ = env.testResult.Get(&result)
+	// TODO: convert env.testResult to *commonpb.Payload
+	if ev, ok := env.testResult.(*EncodedValue); ev != nil && ok {
+		result = ev.value
 	}
 	if result == nil {
 		// not successful run this time, carry over from whatever previous run pass to this run.
