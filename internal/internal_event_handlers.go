@@ -1116,7 +1116,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
 	// convert local activity result and error to marker data
-	laMarkerData := localActivityMarkerData{
+	lamd := localActivityMarkerData{
 		ActivityID:   lar.task.activityID,
 		ActivityType: lar.task.params.ActivityType,
 		ReplayTime:   weh.currentReplayTime.Add(time.Since(weh.currentLocalTime)),
@@ -1124,15 +1124,15 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	}
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
-		laMarkerData.ErrReason = errReason
-		laMarkerData.Err = errDetails
-		laMarkerData.Backoff = lar.backoff
+		lamd.ErrReason = errReason
+		lamd.Err = errDetails
+		lamd.Backoff = lar.backoff
 	} else {
-		laMarkerData.Result = lar.result
+		lamd.Result = lar.result
 	}
 
 	// encode marker data
-	markerData, err := weh.GetDataConverter().ToData(laMarkerData)
+	markerData, err := weh.encodeArg(lamd)
 	if err != nil {
 		return err
 	}
