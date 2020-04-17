@@ -142,12 +142,14 @@ type (
 	}
 
 	localActivityMarkerData struct {
-		ActivityID   string        `json:"activityId,omitempty"`
-		ActivityType string        `json:"activityType,omitempty"`
-		ErrReason    string        `json:"errReason,omitempty"`
-		ReplayTime   time.Time     `json:"replayTime,omitempty"`
-		Attempt      int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
-		Backoff      time.Duration `json:"backoff,omitempty"` // retry backoff duration
+		ActivityID   string
+		ActivityType string
+		ErrReason    string
+		Err          *commonpb.Payload
+		Result       *commonpb.Payload
+		ReplayTime   time.Time
+		Attempt      int32         // record attempt, starting from 0.
+		Backoff      time.Duration // retry backoff duration.
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -1077,34 +1079,33 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payload) error {
-	laMarkerData := localActivityMarkerData{}
-	var laResult, laError *commonpb.Payload
+	lamd := localActivityMarkerData{}
 
-	if err := weh.dataConverter.FromData(markerData, &laMarkerData, &laResult, &laError); err != nil {
+	if err := weh.dataConverter.FromData(markerData, &lamd); err != nil {
 		return err
 	}
 
-	if la, ok := weh.pendingLaTasks[laMarkerData.ActivityID]; ok {
-		if len(laMarkerData.ActivityType) > 0 && laMarkerData.ActivityType != la.params.ActivityType {
+	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
+		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, laMarkerData.ActivityType, markerData)
+			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		weh.decisionsHelper.recordLocalActivityMarker(laMarkerData.ActivityID, markerData)
-		delete(weh.pendingLaTasks, laMarkerData.ActivityID)
-		delete(weh.unstartedLaTasks, laMarkerData.ActivityID)
+		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
+		delete(weh.pendingLaTasks, lamd.ActivityID)
+		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		lar := &localActivityResultWrapper{}
-		if len(laMarkerData.ErrReason) > 0 {
-			lar.attempt = laMarkerData.Attempt
-			lar.backoff = laMarkerData.Backoff
-			lar.err = constructError(laMarkerData.ErrReason, laError, weh.GetDataConverter())
+		if len(lamd.ErrReason) > 0 {
+			lar.attempt = lamd.Attempt
+			lar.backoff = lamd.Backoff
+			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
 		} else {
-			lar.result = laResult
+			lar.result = lamd.Result
 		}
 		la.callback(lar)
 
 		// update time
-		weh.SetCurrentReplayTime(laMarkerData.ReplayTime)
+		weh.SetCurrentReplayTime(lamd.ReplayTime)
 
 		// resume workflow execution after apply local activity result
 		weh.workflowDefinition.OnDecisionTaskStarted()
@@ -1121,23 +1122,17 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		ReplayTime:   weh.currentReplayTime.Add(time.Since(weh.currentLocalTime)),
 		Attempt:      lar.task.attempt,
 	}
-	var laResult, laError *commonpb.Payload
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
 		laMarkerData.ErrReason = errReason
+		laMarkerData.Err = errDetails
 		laMarkerData.Backoff = lar.backoff
-
-		laError = errDetails
 	} else {
-		laResult = lar.result
+		laMarkerData.Result = lar.result
 	}
 
 	// encode marker data
-	markerData, err := weh.GetDataConverter().ToData(
-		NameValuePair{Name: "MarkerData", Value: laMarkerData},
-		NameValuePair{Name: "Result", Value: laResult},
-		NameValuePair{Name: "Error", Value: laError},
-	)
+	markerData, err := weh.GetDataConverter().ToData(laMarkerData)
 	if err != nil {
 		return err
 	}

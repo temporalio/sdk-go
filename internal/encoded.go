@@ -30,16 +30,15 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 const (
-	metadataEncoding      = "encoding"
-	metadataEncodingRaw   = "raw"
-	metadataEncodingJson  = "json"
-	metadataEncodingGob   = "gob"
-	metadataEncodingProto = "proto"
+	metadataEncoding     = "encoding"
+	metadataEncodingRaw  = "raw"
+	metadataEncodingJson = "json"
+	metadataEncodingGob  = "gob"
+	// metadataEncodingProto = "proto"
 
 	metadataName = "name"
 )
@@ -130,23 +129,23 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 				},
 				Data: bytes,
 			}
-		} else if protoValue, isProto := nvp.Value.(proto.Marshaler); isProto {
-			var data []byte
-			if !isInterfaceNil(protoValue) {
-				var err error
-				data, err = protoValue.Marshal()
-				if err != nil {
-					return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
-				}
-			}
-
-			payloadItem = &commonpb.PayloadItem{
-				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingProto),
-					metadataName:     []byte(nvp.Name),
-				},
-				Data: data,
-			}
+			// } else if protoValue, isProto := nvp.Value.(proto.Marshaler); isProto {
+			// 	var data []byte
+			// 	if !isInterfaceNil(protoValue) {
+			// 		var err error
+			// 		data, err = protoValue.Marshal()
+			// 		if err != nil {
+			// 			return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
+			// 		}
+			// 	}
+			//
+			// 	payloadItem = &commonpb.PayloadItem{
+			// 		Metadata: map[string][]byte{
+			// 			metadataEncoding: []byte(metadataEncodingProto),
+			// 			metadataName:     []byte(nvp.Name),
+			// 		},
+			// 		Data: data,
+			// 	}
 		} else {
 			data, err := json.Marshal(nvp.Value)
 			if err != nil {
@@ -207,19 +206,19 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 			if err != nil {
 				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
 			}
-		case metadataEncodingProto:
-			valuePtrV := reflect.ValueOf(valuePtrs[i])
-			valueV := valuePtrV.Elem()
-			if valueV.Type() != reflect.TypeOf((*commonpb.Payload)(nil)) {
-				return fmt.Errorf("%w: %s is of type %s but must be *common.Payload to support %s encodig", ErrInvalidValuePointerType, name, valueV.Type(), metadataEncodingProto)
-			}
-
-			pl := &commonpb.Payload{}
-			err := pl.Unmarshal(payloadItem.GetData())
-			if err != nil {
-				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeProto, err)
-			}
-			valueV.Set(reflect.ValueOf(pl))
+		// case metadataEncodingProto:
+		// 	valuePtrV := reflect.ValueOf(valuePtrs[i])
+		// 	valueV := valuePtrV.Elem()
+		// 	if valueV.Type() != reflect.TypeOf((*commonpb.Payload)(nil)) {
+		// 		return fmt.Errorf("%w: %s is of type %s but must be *common.Payload to support %s encodig", ErrInvalidValuePointerType, name, valueV.Type(), metadataEncodingProto)
+		// 	}
+		//
+		// 	pl := &commonpb.Payload{}
+		// 	err := pl.Unmarshal(payloadItem.GetData())
+		// 	if err != nil {
+		// 		return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeProto, err)
+		// 	}
+		// 	valueV.Set(reflect.ValueOf(pl))
 		default:
 			return fmt.Errorf("%s, encoding %s: %w", name, encoding, ErrEncodingIsNotSupported)
 		}

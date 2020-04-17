@@ -1449,6 +1449,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 // TODO: all proto types should be supported and this test should be removed.
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
+	s.T().Skip()
 	var actualValues []string
 
 	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
@@ -1462,7 +1463,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
-	s.NotNil(err)
+	s.Error(err)
 	s.IsType(&GenericError{}, err)
 	// errors.Is doesn't work here because err is *GenericError not error.
 	s.Contains(err.Error(), "invalid value pointer type: values[1] is of type *common.WorkflowType but must be *common.Payload to support proto encodig")
