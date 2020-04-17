@@ -1619,7 +1619,7 @@ type temporalInvoker struct {
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
 	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport   *commonpb.Payload
+	lastDetailsToReport   **commonpb.Payload
 	closeCh               chan struct{}
 	workerStopChannel     <-chan struct{}
 }
@@ -1630,7 +1630,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 
 	if i.hbBatchEndTimer != nil {
 		// If we have started batching window, keep track of last reported progress.
-		i.lastDetailsToReport = details
+		i.lastDetailsToReport = &details
 		return nil
 	}
 
@@ -1665,7 +1665,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 			}
 
 			// We close the batch and report the progress.
-			var detailsToReport *commonpb.Payload
+			var detailsToReport **commonpb.Payload
 
 			i.Lock()
 			detailsToReport = i.lastDetailsToReport
@@ -1674,7 +1674,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 			i.Unlock()
 
 			if detailsToReport != nil {
-				_ = i.Heartbeat(detailsToReport)
+				_ = i.Heartbeat(*detailsToReport)
 			}
 		}()
 	}
@@ -1718,7 +1718,7 @@ func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 	if i.hbBatchEndTimer != nil {
 		i.hbBatchEndTimer.Stop()
 		if flushBufferedHeartbeat && i.lastDetailsToReport != nil {
-			_, _ = i.internalHeartBeat(i.lastDetailsToReport)
+			_, _ = i.internalHeartBeat(*i.lastDetailsToReport)
 			i.lastDetailsToReport = nil
 		}
 	}

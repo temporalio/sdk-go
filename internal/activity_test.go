@@ -118,60 +118,60 @@ func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	ctx, cancel := context.WithCancel(context.Background())
-	// invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 2, make(chan struct{}))
-	// ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
-	// 	serviceInvoker: invoker,
-	// 	logger:         getLogger()})
-	//
-	// // Multiple calls but only one call is made.
-	// s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// invoker.Close(false)
-	//
-	// // No HB timeout configured.
-	// service2 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	// invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0, make(chan struct{}))
-	// ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
-	// 	serviceInvoker: invoker2,
-	// 	logger:         getLogger()})
-	// service2.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// invoker2.Close(false)
-	//
-	// // simulate batch picks before expiry.
-	// waitCh := make(chan struct{})
-	// service3 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	// invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2, make(chan struct{}))
-	// ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
-	// 	serviceInvoker: invoker3,
-	// 	logger:         getLogger()})
-	// service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
-	//
-	// service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-	// 	Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
-	// 	Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
-	// 		ev := newEncodedValues(request.Details, nil)
-	// 		var progress string
-	// 		err := ev.Get(&progress)
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
-	// 		require.Equal(s.T(), "testDetails-expected", progress)
-	// 		waitCh <- struct{}{}
-	// 	}).Times(1)
-	//
-	// RecordActivityHeartbeat(ctx, "testDetails")
-	// RecordActivityHeartbeat(ctx, "testDetails2")
-	// RecordActivityHeartbeat(ctx, "testDetails3")
-	// RecordActivityHeartbeat(ctx, "testDetails-expected")
-	// <-waitCh
-	// invoker3.Close(false)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, cancel, 2, make(chan struct{}))
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	// Multiple calls but only one call is made.
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	invoker.Close(false)
+
+	// No HB timeout configured.
+	service2 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, cancel, 0, make(chan struct{}))
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker2,
+		logger:         getLogger()})
+	service2.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails")
+	invoker2.Close(false)
+
+	// simulate batch picks before expiry.
+	waitCh := make(chan struct{})
+	service3 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, cancel, 2, make(chan struct{}))
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		serviceInvoker: invoker3,
+		logger:         getLogger()})
+	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
+
+	service3.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
+			ev := newEncodedValues(request.Details, nil)
+			var progress string
+			err := ev.Get(&progress)
+			if err != nil {
+				panic(err)
+			}
+			require.Equal(s.T(), "testDetails-expected", progress)
+			waitCh <- struct{}{}
+		}).Times(1)
+
+	RecordActivityHeartbeat(ctx, "testDetails")
+	RecordActivityHeartbeat(ctx, "testDetails2")
+	RecordActivityHeartbeat(ctx, "testDetails3")
+	RecordActivityHeartbeat(ctx, "testDetails-expected")
+	<-waitCh
+	invoker3.Close(false)
 
 	// simulate batch picks before expiry, without any progress specified.
 	waitCh2 := make(chan struct{})
