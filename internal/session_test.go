@@ -545,7 +545,7 @@ func (s *SessionTestSuite) TestInvalidRecreateToken() {
 	token := &commonpb.Payload{Items: []*commonpb.PayloadItem{
 		{
 			Metadata: map[string][]byte{
-				encodingMetadata: []byte(encodingMetadataJson),
+				metadataEncoding: []byte(metadataEncodingJson),
 			},
 			Data: []byte("some invalid token"),
 		}}}

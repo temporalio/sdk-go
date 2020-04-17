@@ -1061,7 +1061,7 @@ func TestSelectDecodeFuture(t *testing.T) {
 			history = append(history, "add-one")
 			v := &commonpb.Payload{Items: []*commonpb.PayloadItem{{
 				Metadata: map[string][]byte{
-					encodingMetadata: []byte(encodingMetadataRaw),
+					metadataEncoding: []byte(metadataEncodingRaw),
 				},
 				Data: []byte("one"),
 			}}}
@@ -1071,7 +1071,7 @@ func TestSelectDecodeFuture(t *testing.T) {
 			history = append(history, "add-two")
 			v := &commonpb.Payload{Items: []*commonpb.PayloadItem{{
 				Metadata: map[string][]byte{
-					encodingMetadata: []byte(encodingMetadataJson),
+					metadataEncoding: []byte(metadataEncodingJson),
 				},
 				Data: []byte(`"two"`), // string "two" in JSON
 			}}}
@@ -1172,7 +1172,7 @@ func TestDecodeFutureChain(t *testing.T) {
 	require.False(t, f2.IsReady())
 	cs2.Set(&commonpb.Payload{Items: []*commonpb.PayloadItem{{
 		Metadata: map[string][]byte{
-			encodingMetadata: []byte(encodingMetadataRaw),
+			metadataEncoding: []byte(metadataEncodingRaw),
 		},
 		Data: []byte("value2"),
 	}}}, nil)

@@ -152,7 +152,7 @@ func (ga greeterActivity) ActivityType() ActivityType {
 func (ga greeterActivity) Execute(context.Context, *commonpb.Payload) (*commonpb.Payload, error) {
 	return &commonpb.Payload{Items: []*commonpb.PayloadItem{{
 		Metadata: map[string][]byte{
-			encodingMetadata: []byte(encodingMetadataRaw),
+			metadataEncoding: []byte(metadataEncodingRaw),
 		},
 		Data: []byte("World"),
 	}}}, nil

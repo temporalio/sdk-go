@@ -35,13 +35,13 @@ import (
 )
 
 const (
-	encodingMetadata      = "encoding"
-	encodingMetadataRaw   = "raw"
-	encodingMetadataJson  = "json"
-	encodingMetadataGob   = "gob"
-	encodingMetadataProto = "proto"
+	metadataEncoding      = "encoding"
+	metadataEncodingRaw   = "raw"
+	metadataEncodingJson  = "json"
+	metadataEncodingGob   = "gob"
+	metadataEncodingProto = "proto"
 
-	nameMetadata = "name"
+	metadataName = "name"
 )
 
 type (
@@ -99,7 +99,7 @@ var (
 	ErrUnableToEncodeProto     = errors.New("unable to encode to protobuf")
 	ErrUnableToDecodeJSON      = errors.New("unable to decode JSON")
 	ErrUnableToDecodeProto     = errors.New("unable to decode protobuf")
-	ErrUnableToSet             = errors.New("unable to set []byte value")
+	ErrUnableToSetBytes        = errors.New("unable to set []byte value")
 	ErrInvalidValuePointerType = errors.New("invalid value pointer type")
 )
 
@@ -125,8 +125,8 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 		if bytes, isByteSlice := nvp.Value.([]byte); isByteSlice {
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
-					encodingMetadata: []byte(encodingMetadataRaw),
-					nameMetadata:     []byte(nvp.Name),
+					metadataEncoding: []byte(metadataEncodingRaw),
+					metadataName:     []byte(nvp.Name),
 				},
 				Data: bytes,
 			}
@@ -142,8 +142,8 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
-					encodingMetadata: []byte(encodingMetadataProto),
-					nameMetadata:     []byte(nvp.Name),
+					metadataEncoding: []byte(metadataEncodingProto),
+					metadataName:     []byte(nvp.Name),
 				},
 				Data: data,
 			}
@@ -154,8 +154,8 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 			}
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
-					encodingMetadata: []byte(encodingMetadataJson),
-					nameMetadata:     []byte(nvp.Name),
+					metadataEncoding: []byte(metadataEncodingJson),
+					metadataName:     []byte(nvp.Name),
 				},
 				Data: data,
 			}
@@ -182,36 +182,36 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 		}
 
 		var name string
-		if n, ok := metadata[nameMetadata]; ok {
+		if n, ok := metadata[metadataName]; ok {
 			name = string(n)
 		} else {
 			name = fmt.Sprintf("values[%d]", i)
 		}
 
 		var encoding string
-		if e, ok := metadata[encodingMetadata]; ok {
+		if e, ok := metadata[metadataEncoding]; ok {
 			encoding = string(e)
 		} else {
 			return fmt.Errorf("%s: %w", name, ErrEncodingIsNotSet)
 		}
 
 		switch encoding {
-		case encodingMetadataRaw:
+		case metadataEncodingRaw:
 			valueBytes := reflect.ValueOf(valuePtrs[i]).Elem()
 			if !valueBytes.CanSet() {
-				return fmt.Errorf("%s: %w", name, ErrUnableToSet)
+				return fmt.Errorf("%s: %w", name, ErrUnableToSetBytes)
 			}
 			valueBytes.SetBytes(payloadItem.GetData())
-		case encodingMetadataJson:
+		case metadataEncodingJson:
 			err := json.Unmarshal(payloadItem.GetData(), valuePtrs[i])
 			if err != nil {
 				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
 			}
-		case encodingMetadataProto:
+		case metadataEncodingProto:
 			valuePtrV := reflect.ValueOf(valuePtrs[i])
 			valueV := valuePtrV.Elem()
 			if valueV.Type() != reflect.TypeOf((*commonpb.Payload)(nil)) {
-				return fmt.Errorf("%w: %s is of type %s but must be *common.Payload to support %s encodig", ErrInvalidValuePointerType, name, valueV.Type(), encodingMetadataProto)
+				return fmt.Errorf("%w: %s is of type %s but must be *common.Payload to support %s encodig", ErrInvalidValuePointerType, name, valueV.Type(), metadataEncodingProto)
 			}
 
 			pl := &commonpb.Payload{}

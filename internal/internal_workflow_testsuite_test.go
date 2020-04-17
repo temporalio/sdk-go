@@ -1425,14 +1425,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
 		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[encodingMetadata]))
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
 		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
 		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
 	}
 
 	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
 		Metadata: map[string][]byte{
-			encodingMetadata: []byte("someencoding"),
+			metadataEncoding: []byte("someencoding"),
 		},
 		Data: []byte("input1")}}}
 	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
