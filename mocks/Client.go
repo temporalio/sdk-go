@@ -31,6 +31,7 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
+	commonpb "go.temporal.io/temporal-proto/common"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -505,11 +506,11 @@ func (_m *Client) StartWorkflow(ctx context.Context, options client.StartWorkflo
 }
 
 // TerminateWorkflow provides a mock function with given fields: ctx, workflowID, runID, reason, details
-func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
+func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details *commonpb.Payload) error {
 	ret := _m.Called(ctx, workflowID, runID, reason, details)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, []byte) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, *commonpb.Payload) error); ok {
 		r0 = rf(ctx, workflowID, runID, reason, details)
 	} else {
 		r0 = ret.Error(0)
