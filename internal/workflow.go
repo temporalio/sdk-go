@@ -535,7 +535,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 	Go(ctx, func(ctx Context) {
 		for {
 			f := wc.scheduleLocalActivity(ctx, params)
-			var result []byte
+			var result *commonpb.Payload
 			err := f.Get(ctx, &result)
 			if retryErr, ok := err.(*needRetryError); ok && retryErr.Backoff > 0 {
 				// Backoff for retry

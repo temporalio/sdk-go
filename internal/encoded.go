@@ -108,32 +108,12 @@ func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-// var typeOfByteSlice = reflect.TypeOf(([]byte)(nil))
-//
-// func isTypeByteSlice(value interface{}) bool {
-// 	inType := reflect.TypeOf(value)
-// 	return inType == typeOfByteSlice || inType == reflect.PtrTo(typeOfByteSlice)
-// }
-//
-// func protoMarshalerType(value interface{}) proto.Marshaler {
-// 	inType := reflect.TypeOf(value)
-// 	typeOfProtoMarshaler := reflect.TypeOf((*proto.Marshaler)(nil))
-// 	if inType == typeOfProtoMarshaler {
-// 		return value.(proto.Marshaler)
-// 	} else if reflect.PtrTo(inType) == typeOfProtoMarshaler {
-// 		valuePtr := &value
-// 		return interface{}(valuePtr).(proto.Marshaler)
-// 	}
-// 	return nil
-// }
-
 func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
 
 	payload := &commonpb.Payload{}
-
 	for i, value := range values {
 		nvp, ok := value.(NameValuePair)
 		if !ok {

@@ -1767,10 +1767,16 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
 		s.NoError(err)
-		var resultValue string
+		var resultValue *commonpb.Payload
 		err = result.Get(&resultValue)
 		s.NoError(err)
-		s.Equal("hello mock", resultValue)
+
+		data := resultValue.GetItems()[0].GetData() // This is JSON
+		var str string
+		err = json.Unmarshal(data, &str)
+		s.NoError(err)
+
+		s.Equal("hello mock", str)
 		completedCount.Inc()
 	})
 
