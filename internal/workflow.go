@@ -675,10 +675,10 @@ func GetMetricsScope(ctx Context) tally.Scope {
 	return getWorkflowEnvironment(ctx).GetMetricsScope()
 }
 
-// Now returns the current time when the decision is started or replayed.
-// The workflow needs to use this Now() to get the wall clock time instead of the Go lang library one.
+// Now returns the current time in UTC. It corresponds to the time when the decision task is started or replayed.
+// Workflow needs to use this method to get the wall clock time instead of the one from the golang library.
 func Now(ctx Context) time.Time {
-	return getWorkflowEnvironment(ctx).Now()
+	return getWorkflowEnvironment(ctx).Now().UTC()
 }
 
 // NewTimer returns immediately and the future becomes ready after the specified duration d. The workflow needs to use
