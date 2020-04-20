@@ -383,6 +383,16 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
 	env.workerOptions = options
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
+		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name:                          sessionCreationActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
+		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name:                          sessionCompletionActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
@@ -1712,14 +1722,6 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		params.UserContext = context.Background()
 	}
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
-		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-			Name:                          sessionCreationActivityName,
-			DisableAlreadyRegisteredCheck: true,
-		})
-		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-			Name:                          sessionCompletionActivityName,
-			DisableAlreadyRegisteredCheck: true,
-		})
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)

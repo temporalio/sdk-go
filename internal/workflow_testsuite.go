@@ -293,18 +293,16 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 	case reflect.String:
 		name := activity.(string)
-		e.impl.registry.RegisterActivityWithOptions(mockDummyActivity, RegisterActivityOptions{Name: name, DisableAlreadyRegisteredCheck: true})
+		_, ok := e.impl.registry.getActivity(name)
+		if !ok {
+			panic("activity \"" + name + "\" is not registered with the TestWorkflowEnvironment")
+		}
 		call = e.mock.On(name, args...)
 	default:
 		panic("activity must be function or string")
 	}
 
 	return e.wrapCall(call)
-}
-
-// Used to register mocks by string name
-func mockDummyActivity() error {
-	panic("should never be called as it is mocked")
 }
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
