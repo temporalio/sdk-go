@@ -78,7 +78,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.OnActivity("testActivityHello", mock.Anything, mock.Anything).Return(mockActivity).Once()
+	env.OnActivity(testActivityHello, mock.Anything, "world").Return(mockActivity).Once()
 	env.RegisterWorkflow(testWorkflowHello)
 	env.ExecuteWorkflow(testWorkflowHello)
 
