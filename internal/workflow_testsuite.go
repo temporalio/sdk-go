@@ -28,6 +28,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,7 +296,9 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 		name := activity.(string)
 		_, ok := e.impl.registry.getActivity(name)
 		if !ok {
-			panic("activity \"" + name + "\" is not registered with the TestWorkflowEnvironment")
+			registered := strings.Join(e.impl.registry.getRegisteredActivityTypes(), ", ")
+			panic(fmt.Sprintf("activity \""+name+"\" is not registered with the TestWorkflowEnvironment, "+
+				"registered types are: %v", registered))
 		}
 		call = e.mock.On(name, args...)
 	default:
