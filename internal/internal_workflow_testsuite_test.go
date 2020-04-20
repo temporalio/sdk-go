@@ -2819,7 +2819,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 
 	wf := func(ctx Context) error {
 		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    5 * time.Second,
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2851,7 +2850,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 
 	timeoutWf := func(ctx Context) error {
 		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    5 * time.Second,
 			RetryPolicy: &RetryPolicy{
 				InitialInterval:          time.Second,
