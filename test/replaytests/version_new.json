@@ -13,7 +13,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "executionStartToCloseTimeoutSeconds": 60,
         "taskStartToCloseTimeoutSeconds": 60,
         "originalExecutionRunId": "49ca7b7a-4eb7-434a-bc59-7c71b5eea75e",
@@ -73,7 +73,7 @@
       "taskId": 23069231,
       "markerRecordedEventAttributes": {
         "markerName": "Version",
-        "details": "InRlc3QtY2hhbmdlIgoxCg==",
+        "details": null,
         "decisionTaskCompletedEventId": 4
       }
     },
@@ -87,7 +87,7 @@
         "decisionTaskCompletedEventId": 4,
         "searchAttributes": {
           "indexedFields": {
-            "TemporalChangeVersion": "WyJ0ZXN0LWNoYW5nZS0xIl0="
+            "TemporalChangeVersion": null
           }
         }
       }
@@ -121,7 +121,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -151,7 +151,7 @@
       "version": -24,
       "taskId": 23069243,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 8,
         "startedEventId": 9,
         "identity": "69567@boweixu-C02V61JZHTDG@helloWorldGroup"

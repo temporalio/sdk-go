@@ -326,7 +326,7 @@ func mergeSearchAttributes(current, upsert *commonpb.SearchAttributes) *commonpb
 			return nil
 		}
 		current = &commonpb.SearchAttributes{
-			IndexedFields: make(map[string][]byte),
+			IndexedFields: make(map[string]*commonpb.Payload),
 		}
 	}
 

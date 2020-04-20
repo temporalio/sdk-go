@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1157,9 +1156,9 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 		return nil, nil
 	}
 
-	attr := make(map[string][]byte)
+	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := json.Marshal(v)
+		attrBytes, err := getDefaultDataConverter().ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}

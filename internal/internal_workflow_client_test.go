@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -948,7 +947,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = json.Unmarshal(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -983,7 +982,7 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = json.Unmarshal(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1035,7 +1034,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
 
-	_ = json.Unmarshal(result3.IndexedFields["t1"], &resultString)
+	_ = DefaultDataConverter.FromData(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

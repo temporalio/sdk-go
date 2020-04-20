@@ -91,7 +91,7 @@ var (
 
 	ErrMetadataIsNotSet        = errors.New("metadata is not set")
 	ErrEncodingIsNotSet        = errors.New("payload encoding metadata is not set")
-	ErrEncodingIsNotSupported  = errors.New("payload encoding metadata is not supported")
+	ErrEncodingIsNotSupported  = errors.New("payload encoding is not supported")
 	ErrUnableToEncodeJSON      = errors.New("unable to encode to JSON")
 	ErrUnableToEncodeProto     = errors.New("unable to encode to protobuf")
 	ErrUnableToDecodeJSON      = errors.New("unable to decode JSON")
@@ -223,4 +223,10 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 	}
 
 	return nil
+}
+
+func EncodeString(str string) *commonpb.Payload {
+	// Error can be safely ignored here becase string always can be converted to JSON
+	payload, _ := DefaultDataConverter.ToData(str)
+	return payload
 }

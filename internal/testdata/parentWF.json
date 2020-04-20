@@ -157,7 +157,7 @@
           "runId": ""
         },
         "signalName": "test-signal",
-        "input": "InRlc3QtZGF0YSIK",
+        "input": null,
         "control": "MA==",
         "childWorkflowOnly": true
       }
