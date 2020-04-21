@@ -618,19 +618,20 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			ID:    workflowID,
 			RunID: runID,
 		},
-		WorkflowType:                        WorkflowType{Name: task.WorkflowType.GetName()},
-		TaskListName:                        taskList.GetName(),
-		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
-		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
-		Namespace:                           wth.namespace,
-		Attempt:                             attributes.GetAttempt(),
-		lastCompletionResult:                attributes.LastCompletionResult,
-		CronSchedule:                        attributes.CronSchedule,
-		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
-		ParentWorkflowNamespace:             attributes.ParentWorkflowNamespace,
-		ParentWorkflowExecution:             parentWorkflowExecution,
-		Memo:                                attributes.Memo,
-		SearchAttributes:                    attributes.SearchAttributes,
+		WorkflowType:                    WorkflowType{Name: task.WorkflowType.GetName()},
+		TaskListName:                    taskList.GetName(),
+		WorkflowExecutionTimeoutSeconds: attributes.GetWorkflowExecutionTimeoutSeconds(),
+		WorkflowRunTimeoutSeconds:       attributes.GetWorkflowRunTimeoutSeconds(),
+		WorkflowTaskTimeoutSeconds:      attributes.GetWorkflowTaskTimeoutSeconds(),
+		Namespace:                       wth.namespace,
+		Attempt:                         attributes.GetAttempt(),
+		lastCompletionResult:            attributes.LastCompletionResult,
+		CronSchedule:                    attributes.CronSchedule,
+		ContinuedExecutionRunID:         attributes.ContinuedExecutionRunId,
+		ParentWorkflowNamespace:         attributes.ParentWorkflowNamespace,
+		ParentWorkflowExecution:         parentWorkflowExecution,
+		Memo:                            attributes.Memo,
+		SearchAttributes:                attributes.SearchAttributes,
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
@@ -1015,10 +1016,6 @@ func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter Data
 }
 
 func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
-	if p.MaximumAttempts == 0 && p.ExpirationInterval == 0 {
-		return noRetryBackoff
-	}
-
 	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
 		return noRetryBackoff // max attempt reached
 	}
@@ -1142,7 +1139,7 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollFo
 }
 
 func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
-	return time.Second * time.Duration(w.workflowInfo.TaskStartToCloseTimeoutSeconds)
+	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
 }
 
 func skipDeterministicCheckForDecision(d *decisionpb.Decision) bool {
@@ -1491,14 +1488,15 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType:                        &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
-			Input:                               contErr.params.input,
-			TaskList:                            &tasklistpb.TaskList{Name: contErr.params.taskListName},
-			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
-			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
-			Header:                              contErr.params.header,
-			Memo:                                workflowContext.workflowInfo.Memo,
-			SearchAttributes:                    workflowContext.workflowInfo.SearchAttributes,
+			WorkflowType:                    &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
+			Input:                           contErr.params.input,
+			TaskList:                        &tasklistpb.TaskList{Name: contErr.params.taskListName},
+			WorkflowExecutionTimeoutSeconds: contErr.params.workflowExecutionTimeoutSeconds,
+			WorkflowRunTimeoutSeconds:       contErr.params.workflowRunTimeoutSeconds,
+			WorkflowTaskTimeoutSeconds:      contErr.params.workflowTaskTimeoutSeconds,
+			Header:                          contErr.params.header,
+			Memo:                            workflowContext.workflowInfo.Memo,
+			SearchAttributes:                workflowContext.workflowInfo.SearchAttributes,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures

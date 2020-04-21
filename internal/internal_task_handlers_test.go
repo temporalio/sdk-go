@@ -877,21 +877,23 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentNamespace := "parentNamespace"
 	var attempt int32 = 123
 	var executionTimeout int32 = 213456
+	var runTimeout int32 = 21098
 	var taskTimeout int32 = 21
 	workflowType := "GetWorkflowInfoWorkflow"
 	lastCompletionResult, err := getDefaultDataConverter().ToData("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &eventpb.WorkflowExecutionStartedEventAttributes{
-		Input:                               lastCompletionResult,
-		TaskList:                            &tasklistpb.TaskList{Name: taskList},
-		ParentWorkflowExecution:             parentExecution,
-		CronSchedule:                        cronSchedule,
-		ContinuedExecutionRunId:             continuedRunID,
-		ParentWorkflowNamespace:             parentNamespace,
-		Attempt:                             attempt,
-		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
-		TaskStartToCloseTimeoutSeconds:      taskTimeout,
-		LastCompletionResult:                lastCompletionResult,
+		Input:                           lastCompletionResult,
+		TaskList:                        &tasklistpb.TaskList{Name: taskList},
+		ParentWorkflowExecution:         parentExecution,
+		CronSchedule:                    cronSchedule,
+		ContinuedExecutionRunId:         continuedRunID,
+		ParentWorkflowNamespace:         parentNamespace,
+		Attempt:                         attempt,
+		WorkflowExecutionTimeoutSeconds: executionTimeout,
+		WorkflowRunTimeoutSeconds:       runTimeout,
+		WorkflowTaskTimeoutSeconds:      taskTimeout,
+		LastCompletionResult:            lastCompletionResult,
 	}
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
@@ -924,8 +926,9 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
 	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)
 	t.EqualValues(attempt, result.Attempt)
-	t.EqualValues(executionTimeout, result.ExecutionStartToCloseTimeoutSeconds)
-	t.EqualValues(taskTimeout, result.TaskStartToCloseTimeoutSeconds)
+	t.EqualValues(executionTimeout, result.WorkflowExecutionTimeoutSeconds)
+	t.EqualValues(runTimeout, result.WorkflowRunTimeoutSeconds)
+	t.EqualValues(taskTimeout, result.WorkflowTaskTimeoutSeconds)
 	t.EqualValues(workflowType, result.WorkflowType.Name)
 	t.EqualValues(testNamespace, result.Namespace)
 }
@@ -1035,7 +1038,7 @@ func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*que
 	t.Equal(len(expected), len(actual))
 	for expectedID, expectedResult := range expected {
 		t.Contains(actual, expectedID)
-		t.True(expectedResult.Equal(actual[expectedID]))
+		t.Equal(expectedResult, actual[expectedID])
 	}
 }
 
@@ -1110,7 +1113,6 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 				InitialInterval:    backoffDuration,
 				BackoffCoefficient: 1.1,
 				MaximumInterval:    time.Minute,
-				ExpirationInterval: time.Minute,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, ao)
@@ -1131,8 +1133,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			TaskStartToCloseTimeoutSeconds: backoffIntervalInSeconds,
-			TaskList:                       &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}},
+			WorkflowTaskTimeoutSeconds: backoffIntervalInSeconds,
+			TaskList:                   &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}},
 		),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		decisionTaskStartedEvent,

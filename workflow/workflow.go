@@ -104,7 +104,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 //  	ScheduleToCloseTimeout: 5 * time.Second,
 //  }
 //  ctx := WithLocalActivityOptions(ctx, lao)
-// The timeout here should be relative shorter than the DecisionTaskStartToCloseTimeout of the workflow. If you need a
+// The timeout here should be relative shorter than the WorkflowTaskTimeout of the workflow. If you need a
 // longer timeout, you probably should not use local activity and instead should use regular activity. Local activity is
 // designed to be used for short living activities (usually finishes within seconds).
 //
@@ -129,8 +129,8 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 // For example: task list that this child workflow should be routed, timeouts that need to be configured.
 // Use ChildWorkflowOptions to pass down the options.
 //  cwo := ChildWorkflowOptions{
-// 	    ExecutionStartToCloseTimeout: 10 * time.Minute,
-// 	    TaskStartToCloseTimeout: time.Minute,
+// 	    WorkflowExecutionTimeout: 10 * time.Minute,
+// 	    WorkflowTaskTimeout: time.Minute,
 // 	}
 //  ctx := WithChildOptions(ctx, cwo)
 // Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.

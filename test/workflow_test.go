@@ -224,10 +224,10 @@ func (w *Workflows) IDReusePolicy(
 	failFirstChild bool) (string, error) {
 
 	ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
-		WorkflowID:                   childWFID,
-		ExecutionStartToCloseTimeout: 9 * time.Second,
-		TaskStartToCloseTimeout:      5 * time.Second,
-		WorkflowIDReusePolicy:        policy,
+		WorkflowID:               childWFID,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowIDReusePolicy:    policy,
 	})
 
 	var ans1 string
@@ -262,13 +262,12 @@ func (w *Workflows) IDReusePolicy(
 
 func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 9 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}
@@ -279,13 +278,12 @@ func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 
 func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      time.Second,
-		ExecutionStartToCloseTimeout: time.Second,
+		WorkflowTaskTimeout:      time.Second,
+		WorkflowExecutionTimeout: time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}
@@ -295,10 +293,10 @@ func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 
 func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 10 * time.Second,
-		Memo:                         map[string]interface{}{"memoKey": "memoVal"},
-		SearchAttributes:             map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+		Memo:                     map[string]interface{}{"memoKey": "memoVal"},
+		SearchAttributes:         map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err = workflow.ExecuteChildWorkflow(ctx, w.childForMemoAndSearchAttr).Get(ctx, &result)
@@ -307,8 +305,8 @@ func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, e
 
 func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 30 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 30 * time.Second,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 20*time.Second)
@@ -319,9 +317,9 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workf
 
 func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 10 * time.Second,
-		ParentClosePolicy:            client.ParentClosePolicyAbandon,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+		ParentClosePolicy:        client.ParentClosePolicyAbandon,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 5*time.Second)
@@ -439,7 +437,6 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 1.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: time.Second * 5,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
@@ -562,7 +559,6 @@ func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}

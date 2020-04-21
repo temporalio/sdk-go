@@ -194,6 +194,7 @@ type (
 		workerOptions    WorkerOptions
 		dataConverter    DataConverter
 		executionTimeout time.Duration
+		runTimeout       time.Duration
 
 		heartbeatDetails []byte
 
@@ -244,8 +245,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
-			ExecutionStartToCloseTimeoutSeconds: 60 * 24 * 365 * 10,
-			TaskStartToCloseTimeoutSeconds:      1,
+			WorkflowExecutionTimeoutSeconds: 60 * 24 * 365 * 10,
+			WorkflowTaskTimeoutSeconds:      1,
 		},
 		registry: r,
 
@@ -355,13 +356,15 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.WorkflowExecution.RunID = params.workflowID + "_RunID"
 	childEnv.workflowInfo.Namespace = params.namespace
 	childEnv.workflowInfo.TaskListName = params.taskListName
-	childEnv.workflowInfo.ExecutionStartToCloseTimeoutSeconds = params.executionStartToCloseTimeoutSeconds
-	childEnv.workflowInfo.TaskStartToCloseTimeoutSeconds = params.taskStartToCloseTimeoutSeconds
+	childEnv.workflowInfo.WorkflowExecutionTimeoutSeconds = params.workflowExecutionTimeoutSeconds
+	childEnv.workflowInfo.WorkflowRunTimeoutSeconds = params.workflowRunTimeoutSeconds
+	childEnv.workflowInfo.WorkflowTaskTimeoutSeconds = params.workflowTaskTimeoutSeconds
 	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
-	childEnv.executionTimeout = time.Duration(params.executionStartToCloseTimeoutSeconds) * time.Second
+	childEnv.executionTimeout = time.Duration(params.workflowExecutionTimeoutSeconds) * time.Second
+	childEnv.runTimeout = time.Duration(params.workflowRunTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
@@ -856,8 +859,8 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	if params.retryPolicy != nil && env.testError != nil {
 		errReason, _ := getErrorDetails(env.testError, env.GetDataConverter())
 		var expireTime time.Time
-		if params.retryPolicy.GetExpirationIntervalInSeconds() > 0 {
-			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.retryPolicy.GetExpirationIntervalInSeconds()))
+		if params.workflowOptions.workflowExecutionTimeoutSeconds > 0 {
+			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.workflowOptions.workflowExecutionTimeoutSeconds))
 		}
 		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
 		if backoff > 0 {
@@ -952,7 +955,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
-	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().ExecutionStartToCloseTimeoutSeconds)
+	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowExecutionTimeoutSeconds)
 	activityInfo := &activityInfo{activityID: activityID}
 	if err != nil {
 		callback(nil, err)
@@ -1089,19 +1092,6 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		return serviceerror.NewInvalidArgument("A valid ScheduleToCloseTimeout is not set on decision.")
 	}
 	// ensure activity's SCHEDULE_TO_START and SCHEDULE_TO_CLOSE is as long as expiration on retry policy
-	p := attributes.RetryPolicy
-	if p != nil {
-		expiration := p.GetExpirationIntervalInSeconds()
-		if expiration == 0 {
-			expiration = wfTimeout
-		}
-		if attributes.GetScheduleToStartTimeoutSeconds() < expiration {
-			attributes.ScheduleToStartTimeoutSeconds = expiration
-		}
-		if attributes.GetScheduleToCloseTimeoutSeconds() < expiration {
-			attributes.ScheduleToCloseTimeoutSeconds = expiration
-		}
-	}
 	return nil
 }
 
@@ -1141,8 +1131,8 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// nil policy is valid which means no retry
 		return nil
 	}
-	if policy.GetInitialIntervalInSeconds() <= 0 {
-		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds must be greater than 0 on retry policy.")
+	if policy.GetInitialIntervalInSeconds() < 0 {
+		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds cannot be less than 0 on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
@@ -1155,12 +1145,6 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 	}
 	if policy.GetMaximumAttempts() < 0 {
 		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
-	}
-	if policy.GetExpirationIntervalInSeconds() < 0 {
-		return serviceerror.NewInvalidArgument("ExpirationIntervalInSeconds cannot be less than 0 on retry policy.")
-	}
-	if policy.GetMaximumAttempts() == 0 && policy.GetExpirationIntervalInSeconds() == 0 {
-		return serviceerror.NewInvalidArgument("MaximumAttempts and ExpirationIntervalInSeconds are both 0. At least one of them must be specified.")
 	}
 	return nil
 }
@@ -1190,8 +1174,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	task *workflowservice.PollForActivityTaskResponse,
 ) (result interface{}) {
 	var expireTime time.Time
-	if parameters.RetryPolicy != nil && parameters.RetryPolicy.GetExpirationIntervalInSeconds() > 0 {
-		expireTime = env.Now().Add(time.Second * time.Duration(parameters.RetryPolicy.GetExpirationIntervalInSeconds()))
+	if parameters.ScheduleToCloseTimeoutSeconds > 0 {
+		expireTime = env.Now().Add(time.Second * time.Duration(parameters.ScheduleToCloseTimeoutSeconds))
 	}
 
 	for {
@@ -1242,7 +1226,6 @@ func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
 		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
-		ExpirationInterval:       time.Second * time.Duration(p.GetExpirationIntervalInSeconds()),
 		MaximumAttempts:          p.GetMaximumAttempts(),
 		NonRetriableErrorReasons: p.NonRetriableErrorReasons,
 	}
@@ -2184,11 +2167,11 @@ func (env *testWorkflowEnvironmentImpl) GetRegistry() *registry {
 
 func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWorkflowOptions) {
 	wf := env.workflowInfo
-	if options.ExecutionStartToCloseTimeout > 0 {
-		wf.ExecutionStartToCloseTimeoutSeconds = common.Int32Ceil(options.ExecutionStartToCloseTimeout.Seconds())
+	if options.WorkflowExecutionTimeout > 0 {
+		wf.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(options.WorkflowExecutionTimeout.Seconds())
 	}
-	if options.DecisionTaskStartToCloseTimeout > 0 {
-		wf.TaskStartToCloseTimeoutSeconds = common.Int32Ceil(options.DecisionTaskStartToCloseTimeout.Seconds())
+	if options.WorkflowTaskTimeout > 0 {
+		wf.WorkflowTaskTimeoutSeconds = common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())
 	}
 	if len(options.TaskList) > 0 {
 		wf.TaskListName = options.TaskList

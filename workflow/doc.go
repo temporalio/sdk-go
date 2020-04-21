@@ -226,7 +226,7 @@ for an activity it invoked.
 	cwo := workflow.ChildWorkflowOptions{
 		// Do not specify WorkflowID if you want temporal to generate a unique ID for child execution
 		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
-		ExecutionStartToCloseTimeout: time.Minute * 30,
+		WorkflowExecutionTimeout: time.Minute * 30,
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
 

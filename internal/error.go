@@ -211,8 +211,8 @@ func IsCanceledError(err error) bool {
 // provided to this function.
 //  ctx - use context to override any options for the new workflow like execution timeout, decision task timeout, task list.
 //	  if not mentioned it would use the defaults that the current workflow is using.
-//        ctx := WithExecutionStartToCloseTimeout(ctx, 30 * time.Minute)
-//        ctx := WithWorkflowTaskStartToCloseTimeout(ctx, time.Minute)
+//        ctx := WithWorkflowExecutionTimeout(ctx, 30 * time.Minute)
+//        ctx := WithWorkflowTaskTimeout(ctx, time.Minute)
 //	  ctx := WithWorkflowTaskList(ctx, "example-group")
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
@@ -227,15 +227,6 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.dataConverter, env.GetRegistry())
 	if err != nil {
 		panic(err)
-	}
-	if options.taskListName == "" {
-		panic("invalid task list provided")
-	}
-	if options.executionStartToCloseTimeoutSeconds <= 0 {
-		panic("invalid executionStartToCloseTimeoutSeconds provided")
-	}
-	if options.taskStartToCloseTimeoutSeconds <= 0 {
-		panic("invalid taskStartToCloseTimeoutSeconds provided")
 	}
 
 	params := &executeWorkflowParams{

@@ -168,22 +168,23 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	workflowOptions struct {
-		taskListName                        string
-		executionStartToCloseTimeoutSeconds int32
-		taskStartToCloseTimeoutSeconds      int32
-		namespace                           string
-		workflowID                          string
-		waitForCancellation                 bool
-		signalChannels                      map[string]Channel
-		queryHandlers                       map[string]func([]byte) ([]byte, error)
-		workflowIDReusePolicy               WorkflowIDReusePolicy
-		dataConverter                       DataConverter
-		retryPolicy                         *commonpb.RetryPolicy
-		cronSchedule                        string
-		contextPropagators                  []ContextPropagator
-		memo                                map[string]interface{}
-		searchAttributes                    map[string]interface{}
-		parentClosePolicy                   ParentClosePolicy
+		taskListName                    string
+		workflowExecutionTimeoutSeconds int32
+		workflowRunTimeoutSeconds       int32
+		workflowTaskTimeoutSeconds      int32
+		namespace                       string
+		workflowID                      string
+		waitForCancellation             bool
+		signalChannels                  map[string]Channel
+		queryHandlers                   map[string]func([]byte) ([]byte, error)
+		workflowIDReusePolicy           WorkflowIDReusePolicy
+		dataConverter                   DataConverter
+		retryPolicy                     *commonpb.RetryPolicy
+		cronSchedule                    string
+		contextPropagators              []ContextPropagator
+		memo                            map[string]interface{}
+		searchAttributes                map[string]interface{}
+		parentClosePolicy               ParentClosePolicy
 	}
 
 	executeWorkflowParams struct {
@@ -428,8 +429,8 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
-	rootCtx = WithExecutionStartToCloseTimeout(rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
-	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
+	rootCtx = WithWorkflowExecutionTimeout(rootCtx, time.Duration(wInfo.WorkflowExecutionTimeoutSeconds)*time.Second)
+	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
 	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())

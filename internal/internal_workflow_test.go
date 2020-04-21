@@ -416,16 +416,18 @@ func continueAsNewWorkflowTest(ctx Context) error {
 func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 	env.SetStartWorkflowOptions(StartWorkflowOptions{
-		ExecutionStartToCloseTimeout:    100 * time.Second,
-		DecisionTaskStartToCloseTimeout: 5 * time.Second,
+		WorkflowExecutionTimeout: 100 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowRunTimeout:       50 * time.Second,
 	})
 	env.ExecuteWorkflow(continueAsNewWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
 	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.workflowType.Name)
-	s.EqualValues(100, resultErr.params.executionStartToCloseTimeoutSeconds)
-	s.EqualValues(5, resultErr.params.taskStartToCloseTimeoutSeconds)
+	s.EqualValues(100, resultErr.params.workflowExecutionTimeoutSeconds)
+	s.EqualValues(50, resultErr.params.workflowRunTimeoutSeconds)
+	s.EqualValues(5, resultErr.params.workflowTaskTimeoutSeconds)
 	s.EqualValues("default-test-tasklist", resultErr.params.taskListName)
 }
 
@@ -965,7 +967,7 @@ func sleepWorkflow(ctx Context, input time.Duration) (int, error) {
 
 func waitGroupWorkflowTest(ctx Context, n int) (int, error) {
 	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-		ExecutionStartToCloseTimeout: time.Second * 30,
+		WorkflowExecutionTimeout: time.Second * 30,
 	})
 
 	var err error
@@ -997,7 +999,7 @@ func waitGroupWorkflowTest(ctx Context, n int) (int, error) {
 
 func waitGroupWaitForMWorkflowTest(ctx Context, n int, m int) (int, error) {
 	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-		ExecutionStartToCloseTimeout: time.Second * 30,
+		WorkflowExecutionTimeout: time.Second * 30,
 	})
 
 	var err error
@@ -1029,7 +1031,7 @@ func waitGroupWaitForMWorkflowTest(ctx Context, n int, m int) (int, error) {
 
 func waitGroupMultipleWaitsWorkflowTest(ctx Context) (int, error) {
 	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-		ExecutionStartToCloseTimeout: time.Second * 30,
+		WorkflowExecutionTimeout: time.Second * 30,
 	})
 
 	n := 10
@@ -1068,7 +1070,7 @@ func waitGroupMultipleWaitsWorkflowTest(ctx Context) (int, error) {
 
 func waitGroupMultipleConcurrentWaitsPanicsWorkflowTest(ctx Context) (int, error) {
 	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-		ExecutionStartToCloseTimeout: time.Second * 30,
+		WorkflowExecutionTimeout: time.Second * 30,
 	})
 
 	var err error
@@ -1098,7 +1100,7 @@ func waitGroupMultipleConcurrentWaitsPanicsWorkflowTest(ctx Context) (int, error
 
 func waitGroupNegativeCounterPanicsWorkflowTest(ctx Context) (int, error) {
 	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-		ExecutionStartToCloseTimeout: time.Second * 30,
+		WorkflowExecutionTimeout: time.Second * 30,
 	})
 
 	var err error

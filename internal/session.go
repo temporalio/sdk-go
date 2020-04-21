@@ -291,7 +291,6 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		InitialInterval:    time.Second,
 		BackoffCoefficient: 1.1,
 		MaximumInterval:    time.Second * 10,
-		ExpirationInterval: options.CreationTimeout,
 		NonRetriableErrorReasons: []string{
 			"temporalInternal:Panic",
 			"temporalInternal:Generic",
