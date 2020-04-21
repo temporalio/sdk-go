@@ -1379,6 +1379,7 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	opts := getLocalActivityOptions(ctx1)
 
 	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	opts.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
 	opts.RetryPolicy = options.RetryPolicy
 	return ctx1
 }

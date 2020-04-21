@@ -70,6 +70,7 @@ type (
 
 	localActivityOptions struct {
 		ScheduleToCloseTimeoutSeconds int32
+		StartToCloseTimeoutSeconds    int32
 		RetryPolicy                   *RetryPolicy
 	}
 

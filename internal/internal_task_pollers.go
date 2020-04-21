@@ -506,7 +506,11 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		}
 	}()
 
-	timeoutDuration := time.Duration(task.params.ScheduleToCloseTimeoutSeconds) * time.Second
+	timeout := task.params.ScheduleToCloseTimeoutSeconds
+	if task.params.StartToCloseTimeoutSeconds != 0 && task.params.StartToCloseTimeoutSeconds < task.params.ScheduleToCloseTimeoutSeconds {
+		timeout = task.params.StartToCloseTimeoutSeconds
+	}
+	timeoutDuration := time.Duration(timeout) * time.Second
 	deadline := time.Now().Add(timeoutDuration)
 	if task.attempt > 0 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout

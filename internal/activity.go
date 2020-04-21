@@ -116,12 +116,16 @@ type (
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
 	LocalActivityOptions struct {
-		// ScheduleToCloseTimeout - The end to end timeout for the local activity.
+		// ScheduleToCloseTimeout - The end to end timeout for the local activity including retries.
 		// This field is required.
 		ScheduleToCloseTimeout time.Duration
 
+		// StartToCloseTimeout - The timeout for a single execution of the local activity.
+		// Optional: defaults to ScheduleToClose
+		StartToCloseTimeout time.Duration
+
 		// RetryPolicy specify how to retry activity if error happens.
-		// Optional: default is no retry
+		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
 		RetryPolicy *RetryPolicy
 	}
 )
