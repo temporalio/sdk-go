@@ -332,15 +332,18 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	}
 
 	var result *commonpb.Payload
-	var err error
 
 	// Parse result
 	if resultSize > 1 {
 		retValue := values[0]
-		if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
-			result, err = encodeArg(dataConverter, retValue.Interface())
-			if err != nil {
-				return nil, err
+
+		var ok bool
+		if result, ok = retValue.Interface().(*commonpb.Payload); !ok {
+			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+				var err error
+				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

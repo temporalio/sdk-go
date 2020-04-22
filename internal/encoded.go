@@ -224,9 +224,3 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 
 	return nil
 }
-
-func EncodeString(str string) *commonpb.Payload {
-	// Error can be safely ignored here becase string always can be converted to JSON
-	payload, _ := DefaultDataConverter.ToData(str)
-	return payload
-}

@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -59,7 +58,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		HeartbeatTimeout:       20 * time.Second,
 	}
 	s.localActivityOptions = LocalActivityOptions{
-		ScheduleToCloseTimeout: time.Second * 3,
+		ScheduleToCloseTimeout: 3 * time.Second,
 	}
 	s.header = &commonpb.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
@@ -1423,11 +1422,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (*commonpb.Payload, error) {
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (commonpb.Payload, error) {
 		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
 		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
 		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
-		return &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
+
+		// return type can't be *commonpb.Payload. Only commonpb.Payload.
+		return commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
 	}
 
 	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
@@ -1442,9 +1443,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	s.NoError(err)
 	s.EqualValues([]string{"input1", "someencoding", "input2"}, actualValues)
 
-	var ret *commonpb.Payload
+	var ret commonpb.Payload
 	_ = payload.Get(&ret)
-	s.Equal(&commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
+	s.Equal(commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
 }
 
 // TODO: all proto types should be supported and this test should be removed.
@@ -1731,7 +1732,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	var startedCount, completedCount, canceledCount atomic.Int32
 
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
-		return "hello " + name, nil
+		return "this won't be called " + name, nil
 	}
 
 	cancelledLocalActivityFn := func(ctx context.Context) error {
@@ -1775,16 +1776,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
 		s.NoError(err)
-		var resultValue *commonpb.Payload
+		var resultValue string
 		err = result.Get(&resultValue)
 		s.NoError(err)
-
-		data := resultValue.GetItems()[0].GetData() // This is JSON
-		var str string
-		err = json.Unmarshal(data, &str)
-		s.NoError(err)
-
-		s.Equal("hello mock", str)
+		s.Equal("hello mock", resultValue)
 		completedCount.Inc()
 	})
 
