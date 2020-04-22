@@ -551,13 +551,13 @@ const (
 
 // NewClient creates an instance of a workflow client
 func NewClient(options ClientOptions) (Client, error) {
-	if len(options.Namespace) == 0 {
+	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
 	}
 
 	options.MetricsScope = tagScope(options.MetricsScope, tagNamespace, options.Namespace, clientImplHeaderName, clientImplHeaderValue)
 
-	if len(options.HostPort) == 0 {
+	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
 	}
 
@@ -581,11 +581,11 @@ func NewClient(options ClientOptions) (Client, error) {
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
 func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
 	// Namespace can be empty in unit tests.
-	if len(options.Namespace) == 0 {
+	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
 	}
 
-	if len(options.Identity) == 0 {
+	if options.Identity == "" {
 		options.Identity = getWorkerIdentity("")
 	}
 
@@ -616,7 +616,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	options.MetricsScope = tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
 
-	if len(options.HostPort) == 0 {
+	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
 	}
 
@@ -638,7 +638,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 }
 
 func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, clientConn *grpc.ClientConn, options ClientOptions) NamespaceClient {
-	if len(options.Identity) == 0 {
+	if options.Identity == "" {
 		options.Identity = getWorkerIdentity("")
 	}
 

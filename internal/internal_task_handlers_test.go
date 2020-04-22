@@ -1369,6 +1369,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		UserContext:       ctx,
 		UserContextCancel: cancel,
 		WorkerStopChannel: workerStopCh,
+		Tracer:            opentracing.NoopTracer{},
 	}
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollForActivityTaskResponse{

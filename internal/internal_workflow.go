@@ -36,7 +36,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/robfig/cron"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -124,8 +123,8 @@ type (
 
 	// Single case statement of the Select
 	selectCase struct {
-		channel     *channelImpl                // Channel of this case.
-		receiveFunc *func(c Channel, more bool) // function to call when channel has a message. nil for send case.
+		channel     *channelImpl                       // Channel of this case.
+		receiveFunc *func(c ReceiveChannel, more bool) // function to call when channel has a message. nil for send case.
 
 		sendFunc   *func()         // function to call when channel accepted a message. nil for receive case.
 		sendValue  *interface{}    // value to send to the channel. Used only for send case.
@@ -973,12 +972,12 @@ func (d *dispatcherImpl) StackTrace() string {
 	return result
 }
 
-func (s *selectorImpl) AddReceive(c Channel, f func(c Channel, more bool)) Selector {
+func (s *selectorImpl) AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), receiveFunc: &f})
 	return s
 }
 
-func (s *selectorImpl) AddSend(c Channel, v interface{}, f func()) Selector {
+func (s *selectorImpl) AddSend(c SendChannel, v interface{}, f func()) Selector {
 	s.cases = append(s.cases, &selectCase{channel: c.(*channelImpl), sendFunc: &f, sendValue: &v})
 	return s
 }
@@ -1152,49 +1151,6 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	return &WorkflowType{Name: fnName}, input, nil
 }
 
-func getValidatedWorkflowOptions(ctx Context) (*workflowOptions, error) {
-	p := getWorkflowEnvOptions(ctx)
-	if p == nil {
-		// We need task list as a compulsory parameter. This can be removed after registration
-		return nil, errWorkflowOptionBadRequest
-	}
-	info := GetWorkflowInfo(ctx)
-	if p.namespace == "" {
-		// default to use current workflow's namespace
-		p.namespace = info.Namespace
-	}
-	if p.taskListName == "" {
-		// default to use current workflow's task list
-		p.taskListName = info.TaskListName
-	}
-	if p.taskStartToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("missing or negative DecisionTaskStartToCloseTimeout")
-	}
-	if p.taskStartToCloseTimeoutSeconds == 0 {
-		p.taskStartToCloseTimeoutSeconds = defaultDecisionTaskTimeoutInSecs
-	}
-	if p.executionStartToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or invalid ExecutionStartToCloseTimeout")
-	}
-	if err := validateRetryPolicy(p.retryPolicy); err != nil {
-		return nil, err
-	}
-	if err := validateCronSchedule(p.cronSchedule); err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
-func validateCronSchedule(cronSchedule string) error {
-	if len(cronSchedule) == 0 {
-		return nil
-	}
-
-	_, err := cron.ParseStandard(cronSchedule)
-	return err
-}
-
 func getWorkflowEnvOptions(ctx Context) *workflowOptions {
 	options := ctx.Value(workflowEnvOptionsContextKey)
 	if options != nil {
@@ -1248,7 +1204,7 @@ func getHeadersFromContext(ctx Context) *commonpb.Header {
 }
 
 // getSignalChannel finds the associated channel for the signal.
-func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Channel {
+func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
 	}

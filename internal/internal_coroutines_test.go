@@ -53,6 +53,7 @@ func requireNoExecuteErr(t *testing.T, err error) {
 func TestDispatcher(t *testing.T) {
 	value := "foo"
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) { value = "bar" })
+	defer d.Close()
 	require.Equal(t, "foo", value)
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
@@ -70,6 +71,7 @@ func TestNonBlockingChildren(t *testing.T) {
 		}
 		history = append(history, "root")
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
@@ -93,6 +95,7 @@ func TestNonbufferedChannel(t *testing.T) {
 		history = append(history, "root-after-channel-put")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
@@ -139,6 +142,7 @@ func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 		history = append(history, "root-after-channel-put")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	c2.SendAsync("value21")
@@ -170,6 +174,7 @@ func TestBufferedChannelPut(t *testing.T) {
 		c1.Send(ctx, "value2")
 		history = append(history, "root-after-channel-put2")
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
@@ -220,6 +225,7 @@ func TestBufferedChannelGet(t *testing.T) {
 		c1.Send(ctx, "value2")
 		history = append(history, "root-after-channel-put2")
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n")+"\n\n"+d.StackTrace())
@@ -247,13 +253,13 @@ func TestNotBlockingSelect(t *testing.T) {
 		c2 := NewBufferedChannel(ctx, 1)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
@@ -266,6 +272,7 @@ func TestNotBlockingSelect(t *testing.T) {
 		s.Select(ctx)
 		s.Select(ctx)
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
@@ -296,13 +303,13 @@ func TestBlockingSelect(t *testing.T) {
 
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c2-%v", v))
@@ -313,6 +320,7 @@ func TestBlockingSelect(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
@@ -337,7 +345,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 		c1 := NewChannel(ctx)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v int
 				c.Receive(ctx, &v)
@@ -354,6 +362,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 		}
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
@@ -381,7 +390,7 @@ func TestSelectOnClosedChannel(t *testing.T) {
 
 		selector := NewNamedSelector(ctx, "waiting for channel")
 
-		selector.AddReceive(c, func(f Channel, more bool) {
+		selector.AddReceive(c, func(f ReceiveChannel, more bool) {
 			var n int
 
 			if !more {
@@ -402,6 +411,7 @@ func TestSelectOnClosedChannel(t *testing.T) {
 		selector.Select(ctx)
 		selector.Select(ctx)
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
@@ -421,13 +431,13 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 		c2 := NewBufferedChannel(ctx, 100)
 		s := NewSelector(ctx)
 		s.
-			AddReceive(c1, func(c Channel, more bool) {
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
-			AddReceive(c2, func(c Channel, more bool) {
+			AddReceive(c2, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
 				var v string
 				c.Receive(ctx, &v)
@@ -444,6 +454,7 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
@@ -484,6 +495,7 @@ func TestSendSelect(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
@@ -526,6 +538,7 @@ func TestSendSelectWithAsyncReceive(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), strings.Join(history, "\n"))
 
@@ -571,6 +584,7 @@ func TestChannelClose(t *testing.T) {
 		history = append(history, "done")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone(), d.StackTrace())
@@ -600,6 +614,7 @@ func TestSendClosedChannel(t *testing.T) {
 		})
 		c.Send(ctx, "baz")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
@@ -614,6 +629,7 @@ func TestBlockedSendClosedChannel(t *testing.T) {
 		c.Close()
 		c.Send(ctx, "baz")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
@@ -628,6 +644,7 @@ func TestAsyncSendClosedChannel(t *testing.T) {
 		c.Close()
 		_ = c.SendAsync("baz")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 }
@@ -684,6 +701,7 @@ func TestPanic(t *testing.T) {
 		history = append(history, "root")
 		c.Receive(ctx, nil) // blocked forever
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	err := d.ExecuteUntilAllBlocked()
 	require.Error(t, err)
@@ -700,6 +718,7 @@ func TestAwait(t *testing.T) {
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
 		_ = Await(ctx, func() bool { return flag })
 	})
+	defer d.Close()
 	err := d.ExecuteUntilAllBlocked()
 	require.NoError(t, err)
 	require.False(t, d.IsDone())
@@ -719,6 +738,7 @@ func TestAwaitCancellation(t *testing.T) {
 	d, _ := newDispatcher(ctx, func(ctx Context) {
 		awaitError = Await(ctx, func() bool { return false })
 	})
+	defer d.Close()
 	err := d.ExecuteUntilAllBlocked()
 	require.NoError(t, err)
 	require.False(t, d.IsDone())
@@ -738,6 +758,7 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return flag })
 	})
+	defer d.Close()
 	err := d.ExecuteUntilAllBlocked()
 	require.NoError(t, err)
 	require.False(t, d.IsDone())
@@ -761,6 +782,7 @@ func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	d, _ := newDispatcher(ctx, func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return false })
 	})
+	defer d.Close()
 	err := d.ExecuteUntilAllBlocked()
 	require.NoError(t, err)
 	require.False(t, d.IsDone())
@@ -798,6 +820,7 @@ func TestFutureSetValue(t *testing.T) {
 		history = append(history, "root-end")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
@@ -842,6 +865,7 @@ func TestFutureFail(t *testing.T) {
 		history = append(history, "root-end")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
@@ -899,6 +923,7 @@ func TestFutureSet(t *testing.T) {
 		})
 		history = append(history, "root-end")
 	})
+	defer d.Close()
 
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
@@ -972,6 +997,7 @@ func TestFutureChain(t *testing.T) {
 		history = append(history, "root-end")
 
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
@@ -1037,6 +1063,7 @@ func TestSelectFuture(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
@@ -1098,6 +1125,7 @@ func TestSelectDecodeFuture(t *testing.T) {
 		s.Select(ctx)
 		history = append(history, "done")
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
@@ -1156,6 +1184,7 @@ func TestDecodeFutureChain(t *testing.T) {
 		})
 		history = append(history, "root-end")
 	})
+	defer d.Close()
 	require.EqualValues(t, 0, len(history))
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	// set f1
@@ -1229,6 +1258,7 @@ func TestSelectFuture_WithBatchSets(t *testing.T) {
 		s.Select(ctx)
 		s.Select(ctx)
 	})
+	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 	require.True(t, d.IsDone())
 
@@ -1244,17 +1274,15 @@ func TestChainedFuture(t *testing.T) {
 	activityFn := func(arg int) (int, error) {
 		return arg, nil
 	}
-	workflowFn := func(ctx Context) (int, error) {
+	workflowFn := func(ctx Context) (out int, err error) {
 		ctx = WithActivityOptions(ctx, ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    time.Minute,
+			ScheduleToCloseTimeout: time.Minute,
 		})
 		f := ExecuteActivity(ctx, activityFn, 5)
-		var out int
 		fut, set := NewFuture(ctx)
 		set.Chain(f)
-		require.NoError(t, fut.Get(ctx, &out))
-		return out, nil
+		err = fut.Get(ctx, &out)
+		return
 	}
 
 	s := WorkflowTestSuite{}

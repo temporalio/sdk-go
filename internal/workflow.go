@@ -40,18 +40,26 @@ import (
 )
 
 var (
-	errNamespaceNotSet               = errors.New("namespace is not set")
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
-	errActivityParamsBadRequest      = errors.New("missing activity parameters through context, check ActivityOptions")
-	errWorkflowOptionBadRequest      = errors.New("missing workflow options through context, check WorkflowOptions")
 	errSearchAttributesNotSet        = errors.New("search attributes is empty")
 )
 
 type (
-	// Channel must be used instead of native go channel by workflow code.
-	// Use workflow.NewChannel(ctx) method to create Channel instance.
-	Channel interface {
+	// SendChannel is a write only view of the Channel
+	SendChannel interface {
+		// Send blocks until the data is sent.
+		Send(ctx Context, v interface{})
+
+		// SendAsync try to send without blocking. It returns true if the data was sent, otherwise it returns false.
+		SendAsync(v interface{}) (ok bool)
+
+		// Close close the Channel, and prohibit subsequent sends.
+		Close()
+	}
+
+	// ReceiveChannel is a read only view of the Channel
+	ReceiveChannel interface {
 		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
 		// Returns false when Channel is closed.
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
@@ -66,22 +74,20 @@ type (
 		// ReceiveAsyncWithMoreFlag is same as ReceiveAsync with extra return value more to indicate if there could be
 		// more value from the Channel. The more is false when Channel is closed.
 		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
+	}
 
-		// Send blocks until the data is sent.
-		Send(ctx Context, v interface{})
-
-		// SendAsync try to send without blocking. It returns true if the data was sent, otherwise it returns false.
-		SendAsync(v interface{}) (ok bool)
-
-		// Close close the Channel, and prohibit subsequent sends.
-		Close()
+	// Channel must be used instead of native go channel by workflow code.
+	// Use workflow.NewChannel(ctx) method to create Channel instance.
+	Channel interface {
+		SendChannel
+		ReceiveChannel
 	}
 
 	// Selector must be used instead of native go select by workflow code.
-	// Use workflow.NewSelector(ctx) method to create a Selector instance.
+	// Create through workflow.NewSelector(ctx).
 	Selector interface {
-		AddReceive(c Channel, f func(c Channel, more bool)) Selector
-		AddSend(c Channel, v interface{}, f func()) Selector
+		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
+		AddSend(c SendChannel, v interface{}, f func()) Selector
 		AddFuture(future Future, f func(f Future)) Selector
 		AddDefault(f func())
 		Select(ctx Context)
@@ -402,11 +408,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	}
 	// Validate context options.
 	options := getActivityOptions(ctx)
-	options, err = getValidatedActivityOptions(ctx)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
-	}
 
 	// Validate session state.
 	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
@@ -637,12 +638,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		mainSettable.Set(nil, err)
 		return result
 	}
-	options, err := getValidatedWorkflowOptions(ctx)
-	if err != nil {
-		executionSettable.Set(nil, err)
-		mainSettable.Set(nil, err)
-		return result
-	}
+
+	options := getWorkflowEnvOptions(ctx)
 	options.dataConverter = dc
 	options.contextPropagators = workflowOptionsFromCtx.contextPropagators
 	options.memo = workflowOptionsFromCtx.memo
@@ -847,11 +844,6 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if options.namespace == "" {
-		settable.Set(nil, errNamespaceNotSet)
-		return future
-	}
-
 	if workflowID == "" {
 		settable.Set(nil, errWorkflowIDNotSet)
 		return future
@@ -894,11 +886,6 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
-
-	if options.namespace == "" {
-		settable.Set(nil, errNamespaceNotSet)
-		return future
-	}
 
 	if workflowID == "" {
 		settable.Set(nil, errWorkflowIDNotSet)
@@ -972,8 +959,12 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
-	wfOptions.namespace = cwo.Namespace
-	wfOptions.taskListName = cwo.TaskList
+	if len(cwo.Namespace) > 0 {
+		wfOptions.namespace = cwo.Namespace
+	}
+	if len(cwo.TaskList) > 0 {
+		wfOptions.taskListName = cwo.TaskList
+	}
 	wfOptions.workflowID = cwo.WorkflowID
 	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds())
 	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds())
@@ -997,6 +988,9 @@ func WithWorkflowNamespace(ctx Context, name string) Context {
 
 // WithWorkflowTaskList adds a task list to the context.
 func WithWorkflowTaskList(ctx Context, name string) Context {
+	if name == "" {
+		panic("empty task list name")
+	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).taskListName = name
 	return ctx1
@@ -1045,12 +1039,12 @@ func withContextPropagators(ctx Context, contextPropagators []ContextPropagator)
 }
 
 // GetSignalChannel returns channel corresponding to the signal name.
-func GetSignalChannel(ctx Context, signalName string) Channel {
+func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	i := getWorkflowInterceptor(ctx)
 	return i.GetSignalChannel(ctx, signalName)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) Channel {
+func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
@@ -1346,7 +1340,9 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
 
-	eap.TaskListName = options.TaskList
+	if len(options.TaskList) > 0 {
+		eap.TaskListName = options.TaskList
+	}
 	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
 	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
 	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
