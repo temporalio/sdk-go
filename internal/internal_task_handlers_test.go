@@ -1035,7 +1035,7 @@ func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*que
 	t.Equal(len(expected), len(actual))
 	for expectedID, expectedResult := range expected {
 		t.Contains(actual, expectedID)
-		t.True(expectedResult.Equal(actual[expectedID]))
+		t.Equal(expectedResult, actual[expectedID])
 	}
 }
 
