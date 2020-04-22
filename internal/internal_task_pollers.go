@@ -25,9 +25,10 @@ package internal
 import (
 	"context"
 	"fmt"
-	"go.uber.org/cadence/internal/common/serializer"
 	"sync"
 	"time"
+
+	"go.uber.org/cadence/internal/common/serializer"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -41,7 +42,7 @@ import (
 )
 
 const (
-	pollTaskServiceTimeOut = 3 * time.Minute // Server long poll is 1 * Minutes + delta
+	pollTaskServiceTimeOut = 150 * time.Second // Server long poll is 2 * Minutes + delta
 
 	stickyDecisionScheduleToStartTimeoutSeconds = 5
 

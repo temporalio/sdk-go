@@ -60,7 +60,7 @@ const (
 	//minRPCTimeout is minimum rpc call timeout allowed
 	minRPCTimeout = 1 * time.Second
 	//maxRPCTimeout is maximum rpc call timeout allowed
-	maxRPCTimeout = 20 * time.Second
+	maxRPCTimeout = 5 * time.Second
 )
 
 var (
