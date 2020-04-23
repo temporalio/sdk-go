@@ -36,7 +36,7 @@ import (
 const (
 	metadataEncoding     = "encoding"
 	metadataEncodingRaw  = "raw"
-	metadataEncodingJson = "json"
+	metadataEncodingJSON = "json"
 
 	metadataName = "name"
 )
@@ -77,6 +77,7 @@ type (
 	// defaultDataConverter uses JSON.
 	defaultDataConverter struct{}
 
+	// NameValuePair represent named value.
 	NameValuePair struct {
 		Name  string
 		Value interface{}
@@ -87,12 +88,18 @@ var (
 	// DefaultDataConverter is default data converter used by Temporal worker
 	DefaultDataConverter = &defaultDataConverter{}
 
-	ErrMetadataIsNotSet       = errors.New("metadata is not set")
-	ErrEncodingIsNotSet       = errors.New("payload encoding metadata is not set")
+	// ErrMetadataIsNotSet is returned when metadata is not set.
+	ErrMetadataIsNotSet = errors.New("metadata is not set")
+	// ErrEncodingIsNotSet is returned when payload encoding metadata is not set.
+	ErrEncodingIsNotSet = errors.New("payload encoding metadata is not set")
+	// ErrEncodingIsNotSupported is returned when payload encoding is not supported.
 	ErrEncodingIsNotSupported = errors.New("payload encoding is not supported")
-	ErrUnableToEncodeJSON     = errors.New("unable to encode to JSON")
-	ErrUnableToDecodeJSON     = errors.New("unable to decode JSON")
-	ErrUnableToSetBytes       = errors.New("unable to set []byte value")
+	// ErrUnableToEncodeJSON is returned when "unable to encode to JSON.
+	ErrUnableToEncodeJSON = errors.New("unable to encode to JSON")
+	// ErrUnableToDecodeJSON is returned when unable to decode JSON.
+	ErrUnableToDecodeJSON = errors.New("unable to decode JSON")
+	// ErrUnableToSetBytes is returned when unable to set []byte value.
+	ErrUnableToSetBytes = errors.New("unable to set []byte value")
 )
 
 // getDefaultDataConverter return default data converter used by Temporal worker
@@ -129,7 +136,7 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 			}
 			payloadItem = &commonpb.PayloadItem{
 				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingJson),
+					metadataEncoding: []byte(metadataEncodingJSON),
 					metadataName:     []byte(nvp.Name),
 				},
 				Data: data,
@@ -177,7 +184,7 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 				return fmt.Errorf("%s: %w", name, ErrUnableToSetBytes)
 			}
 			valueBytes.SetBytes(payloadItem.GetData())
-		case metadataEncodingJson:
+		case metadataEncodingJSON:
 			err := json.Unmarshal(payloadItem.GetData(), valuePtrs[i])
 			if err != nil {
 				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)

@@ -863,7 +863,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.True(ok)
 	t.EqualValues(eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure, r.Cause)
 	var details string
-	DefaultDataConverter.FromData(r.GetDetails(), &details)
+	_ = DefaultDataConverter.FromData(r.GetDetails(), &details)
 	t.EqualValues("panicError", details)
 }
 
