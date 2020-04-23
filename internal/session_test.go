@@ -33,7 +33,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 type SessionTestSuite struct {
@@ -542,14 +541,7 @@ func (s *SessionTestSuite) TestSessionRecreateToken() {
 }
 
 func (s *SessionTestSuite) TestInvalidRecreateToken() {
-	token := &commonpb.Payload{Items: []*commonpb.PayloadItem{
-		{
-			Metadata: map[string][]byte{
-				metadataEncoding: []byte(metadataEncodingJson),
-			},
-			Data: []byte("some invalid token"),
-		}}}
-
+	token := []byte("some invalid token")
 	sessionCtx, err := RecreateSession(Background(), token, s.sessionOptions)
 	s.Error(err)
 	s.Nil(sessionCtx)

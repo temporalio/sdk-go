@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -196,7 +197,7 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // The main usage of RecreateSession is for long sessions that are splited into multiple runs. At the end of
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
-func RecreateSession(ctx Context, recreateToken *commonpb.Payload, sessionOptions *SessionOptions) (Context, error) {
+func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
 	recreateParams, err := deserializeRecreateToken(recreateToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserilalize recreate token: %v", err)
@@ -256,7 +257,7 @@ func GetSessionInfo(ctx Context) *SessionInfo {
 
 // GetRecreateToken returns the token needed to recreate a session. The returned value should be passed to
 // RecreateSession() API.
-func (s *SessionInfo) GetRecreateToken() *commonpb.Payload {
+func (s *SessionInfo) GetRecreateToken() []byte {
 	params := recreateSessionParams{
 		Tasklist: s.tasklist,
 	}
@@ -443,19 +444,17 @@ func isSessionCreationActivity(activity interface{}) bool {
 	return ok && activityName == sessionCreationActivityName
 }
 
-func mustSerializeRecreateToken(params *recreateSessionParams) *commonpb.Payload {
-	dc := getDefaultDataConverter()
-	token, err := dc.ToData(params)
+func mustSerializeRecreateToken(params *recreateSessionParams) []byte {
+	token, err := json.Marshal(params)
 	if err != nil {
 		panic(err)
 	}
 	return token
 }
 
-func deserializeRecreateToken(token *commonpb.Payload) (*recreateSessionParams, error) {
-	dc := getDefaultDataConverter()
+func deserializeRecreateToken(token []byte) (*recreateSessionParams, error) {
 	var recreateParams recreateSessionParams
-	err := dc.FromData(token, &recreateParams)
+	err := json.Unmarshal(token, &recreateParams)
 	return &recreateParams, err
 }
 
