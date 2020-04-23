@@ -1427,7 +1427,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
 		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
 
-		// return type can't be *commonpb.Payload. Only commonpb.Payload.
+		// If return type is *commonpb.Payload it will be automatically unwrpped (this is side effect of internal impementation).
+		// commonpb.Payload type is returned as is.
 		return commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
 	}
 
@@ -1448,14 +1449,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	s.Equal(commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
 }
 
-// TODO: all proto types should be supported and this test should be removed.
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
-	s.T().Skip()
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	var actualValues []string
 
 	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
 		actualValues = append(actualValues, wf1.Name)
-		actualValues = append(actualValues, wf1.Name)
+		actualValues = append(actualValues, wf2.Name)
 		return &commonpb.WorkflowType{Name: "result"}, nil
 	}
 
@@ -1464,12 +1463,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoUnsupported() {
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
-	s.Error(err)
-	s.IsType(&GenericError{}, err)
-	// errors.Is doesn't work here because err is *GenericError not error.
-	s.Contains(err.Error(), "invalid value pointer type: values[1] is of type *common.WorkflowType but must be *common.Payload to support proto encodig")
-	s.Len(actualValues, 0)
-	s.Nil(payload)
+
+	s.NoError(err)
+	s.EqualValues([]string{"input1", "input2"}, actualValues)
+
+	var ret *commonpb.WorkflowType
+	_ = payload.Get(&ret)
+	s.Equal(&commonpb.WorkflowType{Name: "result"}, ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {

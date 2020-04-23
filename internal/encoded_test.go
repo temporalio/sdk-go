@@ -36,6 +36,10 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 )
 
+const (
+	metadataEncodingGob = "gob"
+)
+
 var (
 	ErrUnableToEncodeGob = errors.New("unable to encode to gob")
 	ErrUnableToDecodeGob = errors.New("unable to encode from gob")

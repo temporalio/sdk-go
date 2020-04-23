@@ -37,8 +37,6 @@ const (
 	metadataEncoding     = "encoding"
 	metadataEncodingRaw  = "raw"
 	metadataEncodingJson = "json"
-	metadataEncodingGob  = "gob"
-	// metadataEncodingProto = "proto"
 
 	metadataName = "name"
 )
@@ -89,15 +87,12 @@ var (
 	// DefaultDataConverter is default data converter used by Temporal worker
 	DefaultDataConverter = &defaultDataConverter{}
 
-	ErrMetadataIsNotSet        = errors.New("metadata is not set")
-	ErrEncodingIsNotSet        = errors.New("payload encoding metadata is not set")
-	ErrEncodingIsNotSupported  = errors.New("payload encoding is not supported")
-	ErrUnableToEncodeJSON      = errors.New("unable to encode to JSON")
-	ErrUnableToEncodeProto     = errors.New("unable to encode to protobuf")
-	ErrUnableToDecodeJSON      = errors.New("unable to decode JSON")
-	ErrUnableToDecodeProto     = errors.New("unable to decode protobuf")
-	ErrUnableToSetBytes        = errors.New("unable to set []byte value")
-	ErrInvalidValuePointerType = errors.New("invalid value pointer type")
+	ErrMetadataIsNotSet       = errors.New("metadata is not set")
+	ErrEncodingIsNotSet       = errors.New("payload encoding metadata is not set")
+	ErrEncodingIsNotSupported = errors.New("payload encoding is not supported")
+	ErrUnableToEncodeJSON     = errors.New("unable to encode to JSON")
+	ErrUnableToDecodeJSON     = errors.New("unable to decode JSON")
+	ErrUnableToSetBytes       = errors.New("unable to set []byte value")
 )
 
 // getDefaultDataConverter return default data converter used by Temporal worker
@@ -127,23 +122,6 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 				},
 				Data: bytes,
 			}
-			// } else if protoValue, isProto := nvp.Value.(proto.Marshaler); isProto {
-			// 	var data []byte
-			// 	if !isInterfaceNil(protoValue) {
-			// 		var err error
-			// 		data, err = protoValue.Marshal()
-			// 		if err != nil {
-			// 			return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeProto, err)
-			// 		}
-			// 	}
-			//
-			// 	payloadItem = &commonpb.PayloadItem{
-			// 		Metadata: map[string][]byte{
-			// 			metadataEncoding: []byte(metadataEncodingProto),
-			// 			metadataName:     []byte(nvp.Name),
-			// 		},
-			// 		Data: data,
-			// 	}
 		} else {
 			data, err := json.Marshal(nvp.Value)
 			if err != nil {
@@ -204,19 +182,6 @@ func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ..
 			if err != nil {
 				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
 			}
-		// case metadataEncodingProto:
-		// 	valuePtrV := reflect.ValueOf(valuePtrs[i])
-		// 	valueV := valuePtrV.Elem()
-		// 	if valueV.Type() != reflect.TypeOf((*commonpb.Payload)(nil)) {
-		// 		return fmt.Errorf("%w: %s is of type %s but must be *common.Payload to support %s encodig", ErrInvalidValuePointerType, name, valueV.Type(), metadataEncodingProto)
-		// 	}
-		//
-		// 	pl := &commonpb.Payload{}
-		// 	err := pl.Unmarshal(payloadItem.GetData())
-		// 	if err != nil {
-		// 		return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeProto, err)
-		// 	}
-		// 	valueV.Set(reflect.ValueOf(pl))
 		default:
 			return fmt.Errorf("%s, encoding %s: %w", name, encoding, ErrEncodingIsNotSupported)
 		}
