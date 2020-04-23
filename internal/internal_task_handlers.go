@@ -1488,15 +1488,14 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType:                    &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
-			Input:                           contErr.params.input,
-			TaskList:                        &tasklistpb.TaskList{Name: contErr.params.taskListName},
-			WorkflowExecutionTimeoutSeconds: contErr.params.workflowExecutionTimeoutSeconds,
-			WorkflowRunTimeoutSeconds:       contErr.params.workflowRunTimeoutSeconds,
-			WorkflowTaskTimeoutSeconds:      contErr.params.workflowTaskTimeoutSeconds,
-			Header:                          contErr.params.header,
-			Memo:                            workflowContext.workflowInfo.Memo,
-			SearchAttributes:                workflowContext.workflowInfo.SearchAttributes,
+			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
+			Input:                      contErr.params.input,
+			TaskList:                   &tasklistpb.TaskList{Name: contErr.params.taskListName},
+			WorkflowRunTimeoutSeconds:  contErr.params.workflowRunTimeoutSeconds,
+			WorkflowTaskTimeoutSeconds: contErr.params.workflowTaskTimeoutSeconds,
+			Header:                     contErr.params.header,
+			Memo:                       workflowContext.workflowInfo.Memo,
+			SearchAttributes:           workflowContext.workflowInfo.SearchAttributes,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
