@@ -429,7 +429,8 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
-	rootCtx = WithWorkflowExecutionTimeout(rootCtx, time.Duration(wInfo.WorkflowExecutionTimeoutSeconds)*time.Second)
+	getWorkflowEnvOptions(rootCtx).workflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
+	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())

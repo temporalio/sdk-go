@@ -507,7 +507,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	}()
 
 	timeout := task.params.ScheduleToCloseTimeoutSeconds
-	if task.params.StartToCloseTimeoutSeconds != 0 && task.params.StartToCloseTimeoutSeconds < task.params.ScheduleToCloseTimeoutSeconds {
+	if task.params.StartToCloseTimeoutSeconds != 0 && task.params.StartToCloseTimeoutSeconds < timeout {
 		timeout = task.params.StartToCloseTimeoutSeconds
 	}
 	timeoutDuration := time.Duration(timeout) * time.Second

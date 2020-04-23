@@ -64,8 +64,9 @@ const (
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
 
 	// These are copied from service implementation
-	reservedTaskListPrefix = "/__temporal_sys/"
-	maxIDLengthLimit       = 1000
+	reservedTaskListPrefix    = "/__temporal_sys/"
+	maxIDLengthLimit          = 1000
+	maxWorkflowTimeoutSeconds = 60 * 24 * 365 * 10
 )
 
 type (
@@ -187,14 +188,13 @@ type (
 		queryHandler          func(string, []byte) ([]byte, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
-		isTestCompleted  bool
-		testResult       Value
-		testError        error
-		doneChannel      chan struct{}
-		workerOptions    WorkerOptions
-		dataConverter    DataConverter
-		executionTimeout time.Duration
-		runTimeout       time.Duration
+		isTestCompleted bool
+		testResult      Value
+		testError       error
+		doneChannel     chan struct{}
+		workerOptions   WorkerOptions
+		dataConverter   DataConverter
+		runTimeout      time.Duration
 
 		heartbeatDetails []byte
 
@@ -221,18 +221,17 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			testSuite:                  s,
 			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
 
-			logger:           s.logger,
-			metricsScope:     metrics.NewTaggedScope(s.scope),
-			tracer:           opentracing.NoopTracer{},
-			mockClock:        clock.NewMock(),
-			wallClock:        clock.New(),
-			timers:           make(map[string]*testTimerHandle),
-			activities:       make(map[string]*testActivityHandle),
-			localActivities:  make(map[string]*localActivityTask),
-			runningWorkflows: make(map[string]*testWorkflowHandle),
-			callbackChannel:  make(chan testCallbackHandle, 1000),
-			testTimeout:      time.Second * 3,
-
+			logger:            s.logger,
+			metricsScope:      metrics.NewTaggedScope(s.scope),
+			tracer:            opentracing.NoopTracer{},
+			mockClock:         clock.NewMock(),
+			wallClock:         clock.New(),
+			timers:            make(map[string]*testTimerHandle),
+			activities:        make(map[string]*testActivityHandle),
+			localActivities:   make(map[string]*localActivityTask),
+			runningWorkflows:  make(map[string]*testWorkflowHandle),
+			callbackChannel:   make(chan testCallbackHandle, 1000),
+			testTimeout:       time.Second * 3,
 			expectedMockCalls: make(map[string]struct{}),
 		},
 
@@ -245,7 +244,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
-			WorkflowExecutionTimeoutSeconds: 60 * 24 * 365 * 10,
+			WorkflowExecutionTimeoutSeconds: maxWorkflowTimeoutSeconds,
 			WorkflowTaskTimeoutSeconds:      1,
 		},
 		registry: r,
@@ -256,6 +255,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     getDefaultDataConverter(),
+		runTimeout:        maxWorkflowTimeoutSeconds * time.Second,
 	}
 
 	// move forward the mock clock to start time.
@@ -363,7 +363,6 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
-	childEnv.executionTimeout = time.Duration(params.workflowExecutionTimeoutSeconds) * time.Second
 	childEnv.runTimeout = time.Duration(params.workflowRunTimeoutSeconds) * time.Second
 	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
 		// duplicate workflow ID
@@ -434,16 +433,26 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.Duration, workflowType string, input []byte) {
 	env.locker.Lock()
-	if env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified {
+	wInfo := env.workflowInfo
+	if wInfo.WorkflowType.Name != workflowTypeNotSpecified {
 		// Current TestWorkflowEnvironment only support to run one workflow.
 		// Created task to support testing multiple workflows with one env instance
 		// https://github.com/temporalio/temporal-go-client/issues/50
-		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", env.workflowInfo.WorkflowType.Name, workflowType))
+		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", wInfo.WorkflowType.Name, workflowType))
 	}
-	env.workflowInfo.WorkflowType.Name = workflowType
+	wInfo.WorkflowType.Name = workflowType
+	if wInfo.WorkflowRunTimeoutSeconds == 0 {
+		wInfo.WorkflowRunTimeoutSeconds = common.Int32Ceil(env.runTimeout.Seconds())
+	}
+	if wInfo.WorkflowExecutionTimeoutSeconds == 0 {
+		wInfo.WorkflowExecutionTimeoutSeconds = maxWorkflowTimeoutSeconds
+	}
+	if wInfo.WorkflowTaskTimeoutSeconds == 0 {
+		wInfo.WorkflowTaskTimeoutSeconds = 1
+	}
 	env.locker.Unlock()
 
-	workflowDefinition, err := env.getWorkflowDefinition(env.workflowInfo.WorkflowType)
+	workflowDefinition, err := env.getWorkflowDefinition(wInfo.WorkflowType)
 	if err != nil {
 		panic(err)
 	}
@@ -467,8 +476,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		}
 	}, false)
 
-	if env.executionTimeout > 0 {
-		timeoutDuration := env.executionTimeout + delayStart
+	if env.runTimeout > 0 {
+		timeoutDuration := env.runTimeout + delayStart
 		env.registerDelayedCallback(func() {
 			if !env.isTestCompleted {
 				env.Complete(nil, ErrDeadlineExceeded)
@@ -955,7 +964,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
-	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowExecutionTimeoutSeconds)
+	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
 	activityInfo := &activityInfo{activityID: activityID}
 	if err != nil {
 		callback(nil, err)
@@ -1008,7 +1017,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 // Copy of the server function func (v *decisionAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *decisionpb.ScheduleActivityTaskDecisionAttributes,
-	wfTimeout int32,
+	runTimeout int32,
 ) error {
 
 	//if err := v.validateCrossNamespaceCall(
@@ -1057,41 +1066,51 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		return serviceerror.NewInvalidArgument("A valid timeout may not be negative.")
 	}
 
-	// ensure activity timeout never larger than workflow timeout
-	if attributes.GetScheduleToCloseTimeoutSeconds() > wfTimeout {
-		attributes.ScheduleToCloseTimeoutSeconds = wfTimeout
-	}
-	if attributes.GetScheduleToStartTimeoutSeconds() > wfTimeout {
-		attributes.ScheduleToStartTimeoutSeconds = wfTimeout
-	}
-	if attributes.GetStartToCloseTimeoutSeconds() > wfTimeout {
-		attributes.StartToCloseTimeoutSeconds = wfTimeout
-	}
-	if attributes.GetHeartbeatTimeoutSeconds() > wfTimeout {
-		attributes.HeartbeatTimeoutSeconds = wfTimeout
-	}
-
 	validScheduleToClose := attributes.GetScheduleToCloseTimeoutSeconds() > 0
 	validScheduleToStart := attributes.GetScheduleToStartTimeoutSeconds() > 0
 	validStartToClose := attributes.GetStartToCloseTimeoutSeconds() > 0
 
 	if validScheduleToClose {
-		if !validScheduleToStart {
+		if validScheduleToStart {
+			attributes.ScheduleToStartTimeoutSeconds = common.MinInt32(attributes.GetScheduleToStartTimeoutSeconds(),
+				attributes.GetScheduleToCloseTimeoutSeconds())
+		} else {
 			attributes.ScheduleToStartTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
 		}
-		if !validStartToClose {
+		if validStartToClose {
+			attributes.StartToCloseTimeoutSeconds = common.MinInt32(attributes.GetStartToCloseTimeoutSeconds(),
+				attributes.GetScheduleToCloseTimeoutSeconds())
+		} else {
 			attributes.StartToCloseTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
 		}
-	} else if validScheduleToStart && validStartToClose {
-		attributes.ScheduleToCloseTimeoutSeconds = attributes.GetScheduleToStartTimeoutSeconds() + attributes.GetStartToCloseTimeoutSeconds()
-		if attributes.GetScheduleToCloseTimeoutSeconds() > wfTimeout {
-			attributes.ScheduleToCloseTimeoutSeconds = wfTimeout
+	} else if validStartToClose {
+		// We are in !validScheduleToClose due to the first if above
+		attributes.ScheduleToCloseTimeoutSeconds = runTimeout
+		if !validScheduleToStart {
+			attributes.ScheduleToStartTimeoutSeconds = runTimeout
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
-		return serviceerror.NewInvalidArgument("A valid ScheduleToCloseTimeout is not set on decision.")
+		return serviceerror.NewInvalidArgument("A valid StartToClose or ScheduleToCloseTimeout is not set on decision.")
 	}
-	// ensure activity's SCHEDULE_TO_START and SCHEDULE_TO_CLOSE is as long as expiration on retry policy
+	// ensure activity timeout never larger than workflow timeout
+	if runTimeout > 0 {
+		if attributes.GetScheduleToCloseTimeoutSeconds() > runTimeout {
+			attributes.ScheduleToCloseTimeoutSeconds = runTimeout
+		}
+		if attributes.GetScheduleToStartTimeoutSeconds() > runTimeout {
+			attributes.ScheduleToStartTimeoutSeconds = runTimeout
+		}
+		if attributes.GetStartToCloseTimeoutSeconds() > runTimeout {
+			attributes.StartToCloseTimeoutSeconds = runTimeout
+		}
+		if attributes.GetHeartbeatTimeoutSeconds() > runTimeout {
+			attributes.HeartbeatTimeoutSeconds = runTimeout
+		}
+	}
+	if attributes.GetHeartbeatTimeoutSeconds() > attributes.GetScheduleToCloseTimeoutSeconds() {
+		attributes.HeartbeatTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
+	}
 	return nil
 }
 
@@ -2169,6 +2188,9 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 	wf := env.workflowInfo
 	if options.WorkflowExecutionTimeout > 0 {
 		wf.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(options.WorkflowExecutionTimeout.Seconds())
+	}
+	if options.WorkflowRunTimeout > 0 {
+		wf.WorkflowRunTimeoutSeconds = common.Int32Ceil(options.WorkflowRunTimeout.Seconds())
 	}
 	if options.WorkflowTaskTimeout > 0 {
 		wf.WorkflowTaskTimeoutSeconds = common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())

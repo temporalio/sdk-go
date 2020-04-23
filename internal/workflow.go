@@ -1012,15 +1012,6 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 	return ctx1
 }
 
-// WithWorkflowExecutionTimeout adds a workflow execution timeout to the context.
-// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
-func WithWorkflowExecutionTimeout(ctx Context, d time.Duration) Context {
-	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).workflowExecutionTimeoutSeconds = common.Int32Ceil(d.Seconds())
-	return ctx1
-}
-
 // WithWorkflowRunTimeout adds a run timeout to the context.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.

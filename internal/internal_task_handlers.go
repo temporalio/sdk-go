@@ -772,7 +772,8 @@ processWorkflowLoop:
 		if err == nil && response == nil {
 		waitLocalActivityLoop:
 			for {
-				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
+				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) *
+					float32(workflowContext.GetWorkflowTaskTimeout()))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
 				select {
 				case <-time.After(delayDuration):
@@ -965,7 +966,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	}
 
 	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
-	if retryBackoff > 0 && retryBackoff <= w.GetDecisionTimeout() {
+	if retryBackoff > 0 && retryBackoff <= w.GetWorkflowTaskTimeout() {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
 			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
@@ -1138,7 +1139,7 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollFo
 	return nil
 }
 
-func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
+func (w *workflowExecutionContextImpl) GetWorkflowTaskTimeout() time.Duration {
 	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
 }
 

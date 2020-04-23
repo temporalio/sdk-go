@@ -478,8 +478,7 @@ type (
 		MaximumInterval time.Duration
 
 		// Maximum number of attempts. When exceeded the retries stop even if not expired yet.
-		// If not set or set to 0, it means unlimited, and rely on ExpirationInterval to stop.
-		// Either MaximumAttempts or ExpirationInterval is required.
+		// If not set or set to 0, it means unlimited, and rely on activity ScheduleToCloseTimeout to stop.
 		MaximumAttempts int32
 
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.

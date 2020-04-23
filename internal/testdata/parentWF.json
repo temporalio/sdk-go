@@ -13,8 +13,8 @@
         "taskList": {
           "name": "childWorkflowGroup"
         },
-        "executionStartToCloseTimeoutSeconds": 60,
-        "taskStartToCloseTimeoutSeconds": 60,
+        "workflowRunTimeoutSeconds": 60,
+        "workflowTaskTimeoutSeconds": 60,
         "originalExecutionRunId": "0ea65eda-a0db-4a59-bef3-dce48e8484f8",
         "identity": "10773@longer-C02V60N3HTDG@",
         "attempt": 0,
@@ -78,8 +78,8 @@
           "name": "childWorkflowGroup"
         },
         "input": "MAo1Cg==",
-        "executionStartToCloseTimeoutSeconds": 60,
-        "taskStartToCloseTimeoutSeconds": 10,
+        "workflowRunTimeoutSeconds": 60,
+        "workflowTaskTimeoutSeconds": 10,
         "decisionTaskCompletedEventId": 4,
         "workflowIdReusePolicy": "AllowDuplicateFailedOnly",
         "header": {}

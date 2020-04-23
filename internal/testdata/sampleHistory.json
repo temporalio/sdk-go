@@ -11,8 +11,8 @@
         "taskList": {
           "name": "taskList1"
         },
-        "executionStartToCloseTimeoutSeconds": 60,
-        "taskStartToCloseTimeoutSeconds": 60,
+        "workflowRunTimeoutSeconds": 60,
+        "workflowTaskTimeoutSeconds": 60,
         "identity": "temporal-cli@user-C02WC08UHTDG"
       }
     },

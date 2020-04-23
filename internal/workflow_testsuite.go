@@ -529,12 +529,12 @@ func (t *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 	return t
 }
 
-// SetWorkflowTimeout sets the execution timeout for this tested workflow. This test framework uses mock clock internally
-// and when workflow is blocked on timer, it will auto forward the mock clock. Use SetWorkflowTimeout() to enforce a
-// workflow execution timeout to return timeout error when the workflow mock clock is moved head of the timeout.
+// SetWorkflowRunTimeout sets the run timeout for this tested workflow. This test framework uses mock clock internally
+// and when workflow is blocked on timer, it will auto forward the mock clock. Use SetWorkflowRunTimeout() to enforce a
+// workflow run timeout to return timeout error when the workflow mock clock is moved head of the timeout.
 // This is based on the workflow time (a.k.a workflow.Now() time).
-func (t *TestWorkflowEnvironment) SetWorkflowTimeout(executionTimeout time.Duration) *TestWorkflowEnvironment {
-	t.impl.executionTimeout = executionTimeout
+func (t *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration) *TestWorkflowEnvironment {
+	t.impl.runTimeout = runTimeout
 	return t
 }
 
