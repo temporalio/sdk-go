@@ -34,7 +34,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 func createRootTestContext() (ctx Context) {
@@ -1086,22 +1085,14 @@ func TestSelectDecodeFuture(t *testing.T) {
 		future2, settable2 := newDecodeFuture(ctx, "testFn2")
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
-			v := &commonpb.Payload{Items: []*commonpb.PayloadItem{{
-				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingRaw),
-				},
-				Data: []byte("one"),
-			}}}
+			v, err := DefaultDataConverter.ToData([]byte("one"))
+			require.NoError(t, err)
 			settable1.SetValue(v)
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			v := &commonpb.Payload{Items: []*commonpb.PayloadItem{{
-				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingJson),
-				},
-				Data: []byte(`"two"`), // string "two" in JSON
-			}}}
+			v, err := DefaultDataConverter.ToData("two")
+			require.NoError(t, err)
 			settable2.SetValue(v)
 		})
 
@@ -1199,12 +1190,9 @@ func TestDecodeFutureChain(t *testing.T) {
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f2-set")
 	require.False(t, f2.IsReady())
-	cs2.Set(&commonpb.Payload{Items: []*commonpb.PayloadItem{{
-		Metadata: map[string][]byte{
-			metadataEncoding: []byte(metadataEncodingRaw),
-		},
-		Data: []byte("value2"),
-	}}}, nil)
+	v2, err := DefaultDataConverter.ToData([]byte("value2"))
+	require.NoError(t, err)
+	cs2.Set(v2, nil)
 	assert.True(t, f2.IsReady())
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 
