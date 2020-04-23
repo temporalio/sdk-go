@@ -102,7 +102,7 @@
         "decisionTaskCompletedEventId": 4,
         "searchAttributes": {
           "indexedFields": {
-            "CustomKeywordField": "InRlc3RrZXki"
+            "CustomKeywordField": {"items":[{"metadata":{"encoding":"anNvbg=="},"data":"InRlc3RrZXki"}]}
           }
         }
       }

@@ -203,7 +203,12 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	if err != nil {
 		return "", errors.New("error when get memo value")
 	}
-	searchAttrVal := string(info.SearchAttributes.IndexedFields["CustomKeywordField"])
+
+	var searchAttrVal string
+	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
+	if err != nil {
+		return "", errors.New("error when get search attribute value")
+	}
 
 	if count == 0 {
 		return memoVal + "," + searchAttrVal, nil
@@ -472,9 +477,13 @@ func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result stri
 	if err != nil {
 		return
 	}
-	searchAttr := string(info.SearchAttributes.IndexedFields["CustomKeywordField"])
+	var searchAttrVal string
+	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
+	if err != nil {
+		return
+	}
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	err = workflow.ExecuteActivity(ctx, "GetMemoAndSearchAttr", memo, searchAttr).Get(ctx, &result)
+	err = workflow.ExecuteActivity(ctx, "GetMemoAndSearchAttr", memo, searchAttrVal).Get(ctx, &result)
 	return
 }
 
