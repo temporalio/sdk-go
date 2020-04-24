@@ -447,7 +447,12 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details *commonpb.Payload) error {
+func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+	datailsPayload, err := wc.dataConverter.ToData(details...)
+	if err != nil {
+		return err
+	}
+
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &executionpb.WorkflowExecution{
@@ -456,10 +461,10 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 		},
 		Reason:   reason,
 		Identity: wc.identity,
-		Details:  details,
+		Details:  datailsPayload,
 	}
 
-	err := backoff.Retry(ctx,
+	err = backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()

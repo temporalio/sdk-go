@@ -142,7 +142,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details *commonpb.Payload) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		// - workflow ID of the workflow.
