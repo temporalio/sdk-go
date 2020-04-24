@@ -286,13 +286,13 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 
 		var ok bool
 		if result, ok = retValue.Interface().(*commonpb.Payload); !ok {
-		if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
 				var err error
 				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
-				return nil, err
+					return nil, err
+				}
 			}
 		}
-	}
 	}
 
 	// Parse error.

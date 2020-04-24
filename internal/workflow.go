@@ -721,7 +721,7 @@ type WorkflowInfo struct {
 	WorkflowTaskTimeoutSeconds      int32
 	Namespace                       string
 	Attempt                         int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult                *commonpb.Payload
+	lastCompletionResult            *commonpb.Payload
 	CronSchedule                    string
 	ContinuedExecutionRunID         string
 	ParentWorkflowNamespace         string

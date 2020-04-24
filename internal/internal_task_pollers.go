@@ -36,8 +36,8 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	filterpb "go.temporal.io/temporal-proto/filter"
 	commonpb "go.temporal.io/temporal-proto/common"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.uber.org/zap"
 
 	decisionpb "go.temporal.io/temporal-proto/decision"
@@ -77,13 +77,13 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		namespace    string
-		taskListName string
-		identity     string
-		service      workflowservice.WorkflowServiceClient
-		taskHandler  WorkflowTaskHandler
-		metricsScope tally.Scope
-		logger       *zap.Logger
+		namespace     string
+		taskListName  string
+		identity      string
+		service       workflowservice.WorkflowServiceClient
+		taskHandler   WorkflowTaskHandler
+		metricsScope  tally.Scope
+		logger        *zap.Logger
 		dataConverter DataConverter
 
 		stickyUUID                   string

@@ -111,8 +111,8 @@ type (
 		currentReplayTime time.Time // Indicates current replay time of the decision.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
-		completeHandler completionHandler               // events completion handler
-		cancelHandler   func()                          // A cancel handler to be invoked on a cancel notification
+		completeHandler completionHandler                          // events completion handler
+		cancelHandler   func()                                     // A cancel handler to be invoked on a cancel notification
 		signalHandler   func(name string, input *commonpb.Payload) // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error)
 

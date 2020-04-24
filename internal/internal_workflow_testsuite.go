@@ -231,7 +231,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			localActivities:   make(map[string]*localActivityTask),
 			runningWorkflows:  make(map[string]*testWorkflowHandle),
 			callbackChannel:   make(chan testCallbackHandle, 1000),
-			testTimeout:      3 * time.Second,
+			testTimeout:       3 * time.Second,
 			expectedMockCalls: make(map[string]struct{}),
 		},
 

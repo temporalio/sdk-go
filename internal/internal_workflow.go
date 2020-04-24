@@ -176,7 +176,7 @@ type (
 		workflowID                      string
 		waitForCancellation             bool
 		signalChannels                  map[string]Channel
-		queryHandlers                       map[string]func(*commonpb.Payload) (*commonpb.Payload, error)
+		queryHandlers                   map[string]func(*commonpb.Payload) (*commonpb.Payload, error)
 		workflowIDReusePolicy           WorkflowIDReusePolicy
 		dataConverter                   DataConverter
 		retryPolicy                     *commonpb.RetryPolicy
@@ -192,8 +192,8 @@ type (
 		workflowType         *WorkflowType
 		input                *commonpb.Payload
 		header               *commonpb.Header
-		attempt              int32     // used by test framework to support child workflow retry
-		scheduledTime        time.Time // used by test framework to support child workflow retry
+		attempt              int32             // used by test framework to support child workflow retry
+		scheduledTime        time.Time         // used by test framework to support child workflow retry
 		lastCompletionResult *commonpb.Payload // used by test framework to support cron
 	}
 
@@ -311,10 +311,10 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 	if payload, ok := f.value.(*commonpb.Payload); ok {
 		if _, ok2 := value.(**commonpb.Payload); !ok2 {
 			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, value); err != nil {
-			return err
+				return err
+			}
+			return f.err
 		}
-		return f.err
-	}
 	}
 
 	fv := reflect.ValueOf(f.value)
@@ -1316,11 +1316,11 @@ func (h *queryHandler) execute(input *commonpb.Payload) (result *commonpb.Payloa
 	fnType := reflect.TypeOf(h.fn)
 	var args []reflect.Value
 
-		decoded, err := decodeArgs(h.dataConverter, fnType, input)
-		if err != nil {
+	decoded, err := decodeArgs(h.dataConverter, fnType, input)
+	if err != nil {
 		return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %w", h.queryType, err)
-		}
-		args = append(args, decoded...)
+	}
+	args = append(args, decoded...)
 
 	// invoke the query handler with arguments.
 	fnValue := reflect.ValueOf(h.fn)
