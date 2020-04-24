@@ -36,6 +36,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 
@@ -48,10 +49,11 @@ import (
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/serializer"
 )
 
 const (
-	pollTaskServiceTimeOut = 3 * time.Minute // Server long poll is 1 * Minutes + delta
+	pollTaskServiceTimeOut = 150 * time.Second // Server long poll is 2 * Minutes + delta
 
 	stickyDecisionScheduleToStartTimeoutSeconds = 5
 
@@ -760,7 +762,19 @@ func newGetHistoryPageFunc(
 
 		metricsScope.Counter(metrics.WorkflowGetHistorySucceedCounter).Inc(1)
 		metricsScope.Timer(metrics.WorkflowGetHistoryLatency).Record(time.Since(startTime))
-		h := resp.History
+
+		var h *eventpb.History
+
+		if resp.RawHistory != nil {
+			var err1 error
+			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, filterpb.HistoryEventFilterType_AllEvent)
+			if err1 != nil {
+				return nil, nil, nil
+			}
+		} else {
+			h = resp.History
+		}
+
 		size := len(h.Events)
 		if size > 0 && atDecisionTaskCompletedEventID > 0 &&
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
