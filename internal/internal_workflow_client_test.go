@@ -420,11 +420,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                    workflowID,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -517,11 +517,11 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                    workflowID,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -620,10 +620,10 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
