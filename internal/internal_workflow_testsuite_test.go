@@ -1731,8 +1731,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	var localActivityFnCancelled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
 
-	localActivityFn := func(ctx context.Context, name string) (string, error) {
-		return "this won't be called " + name, nil
+	localActivityFn := func(_ context.Context, _ string) (string, error) {
+		panic("this won't be called because it is mocked")
 	}
 
 	cancelledLocalActivityFn := func(ctx context.Context) error {
@@ -1745,16 +1745,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx = WithLocalActivityOptions(ctx, s.localActivityOptions)
 		var result string
 		f := ExecuteLocalActivity(ctx, localActivityFn, "local_activity")
+
+		// Hack to avoid race condition. Never do anything similar in real production code
+		// TODO: Fix race condition somewhere in test environment
+		time.Sleep(100 * time.Millisecond)
+
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
 		err := f.Get(ctx, nil)
 		if err != nil {
 			return "", err
-		}
-		// Hack to avoid race condition. Never do anything similar in real production code
-		for startedCount.Load() < 2 {
-			time.Sleep(100 * time.Millisecond)
 		}
 		cancel()
 
