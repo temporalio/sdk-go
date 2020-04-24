@@ -13,7 +13,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "workflowRunTimeoutSeconds": 60,
         "workflowTaskTimeoutSeconds": 60,
         "originalExecutionRunId": "d27163e6-9d88-4fbf-8c68-dc5b0b9dceda",
@@ -73,7 +73,7 @@
       "taskId": 22020324,
       "markerRecordedEventAttributes": {
         "markerName": "Version",
-        "details": "InRlc3QtY2hhbmdlIgoxCg==",
+        "details": null,
         "decisionTaskCompletedEventId": 4
       }
     },
@@ -87,7 +87,7 @@
         "decisionTaskCompletedEventId": 4,
         "searchAttributes": {
           "indexedFields": {
-            "CustomKeywordField": "InRlc3RrZXki"
+            "CustomKeywordField": {"items":[{"metadata":{"encoding":"anNvbg=="},"data":"InRlc3RrZXki"}]}
           }
         }
       }
@@ -106,7 +106,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -136,7 +136,7 @@
       "version": -24,
       "taskId": 22020334,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 7,
         "startedEventId": 8,
         "identity": "53889@boweixu-C02V61JZHTDG@helloWorldGroup"

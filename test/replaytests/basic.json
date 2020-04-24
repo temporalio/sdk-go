@@ -13,7 +13,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "workflowRunTimeoutSeconds": 60,
         "workflowTaskTimeoutSeconds": 60,
         "originalExecutionRunId": "b08ce5f0-920b-43f8-a90d-44d12476297e",
@@ -73,7 +73,7 @@
       "taskId": 22037775,
       "markerRecordedEventAttributes": {
         "markerName": "Version",
-        "details": "InRlc3QtY2hhbmdlIgoxCg==",
+        "details": null,
         "decisionTaskCompletedEventId": 4
       }
     },
@@ -91,7 +91,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -121,7 +121,7 @@
       "version": -24,
       "taskId": 22037783,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 6,
         "startedEventId": 7,
         "identity": "87829@boweixu-C02V61JZHTDG@helloWorldGroup"
@@ -180,7 +180,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -210,7 +210,7 @@
       "version": -24,
       "taskId": 22037800,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 12,
         "startedEventId": 13,
         "identity": "87829@boweixu-C02V61JZHTDG@helloWorldGroup"
@@ -269,7 +269,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -299,7 +299,7 @@
       "version": -24,
       "taskId": 22037817,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 18,
         "startedEventId": 19,
         "identity": "87829@boweixu-C02V61JZHTDG@helloWorldGroup"

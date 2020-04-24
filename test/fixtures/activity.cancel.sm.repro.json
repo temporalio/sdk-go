@@ -76,7 +76,7 @@
         "taskList": {
           "name": "tl-1"
         },
-        "input": "ImhlbGxvIgo1MDAwMDAwMDAwCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
         "scheduleToStartTimeoutSeconds": 10,
         "startToCloseTimeoutSeconds": 9,
@@ -97,7 +97,7 @@
         "taskList": {
           "name": "bad_tl"
         },
-        "input": "ImhlbGxvIgo=",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
         "scheduleToStartTimeoutSeconds": 10,
         "startToCloseTimeoutSeconds": 9,
@@ -118,7 +118,7 @@
         "taskList": {
           "name": "bad_tl"
         },
-        "input": "ImhlbGxvIgo=",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
         "scheduleToStartTimeoutSeconds": 10,
         "startToCloseTimeoutSeconds": 9,
@@ -144,7 +144,7 @@
       "eventType": "ActivityTaskCompleted",
       "version": -24,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhFTExPIgo=",
+        "result": null,
         "scheduledEventId": 6,
         "startedEventId": 9,
         "identity": "97228@samar-C02XG22GJGH6@tl-1"
@@ -183,7 +183,7 @@
         "scheduledEventId": 11,
         "startedEventId": 12,
         "cause": "WorkflowWorkerUnhandledFailure",
-        "details": "aW52YWxpZCBzdGF0ZSB0cmFuc2l0aW9uOiBhdHRlbXB0IHRvIGNhbmNlbCwgRGVjaXNpb25UeXBlOiBBY3Rpdml0eSwgSUQ6IDMsIHN0YXRlPUNhbmNlbGVkQWZ0ZXJJbml0aWF0ZWQsIGlzRG9uZSgpPWZhbHNlLCBoaXN0b3J5PVtDcmVhdGVkIGhhbmRsZURlY2lzaW9uU2VudCBEZWNpc2lvblNlbnQgaGFuZGxlSW5pdGlhdGVkRXZlbnQgSW5pdGlhdGVkIGNhbmNlbCBDYW5jZWxlZEFmdGVySW5pdGlhdGVkXQ==",
+        "details": null,
         "identity": "97228@samar-C02XG22GJGH6@tl-1"
       }
     },

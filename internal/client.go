@@ -142,7 +142,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		// - workflow ID of the workflow.
@@ -684,7 +684,7 @@ func (p ParentClosePolicy) toProto() commonpb.ParentClosePolicy {
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data []byte) Value {
+func NewValue(data *commonpb.Payload) Value {
 	return newEncodedValue(data, nil)
 }
 
@@ -695,6 +695,6 @@ func NewValue(data []byte) Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data []byte) Values {
+func NewValues(data *commonpb.Payload) Values {
 	return newEncodedValues(data, nil)
 }

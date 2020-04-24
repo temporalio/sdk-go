@@ -332,6 +332,7 @@ func (w *testActivityCancelWorkflow) Execute(ctx Context, _ []byte) (result []by
 	require.NotNil(w.t, err2)
 	_, ok := err2.(*CanceledError)
 	require.True(w.t, ok)
+
 	return []byte("workflow-completed"), nil
 }
 

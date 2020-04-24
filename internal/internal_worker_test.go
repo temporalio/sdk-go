@@ -142,14 +142,14 @@ func (s *internalWorkerTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
-func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) []byte {
+func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),
 	}
 
 	// encode marker data
-	markerData, err := encodeArg(s.dataConverter, lamd)
+	markerData, err := s.dataConverter.ToData(lamd)
 	s.NoError(err)
 	return markerData
 }
@@ -303,6 +303,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
+	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
@@ -320,7 +321,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
-			Result:                       []byte("some-incorrect-result"),
+			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
@@ -335,6 +336,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
+	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
@@ -352,7 +354,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
-			Result:                       []byte("some-incorrect-result"),
+			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
@@ -1329,7 +1331,7 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) []byte {
+func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payload {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)

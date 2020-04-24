@@ -198,14 +198,16 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	if info.Memo == nil || info.SearchAttributes == nil {
 		return "", errors.New("memo or search attributes are not carried over")
 	}
-	var memoVal, searchAttrVal string
+	var memoVal string
 	err := client.NewValue(info.Memo.Fields["memoKey"]).Get(&memoVal)
 	if err != nil {
 		return "", errors.New("error when get memo value")
 	}
+
+	var searchAttrVal string
 	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
 	if err != nil {
-		return "", errors.New("error when get search attributes value")
+		return "", errors.New("error when get search attribute value")
 	}
 
 	if count == 0 {
@@ -467,17 +469,18 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
 	info := workflow.GetInfo(ctx)
-	var memo, searchAttr string
+	var memo string
 	err = client.NewValue(info.Memo.Fields["memoKey"]).Get(&memo)
 	if err != nil {
 		return
 	}
-	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttr)
+	var searchAttrVal string
+	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
 	if err != nil {
 		return
 	}
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	err = workflow.ExecuteActivity(ctx, "GetMemoAndSearchAttr", memo, searchAttr).Get(ctx, &result)
+	err = workflow.ExecuteActivity(ctx, "GetMemoAndSearchAttr", memo, searchAttrVal).Get(ctx, &result)
 	return
 }
 

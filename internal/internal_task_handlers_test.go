@@ -26,13 +26,13 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -202,7 +202,7 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload []byte) *eventpb.HistoryEvent {
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload *commonpb.Payload) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:   eventID,
 		EventType: eventpb.EventType_WorkflowExecutionSignaled,
@@ -371,9 +371,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
 	t.Equal(decisionpb.DecisionType_CompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
-	checksumsJSON := string(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().Result)
+	checksumsPayload := response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 	var checksums []string
-	_ = json.Unmarshal([]byte(checksumsJSON), &checksums)
+	_ = DefaultDataConverter.FromData(checksumsPayload, &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
@@ -834,8 +834,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.EqualValues(decisionpb.DecisionType_FailWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
 	t.EqualValues("temporalInternal:Panic", attr.GetReason())
-	details := string(attr.Details)
-	t.True(strings.HasPrefix(details, "\"panicError"), details)
+	var details string
+	_ = DefaultDataConverter.FromData(attr.GetDetails(), &details)
+	t.True(strings.HasPrefix(details, "panicError"), details)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
@@ -861,7 +862,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	r, ok := request.(*workflowservice.RespondDecisionTaskFailedRequest)
 	t.True(ok)
 	t.EqualValues(eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure, r.Cause)
-	t.EqualValues("panicError", string(r.Details))
+	var details string
+	_ = DefaultDataConverter.FromData(r.GetDetails(), &details)
+	t.EqualValues("panicError", details)
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
@@ -999,10 +1002,11 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 0)
+	answer, _ := DefaultDataConverter.ToData(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
-			Answer:     []byte(fmt.Sprintf("\"%v\"\n", startingQueryValue)),
+			Answer:     answer,
 		},
 		"id2": {
 			ResultType:   querypb.QueryResultType_Failed,
@@ -1018,10 +1022,11 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 1)
+	answer, _ = DefaultDataConverter.ToData("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
-			Answer:     []byte(fmt.Sprintf("\"%v\"\n", "signal data")),
+			Answer:     answer,
 		},
 		"id2": {
 			ResultType:   querypb.QueryResultType_Failed,
@@ -1038,7 +1043,7 @@ func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*que
 	t.Equal(len(expected), len(actual))
 	for expectedID, expectedResult := range expected {
 		t.Contains(actual, expectedID)
-		t.Equal(expectedResult, actual[expectedID])
+		t.True(proto.Equal(expectedResult, actual[expectedID]))
 	}
 }
 
@@ -1257,7 +1262,7 @@ type testActivityDeadline struct {
 	d      time.Duration
 }
 
-func (t *testActivityDeadline) Execute(ctx context.Context, _ []byte) ([]byte, error) {
+func (t *testActivityDeadline) Execute(ctx context.Context, _ *commonpb.Payload) (*commonpb.Payload, error) {
 	if d, _ := ctx.Deadline(); d.IsZero() {
 		panic("invalid deadline provided")
 	}
@@ -1499,6 +1504,11 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 }
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
+	encodeString := func(str string) *commonpb.Payload {
+		payload, _ := DefaultDataConverter.ToData(str)
+		return payload
+	}
+
 	testCases := []struct {
 		name     string
 		lhs      *commonpb.SearchAttributes
@@ -1526,9 +1536,9 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 		{
 			name: "not match",
 			lhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string][]byte{
-					"key1": []byte("1"),
-					"key2": []byte("abc"),
+				IndexedFields: map[string]*commonpb.Payload{
+					"key1": encodeString("1"),
+					"key2": encodeString("abc"),
 				},
 			},
 			rhs:      &commonpb.SearchAttributes{},
@@ -1537,15 +1547,15 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 		{
 			name: "match",
 			lhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string][]byte{
-					"key1": []byte("1"),
-					"key2": []byte("abc"),
+				IndexedFields: map[string]*commonpb.Payload{
+					"key1": encodeString("1"),
+					"key2": encodeString("abc"),
 				},
 			},
 			rhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string][]byte{
-					"key2": []byte("abc"),
-					"key1": []byte("1"),
+				IndexedFields: map[string]*commonpb.Payload{
+					"key2": encodeString("abc"),
+					"key1": encodeString("1"),
 				},
 			},
 			expected: true,

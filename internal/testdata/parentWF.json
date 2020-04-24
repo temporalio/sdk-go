@@ -77,7 +77,7 @@
         "taskList": {
           "name": "childWorkflowGroup"
         },
-        "input": "MAo1Cg==",
+        "input": null,
         "workflowRunTimeoutSeconds": 60,
         "workflowTaskTimeoutSeconds": 10,
         "decisionTaskCompletedEventId": 4,
@@ -157,7 +157,7 @@
           "runId": ""
         },
         "signalName": "test-signal",
-        "input": "InRlc3QtZGF0YSIK",
+        "input": null,
         "control": "MA==",
         "childWorkflowOnly": true
       }
@@ -224,7 +224,7 @@
       "version": -24,
       "taskId": 50331684,
       "childWorkflowExecutionCompletedEventAttributes": {
-        "result": "IkNoaWxkIHdvcmtmbG93IGV4ZWN1dGlvbiBjb21wbGV0ZWQgYWZ0ZXIgNSBydW5zIgo=",
+        "result": null,
         "namespace": "samples-namespace",
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
