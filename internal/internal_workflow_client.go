@@ -48,6 +48,7 @@ import (
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/serializer"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -134,7 +135,7 @@ type (
 	historyEventIteratorImpl struct {
 		// whether this iterator is initialized
 		initialized bool
-		// local cached histroy events and corresponding comsuming index
+		// local cached history events and corresponding consuming index
 		nextEventIndex int
 		events         []*eventpb.HistoryEvent
 		// token to get next page of history events
@@ -510,6 +511,18 @@ func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 					})
 					defer cancel()
 					response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request)
+
+					if err1 != nil {
+						return err1
+					}
+
+					if response.RawHistory != nil {
+						history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, filterType)
+						if err != nil {
+							return err
+						}
+						response.History = history
+					}
 					return err1
 				}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 

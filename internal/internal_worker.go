@@ -48,11 +48,12 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
 
+	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -61,6 +62,7 @@ import (
 
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/serializer"
 )
 
 const (
@@ -1169,6 +1171,15 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
 	if err != nil {
 		return err
+	}
+
+	if hResponse.RawHistory != nil {
+		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, filterpb.HistoryEventFilterType_AllEvent)
+		if err != nil {
+			return err
+		}
+
+		hResponse.History = history
 	}
 
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
