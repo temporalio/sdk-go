@@ -486,14 +486,15 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	s.Equal(2, localActivityCalledCount)
 }
 
-func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) []byte {
+func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),
 	}
 
 	// encode marker data
-	markerData, err := encodeArg(s.dataConverter, lamd)
+	markerData, err := s.dataConverter.ToData(lamd)
+
 	s.NoError(err)
 	return markerData
 }

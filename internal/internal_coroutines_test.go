@@ -1085,11 +1085,15 @@ func TestSelectDecodeFuture(t *testing.T) {
 		future2, settable2 := newDecodeFuture(ctx, "testFn2")
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
-			settable1.SetValue([]byte("one"))
+			v, err := DefaultDataConverter.ToData([]byte("one"))
+			require.NoError(t, err)
+			settable1.SetValue(v)
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			settable2.SetValue([]byte("two"))
+			v, err := DefaultDataConverter.ToData("two")
+			require.NoError(t, err)
+			settable2.SetValue(v)
 		})
 
 		s := NewSelector(ctx)
@@ -1101,7 +1105,7 @@ func TestSelectDecodeFuture(t *testing.T) {
 				history = append(history, fmt.Sprintf("c1-%s", v))
 			}).
 			AddFuture(future2, func(f Future) {
-				var v []byte
+				var v string
 				err := f.Get(ctx, &v)
 				require.NoError(t, err)
 				history = append(history, fmt.Sprintf("c2-%s", v))
@@ -1186,7 +1190,9 @@ func TestDecodeFutureChain(t *testing.T) {
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f2-set")
 	require.False(t, f2.IsReady())
-	cs2.Set([]byte("value2"), nil)
+	v2, err := DefaultDataConverter.ToData([]byte("value2"))
+	require.NoError(t, err)
+	cs2.Set(v2, nil)
 	assert.True(t, f2.IsReady())
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
 

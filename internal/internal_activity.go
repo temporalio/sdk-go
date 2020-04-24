@@ -42,7 +42,7 @@ import (
 type (
 	// activity is an interface of an activity implementation.
 	activity interface {
-		Execute(ctx context.Context, input []byte) ([]byte, error)
+		Execute(ctx context.Context, input *commonpb.Payload) (*commonpb.Payload, error)
 		ActivityType() ActivityType
 		GetFunction() interface{}
 	}
@@ -76,7 +76,7 @@ type (
 	executeActivityParams struct {
 		activityOptions
 		ActivityType  ActivityType
-		Input         []byte
+		Input         *commonpb.Payload
 		DataConverter DataConverter
 		Header        *commonpb.Header
 	}
@@ -128,7 +128,7 @@ type (
 		taskList           string
 		dataConverter      DataConverter
 		attempt            int32 // starts from 0.
-		heartbeatDetails   []byte
+		heartbeatDetails   *commonpb.Payload
 		workflowType       *WorkflowType
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
@@ -257,7 +257,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) ([]byte, error) {
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) (*commonpb.Payload, error) {
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
@@ -267,16 +267,19 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 			fnName, resultSize)
 	}
 
-	var result []byte
-	var err error
+	var result *commonpb.Payload
 
 	// Parse result
 	if resultSize > 1 {
 		retValue := values[0]
-		if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
-			result, err = encodeArg(dataConverter, retValue.Interface())
-			if err != nil {
-				return nil, err
+
+		var ok bool
+		if result, ok = retValue.Interface().(*commonpb.Payload); !ok {
+			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+				var err error
+				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -295,7 +298,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result []byte, err error) {
+func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result *commonpb.Payload, err error) {
 	// results contain all results including error
 	resultSize := len(results)
 

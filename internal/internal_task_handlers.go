@@ -27,7 +27,6 @@ package internal
 // All code in this file is private to the package.
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -38,8 +37,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
-
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
@@ -71,7 +70,7 @@ type (
 		// Return List of decisions made, any error.
 		ProcessEvent(event *eventpb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
-		ProcessQuery(queryType string, queryArgs []byte) ([]byte, error)
+		ProcessQuery(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -109,7 +108,7 @@ type (
 		eventHandler atomic.Value
 
 		isWorkflowCompleted bool
-		result              []byte
+		result              *commonpb.Payload
 		err                 error
 
 		previousStartedEventID int64
@@ -497,7 +496,7 @@ func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEvent
 	return eventHandlerImpl
 }
 
-func (w *workflowExecutionContextImpl) completeWorkflow(result []byte, err error) {
+func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload, err error) {
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
@@ -1247,7 +1246,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
 			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
 			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) ||
-			(strictMode && !bytes.Equal(eventAttributes.Input, decisionAttributes.Input)) {
+			(strictMode && !proto.Equal(eventAttributes.GetInput(), decisionAttributes.GetInput())) {
 			return false
 		}
 
@@ -1306,7 +1305,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
 			decisionAttributes := d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-			if !bytes.Equal(eventAttributes.Result, decisionAttributes.Result) {
+			if !proto.Equal(eventAttributes.GetResult(), decisionAttributes.GetResult()) {
 				return false
 			}
 		}
@@ -1322,7 +1321,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
 
 			if eventAttributes.GetReason() != decisionAttributes.GetReason() ||
-				!bytes.Equal(eventAttributes.Details, decisionAttributes.Details) {
+				!proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
 				return false
 			}
 		}
@@ -1375,7 +1374,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
 			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if !bytes.Equal(eventAttributes.Details, decisionAttributes.Details) {
+			if !proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
 				return false
 			}
 		}
@@ -1473,7 +1472,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity)
+		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.dataConverter)
 	}
 
 	// complete decision task
@@ -1555,8 +1554,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 }
 
-func errorToFailDecisionTask(taskToken []byte, err error, identity string) *workflowservice.RespondDecisionTaskFailedRequest {
-	_, details := getErrorDetails(err, nil)
+func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
+	_, details := getErrorDetails(err, dataConverter)
 	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure,
@@ -1620,12 +1619,12 @@ type temporalInvoker struct {
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
 	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport   *[]byte
+	lastDetailsToReport   **commonpb.Payload
 	closeCh               chan struct{}
 	workerStopChannel     <-chan struct{}
 }
 
-func (i *temporalInvoker) Heartbeat(details []byte) error {
+func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -1666,7 +1665,7 @@ func (i *temporalInvoker) Heartbeat(details []byte) error {
 			}
 
 			// We close the batch and report the progress.
-			var detailsToReport *[]byte
+			var detailsToReport **commonpb.Payload
 
 			i.Lock()
 			detailsToReport = i.lastDetailsToReport
@@ -1683,7 +1682,7 @@ func (i *temporalInvoker) Heartbeat(details []byte) error {
 	return err
 }
 
-func (i *temporalInvoker) internalHeartBeat(details []byte) (bool, error) {
+func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payload) (bool, error) {
 	isActivityCancelled := false
 	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
 	if timeout <= 0 {
@@ -1857,7 +1856,8 @@ func recordActivityHeartbeat(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
 	identity string,
-	taskToken, details []byte,
+	taskToken []byte,
+	details *commonpb.Payload,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -1887,7 +1887,7 @@ func recordActivityHeartbeatByID(
 	service workflowservice.WorkflowServiceClient,
 	identity string,
 	namespace, workflowID, runID, activityID string,
-	details []byte,
+	details *commonpb.Payload,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,

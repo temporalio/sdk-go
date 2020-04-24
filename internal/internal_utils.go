@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"google.golang.org/grpc/metadata"
 
 	eventpb "go.temporal.io/temporal-proto/event"
@@ -146,10 +147,10 @@ func getWorkerTaskList(stickyUUID string) string {
 }
 
 // getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
+func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payload) {
 	switch err := err.(type) {
 	case *CustomError:
-		var data []byte
+		var data *commonpb.Payload
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -164,7 +165,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
 		}
 		return err.Reason(), data
 	case *CanceledError:
-		var data []byte
+		var data *commonpb.Payload
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -185,7 +186,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
 		}
 		return errReasonPanic, data
 	case *TimeoutError:
-		var data []byte
+		var data *commonpb.Payload
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -200,13 +201,17 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, []byte) {
 		}
 		return fmt.Sprintf("%v %v", errReasonTimeout, err.timeoutType), data
 	default:
+		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error()})
+		if err0 != nil {
+			panic(err0)
+		}
 		// will be convert to GenericError when receiving from server.
-		return errReasonGeneric, []byte(err.Error())
+		return errReasonGeneric, data
 	}
 }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details []byte, dataConverter DataConverter) error {
+func constructError(reason string, details *commonpb.Payload, dataConverter DataConverter) error {
 	if strings.HasPrefix(reason, errReasonTimeout) {
 		details := newEncodedValues(details, dataConverter)
 		timeoutType, err := getTimeoutTypeFromErrReason(reason)
@@ -229,7 +234,9 @@ func constructError(reason string, details []byte, dataConverter DataConverter) 
 		return newPanicError(msg, st)
 	case errReasonGeneric:
 		// errors created other than using NewCustomError() API.
-		return &GenericError{err: string(details)}
+		var msg string
+		_ = dataConverter.FromData(details, &msg)
+		return &GenericError{err: msg}
 	case errReasonCanceled:
 		details := newEncodedValues(details, dataConverter)
 		return NewCanceledError(details)

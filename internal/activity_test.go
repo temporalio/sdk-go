@@ -173,7 +173,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	<-waitCh
 	invoker3.Close(false)
 
-	// simulate batch picks before expiry, with out any progress specified.
+	// simulate batch picks before expiry, without any progress specified.
 	waitCh2 := make(chan struct{})
 	service4 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, cancel, 2, make(chan struct{}))

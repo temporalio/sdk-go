@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -35,7 +34,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
@@ -916,11 +914,11 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := json.Unmarshal(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = json.Unmarshal(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -951,11 +949,11 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := json.Unmarshal(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = json.Unmarshal(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1006,7 +1004,8 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
-	_ = decodeArg(s.dataConverter, result3.IndexedFields["t1"], &resultString)
+
+	_ = DefaultDataConverter.FromData(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

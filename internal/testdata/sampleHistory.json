@@ -60,7 +60,7 @@
         "taskList": {
           "name": "taskList1"
         },
-        "input": "MgoidGVzdCIKdHJ1ZQo=",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 120,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -88,7 +88,7 @@
       "version":-24,
       "taskId":33554447,
       "activityTaskCompletedEventAttributes":{
-        "result":"IkhlbGxvIENhZGVuY2UhIgo=",
+        "result":null,
         "scheduledEventId":5,
         "startedEventId":6,
         "identity": "50114@user-C02WC08UHTDG@taskList1"

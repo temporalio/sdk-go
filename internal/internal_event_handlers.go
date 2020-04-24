@@ -27,13 +27,13 @@ package internal
 // All code in this file is private to the package.
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 
@@ -59,7 +59,7 @@ var _ workflowExecutionEventHandler = (*workflowExecutionEventHandlerImpl)(nil)
 
 type (
 	// completionHandler Handler to indicate completion result
-	completionHandler func(result []byte, err error)
+	completionHandler func(result *commonpb.Payload, err error)
 
 	// workflowExecutionEventHandlerImpl handler to handle workflowExecutionEventHandler
 	workflowExecutionEventHandlerImpl struct {
@@ -100,10 +100,10 @@ type (
 		workflowInfo *WorkflowInfo
 
 		decisionsHelper   *decisionsHelper
-		sideEffectResult  map[int32][]byte
+		sideEffectResult  map[int32]*commonpb.Payload
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
-		mutableSideEffect map[string][]byte
+		mutableSideEffect map[string]*commonpb.Payload
 		unstartedLaTasks  map[string]struct{}
 		openSessions      map[string]*SessionInfo
 
@@ -111,10 +111,10 @@ type (
 		currentReplayTime time.Time // Indicates current replay time of the decision.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
-		completeHandler completionHandler               // events completion handler
-		cancelHandler   func()                          // A cancel handler to be invoked on a cancel notification
-		signalHandler   func(name string, input []byte) // A signal handler to be invoked on a signal event
-		queryHandler    func(queryType string, queryArgs []byte) ([]byte, error)
+		completeHandler completionHandler                          // events completion handler
+		cancelHandler   func()                                     // A cancel handler to be invoked on a cancel notification
+		signalHandler   func(name string, input *commonpb.Payload) // A signal handler to be invoked on a signal event
+		queryHandler    func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error)
 
 		logger                *zap.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -142,14 +142,14 @@ type (
 	}
 
 	localActivityMarkerData struct {
-		ActivityID   string        `json:"activityId,omitempty"`
-		ActivityType string        `json:"activityType,omitempty"`
-		ErrReason    string        `json:"errReason,omitempty"`
-		ErrJSON      string        `json:"errJson,omitempty"` // string instead of []byte so the encoded blob is human readable
-		ResultJSON   string        `json:"resultJson,omitempty"`
-		ReplayTime   time.Time     `json:"replayTime,omitempty"`
-		Attempt      int32         `json:"attempt,omitempty"` // record attempt, starting from 0.
-		Backoff      time.Duration `json:"backoff,omitempty"` // retry backoff duration
+		ActivityID   string
+		ActivityType string
+		ErrReason    string
+		Err          *commonpb.Payload
+		Result       *commonpb.Payload
+		ReplayTime   time.Time
+		Attempt      int32         // record attempt, starting from 0.
+		Backoff      time.Duration // retry backoff duration.
 	}
 
 	// wrapper around zapcore.Core that will be aware of replay
@@ -192,8 +192,8 @@ func newWorkflowExecutionEventHandler(
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
 		decisionsHelper:       newDecisionsHelper(),
-		sideEffectResult:      make(map[int32][]byte),
-		mutableSideEffect:     make(map[string][]byte),
+		sideEffectResult:      make(map[int32]*commonpb.Payload),
+		mutableSideEffect:     make(map[string]*commonpb.Payload),
 		changeVersions:        make(map[string]Version),
 		pendingLaTasks:        make(map[string]*localActivityTask),
 		unstartedLaTasks:      make(map[string]struct{}),
@@ -219,7 +219,7 @@ func newWorkflowExecutionEventHandler(
 	return &workflowExecutionEventHandlerImpl{context, nil}
 }
 
-func (s *scheduledTimer) handle(result []byte, err error) {
+func (s *scheduledTimer) handle(result *commonpb.Payload, err error) {
 	if s.handled {
 		panic(fmt.Sprintf("timer already handled %v", s))
 	}
@@ -227,7 +227,7 @@ func (s *scheduledTimer) handle(result []byte, err error) {
 	s.callback(result, err)
 }
 
-func (s *scheduledActivity) handle(result []byte, err error) {
+func (s *scheduledActivity) handle(result *commonpb.Payload, err error) {
 	if s.handled {
 		panic(fmt.Sprintf("activity already handled %v", s))
 	}
@@ -235,7 +235,7 @@ func (s *scheduledActivity) handle(result []byte, err error) {
 	s.callback(result, err)
 }
 
-func (s *scheduledChildWorkflow) handle(result []byte, err error) {
+func (s *scheduledChildWorkflow) handle(result *commonpb.Payload, err error) {
 	if s.handled {
 		panic(fmt.Sprintf("child workflow already handled %v", s))
 	}
@@ -252,7 +252,7 @@ func (t *localActivityTask) cancel() {
 	t.Unlock()
 }
 
-func (s *scheduledCancellation) handle(result []byte, err error) {
+func (s *scheduledCancellation) handle(result *commonpb.Payload, err error) {
 	if s.handled {
 		panic(fmt.Sprintf("cancellation already handled %v", s))
 	}
@@ -260,7 +260,7 @@ func (s *scheduledCancellation) handle(result []byte, err error) {
 	s.callback(result, err)
 }
 
-func (s *scheduledSignal) handle(result []byte, err error) {
+func (s *scheduledSignal) handle(result *commonpb.Payload, err error) {
 	if s.handled {
 		panic(fmt.Sprintf("signal already handled %v", s))
 	}
@@ -272,7 +272,7 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return wc.workflowInfo
 }
 
-func (wc *workflowEnvironmentImpl) Complete(result []byte, err error) {
+func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payload, err error) {
 	wc.completeHandler(result, err)
 }
 
@@ -289,7 +289,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, work
 }
 
 func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string,
-	input []byte, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback resultHandler) {
+	input *commonpb.Payload, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback resultHandler) {
 
 	signalID := wc.GenerateSequenceID()
 	decision := wc.decisionsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input, signalID, childWorkflowOnly)
@@ -326,7 +326,7 @@ func mergeSearchAttributes(current, upsert *commonpb.SearchAttributes) *commonpb
 			return nil
 		}
 		current = &commonpb.SearchAttributes{
-			IndexedFields: make(map[string][]byte),
+			IndexedFields: make(map[string]*commonpb.Payload),
 		}
 	}
 
@@ -399,11 +399,11 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	return nil
 }
 
-func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input []byte)) {
+func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payload)) {
 	wc.signalHandler = handler
 }
 
-func (wc *workflowEnvironmentImpl) RegisterQueryHandler(handler func(string, []byte) ([]byte, error)) {
+func (wc *workflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *commonpb.Payload) (*commonpb.Payload, error)) {
 	wc.queryHandler = handler
 }
 
@@ -619,10 +619,10 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() ([]byte, error), callback resultHandler) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payload, error), callback resultHandler) {
 	sideEffectID := wc.GenerateSequence()
-	var details []byte
-	var result []byte
+	var details *commonpb.Payload
+	var result *commonpb.Payload
 	if wc.isReplay {
 		var ok bool
 		result, ok = wc.sideEffectResult[sideEffectID]
@@ -680,11 +680,11 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 	return wc.recordMutableSideEffect(id, wc.encodeValue(f()))
 }
 
-func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue []byte, equals func(a, b interface{}) bool) bool {
+func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payload, equals func(a, b interface{}) bool) bool {
 	if newValue == nil {
 		// new value is nil
 		newEncodedValue := wc.encodeValue(nil)
-		return bytes.Equal(newEncodedValue, encodedOldValue)
+		return proto.Equal(newEncodedValue, encodedOldValue)
 	}
 
 	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
@@ -701,20 +701,20 @@ func decodeValue(encodedValue Value, value interface{}) interface{} {
 	return decodedValue
 }
 
-func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) []byte {
-	blob, err := wc.encodeArg(value)
+func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payload {
+	payload, err := wc.encodeArg(value)
 	if err != nil {
 		panic(err)
 	}
-	return blob
+	return payload
 }
 
-func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) ([]byte, error) {
+func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payload, error) {
 	return wc.GetDataConverter().ToData(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data []byte) Value {
-	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, string(data)})
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payload) Value {
+	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, data})
 	if err != nil {
 		panic(err)
 	}
@@ -916,7 +916,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs []byte) ([]byte, error) {
+func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error) {
 	switch queryType {
 	case QueryTypeStackTrace:
 		return weh.encodeArg(weh.StackTrace())
@@ -928,13 +928,12 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, que
 			return nil, err
 		}
 
-		resultSize := len(result)
-		if resultSize > queryResultSizeLimit {
+		if result.Size() > queryResultSizeLimit {
 			weh.logger.Error("Query result size exceeds limit.",
 				zap.String(tagQueryType, queryType),
 				zap.String(tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID),
 				zap.String(tagRunID, weh.workflowInfo.WorkflowExecution.RunID))
-			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", resultSize, queryResultSizeLimit)
+			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 
 		return result, nil
@@ -1055,8 +1054,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	switch attributes.GetMarkerName() {
 	case sideEffectMarkerName:
 		var sideEffectID int32
-		var result []byte
-		_ = encodedValues.Get(&sideEffectID, &result)
+		var result *commonpb.Payload
+		_ = encodedValues.Get(&sideEffectID, result)
 		weh.sideEffectResult[sideEffectID] = result
 		return nil
 	case versionMarkerName:
@@ -1069,26 +1068,27 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		return weh.handleLocalActivityMarker(attributes.Details)
 	case mutableSideEffectMarkerName:
 		var fixedID string
-		var result string
-		_ = encodedValues.Get(&fixedID, &result)
-		weh.mutableSideEffect[fixedID] = []byte(result)
+		var result *commonpb.Payload
+		_ = encodedValues.Get(&fixedID, result)
+		weh.mutableSideEffect[fixedID] = result
 		return nil
 	default:
-		return fmt.Errorf("unknown marker name \"%v\" for eventID \"%v\"",
+		return fmt.Errorf("unknown marker name \"%v\" for eventId \"%v\"",
 			attributes.GetMarkerName(), eventID)
 	}
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData []byte) error {
-	var lamd localActivityMarkerData
-	if err := newEncodedValue(markerData, weh.dataConverter).Get(&lamd); err != nil {
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payload) error {
+	lamd := localActivityMarkerData{}
+
+	if err := weh.dataConverter.FromData(markerData, &lamd); err != nil {
 		return err
 	}
 
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, string(markerData))
+			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
 		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
@@ -1098,9 +1098,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		if len(lamd.ErrReason) > 0 {
 			lar.attempt = lamd.Attempt
 			lar.backoff = lamd.Backoff
-			lar.err = constructError(lamd.ErrReason, []byte(lamd.ErrJSON), weh.GetDataConverter())
+			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
 		} else {
-			lar.result = []byte(lamd.ResultJSON)
+			lar.result = lamd.Result
 		}
 		la.callback(lar)
 
@@ -1125,10 +1125,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	if lar.err != nil {
 		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
 		lamd.ErrReason = errReason
-		lamd.ErrJSON = string(errDetails)
+		lamd.Err = errDetails
 		lamd.Backoff = lar.backoff
 	} else {
-		lamd.ResultJSON = string(lar.result)
+		lamd.Result = lar.result
 	}
 
 	// encode marker data

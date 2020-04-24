@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -38,7 +37,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -60,7 +58,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		HeartbeatTimeout:       20 * time.Second,
 	}
 	s.localActivityOptions = LocalActivityOptions{
-		ScheduleToCloseTimeout: time.Second * 3,
+		ScheduleToCloseTimeout: 3 * time.Second,
 	}
 	s.header = &commonpb.Header{
 		Fields: map[string][]byte{"test": []byte("test-data")},
@@ -1236,7 +1234,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
+		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1296,7 +1294,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = json.Unmarshal(changeVersionsBytes, &changeVersions)
+		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1362,7 +1360,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = NewValue(valBytes).Get(&result)
+		_ = DefaultDataConverter.FromData(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1390,51 +1388,88 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	// mix no-mock and mock is not support
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoTypes() {
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 	var actualValues []string
-	retVal := &executionpb.WorkflowExecution{WorkflowId: "retwID2", RunId: "retrID2"}
+	retVal := "retVal"
 
-	// Passing one argument
-	activitySingleFn := func(ctx context.Context, wf *executionpb.WorkflowExecution) (*executionpb.WorkflowExecution, error) {
-		actualValues = append(actualValues, wf.GetWorkflowId())
-		actualValues = append(actualValues, wf.GetRunId())
-		return retVal, nil
+	activitySingleFn := func(ctx context.Context, s1 string, s2 *string, s3 **string) (*string, error) {
+		actualValues = append(actualValues, s1)
+		actualValues = append(actualValues, *s2)
+		actualValues = append(actualValues, **s3)
+		return &retVal, nil
 	}
 
-	input := &executionpb.WorkflowExecution{WorkflowId: "wID1", RunId: "rID1"}
+	s1 := "s1"
+	s2 := "s2"
+	s3 := "s3"
+	s3Ptr := &s3
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
-	blob, err := env.ExecuteActivity(activitySingleFn, input)
+	payload, err := env.ExecuteActivity(activitySingleFn, s1, &s2, &s3Ptr)
 	s.NoError(err)
-	var ret *executionpb.WorkflowExecution
-	_ = blob.Get(&ret)
-	s.Equal(retVal, ret)
-
-	// Passing more than one argument
-	activityDoubleArgFn := func(ctx context.Context, wf *executionpb.WorkflowExecution, t *commonpb.WorkflowType) (*executionpb.WorkflowExecution, error) {
-		actualValues = append(actualValues, wf.GetWorkflowId())
-		actualValues = append(actualValues, wf.GetRunId())
-		actualValues = append(actualValues, t.GetName())
-		return retVal, nil
-	}
-
-	input = &executionpb.WorkflowExecution{WorkflowId: "wID2", RunId: "rID3"}
-	wt := &commonpb.WorkflowType{Name: "wType"}
-	env = s.NewTestActivityEnvironment()
-	env.RegisterActivity(activityDoubleArgFn)
-	blob, err = env.ExecuteActivity(activityDoubleArgFn, input, wt)
-	s.NoError(err)
-	_ = blob.Get(&ret)
-	s.Equal(retVal, ret)
+	var ret *string
+	_ = payload.Get(&ret)
+	s.Equal(retVal, *ret)
 
 	expectedValues := []string{
-		"wID1",
-		"rID1",
-		"wID2",
-		"rID3",
-		"wType",
+		"s1",
+		"s2",
+		"s3",
 	}
 	s.EqualValues(expectedValues, actualValues)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
+	var actualValues []string
+
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (commonpb.Payload, error) {
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
+		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
+		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
+
+		// If return type is *commonpb.Payload it will be automatically unwrpped (this is side effect of internal impementation).
+		// commonpb.Payload type is returned as is.
+		return commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
+	}
+
+	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
+		Metadata: map[string][]byte{
+			metadataEncoding: []byte("someencoding"),
+		},
+		Data: []byte("input1")}}}
+	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activitySingleFn)
+	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+	s.NoError(err)
+	s.EqualValues([]string{"input1", "someencoding", "input2"}, actualValues)
+
+	var ret commonpb.Payload
+	_ = payload.Get(&ret)
+	s.Equal(commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
+	var actualValues []string
+
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
+		actualValues = append(actualValues, wf1.Name)
+		actualValues = append(actualValues, wf2.Name)
+		return &commonpb.WorkflowType{Name: "result"}, nil
+	}
+
+	input1 := commonpb.WorkflowType{Name: "input1"}
+	input2 := &commonpb.WorkflowType{Name: "input2"}
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activitySingleFn)
+	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+
+	s.NoError(err)
+	s.EqualValues([]string{"input1", "input2"}, actualValues)
+
+	var ret *commonpb.WorkflowType
+	_ = payload.Get(&ret)
+	s.Equal(&commonpb.WorkflowType{Name: "result"}, ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {
@@ -1696,8 +1731,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	var localActivityFnCancelled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
 
-	localActivityFn := func(ctx context.Context, name string) (string, error) {
-		return "hello " + name, nil
+	localActivityFn := func(_ context.Context, _ string) (string, error) {
+		panic("this won't be called because it is mocked")
 	}
 
 	cancelledLocalActivityFn := func(ctx context.Context) error {
@@ -1710,16 +1745,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		ctx = WithLocalActivityOptions(ctx, s.localActivityOptions)
 		var result string
 		f := ExecuteLocalActivity(ctx, localActivityFn, "local_activity")
+
+		// Hack to avoid race condition. Never do anything similar in real production code
+		// TODO: Fix race condition somewhere in test environment
+		time.Sleep(100 * time.Millisecond)
+
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
 		err := f.Get(ctx, nil)
 		if err != nil {
 			return "", err
-		}
-		// Hack to avoid race condition. Never do anything similar in real production code
-		for startedCount.Load() < 2 {
-			time.Sleep(100 * time.Millisecond)
 		}
 		cancel()
 
