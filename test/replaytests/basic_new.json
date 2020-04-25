@@ -13,7 +13,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "executionStartToCloseTimeoutSeconds": 60,
         "taskStartToCloseTimeoutSeconds": 60,
         "originalExecutionRunId": "4ee79b48-c947-4cf2-9902-e9ab01596c6d",
@@ -73,7 +73,7 @@
       "taskId": 22020178,
       "markerRecordedEventAttributes": {
         "markerName": "Version",
-        "details": "InRlc3QtY2hhbmdlIgoxCg==",
+        "details": null,
         "decisionTaskCompletedEventId": 4
       }
     },
@@ -87,7 +87,7 @@
         "decisionTaskCompletedEventId": 4,
         "searchAttributes": {
           "indexedFields": {
-            "TemporalChangeVersion": "WyJ0ZXN0LWNoYW5nZS0xIl0="
+            "TemporalChangeVersion": null
           }
         }
       }
@@ -106,7 +106,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -136,7 +136,7 @@
       "version": -24,
       "taskId": 22020188,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 7,
         "startedEventId": 8,
         "identity": "2310@boweixu-C02V61JZHTDG@helloWorldGroup"
@@ -195,7 +195,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -225,7 +225,7 @@
       "version": -24,
       "taskId": 22020205,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 13,
         "startedEventId": 14,
         "identity": "2310@boweixu-C02V61JZHTDG@helloWorldGroup"
@@ -284,7 +284,7 @@
         "taskList": {
           "name": "helloWorldGroup"
         },
-        "input": "IkNhZGVuY2UiCg==",
+        "input": null,
         "scheduleToCloseTimeoutSeconds": 60,
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
@@ -314,7 +314,7 @@
       "version": -24,
       "taskId": 22020222,
       "activityTaskCompletedEventAttributes": {
-        "result": "IkhlbGxvIENhZGVuY2UhIgo=",
+        "result": null,
         "scheduledEventId": 19,
         "startedEventId": 20,
         "identity": "2310@boweixu-C02V61JZHTDG@helloWorldGroup"

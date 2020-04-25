@@ -25,7 +25,20 @@
 package internal
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
+
+	commonpb "go.temporal.io/temporal-proto/common"
+)
+
+const (
+	metadataEncoding     = "encoding"
+	metadataEncodingRaw  = "raw"
+	metadataEncodingJSON = "json"
+
+	metadataName = "name"
 )
 
 type (
@@ -47,59 +60,139 @@ type (
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in two places:
-	//   1. Workflow worker, through worker.Options
-	//   2. Client, through client.Options
+	// To encode/decode workflow arguments, one should set DataConverter in for Client, through client.Options.
 	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
 	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
-	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
+	//   2. Activity/Workflow worker that run these activity/childWorkflow, through cleint.Options.
 	DataConverter interface {
 		// ToData implements conversion of a list of values.
-		ToData(value ...interface{}) ([]byte, error)
+		ToData(value ...interface{}) (*commonpb.Payload, error)
 		// FromData implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
-		FromData(input []byte, valuePtr ...interface{}) error
+		FromData(input *commonpb.Payload, valuePtr ...interface{}) error
 	}
 
-	// defaultDataConverter uses thrift encoder/decoder when possible, for everything else use json.
+	// defaultDataConverter uses JSON.
 	defaultDataConverter struct{}
+
+	// NameValuePair represent named value.
+	NameValuePair struct {
+		Name  string
+		Value interface{}
+	}
 )
 
-var defaultJSONDataConverter = &defaultDataConverter{}
+var (
+	// DefaultDataConverter is default data converter used by Temporal worker
+	DefaultDataConverter = &defaultDataConverter{}
 
-// DefaultDataConverter is default data converter used by Temporal worker
-var DefaultDataConverter = getDefaultDataConverter()
+	// ErrMetadataIsNotSet is returned when metadata is not set.
+	ErrMetadataIsNotSet = errors.New("metadata is not set")
+	// ErrEncodingIsNotSet is returned when payload encoding metadata is not set.
+	ErrEncodingIsNotSet = errors.New("payload encoding metadata is not set")
+	// ErrEncodingIsNotSupported is returned when payload encoding is not supported.
+	ErrEncodingIsNotSupported = errors.New("payload encoding is not supported")
+	// ErrUnableToEncodeJSON is returned when "unable to encode to JSON.
+	ErrUnableToEncodeJSON = errors.New("unable to encode to JSON")
+	// ErrUnableToDecodeJSON is returned when unable to decode JSON.
+	ErrUnableToDecodeJSON = errors.New("unable to decode JSON")
+	// ErrUnableToSetBytes is returned when unable to set []byte value.
+	ErrUnableToSetBytes = errors.New("unable to set []byte value")
+)
 
 // getDefaultDataConverter return default data converter used by Temporal worker
 func getDefaultDataConverter() DataConverter {
-	return defaultJSONDataConverter
+	return DefaultDataConverter
 }
 
-func (dc *defaultDataConverter) ToData(r ...interface{}) ([]byte, error) {
-	if len(r) == 1 && isTypeByteSlice(reflect.TypeOf(r[0])) {
-		return r[0].([]byte), nil
+func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
+	if len(values) == 0 {
+		return nil, nil
 	}
 
-	encoder := &jsonEncoding{}
+	payload := &commonpb.Payload{}
+	for i, value := range values {
+		nvp, ok := value.(NameValuePair)
+		if !ok {
+			nvp.Name = fmt.Sprintf("values[%d]", i)
+			nvp.Value = value
+		}
 
-	data, err := encoder.Marshal(r)
-	if err != nil {
-		return nil, err
+		var payloadItem *commonpb.PayloadItem
+		if bytes, isByteSlice := nvp.Value.([]byte); isByteSlice {
+			payloadItem = &commonpb.PayloadItem{
+				Metadata: map[string][]byte{
+					metadataEncoding: []byte(metadataEncodingRaw),
+					metadataName:     []byte(nvp.Name),
+				},
+				Data: bytes,
+			}
+		} else {
+			data, err := json.Marshal(nvp.Value)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeJSON, err)
+			}
+			payloadItem = &commonpb.PayloadItem{
+				Metadata: map[string][]byte{
+					metadataEncoding: []byte(metadataEncodingJSON),
+					metadataName:     []byte(nvp.Name),
+				},
+				Data: data,
+			}
+		}
+		payload.Items = append(payload.Items, payloadItem)
 	}
-	return data, nil
+
+	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromData(data []byte, to ...interface{}) error {
-	if len(to) == 1 && isTypeByteSlice(reflect.TypeOf(to[0])) {
-		reflect.ValueOf(to[0]).Elem().SetBytes(data)
+func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
+	if payload == nil {
 		return nil
 	}
-	if len(data) == 0 {
-		return nil
-	}
-	encoder := &jsonEncoding{}
 
-	return encoder.Unmarshal(data, to)
+	for i, payloadItem := range payload.GetItems() {
+		if i >= len(valuePtrs) {
+			break
+		}
+
+		metadata := payloadItem.GetMetadata()
+		if metadata == nil {
+			return fmt.Errorf("payload item %d: %w", i, ErrMetadataIsNotSet)
+		}
+
+		var name string
+		if n, ok := metadata[metadataName]; ok {
+			name = string(n)
+		} else {
+			name = fmt.Sprintf("values[%d]", i)
+		}
+
+		var encoding string
+		if e, ok := metadata[metadataEncoding]; ok {
+			encoding = string(e)
+		} else {
+			return fmt.Errorf("%s: %w", name, ErrEncodingIsNotSet)
+		}
+
+		switch encoding {
+		case metadataEncodingRaw:
+			valueBytes := reflect.ValueOf(valuePtrs[i]).Elem()
+			if !valueBytes.CanSet() {
+				return fmt.Errorf("%s: %w", name, ErrUnableToSetBytes)
+			}
+			valueBytes.SetBytes(payloadItem.GetData())
+		case metadataEncodingJSON:
+			err := json.Unmarshal(payloadItem.GetData(), valuePtrs[i])
+			if err != nil {
+				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
+			}
+		default:
+			return fmt.Errorf("%s, encoding %s: %w", name, encoding, ErrEncodingIsNotSupported)
+		}
+	}
+
+	return nil
 }

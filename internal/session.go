@@ -26,12 +26,14 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/pborman/uuid"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 )
 
@@ -417,7 +419,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			sessionEnv.CompleteSession(sessionID)
 			return ctx.Err()
 		case <-ticker.C:
-			err := activityEnv.serviceInvoker.Heartbeat([]byte{})
+			err := activityEnv.serviceInvoker.Heartbeat(&commonpb.Payload{})
 			if err != nil {
 				sessionEnv.CompleteSession(sessionID)
 				return err
@@ -443,8 +445,7 @@ func isSessionCreationActivity(activity interface{}) bool {
 }
 
 func mustSerializeRecreateToken(params *recreateSessionParams) []byte {
-	dc := getDefaultDataConverter()
-	token, err := dc.ToData(params)
+	token, err := json.Marshal(params)
 	if err != nil {
 		panic(err)
 	}
@@ -452,9 +453,8 @@ func mustSerializeRecreateToken(params *recreateSessionParams) []byte {
 }
 
 func deserializeRecreateToken(token []byte) (*recreateSessionParams, error) {
-	dc := getDefaultDataConverter()
 	var recreateParams recreateSessionParams
-	err := dc.FromData(token, &recreateParams)
+	err := json.Unmarshal(token, &recreateParams)
 	return &recreateParams, err
 }
 

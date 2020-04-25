@@ -36,6 +36,8 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/temporal-proto/common"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.uber.org/zap"
 
 	decisionpb "go.temporal.io/temporal-proto/decision"
@@ -47,10 +49,11 @@ import (
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/serializer"
 )
 
 const (
-	pollTaskServiceTimeOut = 3 * time.Minute // Server long poll is 1 * Minutes + delta
+	pollTaskServiceTimeOut = 150 * time.Second // Server long poll is 2 * Minutes + delta
 
 	stickyDecisionScheduleToStartTimeoutSeconds = 5
 
@@ -74,13 +77,14 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		namespace    string
-		taskListName string
-		identity     string
-		service      workflowservice.WorkflowServiceClient
-		taskHandler  WorkflowTaskHandler
-		metricsScope tally.Scope
-		logger       *zap.Logger
+		namespace     string
+		taskListName  string
+		identity      string
+		service       workflowservice.WorkflowServiceClient
+		taskHandler   WorkflowTaskHandler
+		metricsScope  tally.Scope
+		logger        *zap.Logger
+		dataConverter DataConverter
 
 		stickyUUID                   string
 		disableStickyExecution       bool
@@ -133,7 +137,7 @@ type (
 	}
 
 	localActivityResult struct {
-		result  []byte
+		result  *commonpb.Payload
 		err     error
 		task    *localActivityTask
 		backoff time.Duration
@@ -226,6 +230,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		taskHandler:                  taskHandler,
 		metricsScope:                 params.MetricsScope,
 		logger:                       params.Logger,
+		dataConverter:                params.DataConverter,
 		stickyUUID:                   uuid.New(),
 		disableStickyExecution:       params.DisableStickyExecution,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
@@ -341,7 +346,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.Error(taskErr))
 		// convert err to DecisionTaskFailed
-		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity)
+		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
 	} else {
 		wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
 	}
@@ -522,7 +527,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
-	var laResult []byte
+	var laResult *commonpb.Payload
 	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
@@ -757,7 +762,19 @@ func newGetHistoryPageFunc(
 
 		metricsScope.Counter(metrics.WorkflowGetHistorySucceedCounter).Inc(1)
 		metricsScope.Timer(metrics.WorkflowGetHistoryLatency).Record(time.Since(startTime))
-		h := resp.History
+
+		var h *eventpb.History
+
+		if resp.RawHistory != nil {
+			var err1 error
+			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, filterpb.HistoryEventFilterType_AllEvent)
+			if err1 != nil {
+				return nil, nil, nil
+			}
+		} else {
+			h = resp.History
+		}
+
 		size := len(h.Events)
 		if size > 0 && atDecisionTaskCompletedEventID > 0 &&
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
@@ -988,7 +1005,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	return reportErr
 }
 
-func convertActivityResultToRespondRequest(identity string, taskToken, result []byte, err error,
+func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payload, err error,
 	dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1019,7 +1036,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken, result []
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result []byte, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payload, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

@@ -44,7 +44,7 @@ import (
 type (
 	// EncodedValues is a type alias used to encapsulate/extract encoded arguments from workflow/activity.
 	EncodedValues struct {
-		values        []byte
+		values        *commonpb.Payload
 		dataConverter DataConverter
 	}
 
@@ -80,7 +80,7 @@ type (
 	}
 )
 
-func newEncodedValues(values []byte, dc DataConverter) Values {
+func newEncodedValues(values *commonpb.Payload, dc DataConverter) Values {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -667,7 +667,7 @@ func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result inte
 
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (e *TestWorkflowEnvironment) CancelWorkflow() {
-	e.impl.cancelWorkflow(func(result []byte, err error) {})
+	e.impl.cancelWorkflow(func(result *commonpb.Payload, err error) {})
 }
 
 // SignalWorkflow sends signal to the currently running test workflow.

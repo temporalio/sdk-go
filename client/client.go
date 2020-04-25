@@ -31,6 +31,7 @@ package client
 import (
 	"context"
 
+	commonpb "go.temporal.io/temporal-proto/common"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -116,7 +117,7 @@ type (
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
 
-		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance (described above)
+		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance (described above)
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
@@ -125,6 +126,7 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
+		// If workflow not found, the Get() will return EntityNotExistsError.
 		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -174,7 +176,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		// - workflow ID of the workflow.
@@ -185,7 +187,7 @@ type (
 		// - whether return all history events or just the last event, which contains the workflow execution end result
 		// Example:-
 		//	To iterate all events,
-		//		iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
+		// 		iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
 		//		events := []*shared.HistoryEvent{}
 		//		for iter.HasNext() {
 		//			event, err := iter.Next()
@@ -434,7 +436,7 @@ var _ internal.NamespaceClient = NamespaceClient(nil)
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data []byte) encoded.Value {
+func NewValue(data *commonpb.Payload) encoded.Value {
 	return internal.NewValue(data)
 }
 
@@ -445,6 +447,6 @@ func NewValue(data []byte) encoded.Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data []byte) encoded.Values {
+func NewValues(data *commonpb.Payload) encoded.Values {
 	return internal.NewValues(data)
 }

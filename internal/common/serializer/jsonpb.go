@@ -22,47 +22,49 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package serializer
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"reflect"
+
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/proto"
 )
 
-// jsonEncoding encapsulates json encoding and decoding
-type jsonEncoding struct {
+type (
+	// JSONPBEncoder is JSON encoder/decoder for protobuf structs and slices of protobuf structs.
+	// This is an wrapper on top of jsonpb.Marshaler which supports not only single object serialization
+	// but also slices of concrete objects.
+	JSONPBEncoder struct {
+		marshaler   jsonpb.Marshaler
+		ubmarshaler jsonpb.Unmarshaler
+	}
+)
+
+// NewJSONPBEncoder creates a new JSONPBEncoder.
+func NewJSONPBEncoder() *JSONPBEncoder {
+	return &JSONPBEncoder{
+		marshaler:   jsonpb.Marshaler{},
+		ubmarshaler: jsonpb.Unmarshaler{},
+	}
 }
 
-// Marshal encodes an array of object into bytes
-func (g jsonEncoding) Marshal(objs []interface{}) ([]byte, error) {
+// NewJSONPBIndentEncoder creates a new JSONPBEncoder with indent.
+func NewJSONPBIndentEncoder(indent string) *JSONPBEncoder {
+	return &JSONPBEncoder{
+		marshaler:   jsonpb.Marshaler{Indent: indent},
+		ubmarshaler: jsonpb.Unmarshaler{},
+	}
+}
+
+// Encode protobuf struct to bytes.
+func (e *JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	for i, obj := range objs {
-		if err := enc.Encode(obj); err != nil {
-			if err == io.EOF {
-				return nil, fmt.Errorf("missing argument at index %d of type %T", i, obj)
-			}
-			return nil, fmt.Errorf(
-				"unable to encode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return buf.Bytes(), nil
+	err := e.marshaler.Marshal(&buf, pb)
+	return buf.Bytes(), err
 }
 
-// Unmarshal decodes a byte array into the passed in objects
-func (g jsonEncoding) Unmarshal(data []byte, objs []interface{}) error {
-	if len(data) == 0 {
-		return nil
-	}
-	dec := json.NewDecoder(bytes.NewBuffer(data))
-	for i, obj := range objs {
-		if err := dec.Decode(obj); err != nil {
-			return fmt.Errorf(
-				"unable to decode argument: %d, %v, with json error: %v", i, reflect.TypeOf(obj), err)
-		}
-	}
-	return nil
+// Decode bytes to protobuf struct.
+func (e *JSONPBEncoder) Decode(data []byte, pb proto.Message) error {
+	return e.ubmarshaler.Unmarshal(bytes.NewReader(data), pb)
 }

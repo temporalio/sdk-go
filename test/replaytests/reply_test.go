@@ -69,6 +69,6 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 		replayer.RegisterWorkflow(Workflow2)
 
 		err = replayer.ReplayWorkflowHistoryFromJSONFile(logger, testFile)
-		require.NoError(s.T(), err)
+		require.NoError(s.T(), err, "file: %s", testFile)
 	}
 }

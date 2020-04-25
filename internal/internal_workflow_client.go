@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,6 +48,7 @@ import (
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
 	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/temporal/internal/common/serializer"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -135,7 +135,7 @@ type (
 	historyEventIteratorImpl struct {
 		// whether this iterator is initialized
 		initialized bool
-		// local cached histroy events and corresponding comsuming index
+		// local cached history events and corresponding consuming index
 		nextEventIndex int
 		events         []*eventpb.HistoryEvent
 		// token to get next page of history events
@@ -448,7 +448,12 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details []byte) error {
+func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+	datailsPayload, err := wc.dataConverter.ToData(details...)
+	if err != nil {
+		return err
+	}
+
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &executionpb.WorkflowExecution{
@@ -457,10 +462,10 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 		},
 		Reason:   reason,
 		Identity: wc.identity,
-		Details:  details,
+		Details:  datailsPayload,
 	}
 
-	err := backoff.Retry(ctx,
+	err = backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
@@ -502,6 +507,18 @@ func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 					})
 					defer cancel()
 					response, err1 = wc.workflowService.GetWorkflowExecutionHistory(tchCtx, request)
+
+					if err1 != nil {
+						return err1
+					}
+
+					if response.RawHistory != nil {
+						history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, filterType)
+						if err != nil {
+							return err
+						}
+						response.History = history
+					}
 					return err1
 				}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
@@ -532,7 +549,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		return errors.New("invalid task token provided")
 	}
 
-	var data []byte
+	var data *commonpb.Payload
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -553,7 +570,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
-	var data []byte
+	var data *commonpb.Payload
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -843,7 +860,7 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - EntityNotExistError
 //  - QueryFailError
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
-	var input []byte
+	var input *commonpb.Payload
 	if len(request.Args) > 0 {
 		var err error
 		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
@@ -1112,7 +1129,7 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 		return nil, nil
 	}
 
-	memo := make(map[string][]byte)
+	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
 		memoBytes, err := encodeArg(dc, v)
 		if err != nil {
@@ -1128,9 +1145,9 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 		return nil, nil
 	}
 
-	attr := make(map[string][]byte)
+	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := json.Marshal(v)
+		attrBytes, err := getDefaultDataConverter().ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}
