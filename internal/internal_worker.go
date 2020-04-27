@@ -1249,7 +1249,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	if last.GetEventType() != eventpb.EventType_WorkflowExecutionCompleted && last.GetEventType() != eventpb.EventType_WorkflowExecutionContinuedAsNew {
 		return nil
 	}
-	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
+
 	if resp != nil {
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
@@ -1275,7 +1275,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 			}
 		}
 	}
-	return err
+	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
 }
 
 func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.History, error) {

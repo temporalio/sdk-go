@@ -883,7 +883,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, work
 		Namespace:         namespace,
 		WorkflowId:        workflowID,
 		RunId:             runID,
-		Control:           []byte(cancellationID),
+		Control:           cancellationID,
 		ChildWorkflowOnly: false,
 	}
 	decision := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
@@ -943,7 +943,7 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID,
 		},
 		SignalName:        signalName,
 		Input:             input,
-		Control:           []byte(signalID),
+		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
 	}
 	decision := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
