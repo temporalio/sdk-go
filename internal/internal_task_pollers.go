@@ -37,14 +37,13 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/temporal-proto/common"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	"go.uber.org/zap"
-
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"

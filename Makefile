@@ -8,6 +8,9 @@ IMPORT_ROOT := go.temporal.io/temporal
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 
+TEST_TIMEOUT := 2m
+TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
+
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
