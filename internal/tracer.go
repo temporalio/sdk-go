@@ -36,8 +36,8 @@ type tracingReader struct {
 }
 
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
-	return t.reader.ForEachKey(func(k string, v []byte) error {
-		return handler(k, string(v))
+	return t.reader.ForEachKey(func(k string, v string) error {
+		return handler(k, v)
 	})
 }
 
@@ -46,7 +46,7 @@ type tracingWriter struct {
 }
 
 func (t tracingWriter) Set(key, val string) {
-	t.writer.Set(key, []byte(val))
+	t.writer.Set(key, val)
 }
 
 // tracingContextPropagator implements the ContextPropagator interface for

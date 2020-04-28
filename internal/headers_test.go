@@ -37,50 +37,50 @@ func TestHeaderWriter(t *testing.T) {
 		name     string
 		initial  *commonpb.Header
 		expected *commonpb.Header
-		vals     map[string][]byte
+		vals     map[string]*commonpb.Payload
 	}{
 		{
 			"no values",
 			&commonpb.Header{
-				Fields: map[string][]byte{},
+				Fields: map[string]*commonpb.Payload{},
 			},
 			&commonpb.Header{
-				Fields: map[string][]byte{},
+				Fields: map[string]*commonpb.Payload{},
 			},
-			map[string][]byte{},
+			map[string]*commonpb.Payload{},
 		},
 		{
 			"add values",
 			&commonpb.Header{
-				Fields: map[string][]byte{},
+				Fields: map[string]*commonpb.Payload{},
 			},
 			&commonpb.Header{
-				Fields: map[string][]byte{
-					"key1": []byte("val1"),
-					"key2": []byte("val2"),
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
 				},
 			},
-			map[string][]byte{
-				"key1": []byte("val1"),
-				"key2": []byte("val2"),
+			map[string]*commonpb.Payload{
+				"key1": encodeString(t, "val1"),
+				"key2": encodeString(t, "val2"),
 			},
 		},
 		{
 			"overwrite values",
 			&commonpb.Header{
-				Fields: map[string][]byte{
-					"key1": []byte("unexpected"),
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "unexpected"),
 				},
 			},
 			&commonpb.Header{
-				Fields: map[string][]byte{
-					"key1": []byte("val1"),
-					"key2": []byte("val2"),
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
 				},
 			},
-			map[string][]byte{
-				"key1": []byte("val1"),
-				"key2": []byte("val2"),
+			map[string]*commonpb.Payload{
+				"key1": encodeString(t, "val1"),
+				"key2": encodeString(t, "val2"),
 			},
 		},
 	}
@@ -91,11 +91,20 @@ func TestHeaderWriter(t *testing.T) {
 			t.Parallel()
 			writer := NewHeaderWriter(test.initial)
 			for key, val := range test.vals {
-				writer.Set(key, val)
+				var decodedValue string
+				err := DefaultDataConverter.FromData(val, &decodedValue)
+				assert.NoError(t, err)
+				writer.Set(key, decodedValue)
 			}
 			assert.Equal(t, test.expected, test.initial)
 		})
 	}
+}
+
+func encodeString(t *testing.T, s string) *commonpb.Payload {
+	p, err := DefaultDataConverter.ToData(s)
+	assert.NoError(t, err)
+	return p
 }
 
 func TestHeaderReader(t *testing.T) {
@@ -109,9 +118,9 @@ func TestHeaderReader(t *testing.T) {
 		{
 			"valid values",
 			&commonpb.Header{
-				Fields: map[string][]byte{
-					"key1": []byte("val1"),
-					"key2": []byte("val2"),
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
 				},
 			},
 			map[string]struct{}{"key1": {}, "key2": {}},
@@ -120,9 +129,9 @@ func TestHeaderReader(t *testing.T) {
 		{
 			"invalid values",
 			&commonpb.Header{
-				Fields: map[string][]byte{
-					"key1": []byte("val1"),
-					"key2": []byte("val2"),
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
 				},
 			},
 			map[string]struct{}{"key2": {}},
@@ -135,7 +144,7 @@ func TestHeaderReader(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader := NewHeaderReader(test.header)
-			err := reader.ForEachKey(func(key string, val []byte) error {
+			err := reader.ForEachKey(func(key string, val string) error {
 				if _, ok := test.keys[key]; !ok {
 					return assert.AnError
 				}

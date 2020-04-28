@@ -92,7 +92,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, []byte(value))
+		writer.Set(key, value)
 	}
 	return nil
 }
@@ -104,16 +104,16 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, []byte(value))
+		writer.Set(key, value)
 	}
 	return nil
 }
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value []byte) error {
+	if err := reader.ForEachKey(func(key string, value string) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = context.WithValue(ctx, contextKey(key), string(value))
+			ctx = context.WithValue(ctx, contextKey(key), value)
 		}
 		return nil
 	}); err != nil {
@@ -124,9 +124,9 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value []byte) error {
+	if err := reader.ForEachKey(func(key string, value string) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = WithValue(ctx, contextKey(key), string(value))
+			ctx = WithValue(ctx, contextKey(key), value)
 		}
 		return nil
 	}); err != nil {
