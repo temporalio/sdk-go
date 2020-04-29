@@ -371,8 +371,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Namespace = params.namespace
 	attributes.TaskList = &tasklistpb.TaskList{Name: params.taskListName}
 	attributes.WorkflowId = params.workflowID
-	attributes.ExecutionStartToCloseTimeoutSeconds = params.executionStartToCloseTimeoutSeconds
-	attributes.TaskStartToCloseTimeoutSeconds = params.taskStartToCloseTimeoutSeconds
+	attributes.WorkflowExecutionTimeoutSeconds = params.workflowExecutionTimeoutSeconds
+	attributes.WorkflowRunTimeoutSeconds = params.workflowRunTimeoutSeconds
+	attributes.WorkflowTaskTimeoutSeconds = params.workflowTaskTimeoutSeconds
 	attributes.Input = params.input
 	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.workflowType.Name}
 	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toProto()
@@ -506,8 +507,8 @@ func newLocalActivityTask(params executeLocalActivityParams, callback laResultHa
 		attempt:     params.Attempt,
 	}
 
-	if params.RetryPolicy != nil && params.RetryPolicy.ExpirationInterval > 0 {
-		task.expireTime = params.ScheduledTime.Add(params.RetryPolicy.ExpirationInterval)
+	if params.ScheduleToCloseTimeoutSeconds > 0 {
+		task.expireTime = params.ScheduledTime.Add(time.Second * time.Duration(params.ScheduleToCloseTimeoutSeconds))
 	}
 	return task
 }

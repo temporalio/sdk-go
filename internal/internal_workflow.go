@@ -168,22 +168,23 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	workflowOptions struct {
-		taskListName                        string
-		executionStartToCloseTimeoutSeconds int32
-		taskStartToCloseTimeoutSeconds      int32
-		namespace                           string
-		workflowID                          string
-		waitForCancellation                 bool
-		signalChannels                      map[string]Channel
-		queryHandlers                       map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
-		workflowIDReusePolicy               WorkflowIDReusePolicy
-		dataConverter                       DataConverter
-		retryPolicy                         *commonpb.RetryPolicy
-		cronSchedule                        string
-		contextPropagators                  []ContextPropagator
-		memo                                map[string]interface{}
-		searchAttributes                    map[string]interface{}
-		parentClosePolicy                   ParentClosePolicy
+		taskListName                    string
+		workflowExecutionTimeoutSeconds int32
+		workflowRunTimeoutSeconds       int32
+		workflowTaskTimeoutSeconds      int32
+		namespace                       string
+		workflowID                      string
+		waitForCancellation             bool
+		signalChannels                  map[string]Channel
+		queryHandlers                   map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
+		workflowIDReusePolicy           WorkflowIDReusePolicy
+		dataConverter                   DataConverter
+		retryPolicy                     *commonpb.RetryPolicy
+		cronSchedule                    string
+		contextPropagators              []ContextPropagator
+		memo                            map[string]interface{}
+		searchAttributes                map[string]interface{}
+		parentClosePolicy               ParentClosePolicy
 	}
 
 	executeWorkflowParams struct {
@@ -430,8 +431,9 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
-	rootCtx = WithExecutionStartToCloseTimeout(rootCtx, time.Duration(wInfo.ExecutionStartToCloseTimeoutSeconds)*time.Second)
-	rootCtx = WithWorkflowTaskStartToCloseTimeout(rootCtx, time.Duration(wInfo.TaskStartToCloseTimeoutSeconds)*time.Second)
+	getWorkflowEnvOptions(rootCtx).workflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
+	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
+	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
 	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())
@@ -589,7 +591,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 		hasResult = false
 		v, ok, m := c.receiveAsyncImpl(callback)
 
-		if !ok && !m { // channel closed and empty
+		if !ok && !m { //channel closed and empty
 			return m
 		}
 
@@ -599,7 +601,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 				state.unblocked()
 				return m
 			}
-			continue // corrupt signal. Drop and reset process
+			continue //corrupt signal. Drop and reset process
 		}
 		for {
 			if hasResult {
@@ -608,7 +610,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 					state.unblocked()
 					return more
 				}
-				break // Corrupt signal. Drop and reset process.
+				break //Corrupt signal. Drop and reset process.
 			}
 			state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
 		}
@@ -624,7 +626,7 @@ func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
 func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool) {
 	for {
 		v, ok, more := c.receiveAsyncImpl(nil)
-		if !ok && !more { // channel closed and empty
+		if !ok && !more { //channel closed and empty
 			return ok, more
 		}
 
@@ -767,7 +769,7 @@ func (c *channelImpl) Close() {
 // Takes a value and assigns that 'to' value. logs a metric if it is unable to deserialize
 func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	err := decodeAndAssignValue(c.dataConverter, from, to)
-	// add to metrics
+	//add to metrics
 	if err != nil {
 		c.env.GetLogger().Error(fmt.Sprintf("Corrupt signal received on channel %s. Error deserializing", c.name), zap.Error(err))
 		c.env.GetMetricsScope().Counter(metrics.CorruptedSignalsCounter).Inc(1)

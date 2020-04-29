@@ -51,14 +51,18 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 	return internal.WithWorkflowID(ctx, workflowID)
 }
 
-// WithExecutionStartToCloseTimeout adds a workflow execution timeout to the context.
-func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
-	return internal.WithExecutionStartToCloseTimeout(ctx, d)
+// WithWorkflowRunTimeout adds a run timeout to the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
+	return internal.WithWorkflowRunTimeout(ctx, d)
 }
 
-// WithWorkflowTaskStartToCloseTimeout adds a decision timeout to the context.
-func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
-	return internal.WithWorkflowTaskStartToCloseTimeout(ctx, d)
+// WithWorkflowTaskTimeout adds a workflow task timeout to the context.
+// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
+// subjected to change in the future.
+func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
+	return internal.WithWorkflowTaskTimeout(ctx, d)
 }
 
 // WithDataConverter adds DataConverter to the context.

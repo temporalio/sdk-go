@@ -70,6 +70,7 @@ type (
 
 	localActivityOptions struct {
 		ScheduleToCloseTimeoutSeconds int32
+		StartToCloseTimeoutSeconds    int32
 		RetryPolicy                   *RetryPolicy
 	}
 
@@ -175,10 +176,20 @@ func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error
 	if p == nil {
 		return nil, errLocalActivityParamsBadRequest
 	}
-	if p.ScheduleToCloseTimeoutSeconds <= 0 {
-		return nil, errors.New("missing or negative ScheduleToCloseTimeoutSeconds")
+	if p.ScheduleToCloseTimeoutSeconds < 0 {
+		return nil, errors.New("negative ScheduleToCloseTimeoutSeconds")
 	}
-
+	if p.StartToCloseTimeoutSeconds < 0 {
+		return nil, errors.New("negative StartToCloseTimeoutSeconds")
+	}
+	if p.ScheduleToCloseTimeoutSeconds == 0 && p.StartToCloseTimeoutSeconds == 0 {
+		return nil, errors.New("at least one of ScheduleToCloseTimeoutSeconds and StartToCloseTimeoutSeconds is required")
+	}
+	if p.ScheduleToCloseTimeoutSeconds == 0 {
+		p.ScheduleToCloseTimeoutSeconds = p.StartToCloseTimeoutSeconds
+	} else {
+		p.StartToCloseTimeoutSeconds = p.ScheduleToCloseTimeoutSeconds
+	}
 	return p, nil
 }
 

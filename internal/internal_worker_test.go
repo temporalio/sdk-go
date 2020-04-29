@@ -206,8 +206,8 @@ func testReplayWorkflowFromFileParent(ctx Context) error {
 	execution := GetWorkflowInfo(ctx).WorkflowExecution
 	childID := fmt.Sprintf("child_workflow:%v", execution.RunID)
 	cwo := ChildWorkflowOptions{
-		WorkflowID:                   childID,
-		ExecutionStartToCloseTimeout: time.Minute,
+		WorkflowID:               childID,
+		WorkflowExecutionTimeout: time.Minute,
 	}
 	ctx = WithChildWorkflowOptions(ctx, cwo)
 	var result string

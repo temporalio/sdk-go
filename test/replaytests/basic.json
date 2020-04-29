@@ -14,8 +14,8 @@
           "name": "helloWorldGroup"
         },
         "input": null,
-        "executionStartToCloseTimeoutSeconds": 60,
-        "taskStartToCloseTimeoutSeconds": 60,
+        "workflowRunTimeoutSeconds": 60,
+        "workflowTaskTimeoutSeconds": 60,
         "originalExecutionRunId": "b08ce5f0-920b-43f8-a90d-44d12476297e",
         "identity": "87832@boweixu-C02V61JZHTDG@",
         "firstExecutionRunId": "b08ce5f0-920b-43f8-a90d-44d12476297e",
