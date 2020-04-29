@@ -228,10 +228,10 @@ for an activity it invoked.
 		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
 		WorkflowExecutionTimeout: time.Minute * 30,
 	}
-	ctx = workflow.WithChildOptions(ctx, cwo)
+	childCtx = workflow.WithChildOptions(ctx, cwo)
 
 	var result string
-	future := workflow.ExecuteChildWorkflow(ctx, SimpleChildWorkflow, value)
+	future := workflow.ExecuteChildWorkflow(childCtx, SimpleChildWorkflow, value)
 	if err := future.Get(ctx, &result); err != nil {
 		workflow.GetLogger(ctx).Error("SimpleChildWorkflow failed.", zap.Error(err))
 		return err
@@ -265,6 +265,27 @@ are available.
 The workflow.ExecuteChildWorkflow() function is very similar to the workflow.ExecuteActivity() function. All the
 patterns described for using the workflow.ExecuteActivity() apply to the workflow.ExecuteChildWorkflow() function as
 well.
+
+Child workflows can also be configured to continue to exist once their parent workflow is closed. When using this
+pattern, extra care needs to be taken to ensure the child workflow is started before the parent workflow finishes.
+
+	cwo := workflow.ChildWorkflowOptions{
+		// Do not specify WorkflowID if you want cadence to generate a unique ID for child execution
+		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
+		ExecutionStartToCloseTimeout: time.Minute * 30,
+
+		// Do not terminate when parent closes.
+		ParentClosePolicy: client.ParentClosePolicyAbandon,
+	}
+	childCtx = workflow.WithChildOptions(ctx, cwo)
+
+	future := workflow.ExecuteChildWorkflow(childCtx, SimpleChildWorkflow, value)
+
+	// Wait for the child workflow to start
+	if err := future.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+		// Problem starting workflow.
+		return err
+	}
 
 Error Handling
 
