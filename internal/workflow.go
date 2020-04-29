@@ -702,7 +702,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string][]byte),
+		Fields: make(map[string]*commonpb.Payload),
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {

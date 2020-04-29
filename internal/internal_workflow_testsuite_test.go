@@ -61,7 +61,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		ScheduleToCloseTimeout: 3 * time.Second,
 	}
 	s.header = &commonpb.Header{
-		Fields: map[string][]byte{"test": []byte("test-data")},
+		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
 	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
 }
@@ -387,8 +387,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	}
 
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string][]byte{
-			testHeader: []byte("test-data"),
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
 
@@ -1609,8 +1609,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string][]byte{
-			testHeader: []byte("test-data"),
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
 

@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	commonpb "go.temporal.io/temporal-proto/common"
@@ -437,8 +438,10 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
+	headerValue, err := DefaultDataConverter.ToData("test-data")
+	assert.NoError(t, err)
 	header := &commonpb.Header{
-		Fields: map[string][]byte{"test": []byte("test-data")},
+		Fields: map[string]*commonpb.Payload{"test": headerValue},
 	}
 
 	s := &WorkflowTestSuite{
@@ -450,7 +453,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 		Name: continueAsNewWfName,
 	})
 	wfEnv.ExecuteWorkflow(continueAsNewWorkflowFn, 101, "another random string")
-	err := wfEnv.GetWorkflowError()
+	err = wfEnv.GetWorkflowError()
 
 	require.Error(t, err)
 	continueAsNewErr, ok := err.(*ContinueAsNewError)
