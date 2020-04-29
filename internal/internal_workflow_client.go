@@ -948,7 +948,7 @@ func (wc *WorkflowClient) CloseConnection() error {
 
 func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string][]byte),
+		Fields: make(map[string]*commonpb.Payload),
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range wc.contextPropagators {
