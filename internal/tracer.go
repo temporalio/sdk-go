@@ -28,25 +28,34 @@ import (
 	"context"
 
 	"github.com/opentracing/opentracing-go"
+	commonpb "go.temporal.io/temporal-proto/common"
 	"go.uber.org/zap"
 )
 
+// Must impement opentracing.TextMapReader
 type tracingReader struct {
 	reader HeaderReader
 }
 
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
-	return t.reader.ForEachKey(func(k string, v string) error {
-		return handler(k, v)
+	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
+		var decodedValue string
+		err := DefaultDataConverter.FromData(v, &decodedValue)
+		if err != nil {
+			return err
+		}
+		return handler(k, decodedValue)
 	})
 }
 
+// Must impement opentracing.TextMapWriter
 type tracingWriter struct {
 	writer HeaderWriter
 }
 
 func (t tracingWriter) Set(key, val string) {
-	t.writer.Set(key, val)
+	encodedValue, _ := DefaultDataConverter.ToData(val)
+	t.writer.Set(key, encodedValue)
 }
 
 // tracingContextPropagator implements the ContextPropagator interface for

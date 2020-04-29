@@ -92,7 +92,11 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, value)
+		encodedValue, err := DefaultDataConverter.ToData(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
 	}
 	return nil
 }
@@ -104,16 +108,25 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, value)
+		encodedValue, err := DefaultDataConverter.ToData(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
 	}
 	return nil
 }
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value string) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = context.WithValue(ctx, contextKey(key), value)
+			var decodedValue string
+			err := DefaultDataConverter.FromData(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
 		}
 		return nil
 	}); err != nil {
@@ -124,9 +137,14 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value string) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = WithValue(ctx, contextKey(key), value)
+			var decodedValue string
+			err := DefaultDataConverter.FromData(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = WithValue(ctx, contextKey(key), decodedValue)
 		}
 		return nil
 	}); err != nil {

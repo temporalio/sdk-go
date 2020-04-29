@@ -32,12 +32,12 @@ import (
 
 // HeaderWriter is an interface to write information to temporal headers
 type HeaderWriter interface {
-	Set(string, string)
+	Set(string, *commonpb.Payload)
 }
 
 // HeaderReader is an interface to read information from temporal headers
 type HeaderReader interface {
-	ForEachKey(handler func(string, string) error) error
+	ForEachKey(handler func(string, *commonpb.Payload) error) error
 }
 
 // ContextPropagator is an interface that determines what information from
@@ -62,18 +62,12 @@ type headerReader struct {
 	header *commonpb.Header
 }
 
-func (hr *headerReader) ForEachKey(handler func(string, string) error) error {
+func (hr *headerReader) ForEachKey(handler func(string, *commonpb.Payload) error) error {
 	if hr.header == nil {
 		return nil
 	}
 	for key, value := range hr.header.Fields {
-		var decodedValue string
-		err := DefaultDataConverter.FromData(value, &decodedValue)
-		if err != nil {
-			return err
-		}
-
-		if err := handler(key, decodedValue); err != nil {
+		if err := handler(key, value); err != nil {
 			return err
 		}
 	}
@@ -89,12 +83,11 @@ type headerWriter struct {
 	header *commonpb.Header
 }
 
-func (hw *headerWriter) Set(key string, value string) {
+func (hw *headerWriter) Set(key string, value *commonpb.Payload) {
 	if hw.header == nil {
 		return
 	}
-	payload, _ := DefaultDataConverter.ToData(value)
-	hw.header.Fields[key] = payload
+	hw.header.Fields[key] = value
 }
 
 // NewHeaderWriter returns a header writer interface

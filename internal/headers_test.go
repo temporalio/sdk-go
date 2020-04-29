@@ -91,10 +91,7 @@ func TestHeaderWriter(t *testing.T) {
 			t.Parallel()
 			writer := NewHeaderWriter(test.initial)
 			for key, val := range test.vals {
-				var decodedValue string
-				err := DefaultDataConverter.FromData(val, &decodedValue)
-				assert.NoError(t, err)
-				writer.Set(key, decodedValue)
+				writer.Set(key, val)
 			}
 			assert.Equal(t, test.expected, test.initial)
 		})
@@ -144,7 +141,7 @@ func TestHeaderReader(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader := NewHeaderReader(test.header)
-			err := reader.ForEachKey(func(key string, val string) error {
+			err := reader.ForEachKey(func(key string, _ *commonpb.Payload) error {
 				if _, ok := test.keys[key]; !ok {
 					return assert.AnError
 				}
