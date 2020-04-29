@@ -59,7 +59,7 @@ type (
 	}
 
 	workflowResult struct {
-		workflowResult *commonpb.Payload
+		workflowResult *commonpb.Payloads
 		error          error
 	}
 
@@ -96,7 +96,7 @@ type (
 	// All time manipulation should use current time returned by GetTime(ctx) method.
 	// Note that workflow.Context is used instead of context.Context to avoid use of raw channels.
 	workflow interface {
-		Execute(ctx Context, input *commonpb.Payload) (result *commonpb.Payload, err error)
+		Execute(ctx Context, input *commonpb.Payloads) (result *commonpb.Payloads, err error)
 	}
 
 	sendCallback struct {
@@ -175,7 +175,7 @@ type (
 		workflowID                          string
 		waitForCancellation                 bool
 		signalChannels                      map[string]Channel
-		queryHandlers                       map[string]func(*commonpb.Payload) (*commonpb.Payload, error)
+		queryHandlers                       map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
 		workflowIDReusePolicy               WorkflowIDReusePolicy
 		dataConverter                       DataConverter
 		retryPolicy                         *commonpb.RetryPolicy
@@ -189,11 +189,11 @@ type (
 	executeWorkflowParams struct {
 		workflowOptions
 		workflowType         *WorkflowType
-		input                *commonpb.Payload
+		input                *commonpb.Payloads
 		header               *commonpb.Header
-		attempt              int32             // used by test framework to support child workflow retry
-		scheduledTime        time.Time         // used by test framework to support child workflow retry
-		lastCompletionResult *commonpb.Payload // used by test framework to support cron
+		attempt              int32              // used by test framework to support child workflow retry
+		scheduledTime        time.Time          // used by test framework to support child workflow retry
+		lastCompletionResult *commonpb.Payloads // used by test framework to support cron
 	}
 
 	// decodeFutureImpl
@@ -307,8 +307,8 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 
-	if payload, ok := f.value.(*commonpb.Payload); ok {
-		if _, ok2 := value.(**commonpb.Payload); !ok2 {
+	if payload, ok := f.value.(*commonpb.Payloads); ok {
+		if _, ok2 := value.(**commonpb.Payloads); !ok2 {
 			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, value); err != nil {
 				return err
 			}
@@ -450,7 +450,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	return interceptor, envInterceptor
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payload) {
+func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}
@@ -484,7 +484,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *common
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result *commonpb.Payload) {
+	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result *commonpb.Payloads) {
 		eo := getWorkflowEnvOptions(d.rootCtx)
 		// We don't want this code to be blocked ever, using sendAsync().
 		ch := eo.getSignalChannel(d.rootCtx, name).(*channelImpl)
@@ -494,7 +494,7 @@ func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *common
 		}
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error) {
+	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error) {
 		eo := getWorkflowEnvOptions(d.rootCtx)
 		handler, ok := eo.queryHandlers[queryType]
 		if !ok {
@@ -1122,7 +1122,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payload, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1166,7 +1166,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions = *options
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
-		newOptions.queryHandlers = make(map[string]func(*commonpb.Payload) (*commonpb.Payload, error))
+		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
 	if newOptions.dataConverter == nil {
 		newOptions.dataConverter = getDefaultDataConverter()
@@ -1194,7 +1194,7 @@ func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 
 func getHeadersFromContext(ctx Context) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payload),
+		Fields: make(map[string]*commonpb.Payloads),
 	}
 	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)
 	for _, ctxProp := range contextPropagators {
@@ -1243,7 +1243,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 		return errors.New("value parameter is not a pointer")
 	}
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
-	err := dataConverter.FromData(d.futureImpl.value.(*commonpb.Payload), value)
+	err := dataConverter.FromData(d.futureImpl.value.(*commonpb.Payloads), value)
 	if err != nil {
 		return err
 	}
@@ -1295,7 +1295,7 @@ func (h *queryHandler) validateHandlerFn() error {
 	return nil
 }
 
-func (h *queryHandler) execute(input *commonpb.Payload) (result *commonpb.Payload, err error) {
+func (h *queryHandler) execute(input *commonpb.Payloads) (result *commonpb.Payloads, err error) {
 	// if query handler panic, convert it to error
 	defer func() {
 		if p := recover(); p != nil {

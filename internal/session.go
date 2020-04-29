@@ -419,7 +419,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			sessionEnv.CompleteSession(sessionID)
 			return ctx.Err()
 		case <-ticker.C:
-			err := activityEnv.serviceInvoker.Heartbeat(&commonpb.Payload{})
+			err := activityEnv.serviceInvoker.Heartbeat(&commonpb.Payloads{})
 			if err != nil {
 				sessionEnv.CompleteSession(sessionID)
 				return err

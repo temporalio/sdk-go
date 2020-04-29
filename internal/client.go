@@ -682,7 +682,7 @@ func (p ParentClosePolicy) toProto() commonpb.ParentClosePolicy {
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data *commonpb.Payload) Value {
+func NewValue(data *commonpb.Payloads) Value {
 	return newEncodedValue(data, nil)
 }
 
@@ -693,6 +693,6 @@ func NewValue(data *commonpb.Payload) Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data *commonpb.Payload) Values {
+func NewValues(data *commonpb.Payloads) Values {
 	return newEncodedValues(data, nil)
 }

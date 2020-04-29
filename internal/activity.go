@@ -201,7 +201,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 		// no-op for local activity
 		return
 	}
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
@@ -222,7 +222,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
-	Heartbeat(details *commonpb.Payload) error
+	Heartbeat(details *commonpb.Payloads) error
 	Close(flushBufferedHeartbeat bool)
 	GetClient(namespace string, options ClientOptions) Client
 }

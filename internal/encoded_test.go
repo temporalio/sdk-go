@@ -104,8 +104,8 @@ func newTestDataConverter() DataConverter {
 	return &testDataConverter{}
 }
 
-func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
-	payload := &commonpb.Payload{}
+func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
+	result := &commonpb.Payloads{}
 
 	for i, arg := range values {
 		var buf bytes.Buffer
@@ -114,22 +114,22 @@ func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payload, e
 			return nil, fmt.Errorf("values[%d]: %w: %v", i, ErrUnableToEncodeGob, err)
 		}
 
-		payloadItem := &commonpb.PayloadItem{
+		payload := &commonpb.Payload{
 			Metadata: map[string][]byte{
 				metadataEncoding: []byte(metadataEncodingGob),
 				metadataName:     []byte(fmt.Sprintf("args[%d]", i)),
 			},
 			Data: buf.Bytes(),
 		}
-		payload.Items = append(payload.Items, payloadItem)
+		result.Payloads = append(result.Payloads, payload)
 	}
 
-	return payload, nil
+	return result, nil
 }
 
-func (dc *testDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
-	for i, payloadItem := range payload.GetItems() {
-		encoding, ok := payloadItem.GetMetadata()[metadataEncoding]
+func (dc *testDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+	for i, payload := range payloads.GetPayloads() {
+		encoding, ok := payload.GetMetadata()[metadataEncoding]
 
 		if !ok {
 			return fmt.Errorf("args[%d]: %w", i, ErrEncodingIsNotSet)
@@ -137,7 +137,7 @@ func (dc *testDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...in
 
 		e := string(encoding)
 		if e == metadataEncodingGob {
-			dec := gob.NewDecoder(bytes.NewBuffer(payloadItem.GetData()))
+			dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
 			if err := dec.Decode(valuePtrs[i]); err != nil {
 				return fmt.Errorf("args[%d]: %w: %v", i, ErrUnableToDecodeGob, err)
 			}

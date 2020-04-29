@@ -119,7 +119,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payloads) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
 			err := DefaultDataConverter.FromData(value, &decodedValue)
@@ -137,7 +137,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payloads) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
 			err := DefaultDataConverter.FromData(value, &decodedValue)

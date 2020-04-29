@@ -128,7 +128,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 		&decisionpb.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
-		callback: func(r *commonpb.Payload, e error) {
+		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
@@ -414,7 +414,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	)
 	di.state = decisionStateInitiated
 	di.setData(&scheduledSignal{
-		callback: func(r *commonpb.Payload, e error) {
+		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
@@ -441,7 +441,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 	headerValue, err := DefaultDataConverter.ToData("test-data")
 	assert.NoError(t, err)
 	header := &commonpb.Header{
-		Fields: map[string]*commonpb.Payload{"test": headerValue},
+		Fields: map[string]*commonpb.Payloads{"test": headerValue},
 	}
 
 	s := &WorkflowTestSuite{

@@ -160,7 +160,7 @@ type (
 
 	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
 	EncodedValue struct {
-		value         *commonpb.Payload
+		value         *commonpb.Payloads
 		dataConverter DataConverter
 	}
 	// Version represents a change version. See GetVersion call.
@@ -444,7 +444,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(params, func(r *commonpb.Payload, e error) {
+	a := getWorkflowEnvironment(ctx).ExecuteActivity(params, func(r *commonpb.Payloads, e error) {
 		settable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need the cancellation callback anymore.
@@ -536,7 +536,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 	Go(ctx, func(ctx Context) {
 		for {
 			f := wc.scheduleLocalActivity(ctx, params)
-			var result *commonpb.Payload
+			var result *commonpb.Payloads
 			err := f.Get(ctx, &result)
 			if retryErr, ok := err.(*needRetryError); ok && retryErr.Backoff > 0 {
 				// Backoff for retry
@@ -657,7 +657,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payload, e error) {
+	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
 		mainSettable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -695,7 +695,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payload),
+		Fields: make(map[string]*commonpb.Payloads),
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
@@ -713,7 +713,7 @@ type WorkflowInfo struct {
 	TaskStartToCloseTimeoutSeconds      int32
 	Namespace                           string
 	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult                *commonpb.Payload
+	lastCompletionResult                *commonpb.Payloads
 	CronSchedule                        string
 	ContinuedExecutionRunID             string
 	ParentWorkflowNamespace             string
@@ -784,7 +784,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	t := wc.env.NewTimer(d, func(r *commonpb.Payload, e error) {
+	t := wc.env.NewTimer(d, func(r *commonpb.Payloads, e error) {
 		settable.Set(nil, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -849,7 +849,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 		return future
 	}
 
-	resultCallback := func(result *commonpb.Payload, err error) {
+	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(result, err)
 	}
 
@@ -898,7 +898,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	resultCallback := func(result *commonpb.Payload, err error) {
+	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(result, err)
 	}
 	env.SignalExternalWorkflow(
@@ -1048,7 +1048,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalNa
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
-func newEncodedValue(value *commonpb.Payload, dc DataConverter) Value {
+func newEncodedValue(value *commonpb.Payloads, dc DataConverter) Value {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -1112,11 +1112,11 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
-	wrapperFunc := func() (*commonpb.Payload, error) {
+	wrapperFunc := func() (*commonpb.Payloads, error) {
 		r := f(ctx)
 		return encodeArg(dc, r)
 	}
-	resultCallback := func(result *commonpb.Payload, err error) {
+	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
 	wc.env.SideEffect(wrapperFunc, resultCallback)

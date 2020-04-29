@@ -189,7 +189,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 
-	encodeString := func(str string) *commonpb.Payload {
+	encodeString := func(str string) *commonpb.Payloads {
 		payload, _ := DefaultDataConverter.ToData(str)
 		return payload
 	}
@@ -208,26 +208,26 @@ func Test_MergeSearchAttributes(t *testing.T) {
 		},
 		{
 			name:     "currentIsEmpty",
-			current:  &commonpb.SearchAttributes{IndexedFields: make(map[string]*commonpb.Payload)},
+			current:  &commonpb.SearchAttributes{IndexedFields: make(map[string]*commonpb.Payloads)},
 			upsert:   &commonpb.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name: "normalMerge",
 			current: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payload{
+				IndexedFields: map[string]*commonpb.Payloads{
 					"CustomIntField":     encodeString(`1`),
 					"CustomKeywordField": encodeString(`keyword`),
 				},
 			},
 			upsert: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payload{
+				IndexedFields: map[string]*commonpb.Payloads{
 					"CustomIntField":  encodeString(`2`),
 					"CustomBoolField": encodeString(`true`),
 				},
 			},
 			expected: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payload{
+				IndexedFields: map[string]*commonpb.Payloads{
 					"CustomIntField":     encodeString(`2`),
 					"CustomKeywordField": encodeString(`keyword`),
 					"CustomBoolField":    encodeString(`true`),
