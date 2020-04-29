@@ -617,7 +617,6 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 				InitialInterval:          time.Second,
 				BackoffCoefficient:       2.0,
 				MaximumInterval:          time.Minute,
-				ExpirationInterval:       time.Minute * 10,
 				NonRetriableErrorReasons: []string{"bad-error"},
 			},
 		}

@@ -226,10 +226,10 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{
-		ID:                              "HelloWorld_Workflow",
-		TaskList:                        "testTaskList",
-		ExecutionStartToCloseTimeout:    10 * time.Second,
-		DecisionTaskStartToCloseTimeout: 10 * time.Second,
+		ID:                       "HelloWorld_Workflow",
+		TaskList:                 "testTaskList",
+		WorkflowExecutionTimeout: 10 * time.Second,
+		WorkflowTaskTimeout:      10 * time.Second,
 	}
 	workflowClient := NewServiceClient(s.service, nil, ClientOptions{})
 	_, err := workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, "workflowType")

@@ -182,13 +182,20 @@ type (
 		// Optional: the parent workflow task list will be used if this is not provided.
 		TaskList string
 
-		// ExecutionStartToCloseTimeout - The end to end timeout for the child workflow execution.
-		// Mandatory: no default
-		ExecutionStartToCloseTimeout time.Duration
+		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
+		// and continue as new.
+		// Optional: defaults to 10 years
+		WorkflowExecutionTimeout time.Duration
 
-		// TaskStartToCloseTimeout - The decision task timeout for the child workflow.
+		// WorkflowRunTimeout - The timeout for a single run of the child workflow execution. Each retry or
+		// continue as new should obey this timeout. Use WorkflowExecutionTimeout to specify how long the parent
+		// is willing to wait for the child completion.
+		// Optional: defaults to WorkflowExecutionTimeout
+		WorkflowRunTimeout time.Duration
+
+		// WorkflowTaskTimeout - The workflow task timeout for the child workflow.
 		// Optional: default is 10s if this is not provided (or if 0 is provided).
-		TaskStartToCloseTimeout time.Duration
+		WorkflowTaskTimeout time.Duration
 
 		// WaitForCancellation - Whether to wait for cancelled child workflow to be ended (child workflow can be ended
 		// as: completed/failed/timedout/terminated/canceled)
@@ -482,7 +489,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // 	    ScheduleToCloseTimeout: 5 * time.Second,
 // 	}
 //	ctx := WithLocalActivityOptions(ctx, lao)
-// The timeout here should be relative shorter than the DecisionTaskStartToCloseTimeout of the workflow. If you need a
+// The timeout here should be relative shorter than the WorkflowTaskTimeout of the workflow. If you need a
 // longer timeout, you probably should not use local activity and instead should use regular activity. Local activity is
 // designed to be used for short living activities (usually finishes within seconds).
 //
@@ -604,8 +611,8 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 // For example: task list that this child workflow should be routed, timeouts that need to be configured.
 // Use ChildWorkflowOptions to pass down the options.
 //  cwo := ChildWorkflowOptions{
-// 	    ExecutionStartToCloseTimeout: 10 * time.Minute,
-// 	    TaskStartToCloseTimeout: time.Minute,
+// 	    WorkflowExecutionTimeout: 10 * time.Minute,
+// 	    WorkflowTaskTimeout: time.Minute,
 // 	}
 //  ctx := WithChildWorkflowOptions(ctx, cwo)
 // Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.
@@ -706,21 +713,22 @@ func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Head
 
 // WorkflowInfo information about currently executing workflow
 type WorkflowInfo struct {
-	WorkflowExecution                   WorkflowExecution
-	WorkflowType                        WorkflowType
-	TaskListName                        string
-	ExecutionStartToCloseTimeoutSeconds int32
-	TaskStartToCloseTimeoutSeconds      int32
-	Namespace                           string
-	Attempt                             int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult                *commonpb.Payload
-	CronSchedule                        string
-	ContinuedExecutionRunID             string
-	ParentWorkflowNamespace             string
-	ParentWorkflowExecution             *WorkflowExecution
-	Memo                                *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
-	SearchAttributes                    *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
-	BinaryChecksum                      string
+	WorkflowExecution               WorkflowExecution
+	WorkflowType                    WorkflowType
+	TaskListName                    string
+	WorkflowExecutionTimeoutSeconds int32
+	WorkflowRunTimeoutSeconds       int32
+	WorkflowTaskTimeoutSeconds      int32
+	Namespace                       string
+	Attempt                         int32 // Attempt starts from 0 and increased by 1 for every retry if retry policy is specified.
+	lastCompletionResult            *commonpb.Payload
+	CronSchedule                    string
+	ContinuedExecutionRunID         string
+	ParentWorkflowNamespace         string
+	ParentWorkflowExecution         *WorkflowExecution
+	Memo                            *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
+	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
+	BinaryChecksum                  string
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
@@ -966,8 +974,9 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 		wfOptions.taskListName = cwo.TaskList
 	}
 	wfOptions.workflowID = cwo.WorkflowID
-	wfOptions.executionStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.ExecutionStartToCloseTimeout.Seconds())
-	wfOptions.taskStartToCloseTimeoutSeconds = common.Int32Ceil(cwo.TaskStartToCloseTimeout.Seconds())
+	wfOptions.workflowExecutionTimeoutSeconds = common.Int32Ceil(cwo.WorkflowExecutionTimeout.Seconds())
+	wfOptions.workflowRunTimeoutSeconds = common.Int32Ceil(cwo.WorkflowRunTimeout.Seconds())
+	wfOptions.workflowTaskTimeoutSeconds = common.Int32Ceil(cwo.WorkflowTaskTimeout.Seconds())
 	wfOptions.waitForCancellation = cwo.WaitForCancellation
 	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
@@ -1003,21 +1012,21 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 	return ctx1
 }
 
-// WithExecutionStartToCloseTimeout adds a workflow execution timeout to the context.
+// WithWorkflowRunTimeout adds a run timeout to the context.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func WithExecutionStartToCloseTimeout(ctx Context, d time.Duration) Context {
+func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).executionStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).workflowRunTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
-// WithWorkflowTaskStartToCloseTimeout adds a decision timeout to the context.
+// WithWorkflowTaskTimeout adds a workflow task timeout to the context.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func WithWorkflowTaskStartToCloseTimeout(ctx Context, d time.Duration) Context {
+func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).taskStartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).workflowTaskTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
@@ -1361,6 +1370,7 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	opts := getLocalActivityOptions(ctx1)
 
 	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
+	opts.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
 	opts.RetryPolicy = options.RetryPolicy
 	return ctx1
 }
@@ -1430,11 +1440,10 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
 	}
 	return &commonpb.RetryPolicy{
-		MaximumIntervalInSeconds:    common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
-		InitialIntervalInSeconds:    common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
-		BackoffCoefficient:          retryPolicy.BackoffCoefficient,
-		MaximumAttempts:             retryPolicy.MaximumAttempts,
-		NonRetriableErrorReasons:    retryPolicy.NonRetriableErrorReasons,
-		ExpirationIntervalInSeconds: common.Int32Ceil(retryPolicy.ExpirationInterval.Seconds()),
+		MaximumIntervalInSeconds: common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
+		InitialIntervalInSeconds: common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
+		BackoffCoefficient:       retryPolicy.BackoffCoefficient,
+		MaximumAttempts:          retryPolicy.MaximumAttempts,
+		NonRetriableErrorReasons: retryPolicy.NonRetriableErrorReasons,
 	}
 }

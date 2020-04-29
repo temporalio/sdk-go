@@ -37,3 +37,43 @@ func Int32Ceil(v float64) int32 {
 func Int64Ceil(v float64) int64 {
 	return int64(math.Ceil(v))
 }
+
+// MinInt64 returns the smaller of two given int64
+func MinInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// MaxInt64 returns the greater of two given int64
+func MaxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// MinInt32 return smaller one of two inputs int32
+func MinInt32(a, b int32) int32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// MinInt returns the smaller of two given integers
+func MinInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// MaxInt returns the greater one of two given integers
+func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

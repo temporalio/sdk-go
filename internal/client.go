@@ -404,16 +404,23 @@ type (
 		// Mandatory: No default.
 		TaskList string
 
-		// ExecutionStartToCloseTimeout - The timeout for duration of workflow execution.
+		// WorkflowExecutionTimeout - The timeout for duration of workflow execution.
+		// It includes retries and continue as new. Use WorkflowRunTimeout to limit execution time
+		// of a single workflow run.
 		// The resolution is seconds.
-		// Mandatory: No default.
-		ExecutionStartToCloseTimeout time.Duration
+		// Optional: defaulted to 10 years.
+		WorkflowExecutionTimeout time.Duration
 
-		// DecisionTaskStartToCloseTimeout - The timeout for processing decision task from the time the worker
+		// WorkflowRunTimeout - The timeout for duration of a single workflow run.
+		// The resolution is seconds.
+		// Optional: defaulted to WorkflowExecutionTimeout.
+		WorkflowRunTimeout time.Duration
+
+		// WorkflowTaskTimeout - The timeout for processing workflow task from the time the worker
 		// pulled this task. If a decision task is lost, it is retried after this timeout.
 		// The resolution is seconds.
 		// Optional: defaulted to 10 secs.
-		DecisionTaskStartToCloseTimeout time.Duration
+		WorkflowTaskTimeout time.Duration
 
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
 		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate.
@@ -470,13 +477,8 @@ type (
 		// This value is the cap of the interval. Default is 100x of initial interval.
 		MaximumInterval time.Duration
 
-		// Maximum time to retry. Either ExpirationInterval or MaximumAttempts is required.
-		// When exceeded the retries stop even if maximum retries is not reached yet.
-		ExpirationInterval time.Duration
-
 		// Maximum number of attempts. When exceeded the retries stop even if not expired yet.
-		// If not set or set to 0, it means unlimited, and rely on ExpirationInterval to stop.
-		// Either MaximumAttempts or ExpirationInterval is required.
+		// If not set or set to 0, it means unlimited, and rely on activity ScheduleToCloseTimeout to stop.
 		MaximumAttempts int32
 
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.
