@@ -32,10 +32,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Must impement opentracing.TextMapReader
 type tracingReader struct {
 	reader HeaderReader
 }
+
+// This is important requirement for t.tracer.Extract to work.
+var _ opentracing.TextMapReader = (*tracingReader)(nil)
 
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
 	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
@@ -48,10 +50,12 @@ func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
 	})
 }
 
-// Must impement opentracing.TextMapWriter
 type tracingWriter struct {
 	writer HeaderWriter
 }
+
+// This is important requirement for t.tracer.Inject to work.
+var _ opentracing.TextMapWriter = (*tracingWriter)(nil)
 
 func (t tracingWriter) Set(key, val string) {
 	encodedValue, _ := DefaultDataConverter.ToData(val)
