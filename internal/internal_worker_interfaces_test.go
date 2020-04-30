@@ -149,7 +149,7 @@ func (ga greeterActivity) ActivityType() ActivityType {
 	return ActivityType{Name: activityName}
 }
 
-func (ga greeterActivity) Execute(context.Context, *commonpb.Payload) (*commonpb.Payload, error) {
+func (ga greeterActivity) Execute(context.Context, *commonpb.Payloads) (*commonpb.Payloads, error) {
 	return DefaultDataConverter.ToData([]byte("World"))
 }
 

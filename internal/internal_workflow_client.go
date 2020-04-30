@@ -553,7 +553,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		return errors.New("invalid task token provided")
 	}
 
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -574,7 +574,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -864,7 +864,7 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - EntityNotExistError
 //  - QueryFailError
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
-	var input *commonpb.Payload
+	var input *commonpb.Payloads
 	if len(request.Args) > 0 {
 		var err error
 		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
@@ -952,7 +952,7 @@ func (wc *WorkflowClient) CloseConnection() error {
 
 func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payload),
+		Fields: make(map[string]*commonpb.Payloads),
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range wc.contextPropagators {
@@ -1133,7 +1133,7 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 		return nil, nil
 	}
 
-	memo := make(map[string]*commonpb.Payload)
+	memo := make(map[string]*commonpb.Payloads)
 	for k, v := range input {
 		memoBytes, err := encodeArg(dc, v)
 		if err != nil {
@@ -1149,7 +1149,7 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 		return nil, nil
 	}
 
-	attr := make(map[string]*commonpb.Payload)
+	attr := make(map[string]*commonpb.Payloads)
 	for k, v := range input {
 		attrBytes, err := getDefaultDataConverter().ToData(v)
 		if err != nil {

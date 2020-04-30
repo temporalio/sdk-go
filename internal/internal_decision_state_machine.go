@@ -797,7 +797,7 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 	return decision
 }
 
-func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data *commonpb.Payload) decisionStateMachine {
+func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data *commonpb.Payloads) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: sideEffectMarkerName,
@@ -808,7 +808,7 @@ func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int32, data *commo
 	return decision
 }
 
-func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result *commonpb.Payload) decisionStateMachine {
+func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result *commonpb.Payloads) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: localActivityMarkerName,
@@ -819,7 +819,7 @@ func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result *c
 	return decision
 }
 
-func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payload) decisionStateMachine {
+func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: mutableSideEffectMarkerName,
@@ -934,7 +934,7 @@ func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(ini
 	return isExternal, decision
 }
 
-func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payload, signalID string, childWorkflowOnly bool) decisionStateMachine {
+func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, signalID string, childWorkflowOnly bool) decisionStateMachine {
 	attributes := &decisionpb.SignalExternalWorkflowExecutionDecisionAttributes{
 		Namespace: namespace,
 		Execution: &executionpb.WorkflowExecution{

@@ -40,7 +40,7 @@ type tracingReader struct {
 var _ opentracing.TextMapReader = (*tracingReader)(nil)
 
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
-	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
+	return t.reader.ForEachKey(func(k string, v *commonpb.Payloads) error {
 		var decodedValue string
 		err := DefaultDataConverter.FromData(v, &decodedValue)
 		if err != nil {

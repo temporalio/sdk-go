@@ -136,7 +136,7 @@ type (
 	}
 
 	localActivityResult struct {
-		result  *commonpb.Payload
+		result  *commonpb.Payloads
 		err     error
 		task    *localActivityTask
 		backoff time.Duration
@@ -530,7 +530,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
-	var laResult *commonpb.Payload
+	var laResult *commonpb.Payloads
 	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
@@ -1008,7 +1008,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	return reportErr
 }
 
-func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payload, err error,
+func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
 	dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1039,7 +1039,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result *commonpb.Payload, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payloads, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

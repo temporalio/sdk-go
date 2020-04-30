@@ -147,10 +147,10 @@ func getWorkerTaskList(stickyUUID string) string {
 }
 
 // getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payload) {
+func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payloads) {
 	switch err := err.(type) {
 	case *CustomError:
-		var data *commonpb.Payload
+		var data *commonpb.Payloads
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -165,7 +165,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.
 		}
 		return err.Reason(), data
 	case *CanceledError:
-		var data *commonpb.Payload
+		var data *commonpb.Payloads
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -186,7 +186,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.
 		}
 		return errReasonPanic, data
 	case *TimeoutError:
-		var data *commonpb.Payload
+		var data *commonpb.Payloads
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
@@ -211,7 +211,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.
 }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details *commonpb.Payload, dataConverter DataConverter) error {
+func constructError(reason string, details *commonpb.Payloads, dataConverter DataConverter) error {
 	if strings.HasPrefix(reason, errReasonTimeout) {
 		details := newEncodedValues(details, dataConverter)
 		timeoutType, err := getTimeoutTypeFromErrReason(reason)
