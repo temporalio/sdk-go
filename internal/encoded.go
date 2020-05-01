@@ -74,7 +74,7 @@ type (
 		FromData(input *commonpb.Payloads, valuePtrs ...interface{}) error
 	}
 
-	// PayloadConverter marshal/unmarshal single value to/from payload.
+	// PayloadConverter converts single value to/from payload.
 	PayloadConverter interface {
 		// ToData single value to payload.
 		ToData(value interface{}) (*commonpb.Payload, error)
