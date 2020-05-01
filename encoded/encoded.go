@@ -56,7 +56,7 @@ func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
 }
 
-// GetDefaultDataConverter return default data converter used by Temporal worker
+// GetDefaultPayloadConverter return default data converter used by Temporal worker
 func GetDefaultPayloadConverter() PayloadConverter {
 	return internal.DefaultPayloadConverter
 }
