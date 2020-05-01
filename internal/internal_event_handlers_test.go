@@ -151,7 +151,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeSearchAttributes(attr)
-	require.EqualError(t, err, "encode search attribute [JustKey] error: values[0]: unable to encode to JSON: json: unsupported type: chan int")
+	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode to JSON: json: unsupported type: chan int")
 
 	attr = map[string]interface{}{
 		"key": 1,
@@ -160,7 +160,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchAttr.IndexedFields))
 	var resp int
-	_ = DefaultDataConverter.FromData(searchAttr.IndexedFields["key"], &resp)
+	_ = DefaultPayloadConverter.FromData(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
 }
 
@@ -189,8 +189,8 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 
-	encodeString := func(str string) *commonpb.Payloads {
-		payload, _ := DefaultDataConverter.ToData(str)
+	encodeString := func(str string) *commonpb.Payload {
+		payload, _ := DefaultPayloadConverter.ToData(str)
 		return payload
 	}
 
@@ -208,26 +208,26 @@ func Test_MergeSearchAttributes(t *testing.T) {
 		},
 		{
 			name:     "currentIsEmpty",
-			current:  &commonpb.SearchAttributes{IndexedFields: make(map[string]*commonpb.Payloads)},
+			current:  &commonpb.SearchAttributes{IndexedFields: make(map[string]*commonpb.Payload)},
 			upsert:   &commonpb.SearchAttributes{},
 			expected: nil,
 		},
 		{
 			name: "normalMerge",
 			current: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"CustomIntField":     encodeString(`1`),
 					"CustomKeywordField": encodeString(`keyword`),
 				},
 			},
 			upsert: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"CustomIntField":  encodeString(`2`),
 					"CustomBoolField": encodeString(`true`),
 				},
 			},
 			expected: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"CustomIntField":     encodeString(`2`),
 					"CustomKeywordField": encodeString(`keyword`),
 					"CustomBoolField":    encodeString(`true`),

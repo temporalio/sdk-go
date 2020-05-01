@@ -952,7 +952,7 @@ func (wc *WorkflowClient) CloseConnection() error {
 
 func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payloads),
+		Fields: make(map[string]*commonpb.Payload),
 	}
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range wc.contextPropagators {
@@ -1133,9 +1133,10 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 		return nil, nil
 	}
 
-	memo := make(map[string]*commonpb.Payloads)
+	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		memoBytes, err := encodeArg(dc, v)
+		// TODO (shtin): use dc here???
+		memoBytes, err := DefaultPayloadConverter.ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1149,9 +1150,9 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 		return nil, nil
 	}
 
-	attr := make(map[string]*commonpb.Payloads)
+	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := getDefaultDataConverter().ToData(v)
+		attrBytes, err := DefaultPayloadConverter.ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}

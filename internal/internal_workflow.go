@@ -1196,7 +1196,7 @@ func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 
 func getHeadersFromContext(ctx Context) *commonpb.Header {
 	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payloads),
+		Fields: make(map[string]*commonpb.Payload),
 	}
 	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)
 	for _, ctxProp := range contextPropagators {

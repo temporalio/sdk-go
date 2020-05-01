@@ -61,7 +61,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		ScheduleToCloseTimeout: 3 * time.Second,
 	}
 	s.header = &commonpb.Header{
-		Fields: map[string]*commonpb.Payloads{"test": encodeString(s.T(), "test-data")},
+		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
 	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
 }
@@ -387,7 +387,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	}
 
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string]*commonpb.Payloads{
+		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
@@ -1234,7 +1234,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1294,7 +1294,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1360,7 +1360,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = DefaultDataConverter.FromData(valBytes, &result)
+		_ = DefaultPayloadConverter.FromData(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1609,7 +1609,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string]*commonpb.Payloads{
+		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})

@@ -438,10 +438,10 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
-	headerValue, err := DefaultDataConverter.ToData("test-data")
+	headerValue, err := DefaultPayloadConverter.ToData("test-data")
 	assert.NoError(t, err)
 	header := &commonpb.Header{
-		Fields: map[string]*commonpb.Payloads{"test": headerValue},
+		Fields: map[string]*commonpb.Payload{"test": headerValue},
 	}
 
 	s := &WorkflowTestSuite{

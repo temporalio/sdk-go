@@ -1504,8 +1504,8 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 }
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
-	encodeString := func(str string) *commonpb.Payloads {
-		payload, _ := DefaultDataConverter.ToData(str)
+	encodeString := func(str string) *commonpb.Payload {
+		payload, _ := DefaultPayloadConverter.ToData(str)
 		return payload
 	}
 
@@ -1536,7 +1536,7 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 		{
 			name: "not match",
 			lhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"key1": encodeString("1"),
 					"key2": encodeString("abc"),
 				},
@@ -1547,13 +1547,13 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 		{
 			name: "match",
 			lhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"key1": encodeString("1"),
 					"key2": encodeString("abc"),
 				},
 			},
 			rhs: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payloads{
+				IndexedFields: map[string]*commonpb.Payload{
 					"key2": encodeString("abc"),
 					"key1": encodeString("1"),
 				},
