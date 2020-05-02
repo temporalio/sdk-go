@@ -142,7 +142,7 @@ func (s *internalWorkerTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
-func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
+func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payloads {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),
@@ -1331,7 +1331,7 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payload {
+func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payloads {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)

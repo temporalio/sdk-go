@@ -57,12 +57,12 @@ var errShutdown = errors.New("worker shutting down")
 
 type (
 	// resultHandler that returns result
-	resultHandler   func(result *commonpb.Payload, err error)
+	resultHandler   func(result *commonpb.Payloads, err error)
 	laResultHandler func(lar *localActivityResultWrapper)
 
 	localActivityResultWrapper struct {
 		err     error
-		result  *commonpb.Payload
+		result  *commonpb.Payloads
 		attempt int32
 		backoff time.Duration
 	}
@@ -73,19 +73,19 @@ type (
 		asyncActivityClient
 		localActivityClient
 		workflowTimerClient
-		SideEffect(f func() (*commonpb.Payload, error), callback resultHandler)
+		SideEffect(f func() (*commonpb.Payloads, error), callback resultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
-		Complete(result *commonpb.Payload, err error)
+		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler)
 		ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
-		RegisterSignalHandler(handler func(name string, input *commonpb.Payload))
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payload, arg interface{}, childWorkflowOnly bool, callback resultHandler)
-		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error))
+		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
+		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback resultHandler)
+		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value
 		GetDataConverter() DataConverter
@@ -98,7 +98,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	workflowDefinition interface {
-		Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payload)
+		Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to workflowDefinition
 		OnDecisionTaskStarted()

@@ -92,7 +92,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultDataConverter.ToData(value)
+		encodedValue, err := DefaultPayloadConverter.ToData(value)
 		if err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultDataConverter.ToData(value)
+		encodedValue, err := DefaultPayloadConverter.ToData(value)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultDataConverter.FromData(value, &decodedValue)
+			err := DefaultPayloadConverter.FromData(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -140,7 +140,7 @@ func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultDataConverter.FromData(value, &decodedValue)
+			err := DefaultPayloadConverter.FromData(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -1121,11 +1121,11 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1156,11 +1156,11 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1185,7 +1185,8 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	_ = decodeArg(s.dataConverter, result3.Fields["t1"], &resultString)
+	// TODO (shtin): use s.dataConverter here???
+	_ = DefaultPayloadConverter.FromData(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
@@ -1212,7 +1213,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
 
-	_ = DefaultDataConverter.FromData(result3.IndexedFields["t1"], &resultString)
+	_ = DefaultPayloadConverter.FromData(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

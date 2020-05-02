@@ -70,7 +70,7 @@ type (
 		// Return List of decisions made, any error.
 		ProcessEvent(event *eventpb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
-		ProcessQuery(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error)
+		ProcessQuery(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -108,7 +108,7 @@ type (
 		eventHandler atomic.Value
 
 		isWorkflowCompleted bool
-		result              *commonpb.Payload
+		result              *commonpb.Payloads
 		err                 error
 
 		previousStartedEventID int64
@@ -496,7 +496,7 @@ func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEvent
 	return eventHandlerImpl
 }
 
-func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload, err error) {
+func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
@@ -1617,12 +1617,12 @@ type temporalInvoker struct {
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
 	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport   **commonpb.Payload
+	lastDetailsToReport   **commonpb.Payloads
 	closeCh               chan struct{}
 	workerStopChannel     <-chan struct{}
 }
 
-func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
+func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -1663,7 +1663,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 			}
 
 			// We close the batch and report the progress.
-			var detailsToReport **commonpb.Payload
+			var detailsToReport **commonpb.Payloads
 
 			i.Lock()
 			detailsToReport = i.lastDetailsToReport
@@ -1680,7 +1680,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 	return err
 }
 
-func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payload) (bool, error) {
+func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, error) {
 	isActivityCancelled := false
 	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
 	if timeout <= 0 {
@@ -1855,7 +1855,7 @@ func recordActivityHeartbeat(
 	service workflowservice.WorkflowServiceClient,
 	identity string,
 	taskToken []byte,
-	details *commonpb.Payload,
+	details *commonpb.Payloads,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -1885,7 +1885,7 @@ func recordActivityHeartbeatByID(
 	service workflowservice.WorkflowServiceClient,
 	identity string,
 	namespace, workflowID, runID, activityID string,
-	details *commonpb.Payload,
+	details *commonpb.Payloads,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,

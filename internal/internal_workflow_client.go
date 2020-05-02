@@ -553,7 +553,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		return errors.New("invalid task token provided")
 	}
 
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -574,7 +574,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
 		data, err0 = encodeArg(wc.dataConverter, result)
@@ -864,7 +864,7 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - EntityNotExistError
 //  - QueryFailError
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
-	var input *commonpb.Payload
+	var input *commonpb.Payloads
 	if len(request.Args) > 0 {
 		var err error
 		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
@@ -1135,7 +1135,8 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 
 	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		memoBytes, err := encodeArg(dc, v)
+		// TODO (shtin): use dc here???
+		memoBytes, err := DefaultPayloadConverter.ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1151,7 +1152,7 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 
 	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := getDefaultDataConverter().ToData(v)
+		attrBytes, err := DefaultPayloadConverter.ToData(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}

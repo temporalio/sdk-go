@@ -99,7 +99,7 @@ func TestHeaderWriter(t *testing.T) {
 }
 
 func encodeString(t *testing.T, s string) *commonpb.Payload {
-	p, err := DefaultDataConverter.ToData(s)
+	p, err := DefaultPayloadConverter.ToData(s)
 	assert.NoError(t, err)
 	return p
 }

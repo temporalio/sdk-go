@@ -202,13 +202,13 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload *commonpb.Payload) *eventpb.HistoryEvent {
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payloads *commonpb.Payloads) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:   eventID,
 		EventType: eventpb.EventType_WorkflowExecutionSignaled,
 		Attributes: &eventpb.HistoryEvent_WorkflowExecutionSignaledEventAttributes{WorkflowExecutionSignaledEventAttributes: &eventpb.WorkflowExecutionSignaledEventAttributes{
 			SignalName: signalName,
-			Input:      payload,
+			Input:      payloads,
 			Identity:   "test-identity",
 		}},
 	}
@@ -1262,7 +1262,7 @@ type testActivityDeadline struct {
 	d      time.Duration
 }
 
-func (t *testActivityDeadline) Execute(ctx context.Context, _ *commonpb.Payload) (*commonpb.Payload, error) {
+func (t *testActivityDeadline) Execute(ctx context.Context, _ *commonpb.Payloads) (*commonpb.Payloads, error) {
 	if d, _ := ctx.Deadline(); d.IsZero() {
 		panic("invalid deadline provided")
 	}
@@ -1505,7 +1505,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultDataConverter.ToData(str)
+		payload, _ := DefaultPayloadConverter.ToData(str)
 		return payload
 	}
 

@@ -1234,7 +1234,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1294,7 +1294,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1360,7 +1360,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = DefaultDataConverter.FromData(valBytes, &result)
+		_ = DefaultPayloadConverter.FromData(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1422,31 +1422,31 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (commonpb.Payload, error) {
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
-		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
+		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetData()))
+		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()[metadataEncoding]))
+		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
 
-		// If return type is *commonpb.Payload it will be automatically unwrpped (this is side effect of internal impementation).
-		// commonpb.Payload type is returned as is.
-		return commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
+		// If return type is *commonpb.Payloads it will be automatically unwrpped (this is side effect of internal impementation).
+		// commonpb.Payloads type is returned as is.
+		return commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, nil
 	}
 
-	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
+	input1 := commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
 		Metadata: map[string][]byte{
 			metadataEncoding: []byte("someencoding"),
 		},
 		Data: []byte("input1")}}}
-	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
+	input2 := &commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("input2")}}}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 	s.NoError(err)
 	s.EqualValues([]string{"input1", "someencoding", "input2"}, actualValues)
 
-	var ret commonpb.Payload
+	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.Equal(commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
+	s.Equal(commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {

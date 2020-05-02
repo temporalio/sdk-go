@@ -68,25 +68,35 @@ type (
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through cleint.Options.
 	DataConverter interface {
 		// ToData implements conversion of a list of values.
-		ToData(value ...interface{}) (*commonpb.Payload, error)
+		ToData(value ...interface{}) (*commonpb.Payloads, error)
 		// FromData implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
-		FromData(input *commonpb.Payload, valuePtr ...interface{}) error
+		FromData(input *commonpb.Payloads, valuePtrs ...interface{}) error
 	}
 
-	// defaultDataConverter uses JSON.
-	defaultDataConverter struct{}
+	// PayloadConverter converts single value to/from payload.
+	PayloadConverter interface {
+		// ToData single value to payload.
+		ToData(value interface{}) (*commonpb.Payload, error)
+		// FromData single value from payload.
+		FromData(input *commonpb.Payload, valuePtr interface{}) error
+	}
 
-	// NameValuePair represent named value.
-	NameValuePair struct {
-		Name  string
-		Value interface{}
+	defaultPayloadConverter struct{}
+
+	defaultDataConverter struct {
+		payloadConverter PayloadConverter
 	}
 )
 
 var (
-	// DefaultDataConverter is default data converter used by Temporal worker
-	DefaultDataConverter = &defaultDataConverter{}
+	// DefaultPayloadConverter is default single value serializer.
+	DefaultPayloadConverter = &defaultPayloadConverter{}
+
+	// DefaultDataConverter is default data converter used by Temporal worker.
+	DefaultDataConverter = &defaultDataConverter{
+		payloadConverter: DefaultPayloadConverter,
+	}
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
 	ErrMetadataIsNotSet = errors.New("metadata is not set")
@@ -102,96 +112,104 @@ var (
 	ErrUnableToSetBytes = errors.New("unable to set []byte value")
 )
 
-// getDefaultDataConverter return default data converter used by Temporal worker
+// getDefaultDataConverter return default data converter used by Temporal worker.
 func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload, error) {
+func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
 
-	payload := &commonpb.Payload{}
+	result := &commonpb.Payloads{}
 	for i, value := range values {
-		nvp, ok := value.(NameValuePair)
-		if !ok {
-			nvp.Name = fmt.Sprintf("values[%d]", i)
-			nvp.Value = value
+		payload, err := dc.payloadConverter.ToData(value)
+		if err != nil {
+			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
 
-		var payloadItem *commonpb.PayloadItem
-		if bytes, isByteSlice := nvp.Value.([]byte); isByteSlice {
-			payloadItem = &commonpb.PayloadItem{
-				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingRaw),
-					metadataName:     []byte(nvp.Name),
-				},
-				Data: bytes,
-			}
-		} else {
-			data, err := json.Marshal(nvp.Value)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w: %v", nvp.Name, ErrUnableToEncodeJSON, err)
-			}
-			payloadItem = &commonpb.PayloadItem{
-				Metadata: map[string][]byte{
-					metadataEncoding: []byte(metadataEncodingJSON),
-					metadataName:     []byte(nvp.Name),
-				},
-				Data: data,
-			}
+		result.Payloads = append(result.Payloads, payload)
+	}
+
+	return result, nil
+}
+
+func (dc *defaultDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+	if payloads == nil {
+		return nil
+	}
+
+	for i, payload := range payloads.GetPayloads() {
+		if i >= len(valuePtrs) {
+			break
 		}
-		payload.Items = append(payload.Items, payloadItem)
+
+		err := dc.payloadConverter.FromData(payload, valuePtrs[i])
+		if err != nil {
+			return fmt.Errorf("payload item %d: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
+func (vs *defaultPayloadConverter) ToData(value interface{}) (*commonpb.Payload, error) {
+	var payload *commonpb.Payload
+	if bytes, isByteSlice := value.([]byte); isByteSlice {
+		payload = &commonpb.Payload{
+			Metadata: map[string][]byte{
+				metadataEncoding: []byte(metadataEncodingRaw),
+			},
+			Data: bytes,
+		}
+	} else {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrUnableToEncodeJSON, err)
+		}
+		payload = &commonpb.Payload{
+			Metadata: map[string][]byte{
+				metadataEncoding: []byte(metadataEncodingJSON),
+			},
+			Data: data,
+		}
 	}
 
 	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromData(payload *commonpb.Payload, valuePtrs ...interface{}) error {
+func (vs *defaultPayloadConverter) FromData(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}
 
-	for i, payloadItem := range payload.GetItems() {
-		if i >= len(valuePtrs) {
-			break
-		}
+	metadata := payload.GetMetadata()
+	if metadata == nil {
+		return ErrMetadataIsNotSet
+	}
 
-		metadata := payloadItem.GetMetadata()
-		if metadata == nil {
-			return fmt.Errorf("payload item %d: %w", i, ErrMetadataIsNotSet)
-		}
+	var encoding string
+	if e, ok := metadata[metadataEncoding]; ok {
+		encoding = string(e)
+	} else {
+		return ErrEncodingIsNotSet
+	}
 
-		var name string
-		if n, ok := metadata[metadataName]; ok {
-			name = string(n)
-		} else {
-			name = fmt.Sprintf("values[%d]", i)
+	switch encoding {
+	case metadataEncodingRaw:
+		valueBytes := reflect.ValueOf(valuePtr).Elem()
+		if !valueBytes.CanSet() {
+			return ErrUnableToSetBytes
 		}
-
-		var encoding string
-		if e, ok := metadata[metadataEncoding]; ok {
-			encoding = string(e)
-		} else {
-			return fmt.Errorf("%s: %w", name, ErrEncodingIsNotSet)
+		valueBytes.SetBytes(payload.GetData())
+	case metadataEncodingJSON:
+		err := json.Unmarshal(payload.GetData(), valuePtr)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
 		}
-
-		switch encoding {
-		case metadataEncodingRaw:
-			valueBytes := reflect.ValueOf(valuePtrs[i]).Elem()
-			if !valueBytes.CanSet() {
-				return fmt.Errorf("%s: %w", name, ErrUnableToSetBytes)
-			}
-			valueBytes.SetBytes(payloadItem.GetData())
-		case metadataEncodingJSON:
-			err := json.Unmarshal(payloadItem.GetData(), valuePtrs[i])
-			if err != nil {
-				return fmt.Errorf("%s: %w: %v", name, ErrUnableToDecodeJSON, err)
-			}
-		default:
-			return fmt.Errorf("%s, encoding %s: %w", name, encoding, ErrEncodingIsNotSupported)
-		}
+	default:
+		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
 	}
 
 	return nil
