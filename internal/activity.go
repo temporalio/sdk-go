@@ -215,7 +215,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 		}
 	}
 
-	err = env.serviceInvoker.Heartbeat(data)
+	err = env.serviceInvoker.Heartbeat(data, false)
 	if err != nil {
 		log := GetActivityLogger(ctx)
 		log.Debug("RecordActivityHeartbeat With Error:", zap.Error(err))
@@ -226,7 +226,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
-	Heartbeat(details *commonpb.Payloads) error
+	Heartbeat(details *commonpb.Payloads, skipBatching bool) error
 	Close(flushBufferedHeartbeat bool)
 	GetClient(options ClientOptions) Client
 }
