@@ -1312,7 +1312,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		taskToken: nil,
 	}
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 
 	t.NoError(heartbeatErr)
 }
@@ -1331,7 +1331,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		0,
 		make(chan struct{}))
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1353,7 +1353,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 		0,
 		make(chan struct{}))
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil)
+	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)
