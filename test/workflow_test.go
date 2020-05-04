@@ -434,12 +434,14 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
-		ScheduleToStartTimeout: time.Second * 2,
-		StartToCloseTimeout:    time.Second * 6,
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    2 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
+			InitialInterval:    1 * time.Second,
 			BackoffCoefficient: 1.0,
-			MaximumInterval:    time.Second,
+			MaximumInterval:    1 * time.Second,
+			MaximumAttempts:    3,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)

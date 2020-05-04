@@ -56,7 +56,7 @@ func newActivities() *Activities {
 }
 
 func (a *Activities) RetryTimeoutStableErrorActivity() error {
-	time.Sleep(time.Second * 3)
+	time.Sleep(1 * time.Second)
 	return errFailOnPurpose
 }
 
