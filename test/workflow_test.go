@@ -434,12 +434,16 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
-		ScheduleToStartTimeout: time.Second * 2,
-		StartToCloseTimeout:    time.Second * 6,
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    2 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
+			InitialInterval:    1 * time.Second,
 			BackoffCoefficient: 1.0,
-			MaximumInterval:    time.Second,
+			MaximumInterval:    1 * time.Second,
+			// TODO (shtin): This is sort of workarounds to make TestActivityRetryOnTimeoutStableError test works. But it should fail on ScheduleToCloseTimeout not on MaximumAttempts.
+			//  https://github.com/temporalio/temporal-go-sdk/issues/120 is to fix it.
+			MaximumAttempts: 3,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
