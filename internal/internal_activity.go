@@ -48,6 +48,7 @@ type (
 	}
 
 	activityInfo struct {
+		scheduleID int64
 		activityID string
 	}
 

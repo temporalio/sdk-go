@@ -53,7 +53,7 @@
       "timestamp": 1528336257188469200,
       "eventType": "ActivityTaskScheduled",
       "activityTaskScheduledEventAttributes": {
-        "activityId": "0",
+        "activityId": "5",
         "activityType": {
           "name": "testActivityMultipleArgs"
         },

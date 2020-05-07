@@ -292,3 +292,7 @@ func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
 	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
 	return 0, fmt.Errorf("timeout type %q is not defined", timeoutTypeStr)
 }
+
+func getStringID(intID int64) string {
+	return fmt.Sprintf("%d", intID)
+}
