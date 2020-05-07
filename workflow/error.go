@@ -25,7 +25,7 @@
 package workflow
 
 import (
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
 
 	"go.temporal.io/temporal/internal"
 )
@@ -130,7 +130,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType commonpb.TimeoutType, details ...interface{}) *TimeoutError {
 	return internal.NewTimeoutError(timeoutType, details...)
 }
 

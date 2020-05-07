@@ -35,6 +35,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	failurepb "go.temporal.io/temporal-proto/failure"
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
@@ -460,13 +461,18 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
+		Identity:  wc.identity,
 		WorkflowExecution: &executionpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		Reason:   reason,
-		Identity: wc.identity,
-		Details:  datailsPayload,
+		Failure: &failurepb.Failure{
+			FailureInfo: &failurepb.Failure_TerminatedFailureInfo{
+				TerminatedFailureInfo: &failurepb.TerminatedFailureInfo{
+					Sdk:     "GoSDK",
+					Message: reason,
+					Details: datailsPayload,
+				}}},
 	}
 
 	err = backoff.Retry(ctx,
@@ -1108,11 +1114,10 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
-		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)
+		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case eventpb.EventType_WorkflowExecutionCanceled:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
-		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
-		err = NewCanceledError(details)
+		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case eventpb.EventType_WorkflowExecutionTerminated:
 		err = newTerminatedError()
 	case eventpb.EventType_WorkflowExecutionTimedOut:

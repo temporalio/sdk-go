@@ -571,7 +571,7 @@ WaitResult:
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
 		} else {
 			// should not happen
-			return &localActivityResult{err: NewCustomError("unexpected context done"), task: task}
+			return &localActivityResult{err: NewCustomError("unexpected context done", true), task: task}
 		}
 	case <-doneCh:
 		// local activity completed
@@ -1023,18 +1023,17 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 			Identity:  identity}
 	}
 
-	reason, details := getErrorDetails(err, dataConverter)
+	failure := convertErrorToFailure(err, dataConverter)
 	if _, ok := err.(*CanceledError); ok || err == context.Canceled {
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
-			Details:   details,
+			Failure:   failure,
 			Identity:  identity}
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
 		TaskToken: taskToken,
-		Reason:    reason,
-		Details:   details,
+		Failure:   failure,
 		Identity:  identity}
 }
 
@@ -1056,14 +1055,14 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 			Identity:   identity}
 	}
 
-	reason, details := getErrorDetails(err, dataConverter)
+	failure := convertErrorToFailure(err, dataConverter)
 	if _, ok := err.(*CanceledError); ok || err == context.Canceled {
 		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
 			Namespace:  namespace,
 			WorkflowId: workflowID,
 			RunId:      runID,
 			ActivityId: activityID,
-			Details:    details,
+			Failure:    failure,
 			Identity:   identity}
 	}
 
@@ -1072,7 +1071,6 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
-		Reason:     reason,
-		Details:    details,
+		Failure:    failure,
 		Identity:   identity}
 }

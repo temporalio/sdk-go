@@ -36,7 +36,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -2220,7 +2219,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	attempt1Count := 0
 	activityFailedFn := func(ctx context.Context) (string, error) {
 		attempt1Count++
-		return "", NewCustomError("bad-bug")
+		return "", NewCustomError("bad-bug", false)
 	}
 
 	attempt2Count := 0
@@ -2228,7 +2227,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 		attempt2Count++
 		info := GetActivityInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck")
+			return "", NewCustomError("bad-luck", true)
 		}
 		return "retry-done", nil
 	}
@@ -2296,7 +2295,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 			// process task i
 			RecordActivityHeartbeat(ctx, i)
 			if j == 2 && i < firstTaskID+taskCount-1 { // simulate failure after processing 3 tasks
-				return NewCustomError("bad-luck")
+				return NewCustomError("bad-luck", true)
 			}
 		}
 
@@ -2341,7 +2340,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := GetActivityInfo(ctx)
 		if info.Attempt < 2 {
-			return int32(-1), NewCustomError("bad-luck")
+			return int32(-1), NewCustomError("bad-luck", true)
 		}
 		return info.Attempt, nil
 	}
@@ -2459,7 +2458,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck")
+			return "", NewCustomError("bad-luck", true)
 		}
 		return "retry-done", nil
 	}
@@ -2501,7 +2500,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck")
+			return "", NewCustomError("bad-luck", true)
 		}
 
 		ch := GetSignalChannel(ctx, "test-signal-name")
@@ -2855,7 +2854,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(eventpb.TimeoutType_StartToClose, testErrorDetails1)
+		return NewTimeoutError(commonpb.TimeoutType_StartToClose, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {
@@ -2863,10 +2862,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    5 * time.Second,
 			RetryPolicy: &RetryPolicy{
-				InitialInterval:          time.Second,
-				BackoffCoefficient:       1.1,
-				MaximumAttempts:          3,
-				NonRetriableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
+				InitialInterval:    time.Second,
+				BackoffCoefficient: 1.1,
+				MaximumAttempts:    3,
+				// NonRetriableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2883,13 +2882,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
-	s.Equal(1, count)
+	s.Equal(4, count)
 
 	activityEnv := s.NewTestActivityEnvironment()
 	activityEnv.RegisterActivity(timeoutFn)
@@ -2898,7 +2897,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	err = timeoutErr.Details(&details)
 	s.NoError(err)
@@ -2929,7 +2928,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)

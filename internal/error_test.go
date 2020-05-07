@@ -98,7 +98,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(eventpb.TimeoutType_ScheduleToStart)
+	timeoutErr := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
@@ -110,12 +110,12 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_Heartbeat)
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_ScheduleToClose)
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_StartToClose)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_Heartbeat)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_ScheduleToClose)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_StartToClose)
 }
 
-func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
+func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   getDefaultDataConverter(),
@@ -133,12 +133,11 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 		},
 	})
 	context.decisionsHelper.addDecision(di)
-	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
+	failure := convertErrorToFailure(NewTimeoutError(timeoutType, testErrorDetails1), context.dataConverter)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
-		Details:          encodedDetails1,
+		Failure:          failure,
 		ScheduledEventId: 5,
 		StartedEventId:   6,
-		TimeoutType:      timeoutType,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	_ = weh.handleActivityTaskTimedOut(event)
@@ -155,12 +154,12 @@ func Test_CustomError(t *testing.T) {
 	var a1 string
 	var a2 int
 	var a3 testStruct
-	err0 := NewCustomError(customErrReasonA, testErrorDetails1)
+	err0 := NewCustomError(customErrReasonA, true, testErrorDetails1)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
-	err0 = NewCustomError(customErrReasonA, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	err0 = NewCustomError(customErrReasonA, true, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
@@ -188,13 +187,12 @@ func Test_CustomError(t *testing.T) {
 	require.Equal(t, testErrorDetails3, b3)
 
 	// test reason and no detail
-	require.Panics(t, func() { _ = NewCustomError("temporalInternal:testReason") })
 	newReason := "another reason"
-	err2 := NewCustomError(newReason)
+	err2 := NewCustomError(newReason, true)
 	require.True(t, !err2.HasDetails())
 	require.Equal(t, ErrNoData, err2.Details())
 	require.Equal(t, newReason, err2.Reason())
-	err3 := NewCustomError(newReason, nil)
+	err3 := NewCustomError(newReason, true, nil)
 	// TODO: probably we want to handle this case when details are nil, HasDetails return false
 	require.True(t, err3.HasDetails())
 
@@ -218,14 +216,14 @@ func Test_CustomError(t *testing.T) {
 
 func Test_CustomError_Pointer(t *testing.T) {
 	a1 := testStruct2{}
-	err1 := NewCustomError(customErrReasonA, testErrorDetails4)
+	err1 := NewCustomError(customErrReasonA, true, testErrorDetails4)
 	require.True(t, err1.HasDetails())
 	err := err1.Details(&a1)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails4, a1)
 
 	a2 := &testStruct2{}
-	err2 := NewCustomError(customErrReasonA, &testErrorDetails4) // // pointer in details
+	err2 := NewCustomError(customErrReasonA, true, &testErrorDetails4) // // pointer in details
 	require.True(t, err2.HasDetails())
 	err = err2.Details(&a2)
 	require.NoError(t, err)

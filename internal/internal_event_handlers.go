@@ -36,6 +36,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	failurepb "go.temporal.io/temporal-proto/failure"
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
@@ -144,8 +145,7 @@ type (
 	localActivityMarkerData struct {
 		ActivityID   string
 		ActivityType string
-		ErrReason    string
-		Err          *commonpb.Payloads
+		Failure      *failurepb.Failure
 		Result       *commonpb.Payloads
 		ReplayTime   time.Time
 		Attempt      int32         // record attempt, starting from 0.
@@ -986,7 +986,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 	}
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
-	err := constructError(attributes.Reason, attributes.Details, weh.GetDataConverter())
+	err := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 	activity.handle(nil, err)
 	return nil
 }
@@ -1001,14 +1001,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 
 	var err error
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	if len(attributes.GetLastFailureReason()) > 0 && attributes.GetTimeoutType() == eventpb.TimeoutType_StartToClose {
+	if attributes.GetLastFailure() != nil && attributes.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == commonpb.TimeoutType_StartToClose {
 		// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
 		// To stabilize the error type, we always return the customer error.
 		// See more details of background: https://github.com/temporalio/temporal/issues/185
-		err = constructError(attributes.GetLastFailureReason(), attributes.LastFailureDetails, weh.GetDataConverter())
+		err = convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter())
 	} else {
-		details := newEncodedValues(attributes.Details, weh.GetDataConverter())
-		err = NewTimeoutError(attributes.GetTimeoutType(), details)
+		err = convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 	}
 	activity.handle(nil, err)
 	return nil
@@ -1096,10 +1095,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		lar := &localActivityResultWrapper{}
-		if len(lamd.ErrReason) > 0 {
+		if lamd.Failure != nil {
 			lar.attempt = lamd.Attempt
 			lar.backoff = lamd.Backoff
-			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
+			lar.err = convertFailureToError(lamd.Failure, weh.GetDataConverter())
 		} else {
 			lar.result = lamd.Result
 		}
@@ -1124,9 +1123,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		Attempt:      lar.task.attempt,
 	}
 	if lar.err != nil {
-		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
-		lamd.ErrReason = errReason
-		lamd.Err = errDetails
+		lamd.Failure = convertErrorToFailure(lar.err, weh.GetDataConverter())
 		lamd.Backoff = lar.backoff
 	} else {
 		lamd.Result = lar.result
@@ -1212,7 +1209,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		return nil
 	}
 
-	err := constructError(attributes.GetReason(), attributes.Details, weh.GetDataConverter())
+	err := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 	childWorkflow.handle(nil, err)
 
 	return nil

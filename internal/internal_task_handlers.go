@@ -43,6 +43,7 @@ import (
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
+	failurepb "go.temporal.io/temporal-proto/failure"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -932,7 +933,7 @@ ProcessEvents:
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewCustomError("FailWorkflow", nonDeterministicErr.Error()))
+			eventHandler.Complete(nil, NewCustomError("FailWorkflow", true, nonDeterministicErr.Error()))
 		case BlockWorkflow:
 			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
@@ -1003,19 +1004,11 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 }
 
 func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
-	p := lar.task.retryPolicy
-	var errReason string
-	if len(p.NonRetriableErrorReasons) > 0 {
-		if lar.err == ErrDeadlineExceeded {
-			errReason = "timeout:" + eventpb.TimeoutType_ScheduleToClose.String()
-		} else {
-			errReason, _ = getErrorDetails(lar.err, dataConverter)
-		}
-	}
-	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, now, lar.task.expireTime)
+	failure := convertErrorToFailure(lar.err, dataConverter)
+	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, failure, now, lar.task.expireTime)
 }
 
-func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, failure *failurepb.Failure, now, expireTime time.Time) time.Duration {
 	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
 		return noRetryBackoff // max attempt reached
 	}
@@ -1041,10 +1034,8 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string,
 	}
 
 	// check if error is non-retriable
-	for _, er := range p.NonRetriableErrorReasons {
-		if er == errReason {
-			return noRetryBackoff
-		}
+	if failure.GetCustomFailureInfo() != nil && !failure.GetCustomFailureInfo().Retryable {
+		return noRetryBackoff
 	}
 
 	return backoffInterval
@@ -1318,8 +1309,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
 			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
 
-			if eventAttributes.GetReason() != decisionAttributes.GetReason() ||
-				!proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
+			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
 				return false
 			}
 		}
@@ -1372,7 +1362,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
 			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if !proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
+			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
 				return false
 			}
 		}
@@ -1479,9 +1469,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_CancelWorkflowExecution)
-		_, details := getErrorDetails(canceledErr, wth.dataConverter)
 		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
-			Details: details,
+			Failure: convertErrorToFailure(canceledErr, wth.dataConverter),
 		}}
 	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
 		// Continue as new error.
@@ -1501,10 +1490,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_FailWorkflowExecution)
-		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
+		failure := convertErrorToFailure(workflowContext.err, wth.dataConverter)
 		closeDecision.Attributes = &decisionpb.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &decisionpb.FailWorkflowExecutionDecisionAttributes{
-			Reason:  reason,
-			Details: details,
+			Failure: failure,
 		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
@@ -1553,11 +1541,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 }
 
 func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
-	_, details := getErrorDetails(err, dataConverter)
 	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure,
-		Details:        details,
+		Failure:        convertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
 	}

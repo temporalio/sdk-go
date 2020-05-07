@@ -31,16 +31,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
+	failurepb "go.temporal.io/temporal-proto/failure"
 	"google.golang.org/grpc/metadata"
-
-	eventpb "go.temporal.io/temporal-proto/event"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -60,7 +58,7 @@ const (
 	defaultRPCTimeout = 10 * time.Second
 	// minRPCTimeout is minimum rpc call timeout allowed
 	minRPCTimeout = 1 * time.Second
-	//maxRPCTimeout is maximum rpc call timeout allowed
+	// maxRPCTimeout is maximum rpc call timeout allowed
 	maxRPCTimeout = 5 * time.Second
 )
 
@@ -146,106 +144,227 @@ func getWorkerTaskList(stickyUUID string) string {
 	return fmt.Sprintf("%s:%s", getHostName(), stickyUUID)
 }
 
-// getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payloads) {
+func getErrorType(err error) string {
+	var t reflect.Type
+	for t = reflect.TypeOf(err); t.Kind() == reflect.Ptr; t = t.Elem() {
+	}
+
+	return t.Name()
+}
+
+// convertErrorToFailure converts error to failure.
+func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Failure {
+	failure := &failurepb.Failure{}
+
 	switch err := err.(type) {
 	case *CustomError:
-		var data *commonpb.Payloads
+		failureInfo := &failurepb.CustomFailureInfo{
+			Sdk:       "GoSDK",
+			Message:   err.Error(),
+			Type:      getErrorType(err),
+			Retryable: err.retryable,
+		}
+		failure.FailureInfo = &failurepb.Failure_CustomFailureInfo{CustomFailureInfo: failureInfo}
+
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
+			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
 		case *EncodedValues:
-			data = details.values
+			failureInfo.Details = details.values
 		default:
-			panic("unknown error type")
+			panic("unknown error details type")
 		}
 		if err0 != nil {
 			panic(err0)
 		}
-		return err.Reason(), data
 	case *CanceledError:
-		var data *commonpb.Payloads
+		failureInfo := &failurepb.CanceledFailureInfo{
+			Sdk: "GoSDK",
+		}
+		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{CanceledFailureInfo: failureInfo}
+
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
+			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
 		case *EncodedValues:
-			data = details.values
+			failureInfo.Details = details.values
 		default:
-			panic("unknown error type")
+			panic("unknown error details type")
 		}
 		if err0 != nil {
 			panic(err0)
 		}
-		return errReasonCanceled, data
 	case *PanicError:
-		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error(), err.StackTrace()})
-		if err0 != nil {
-			panic(err0)
+		failureInfo := &failurepb.PanicFailureInfo{
+			Sdk:        "GoSDK",
+			Message:    err.Error(),
+			StackTrace: err.StackTrace(),
 		}
-		return errReasonPanic, data
+		failure.FailureInfo = &failurepb.Failure_PanicFailureInfo{PanicFailureInfo: failureInfo}
+	case *workflowPanicError:
+		failureInfo := &failurepb.PanicFailureInfo{
+			Sdk:        "GoSDK",
+			Message:    err.Error(),
+			StackTrace: err.StackTrace(),
+		}
+		failure.FailureInfo = &failurepb.Failure_PanicFailureInfo{PanicFailureInfo: failureInfo}
 	case *TimeoutError:
-		var data *commonpb.Payloads
+		failureInfo := &failurepb.TimeoutFailureInfo{
+			Sdk:         "GoSDK",
+			TimeoutType: err.timeoutType,
+		}
+		failure.FailureInfo = &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: failureInfo}
+
 		var err0 error
 		switch details := err.details.(type) {
 		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
+			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
 		case *EncodedValues:
-			data = details.values
+			failureInfo.Details = details.values
 		default:
-			panic("unknown error type")
+			panic("unknown error details type")
 		}
 		if err0 != nil {
 			panic(err0)
 		}
-		return fmt.Sprintf("%v %v", errReasonTimeout, err.timeoutType), data
 	default:
-		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error()})
-		if err0 != nil {
-			panic(err0)
+		failureInfo := &failurepb.GenericFailureInfo{
+			Sdk:     "GoSDK",
+			Message: err.Error(),
+			Type:    getErrorType(err),
 		}
-		// will be convert to GenericError when receiving from server.
-		return errReasonGeneric, data
+		failure.FailureInfo = &failurepb.Failure_GenericFailureInfo{GenericFailureInfo: failureInfo}
+	}
+
+	// if innerErr := errors.Unwrap(err); innerErr != nil {
+	// 	failure.InnerFailure = convertErrorToFailure(innerErr, dataConverter)
+	// }
+
+	return failure
+}
+
+// convertFailureToError converts failure to error.
+func convertFailureToError(failure *failurepb.Failure, dataConverter DataConverter) error {
+	if failure.GetTimeoutFailureInfo() != nil {
+		details := newEncodedValues(failure.GetTimeoutFailureInfo().GetDetails(), dataConverter)
+		return NewTimeoutError(failure.GetTimeoutFailureInfo().GetTimeoutType(), details)
+	} else if failure.GetPanicFailureInfo() != nil {
+		return newPanicError(failure.GetPanicFailureInfo().GetMessage(), failure.GetPanicFailureInfo().GetStackTrace())
+	} else if failure.GetGenericFailureInfo() != nil {
+		return &GenericError{err: failure.GetGenericFailureInfo().GetMessage()}
+	} else if failure.GetCanceledFailureInfo() != nil {
+		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dataConverter)
+		return NewCanceledError(details)
+	} else if failure.GetCustomFailureInfo() != nil {
+		details := newEncodedValues(failure.GetCustomFailureInfo().GetDetails(), dataConverter)
+		return NewCustomError(failure.GetCustomFailureInfo().GetMessage(), failure.GetCustomFailureInfo().GetRetryable(), details)
+	} else {
+		panic(fmt.Sprintf("unknown failure info type %T", failure.GetFailureInfo()))
 	}
 }
+
+// getErrorDetails gets reason and details.
+// func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payloads) {
+// 	switch err := err.(type) {
+// 	case *CustomError:
+// 		var data *commonpb.Payloads
+// 		var err0 error
+// 		switch details := err.details.(type) {
+// 		case ErrorDetailsValues:
+// 			data, err0 = encodeArgs(dataConverter, details)
+// 		case *EncodedValues:
+// 			data = details.values
+// 		default:
+// 			panic("unknown error type")
+// 		}
+// 		if err0 != nil {
+// 			panic(err0)
+// 		}
+// 		return err.Reason(), data
+// 	case *CanceledError:
+// 		var data *commonpb.Payloads
+// 		var err0 error
+// 		switch details := err.details.(type) {
+// 		case ErrorDetailsValues:
+// 			data, err0 = encodeArgs(dataConverter, details)
+// 		case *EncodedValues:
+// 			data = details.values
+// 		default:
+// 			panic("unknown error type")
+// 		}
+// 		if err0 != nil {
+// 			panic(err0)
+// 		}
+// 		return errReasonCanceled, data
+// 	case *PanicError:
+// 		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error(), err.StackTrace()})
+// 		if err0 != nil {
+// 			panic(err0)
+// 		}
+// 		return errReasonPanic, data
+// 	case *TimeoutError:
+// 		var data *commonpb.Payloads
+// 		var err0 error
+// 		switch details := err.details.(type) {
+// 		case ErrorDetailsValues:
+// 			data, err0 = encodeArgs(dataConverter, details)
+// 		case *EncodedValues:
+// 			data = details.values
+// 		default:
+// 			panic("unknown error type")
+// 		}
+// 		if err0 != nil {
+// 			panic(err0)
+// 		}
+// 		return fmt.Sprintf("%v %v", errReasonTimeout, err.timeoutType), data
+// 	default:
+// 		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error()})
+// 		if err0 != nil {
+// 			panic(err0)
+// 		}
+// 		// will be convert to GenericError when receiving from server.
+// 		return errReasonGeneric, data
+// 	}
+// }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details *commonpb.Payloads, dataConverter DataConverter) error {
-	if strings.HasPrefix(reason, errReasonTimeout) {
-		details := newEncodedValues(details, dataConverter)
-		timeoutType, err := getTimeoutTypeFromErrReason(reason)
-		if err != nil {
-			// prior client version uses details to indicate timeoutType
-			if err := details.Get(&timeoutType); err != nil {
-				panic(err)
-			}
-			return NewTimeoutError(timeoutType)
-		}
-		return NewTimeoutError(timeoutType, details)
-	}
-
-	switch reason {
-	case errReasonPanic:
-		// panic error
-		var msg, st string
-		details := newEncodedValues(details, dataConverter)
-		_ = details.Get(&msg, &st)
-		return newPanicError(msg, st)
-	case errReasonGeneric:
-		// errors created other than using NewCustomError() API.
-		var msg string
-		_ = dataConverter.FromData(details, &msg)
-		return &GenericError{err: msg}
-	case errReasonCanceled:
-		details := newEncodedValues(details, dataConverter)
-		return NewCanceledError(details)
-	default:
-		details := newEncodedValues(details, dataConverter)
-		err := NewCustomError(reason, details)
-		return err
-	}
-}
+// func constructError(reason string, details *commonpb.Payloads, dataConverter DataConverter) error {
+// 	if strings.HasPrefix(reason, errReasonTimeout) {
+// 		details := newEncodedValues(details, dataConverter)
+// 		timeoutType, err := getTimeoutTypeFromErrReason(reason)
+// 		if err != nil {
+// 			// prior client version uses details to indicate timeoutType
+// 			if err := details.Get(&timeoutType); err != nil {
+// 				panic(err)
+// 			}
+// 			return NewTimeoutError(timeoutType)
+// 		}
+// 		return NewTimeoutError(timeoutType, details)
+// 	}
+//
+// 	switch reason {
+// 	case errReasonPanic:
+// 		// panic error
+// 		var msg, st string
+// 		details := newEncodedValues(details, dataConverter)
+// 		_ = details.Get(&msg, &st)
+// 		return newPanicError(msg, st)
+// 	case errReasonGeneric:
+// 		// errors created other than using NewCustomError() API.
+// 		var msg string
+// 		_ = dataConverter.FromData(details, &msg)
+// 		return &GenericError{err: msg}
+// 	case errReasonCanceled:
+// 		details := newEncodedValues(details, dataConverter)
+// 		return NewCanceledError(details)
+// 	default:
+// 		details := newEncodedValues(details, dataConverter)
+// 		err := NewCustomError(reason, details)
+// 		return err
+// 	}
+// }
 
 // AwaitWaitGroup calls Wait on the given wait
 // Returns true if the Wait() call succeeded before the timeout
@@ -282,13 +401,13 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }
 
-func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
-	// "reason" is a string like "temporalInternal:Timeout StartToClose"
-	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	if timeoutType, found := eventpb.TimeoutType_value[timeoutTypeStr]; found {
-		return eventpb.TimeoutType(timeoutType), nil
-	}
-
-	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
-	return 0, fmt.Errorf("timeout type %q is not defined", timeoutTypeStr)
-}
+// func getTimeoutTypeFromErrReason(reason string) (commonpb.TimeoutType, error) {
+// 	// "reason" is a string like "temporalInternal:Timeout StartToClose"
+// 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
+// 	if timeoutType, found := commonpb.TimeoutType_value[timeoutTypeStr]; found {
+// 		return commonpb.TimeoutType(timeoutType), nil
+// 	}
+//
+// 	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
+// 	return 0, fmt.Errorf("timeout type %q is not defined", timeoutTypeStr)
+// }

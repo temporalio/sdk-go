@@ -36,3 +36,6 @@ require (
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 )
+
+replace go.temporal.io/temporal-proto v0.20.31 => ../temporal-proto-go
+

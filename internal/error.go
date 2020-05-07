@@ -27,9 +27,8 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"strings"
 
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 /*
@@ -90,8 +89,9 @@ That decision task will be retried at a later time (with exponential backoff ret
 type (
 	// CustomError returned from workflow and activity implementations with reason and optional details.
 	CustomError struct {
-		reason  string
-		details Values
+		reason    string
+		retryable bool
+		details   Values
 	}
 
 	// GenericError returned from workflow/workflow when the implementations return errors other than from NewCustomError() API.
@@ -101,7 +101,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
-		timeoutType eventpb.TimeoutType
+		timeoutType commonpb.TimeoutType
 		details     Values
 	}
 
@@ -138,12 +138,12 @@ type (
 	UnknownExternalWorkflowExecutionError struct{}
 )
 
-const (
-	errReasonPanic    = "temporalInternal:Panic"
-	errReasonGeneric  = "temporalInternal:Generic"
-	errReasonCanceled = "temporalInternal:Canceled"
-	errReasonTimeout  = "temporalInternal:Timeout"
-)
+// const (
+// 	errReasonPanic    = "temporalInternal:Panic"
+// 	errReasonGeneric  = "temporalInternal:Generic"
+// 	errReasonCanceled = "temporalInternal:Canceled"
+// 	errReasonTimeout  = "temporalInternal:Timeout"
+// )
 
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
 var ErrNoData = errors.New("no data available")
@@ -159,23 +159,20 @@ var ErrTooManyArg = errors.New("too many arguments")
 var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
 // NewCustomError create new instance of *CustomError with reason and optional details.
-func NewCustomError(reason string, details ...interface{}) *CustomError {
-	if strings.HasPrefix(reason, "temporalInternal:") {
-		panic("'temporalInternal:' is reserved prefix, please use different reason")
-	}
+func NewCustomError(reason string, retryable bool, details ...interface{}) *CustomError {
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &CustomError{reason: reason, details: d}
+			return &CustomError{reason: reason, retryable: retryable, details: d}
 		}
 	}
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &CustomError{reason: reason, details: ErrorDetailsValues(details)}
+	return &CustomError{reason: reason, retryable: retryable, details: ErrorDetailsValues(details)}
 }
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
-func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType commonpb.TimeoutType, details ...interface{}) *TimeoutError {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &TimeoutError{timeoutType: timeoutType, details: d}
@@ -186,7 +183,7 @@ func NewTimeoutError(timeoutType eventpb.TimeoutType, details ...interface{}) *T
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(eventpb.TimeoutType_Heartbeat, details...)
+	return NewTimeoutError(commonpb.TimeoutType_Heartbeat, details...)
 }
 
 // NewCanceledError creates CanceledError instance
@@ -272,7 +269,7 @@ func (e *TimeoutError) Error() string {
 }
 
 // TimeoutType return timeout type of this error
-func (e *TimeoutError) TimeoutType() eventpb.TimeoutType {
+func (e *TimeoutError) TimeoutType() commonpb.TimeoutType {
 	return e.timeoutType
 }
 

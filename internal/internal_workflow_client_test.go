@@ -661,8 +661,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCanceled
-	details := "some details"
-	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
+	cancelledErr := NewCanceledError("some details")
+	failure := convertErrorToFailure(cancelledErr, getDefaultDataConverter())
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -670,7 +670,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 				{
 					EventType: eventType,
 					Attributes: &eventpb.HistoryEvent_WorkflowExecutionCanceledEventAttributes{WorkflowExecutionCanceledEventAttributes: &eventpb.WorkflowExecutionCanceledEventAttributes{
-						Details: encodedDetails,
+						Failure: failure,
 					}},
 				},
 			},
@@ -710,8 +710,9 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	dataConverter := getDefaultDataConverter()
-	encodedDetails, _ := encodeArg(dataConverter, details)
+	customErr := NewCustomError(reason, true, details)
+	failure := convertErrorToFailure(customErr, getDefaultDataConverter())
+
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -719,8 +720,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 				{
 					EventType: eventType,
 					Attributes: &eventpb.HistoryEvent_WorkflowExecutionFailedEventAttributes{WorkflowExecutionFailedEventAttributes: &eventpb.WorkflowExecutionFailedEventAttributes{
-						Reason:  reason,
-						Details: encodedDetails,
+						Failure: failure,
 					}},
 				},
 			},
@@ -744,7 +744,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Equal(constructError(reason, encodedDetails, dataConverter), err)
+	s.Equal(convertFailureToError(failure, getDefaultDataConverter()), err)
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -796,7 +796,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionTimedOut
-	timeType := eventpb.TimeoutType_ScheduleToStart
+	timeType := commonpb.TimeoutType_ScheduleToStart
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
