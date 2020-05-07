@@ -818,10 +818,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.decisionsHelper.handleActivityTaskCancelRequested(
 			event.GetActivityTaskCancelRequestedEventAttributes().GetActivityId())
 
-	case eventpb.EventType_RequestCancelActivityTaskFailed:
-		weh.decisionsHelper.handleRequestCancelActivityTaskFailed(
-			event.GetRequestCancelActivityTaskFailedEventAttributes().GetActivityId())
-
 	case eventpb.EventType_ActivityTaskCanceled:
 		err = weh.handleActivityTaskCanceled(event)
 

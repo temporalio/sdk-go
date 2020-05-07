@@ -783,11 +783,6 @@ func (h *decisionsHelper) handleActivityTaskCanceled(activityID string) decision
 	return decision
 }
 
-func (h *decisionsHelper) handleRequestCancelActivityTaskFailed(activityID string) {
-	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
-	decision.handleCancelFailedEvent()
-}
-
 func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
