@@ -98,14 +98,14 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart)
-	require.False(t, timeoutErr.HasDetails())
+	timeoutErr := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart, nil)
+	require.False(t, timeoutErr.HasLastHeartbeatDetails())
 	var data string
-	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
+	require.Equal(t, ErrNoData, timeoutErr.LastHeartbeatDetails(&data))
 
 	heartbeatErr := NewHeartbeatTimeoutError(testErrorDetails1)
-	require.True(t, heartbeatErr.HasDetails())
-	require.NoError(t, heartbeatErr.Details(&data))
+	require.True(t, heartbeatErr.HasLastHeartbeatDetails())
+	require.NoError(t, heartbeatErr.LastHeartbeatDetails(&data))
 	require.Equal(t, testErrorDetails1, data)
 }
 
@@ -133,19 +133,20 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 		},
 	})
 	context.decisionsHelper.addDecision(di)
-	failure := convertErrorToFailure(NewTimeoutError(timeoutType, testErrorDetails1), context.dataConverter)
+	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
-		Failure:          failure,
-		ScheduledEventId: 5,
-		StartedEventId:   6,
+		LastHeartbeatDetails: encodedDetails1,
+		ScheduledEventId:     5,
+		StartedEventId:       6,
+		TimeoutType:          timeoutType,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	_ = weh.handleActivityTaskTimedOut(event)
 	err, ok := actualErr.(*TimeoutError)
 	require.True(t, ok)
-	require.True(t, err.HasDetails())
+	require.True(t, err.HasLastHeartbeatDetails())
 	data := ""
-	require.NoError(t, err.Details(&data))
+	require.NoError(t, err.LastHeartbeatDetails(&data))
 	require.Equal(t, testErrorDetails1, data)
 }
 

@@ -987,7 +987,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
 	err := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
-	activity.handle(nil, err)
+	err2 := err ///TODO: wrap error here
+
+	activity.handle(nil, err2)
 	return nil
 }
 
@@ -1001,14 +1003,21 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 
 	var err error
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	if attributes.GetLastFailure() != nil && attributes.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == commonpb.TimeoutType_StartToClose {
-		// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
-		// To stabilize the error type, we always return the customer error.
-		// See more details of background: https://github.com/temporalio/temporal/issues/185
-		err = convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter())
-	} else {
-		err = convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
-	}
+	lastHeartbeatDetails := newEncodedValues(attributes.GetLastHeartbeatDetails(), weh.GetDataConverter())
+	err = NewTimeoutError(
+		attributes.GetTimeoutType(),
+		convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter()),
+		lastHeartbeatDetails)
+
+	// if attributes.GetLastFailure() != nil && attributes.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == commonpb.TimeoutType_StartToClose {
+	// 	// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
+	// 	// To stabilize the error type, we always return the customer error.
+	// 	// See more details of background: https://github.com/temporalio/temporal/issues/185
+	// 	err = convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter())
+	// } else {
+	// 	err = convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
+	// }
+
 	activity.handle(nil, err)
 	return nil
 }
@@ -1023,7 +1032,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 
 	if decision.isDone() || !activity.waitForCancelRequest {
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
-		details := newEncodedValues(event.GetActivityTaskCanceledEventAttributes().Details, weh.GetDataConverter())
+		details := newEncodedValues(event.GetActivityTaskCanceledEventAttributes().GetDetails(), weh.GetDataConverter())
 		err := NewCanceledError(details)
 		activity.handle(nil, err)
 	}
@@ -1237,7 +1246,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 	if childWorkflow.handled {
 		return nil
 	}
-	err := NewTimeoutError(attributes.GetTimeoutType())
+	err := NewTimeoutError(attributes.GetTimeoutType(), nil)
 	childWorkflow.handle(nil, err)
 
 	return nil

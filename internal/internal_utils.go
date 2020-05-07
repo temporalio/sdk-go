@@ -154,17 +154,22 @@ func getErrorType(err error) string {
 
 // convertErrorToFailure converts error to failure.
 func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Failure {
-	failure := &failurepb.Failure{}
+	if err == nil {
+		return nil
+	}
+
+	failure := &failurepb.Failure{
+		Source:  "GoSDK",
+		Message: err.Error(),
+	}
 
 	switch err := err.(type) {
 	case *CustomError:
-		failureInfo := &failurepb.CustomFailureInfo{
-			Sdk:       "GoSDK",
-			Message:   err.Error(),
+		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:      getErrorType(err),
 			Retryable: err.retryable,
 		}
-		failure.FailureInfo = &failurepb.Failure_CustomFailureInfo{CustomFailureInfo: failureInfo}
+		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 
 		var err0 error
 		switch details := err.details.(type) {
@@ -179,9 +184,7 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 			panic(err0)
 		}
 	case *CanceledError:
-		failureInfo := &failurepb.CanceledFailureInfo{
-			Sdk: "GoSDK",
-		}
+		failureInfo := &failurepb.CanceledFailureInfo{}
 		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{CanceledFailureInfo: failureInfo}
 
 		var err0 error
@@ -197,45 +200,45 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 			panic(err0)
 		}
 	case *PanicError:
-		failureInfo := &failurepb.PanicFailureInfo{
-			Sdk:        "GoSDK",
-			Message:    err.Error(),
-			StackTrace: err.StackTrace(),
+		failureInfo := &failurepb.ApplicationFailureInfo{
+			Type:      getErrorType(err),
+			Retryable: true,
 		}
-		failure.FailureInfo = &failurepb.Failure_PanicFailureInfo{PanicFailureInfo: failureInfo}
+		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
+		failure.StackTrace = err.StackTrace()
 	case *workflowPanicError:
-		failureInfo := &failurepb.PanicFailureInfo{
-			Sdk:        "GoSDK",
-			Message:    err.Error(),
-			StackTrace: err.StackTrace(),
+		failureInfo := &failurepb.ApplicationFailureInfo{
+			Type:      getErrorType(&PanicError{}), // not err because workflowPanicError is not exposed.
+			Retryable: true,
 		}
-		failure.FailureInfo = &failurepb.Failure_PanicFailureInfo{PanicFailureInfo: failureInfo}
+		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
+		failure.StackTrace = err.StackTrace()
 	case *TimeoutError:
 		failureInfo := &failurepb.TimeoutFailureInfo{
-			Sdk:         "GoSDK",
 			TimeoutType: err.timeoutType,
+			LastFailure: convertErrorToFailure(err.lastErr, dataConverter),
 		}
 		failure.FailureInfo = &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: failureInfo}
 
 		var err0 error
-		switch details := err.details.(type) {
+		switch lastHeartbeatDetails := err.lastHeartbeatDetails.(type) {
 		case ErrorDetailsValues:
-			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
+			failureInfo.LastHeartbeatDetails, err0 = encodeArgs(dataConverter, lastHeartbeatDetails)
 		case *EncodedValues:
-			failureInfo.Details = details.values
+			failureInfo.LastHeartbeatDetails = lastHeartbeatDetails.values
 		default:
-			panic("unknown error details type")
+			panic("unknown last heartbeat details type")
 		}
 		if err0 != nil {
 			panic(err0)
 		}
+	// GenericError and all the rest.
 	default:
-		failureInfo := &failurepb.GenericFailureInfo{
-			Sdk:     "GoSDK",
-			Message: err.Error(),
-			Type:    getErrorType(err),
+		failureInfo := &failurepb.ApplicationFailureInfo{
+			Type:      getErrorType(err),
+			Retryable: true,
 		}
-		failure.FailureInfo = &failurepb.Failure_GenericFailureInfo{GenericFailureInfo: failureInfo}
+		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
 	// if innerErr := errors.Unwrap(err); innerErr != nil {
@@ -247,22 +250,40 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 
 // convertFailureToError converts failure to error.
 func convertFailureToError(failure *failurepb.Failure, dataConverter DataConverter) error {
+	if failure == nil {
+		return nil
+	}
+
 	if failure.GetTimeoutFailureInfo() != nil {
-		details := newEncodedValues(failure.GetTimeoutFailureInfo().GetDetails(), dataConverter)
-		return NewTimeoutError(failure.GetTimeoutFailureInfo().GetTimeoutType(), details)
-	} else if failure.GetPanicFailureInfo() != nil {
-		return newPanicError(failure.GetPanicFailureInfo().GetMessage(), failure.GetPanicFailureInfo().GetStackTrace())
-	} else if failure.GetGenericFailureInfo() != nil {
-		return &GenericError{err: failure.GetGenericFailureInfo().GetMessage()}
+		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dataConverter)
+		return NewTimeoutError(
+			timeoutFailureInfo.GetTimeoutType(),
+			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dataConverter),
+			lastHeartbeatDetails)
+	} else if failure.GetApplicationFailureInfo() != nil {
+		applicationFailureInfo := failure.GetApplicationFailureInfo()
+		details := newEncodedValues(applicationFailureInfo.GetDetails(), dataConverter)
+		switch applicationFailureInfo.GetType() {
+		case getErrorType(&CustomError{}):
+			return NewCustomError(failure.GetMessage(), applicationFailureInfo.GetRetryable(), details)
+		case getErrorType(&PanicError{}):
+			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
+		default:
+			// case getErrorType(&GenericError{}):
+			return &GenericError{err: failure.GetMessage()}
+		}
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dataConverter)
 		return NewCanceledError(details)
-	} else if failure.GetCustomFailureInfo() != nil {
-		details := newEncodedValues(failure.GetCustomFailureInfo().GetDetails(), dataConverter)
-		return NewCustomError(failure.GetCustomFailureInfo().GetMessage(), failure.GetCustomFailureInfo().GetRetryable(), details)
 	} else {
-		panic(fmt.Sprintf("unknown failure info type %T", failure.GetFailureInfo()))
+		return &GenericError{err: failure.GetMessage()}
 	}
+
+	// if failure.GetInnerFailure() != nil {
+	// 	innerErr := convertFailureToError(failure.GetInnerFailure(), dataConverter)
+	// 	return fmt.Errorf("%w")
+	// }
 }
 
 // getErrorDetails gets reason and details.

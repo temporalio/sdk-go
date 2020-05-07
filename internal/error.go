@@ -101,8 +101,9 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
-		timeoutType commonpb.TimeoutType
-		details     Values
+		timeoutType          commonpb.TimeoutType
+		lastErr              error
+		lastHeartbeatDetails Values
 	}
 
 	// CanceledError returned when operation was canceled.
@@ -172,18 +173,25 @@ func NewCustomError(reason string, retryable bool, details ...interface{}) *Cust
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
-func NewTimeoutError(timeoutType commonpb.TimeoutType, details ...interface{}) *TimeoutError {
-	if len(details) == 1 {
-		if d, ok := details[0].(*EncodedValues); ok {
-			return &TimeoutError{timeoutType: timeoutType, details: d}
+func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, lastHeatbeatDetails ...interface{}) *TimeoutError {
+	timeoutErr := &TimeoutError{
+		timeoutType: timeoutType,
+		lastErr:     lastErr,
+	}
+
+	if len(lastHeatbeatDetails) == 1 {
+		if d, ok := lastHeatbeatDetails[0].(*EncodedValues); ok {
+			timeoutErr.lastHeartbeatDetails = d
+			return timeoutErr
 		}
 	}
-	return &TimeoutError{timeoutType: timeoutType, details: ErrorDetailsValues(details)}
+	timeoutErr.lastHeartbeatDetails = ErrorDetailsValues(lastHeatbeatDetails)
+	return timeoutErr
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(commonpb.TimeoutType_Heartbeat, details...)
+	return NewTimeoutError(commonpb.TimeoutType_Heartbeat, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance
@@ -265,7 +273,7 @@ func (e *GenericError) Error() string {
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("TimeoutType: %v", e.timeoutType)
+	return fmt.Sprintf("TimeoutType: %v, LastErr: %v", e.timeoutType, e.lastErr)
 }
 
 // TimeoutType return timeout type of this error
@@ -273,17 +281,17 @@ func (e *TimeoutError) TimeoutType() commonpb.TimeoutType {
 	return e.timeoutType
 }
 
-// HasDetails return if this error has strong typed detail data.
-func (e *TimeoutError) HasDetails() bool {
-	return e.details != nil && e.details.HasValues()
+// HasLastHeartbeatDetails return if this error has strong typed detail data.
+func (e *TimeoutError) HasLastHeartbeatDetails() bool {
+	return e.lastHeartbeatDetails != nil && e.lastHeartbeatDetails.HasValues()
 }
 
-// Details extracts strong typed detail data of this error. If there is no details, it will return ErrNoData.
-func (e *TimeoutError) Details(d ...interface{}) error {
-	if !e.HasDetails() {
+// LastHeartbeatDetails extracts strong typed detail data of this error. If there is no details, it will return ErrNoData.
+func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
+	if !e.HasLastHeartbeatDetails() {
 		return ErrNoData
 	}
-	return e.details.Get(d...)
+	return e.lastHeartbeatDetails.Get(d...)
 }
 
 // Error from error interface

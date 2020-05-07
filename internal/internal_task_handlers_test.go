@@ -798,7 +798,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.True(len(response.Decisions) > 0)
 	closeDecision := response.Decisions[len(response.Decisions)-1]
 	t.Equal(closeDecision.DecisionType, decisionpb.DecisionType_FailWorkflowExecution)
-	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().GetFailure().GetCustomFailureInfo().GetMessage(), "FailWorkflow")
+	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
@@ -832,8 +832,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.True(ok)
 	t.EqualValues(decisionpb.DecisionType_FailWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
-	t.NotNil(attr.GetFailure().GetPanicFailureInfo())
-	t.EqualValues("panicError", attr.GetFailure().GetPanicFailureInfo().GetMessage())
+	t.EqualValues("panicError", attr.GetFailure().GetMessage())
+	t.NotNil(attr.GetFailure().GetApplicationFailureInfo())
+	t.EqualValues("PanicError", attr.GetFailure().GetApplicationFailureInfo().GetType())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
@@ -859,10 +860,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	r, ok := request.(*workflowservice.RespondDecisionTaskFailedRequest)
 	t.True(ok)
 	t.EqualValues(eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure, r.Cause)
-	t.NotNil(r.GetFailure().GetPanicFailureInfo())
-	// var details string
-	// _ = DefaultDataConverter.FromData(r.GetDetails(), &details)
-	// t.EqualValues("panicError", details)
+	t.NotNil(r.GetFailure().GetApplicationFailureInfo())
+	t.Equal("PanicError", r.GetFailure().GetApplicationFailureInfo().GetType())
+	t.Equal("panicError", r.GetFailure().GetMessage())
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {

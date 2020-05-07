@@ -87,15 +87,15 @@ func TestConvertFailureToError_CustomError(t *testing.T) {
 	val := newEncodedValues(details, dc).(*EncodedValues)
 	customErr1 := NewCustomError(customErrReasonA, true, val)
 	failure := convertErrorToFailure(customErr1, dc)
-	require.Equal(t, customErrReasonA, failure.GetCustomFailureInfo().GetMessage())
-	require.Equal(t, val.values, failure.GetCustomFailureInfo().GetDetails())
+	require.Equal(t, customErrReasonA, failure.GetMessage())
+	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
 	customErr2 := NewCustomError(customErrReasonA, true, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
 	failure = convertErrorToFailure(customErr2, dc)
-	require.Equal(t, customErrReasonA, failure.GetCustomFailureInfo().GetMessage())
-	require.Equal(t, val2, failure.GetCustomFailureInfo().GetDetails())
+	require.Equal(t, customErrReasonA, failure.GetMessage())
+	require.Equal(t, val2, failure.GetApplicationFailureInfo().GetDetails())
 }
 
 func TestConvertFailureToError_CancelError(t *testing.T) {
@@ -125,19 +125,19 @@ func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart, val)
+	timeoutErr1 := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart, nil, val)
 	failure := convertErrorToFailure(timeoutErr1, dc)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())
 	require.Equal(t, commonpb.TimeoutType_ScheduleToStart, failure.GetTimeoutFailureInfo().GetTimeoutType())
-	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetDetails())
+	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 
-	timeoutErr2 := NewTimeoutError(commonpb.TimeoutType_Heartbeat, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError(commonpb.TimeoutType_Heartbeat, nil, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
 	failure = convertErrorToFailure(timeoutErr2, dc)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())
 	require.Equal(t, commonpb.TimeoutType_Heartbeat, failure.GetTimeoutFailureInfo().GetTimeoutType())
-	require.Equal(t, val2, failure.GetTimeoutFailureInfo().GetDetails())
+	require.Equal(t, val2, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 }
 
 func TestConvertFailureToError_TimeoutError(t *testing.T) {
@@ -148,16 +148,16 @@ func TestConvertFailureToError_TimeoutError(t *testing.T) {
 
 	failure := &failurepb.Failure{
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
-			TimeoutType: commonpb.TimeoutType_Heartbeat,
-			Details:     details,
+			TimeoutType:          commonpb.TimeoutType_Heartbeat,
+			LastHeartbeatDetails: details,
 		}},
 	}
 	constructedErr := convertFailureToError(failure, dc)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
-	require.True(t, timeoutErr.HasDetails())
+	require.True(t, timeoutErr.HasLastHeartbeatDetails())
 	var detailValue string
-	err = timeoutErr.Details(&detailValue)
+	err = timeoutErr.LastHeartbeatDetails(&detailValue)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails1, detailValue)
 }

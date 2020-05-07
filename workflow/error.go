@@ -130,8 +130,8 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType commonpb.TimeoutType, details ...interface{}) *TimeoutError {
-	return internal.NewTimeoutError(timeoutType, details...)
+func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, details ...interface{}) *TimeoutError {
+	return internal.NewTimeoutError(timeoutType, lastErr, details...)
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance

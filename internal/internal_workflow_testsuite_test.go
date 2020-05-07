@@ -2854,7 +2854,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(commonpb.TimeoutType_StartToClose, testErrorDetails1)
+		return NewTimeoutError(commonpb.TimeoutType_StartToClose, nil, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {
@@ -2883,9 +2883,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
 	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
-	s.True(timeoutErr.HasDetails())
+	s.True(timeoutErr.HasLastHeartbeatDetails())
 	var details string
-	err = timeoutErr.Details(&details)
+	err = timeoutErr.LastHeartbeatDetails(&details)
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
 	s.Equal(4, count)
@@ -2898,8 +2898,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
 	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
-	s.True(timeoutErr.HasDetails())
-	err = timeoutErr.Details(&details)
+	s.True(timeoutErr.HasLastHeartbeatDetails())
+	err = timeoutErr.LastHeartbeatDetails(&details)
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
 }
@@ -2929,11 +2929,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
 	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
-	s.True(timeoutErr.HasDetails())
-	var details string
-	err = timeoutErr.Details(&details)
-	s.NoError(err)
-	s.Equal("context deadline exceeded", details)
+	s.Equal("context deadline exceeded", timeoutErr.lastErr.Error())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {

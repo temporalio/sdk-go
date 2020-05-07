@@ -1034,7 +1034,7 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, failure *failurep
 	}
 
 	// check if error is non-retriable
-	if failure.GetCustomFailureInfo() != nil && !failure.GetCustomFailureInfo().Retryable {
+	if failure.GetApplicationFailureInfo() != nil && !failure.GetApplicationFailureInfo().GetRetryable() {
 		return noRetryBackoff
 	}
 
