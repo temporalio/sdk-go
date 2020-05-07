@@ -466,12 +466,10 @@ func (d *activityDecisionStateMachine) handleDecisionSent() {
 }
 
 func (d *activityDecisionStateMachine) handleCancelFailedEvent() {
-	switch d.state {
-	case decisionStateCancellationDecisionSent:
-		d.moveState(decisionStateInitiated, eventCancelFailed)
-	default:
-		d.decisionStateMachineBase.handleCancelFailedEvent()
-	}
+	// Request to cancel activity now results in either activity completion, failed, timedout, or canceled
+	// Request to cancel itself can never fail and invalid RequestCancelActivity decisions results in the
+	// entire decision being failed.
+	d.failStateTransition(eventCancelFailed)
 }
 
 func (d *timerDecisionStateMachine) cancel() {
