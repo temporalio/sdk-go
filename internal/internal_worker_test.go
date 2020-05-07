@@ -240,7 +240,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
-			ActivityId:   "0",
+			ActivityId:   "5",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
@@ -284,7 +284,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("0"),
+			Details:                      s.createLocalActivityMarkerDataForTest("5"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 

@@ -158,7 +158,7 @@
         },
         "signalName": "test-signal",
         "input": null,
-        "control": "0",
+        "control": "10",
         "childWorkflowOnly": true
       }
     },
@@ -175,7 +175,7 @@
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
           "runId": ""
         },
-        "control": "0"
+        "control": "11"
       }
     },
     {

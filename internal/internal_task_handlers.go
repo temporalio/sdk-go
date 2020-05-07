@@ -1256,7 +1256,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		}
 		decisionAttributes := d.GetRequestCancelActivityTaskDecisionAttributes()
 		eventAttributes := e.GetActivityTaskCancelRequestedEventAttributes()
-		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
+		if eventAttributes.GetScheduledEventId() != decisionAttributes.GetScheduledEventId() {
 			return false
 		}
 

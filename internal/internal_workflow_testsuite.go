@@ -79,7 +79,7 @@ type (
 		duration       time.Duration
 		mockTimeToFire time.Time
 		wallTimeToFire time.Time
-		timerID        int
+		timerID        int64
 	}
 
 	testActivityHandle struct {
@@ -148,7 +148,7 @@ type (
 		testTimeout     time.Duration
 		header          *commonpb.Header
 
-		counterID        int
+		counterID        int64
 		activities       map[string]*testActivityHandle
 		localActivities  map[string]*localActivityTask
 		timers           map[string]*testTimerHandle
@@ -707,7 +707,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	fireTimer := func(th *testTimerHandle) {
 		skipDuration := th.mockTimeToFire.Sub(env.mockClock.Now())
 		env.logger.Debug("Auto fire timer",
-			zap.Int(tagTimerID, th.timerID),
+			zap.Int64(tagTimerID, th.timerID),
 			zap.Duration("TimerDuration", th.duration),
 			zap.Duration("TimeSkipped", skipDuration))
 
@@ -951,8 +951,10 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+
+	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
+		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
@@ -967,7 +969,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
-	activityInfo := &activityInfo{activityID: activityID}
+	activityInfo := &activityInfo{
+		scheduleID: scheduleID,
+		activityID: activityID,
+	}
 	if err != nil {
 		callback(nil, err)
 		return activityInfo
@@ -983,7 +988,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
-	env.setActivityHandle(activityInfo.activityID, activityHandle)
+	env.setActivityHandle(activityID, activityHandle)
 	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
@@ -1006,7 +1011,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 			}
 			// post activity result to workflow dispatcher
 			env.postCallback(func() {
-				env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
+				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
 				env.runningCount--
 			}, false /* do not auto schedule decision task, because activity might be still pending */)
 		}()
@@ -2084,14 +2089,10 @@ func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb
 	return blob
 }
 
-func (env *testWorkflowEnvironmentImpl) nextID() int {
+func (env *testWorkflowEnvironmentImpl) nextID() int64 {
 	activityID := env.counterID
 	env.counterID++
 	return activityID
-}
-
-func getStringID(intID int) string {
-	return fmt.Sprintf("%d", intID)
 }
 
 func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType string) *ActivityInfo {
