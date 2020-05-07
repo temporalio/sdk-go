@@ -770,7 +770,11 @@ func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, ac
 	decision.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleActivityTaskCancelRequested(activityID string) {
+func (h *decisionsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
+	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("unable to find activity ID for the scheduledEventID %v", scheduledEventID))
+	}
 	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
 	decision.handleCancelInitiatedEvent()
 }
