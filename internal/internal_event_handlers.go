@@ -99,7 +99,7 @@ type (
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
-		decisionsHelper   *nextDecisionEventID
+		decisionsHelper   *decisionsHelper
 		sideEffectResult  map[int64]*commonpb.Payloads
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
