@@ -173,7 +173,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
-	h.setCurrentDecisionStartedEventId(3)
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
 	scheduleID := h.getNextID()
@@ -200,7 +200,7 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
-	h.setCurrentDecisionStartedEventId(3)
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
 	scheduleID := h.getNextID()
@@ -223,7 +223,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
-	h.setCurrentDecisionStartedEventId(3)
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
 	scheduleID := h.getNextID()
@@ -258,7 +258,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
-	h.setCurrentDecisionStartedEventId(3)
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
 	scheduleID := h.getNextID()
@@ -293,7 +293,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
-	h.setCurrentDecisionStartedEventId(3)
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
 	scheduleID := h.getNextID()

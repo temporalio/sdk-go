@@ -789,7 +789,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// Set replay clock.
 		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
 		// Reset the counter on decision helper used for generating ID for decisions
-		weh.decisionsHelper.setCurrentDecisionStartedEventId(event.GetEventId())
+		weh.decisionsHelper.setCurrentDecisionStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnDecisionTaskStarted()
 
 	case eventpb.EventType_DecisionTaskTimedOut:

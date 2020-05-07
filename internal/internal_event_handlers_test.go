@@ -171,7 +171,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 		decisionsHelper: helper,
 		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
 	}
-	helper.setCurrentDecisionStartedEventId(4)
+	helper.setCurrentDecisionStartedEventID(4)
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
