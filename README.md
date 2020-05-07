@@ -20,7 +20,7 @@ go get go.temporal.io/temporal
 
 See [samples](https://github.com/temporalio/temporal-go-samples) to get started. 
 
-Documentation is available [here](https://docs.temporal.io/docs/07_goclient/). 
+Documentation is available [here](https://docs.temporal.io/docs/go-quick-start). 
 You can also find the API documentation [here](https://godoc.org/go.temporal.io/temporal).
 
 ## Contributing
