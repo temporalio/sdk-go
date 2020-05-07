@@ -99,7 +99,7 @@ type (
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
-		decisionsHelper   *decisionsHelper
+		decisionsHelper   *nextDecisionEventID
 		sideEffectResult  map[int64]*commonpb.Payloads
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
@@ -789,7 +789,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// Set replay clock.
 		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
 		// Reset the counter on decision helper used for generating ID for decisions
-		weh.decisionsHelper.resetCounterOffset(event.GetEventId())
+		weh.decisionsHelper.setCurrentDecisionStartedEventId(event.GetEventId())
 		weh.workflowDefinition.OnDecisionTaskStarted()
 
 	case eventpb.EventType_DecisionTaskTimedOut:

@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -183,6 +184,11 @@ func testReplayWorkflowLocalActivity(ctx Context) error {
 		getLogger().Error("activity failed with error.", zap.Error(err))
 		panic("Failed workflow")
 	}
+	err = ExecuteLocalActivity(ctx, testActivity).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
 	return err
 }
 
@@ -287,8 +293,13 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 			Details:                      s.createLocalActivityMarkerDataForTest("5"),
 			DecisionTaskCompletedEventId: 4,
 		}),
+		createTestEventLocalActivity(6, &eventpb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("6"),
+			DecisionTaskCompletedEventId: 4,
+		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(7, &eventpb.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
@@ -316,11 +327,16 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("0"),
+			Details:                      s.createLocalActivityMarkerDataForTest("5"),
+			DecisionTaskCompletedEventId: 4,
+		}),
+		createTestEventLocalActivity(6, &eventpb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("6"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(7, &eventpb.WorkflowExecutionCompletedEventAttributes{
 			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
@@ -329,9 +345,13 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 	history := &eventpb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
-	replayer.RegisterWorkflow(testReplayWorkflow)
+	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
 	err := replayer.ReplayWorkflowHistory(logger, history)
+	if err != nil {
+		fmt.Printf("replay failed.  Error: %v", err.Error())
+	}
 	require.Error(s.T(), err)
+	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow doesn't return the same result as the last event"))
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
