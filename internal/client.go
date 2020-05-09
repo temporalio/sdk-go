@@ -376,18 +376,6 @@ type (
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: no ContextPropagators
 		ContextPropagators []ContextPropagator
-
-		// Optional: Sets GRPCDialer that can be used to create gRPC connection
-		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round-robin load balancer needs to be enabled:
-		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
-		//	return grpc.Dial(params.HostPort,
-		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
-		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
-		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
-		//	)
-		// }
-		// default: defaultGRPCDialer (same as above)
-		GRPCDialer GRPCDialer
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -563,11 +551,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	if options.GRPCDialer == nil {
-		options.GRPCDialer = defaultGRPCDialer
-	}
-
-	connection, err := options.GRPCDialer(GRPCDialerParams{
+	connection, err := dial(ConnectionParameters{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,
@@ -622,11 +606,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	if options.GRPCDialer == nil {
-		options.GRPCDialer = defaultGRPCDialer
-	}
-
-	connection, err := options.GRPCDialer(GRPCDialerParams{
+	connection, err := dial(ConnectionParameters{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,
