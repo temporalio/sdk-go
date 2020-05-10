@@ -71,7 +71,8 @@ func Test_GenericError(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	require.Equal(t, &GenericError{"error:foo"}, err)
+	require.IsType(t, &CustomError{}, err)
+	require.Equal(t, "error:foo", err.Error())
 
 	// test workflow error
 	errorWorkflowFn := func(ctx Context) error {
@@ -82,7 +83,8 @@ func Test_GenericError(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	require.Equal(t, &GenericError{"error:foo"}, err)
+	require.IsType(t, &CustomError{}, err)
+	require.Equal(t, "error:foo", err.Error())
 }
 
 func Test_ActivityNotRegistered(t *testing.T) {
@@ -142,11 +144,12 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	_ = weh.handleActivityTaskTimedOut(event)
-	err, ok := actualErr.(*TimeoutError)
+	var timeoutErr *TimeoutError
+	ok := errors.As(actualErr, &timeoutErr)
 	require.True(t, ok)
-	require.True(t, err.HasLastHeartbeatDetails())
-	data := ""
-	require.NoError(t, err.LastHeartbeatDetails(&data))
+	require.True(t, timeoutErr.HasLastHeartbeatDetails())
+	var data string
+	require.NoError(t, timeoutErr.LastHeartbeatDetails(&data))
 	require.Equal(t, testErrorDetails1, data)
 }
 
@@ -155,12 +158,12 @@ func Test_CustomError(t *testing.T) {
 	var a1 string
 	var a2 int
 	var a3 testStruct
-	err0 := NewCustomError(customErrReasonA, true, testErrorDetails1)
+	err0 := NewCustomError(customErrReasonA, false, testErrorDetails1)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
-	err0 = NewCustomError(customErrReasonA, true, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	err0 = NewCustomError(customErrReasonA, false, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
@@ -189,11 +192,11 @@ func Test_CustomError(t *testing.T) {
 
 	// test reason and no detail
 	newReason := "another reason"
-	err2 := NewCustomError(newReason, true)
+	err2 := NewCustomError(newReason, false)
 	require.True(t, !err2.HasDetails())
 	require.Equal(t, ErrNoData, err2.Details())
-	require.Equal(t, newReason, err2.Reason())
-	err3 := NewCustomError(newReason, true, nil)
+	require.Equal(t, newReason, err2.Error())
+	err3 := NewCustomError(newReason, false, nil)
 	// TODO: probably we want to handle this case when details are nil, HasDetails return false
 	require.True(t, err3.HasDetails())
 
@@ -217,14 +220,14 @@ func Test_CustomError(t *testing.T) {
 
 func Test_CustomError_Pointer(t *testing.T) {
 	a1 := testStruct2{}
-	err1 := NewCustomError(customErrReasonA, true, testErrorDetails4)
+	err1 := NewCustomError(customErrReasonA, false, testErrorDetails4)
 	require.True(t, err1.HasDetails())
 	err := err1.Details(&a1)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails4, a1)
 
 	a2 := &testStruct2{}
-	err2 := NewCustomError(customErrReasonA, true, &testErrorDetails4) // // pointer in details
+	err2 := NewCustomError(customErrReasonA, false, &testErrorDetails4) // // pointer in details
 	require.True(t, err2.HasDetails())
 	err = err2.Details(&a2)
 	require.NoError(t, err)

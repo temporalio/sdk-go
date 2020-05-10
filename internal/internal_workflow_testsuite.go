@@ -34,7 +34,6 @@ import (
 	"time"
 
 	decisionpb "go.temporal.io/temporal-proto/decision"
-	failurepb "go.temporal.io/temporal-proto/failure"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 
 	"github.com/facebookgo/clock"
@@ -806,12 +805,15 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	env.isTestCompleted = true
 
 	if err != nil {
-		switch err := err.(type) {
-		case *CanceledError, *ContinueAsNewError, *TimeoutError:
+		var cancelledErr *CanceledError
+		var continueAsNewErr *ContinueAsNewError
+		var timeoutErr *TimeoutError
+		var workflowPanicErr *workflowPanicError
+		if errors.As(err, &cancelledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) {
 			env.testError = err
-		case *workflowPanicError:
-			env.testError = newPanicError(err.value, err.stackTrace)
-		default:
+		} else if errors.As(err, &workflowPanicErr) {
+			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
+		} else {
 			failure := convertErrorToFailure(err, dc)
 			env.testError = convertFailureToError(failure, dc)
 		}
@@ -867,12 +869,11 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	params.lastCompletionResult = result
 
 	if params.retryPolicy != nil && env.testError != nil {
-		failure := convertErrorToFailure(env.testError, env.GetDataConverter())
 		var expireTime time.Time
 		if params.workflowOptions.workflowExecutionTimeoutSeconds > 0 {
 			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.workflowOptions.workflowExecutionTimeoutSeconds))
 		}
-		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, failure, env.Now(), expireTime)
+		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, env.testError, env.Now(), expireTime)
 		if backoff > 0 {
 			// remove the current child workflow from the pending child workflow map because
 			// the childWorkflowID will be the same for retry run.
@@ -1209,7 +1210,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 		// check if a retry is needed
 		if request, ok := result.(*workflowservice.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
 			p := fromProtoRetryPolicy(parameters.RetryPolicy)
-			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), request.GetFailure(), env.Now(), expireTime)
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), convertFailureToError(request.GetFailure(), env.GetDataConverter()), env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
 				waitCh := make(chan struct{})
@@ -1249,13 +1250,13 @@ func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	}
 }
 
-func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int32, failure *failurepb.Failure, now, expireTime time.Time) time.Duration {
+func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int32, err error, now, expireTime time.Time) time.Duration {
 	if prp == nil {
 		return noRetryBackoff
 	}
 
 	p := fromProtoRetryPolicy(prp)
-	return getRetryBackoffWithNowTime(p, attempt, failure, now, expireTime)
+	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {

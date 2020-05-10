@@ -25,6 +25,8 @@
 package temporal
 
 import (
+	"errors"
+
 	"go.temporal.io/temporal-proto/serviceerror"
 
 	"go.temporal.io/temporal/internal"
@@ -44,8 +46,8 @@ var ErrNoData = internal.ErrNoData
 
 // NewCustomError create new instance of *CustomError with reason and optional details.
 // Use CustomError for any use case specific errors that cross activity and child workflow boundaries.
-func NewCustomError(reason string, retryable bool, details ...interface{}) *CustomError {
-	return internal.NewCustomError(reason, retryable, details...)
+func NewCustomError(reason string, nonRetryable bool, details ...interface{}) *CustomError {
+	return internal.NewCustomError(reason, nonRetryable, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -56,8 +58,8 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 
 // IsCustomError return if the err is a CustomError
 func IsCustomError(err error) bool {
-	_, ok := err.(*CustomError)
-	return ok
+	var applicationError *CustomError
+	return errors.As(err, &applicationError)
 }
 
 // IsWorkflowExecutionAlreadyStartedError return if the err is a WorkflowExecutionAlreadyStartedError
@@ -68,30 +70,24 @@ func IsWorkflowExecutionAlreadyStartedError(err error) bool {
 
 // IsCanceledError return if the err is a CanceledError
 func IsCanceledError(err error) bool {
-	_, ok := err.(*CanceledError)
-	return ok
-}
-
-// IsGenericError return if the err is a GenericError
-func IsGenericError(err error) bool {
-	_, ok := err.(*workflow.GenericError)
-	return ok
+	var cancelError *CanceledError
+	return errors.As(err, &cancelError)
 }
 
 // IsTimeoutError return if the err is a TimeoutError
 func IsTimeoutError(err error) bool {
-	_, ok := err.(*workflow.TimeoutError)
-	return ok
+	var timeoutError *workflow.TimeoutError
+	return errors.As(err, &timeoutError)
 }
 
 // IsTerminatedError return if the err is a TerminatedError
 func IsTerminatedError(err error) bool {
-	_, ok := err.(*workflow.TerminatedError)
-	return ok
+	var terminateError *workflow.TerminatedError
+	return errors.As(err, &terminateError)
 }
 
 // IsPanicError return if the err is a PanicError
 func IsPanicError(err error) bool {
-	_, ok := err.(*workflow.PanicError)
-	return ok
+	var panicError *workflow.PanicError
+	return errors.As(err, &panicError)
 }

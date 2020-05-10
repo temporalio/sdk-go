@@ -481,6 +481,7 @@ type (
 		// If not set or set to 0, it means unlimited, and rely on activity ScheduleToCloseTimeout to stop.
 		MaximumAttempts int32
 
+		// TODO: Rename to NonRetriableErrorTypes and clean up comment.
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.
 		// Error reason for custom error is specified when your activity/workflow return temporal.NewCustomError(reason).
 		// Error reason for panic error is "temporalInternal:Panic".

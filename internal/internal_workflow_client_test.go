@@ -710,7 +710,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	customErr := NewCustomError(reason, true, details)
+	customErr := NewCustomError(reason, false, details)
 	failure := convertErrorToFailure(customErr, getDefaultDataConverter())
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)

@@ -81,8 +81,8 @@ func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	if cerr.Reason() != errFailOnPurpose.Reason() {
-		return nil, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Reason())
+	if cerr.Error() != errFailOnPurpose.Error() {
+		return nil, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Error())
 	}
 
 	return []string{"fail", "fail", "fail"}, nil
@@ -456,8 +456,8 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 	if !ok {
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	if cerr.Reason() != errFailOnPurpose.Reason() {
-		return []string{}, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Reason())
+	if cerr.Error() != errFailOnPurpose.Error() {
+		return []string{}, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Error())
 	}
 	return []string{}, nil
 }

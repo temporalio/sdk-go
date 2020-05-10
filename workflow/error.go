@@ -89,10 +89,6 @@ if err != nil {
 */
 
 type (
-	// GenericError is returned from activity or child workflow when an implementations return error
-	// other than from workflow.NewCustomError() API.
-	GenericError = internal.GenericError
-
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError = internal.TimeoutError
 

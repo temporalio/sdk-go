@@ -85,12 +85,12 @@ func TestConvertFailureToError_CustomError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	customErr1 := NewCustomError(customErrReasonA, true, val)
+	customErr1 := NewCustomError(customErrReasonA, false, val)
 	failure := convertErrorToFailure(customErr1, dc)
 	require.Equal(t, customErrReasonA, failure.GetMessage())
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
-	customErr2 := NewCustomError(customErrReasonA, true, testErrorDetails1)
+	customErr2 := NewCustomError(customErrReasonA, false, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
 	failure = convertErrorToFailure(customErr2, dc)

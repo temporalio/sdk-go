@@ -986,10 +986,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 	}
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
-	err := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
-	err2 := err ///TODO: wrap error here
+	activityTaskErr := NewActivityTaskError(
+		attributes.GetScheduledEventId(),
+		attributes.GetStartedEventId(),
+		attributes.GetIdentity(),
+		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+	)
 
-	activity.handle(nil, err2)
+	activity.handle(nil, activityTaskErr)
 	return nil
 }
 
@@ -1001,24 +1005,31 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 		return nil
 	}
 
-	var err error
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
 	lastHeartbeatDetails := newEncodedValues(attributes.GetLastHeartbeatDetails(), weh.GetDataConverter())
-	err = NewTimeoutError(
+	timeoutError := NewTimeoutError(
 		attributes.GetTimeoutType(),
 		convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter()),
 		lastHeartbeatDetails)
 
-	// if attributes.GetLastFailure() != nil && attributes.GetFailure().GetTimeoutFailureInfo().GetTimeoutType() == commonpb.TimeoutType_StartToClose {
+	activityTaskErr := NewActivityTaskError(
+		attributes.GetScheduledEventId(),
+		attributes.GetStartedEventId(),
+		"",
+		timeoutError,
+	)
+
+	// if len(attributes.GetLastFailureReason()) > 0 && attributes.GetTimeoutType() == eventpb.TimeoutType_StartToClose {
 	// 	// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
 	// 	// To stabilize the error type, we always return the customer error.
 	// 	// See more details of background: https://github.com/temporalio/temporal/issues/185
-	// 	err = convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter())
+	// 	err = constructError(attributes.GetLastFailureReason(), attributes.LastFailureDetails, weh.GetDataConverter())
 	// } else {
-	// 	err = convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
+	// 	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+	// 	err = NewTimeoutError(attributes.GetTimeoutType(), details)
 	// }
 
-	activity.handle(nil, err)
+	activity.handle(nil, activityTaskErr)
 	return nil
 }
 
@@ -1032,9 +1043,18 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 
 	if decision.isDone() || !activity.waitForCancelRequest {
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
-		details := newEncodedValues(event.GetActivityTaskCanceledEventAttributes().GetDetails(), weh.GetDataConverter())
-		err := NewCanceledError(details)
-		activity.handle(nil, err)
+
+		attributes := event.GetActivityTaskCanceledEventAttributes()
+		details := newEncodedValues(attributes.GetDetails(), weh.GetDataConverter())
+
+		activityTaskErr := NewActivityTaskError(
+			attributes.GetScheduledEventId(),
+			attributes.GetStartedEventId(),
+			attributes.GetIdentity(),
+			NewCanceledError(details),
+		)
+
+		activity.handle(nil, activityTaskErr)
 	}
 
 	return nil
@@ -1218,9 +1238,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		return nil
 	}
 
-	err := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
-	childWorkflow.handle(nil, err)
-
+	childWorkflowExecutionError := NewChildWorkflowExecutionError(
+		attributes.GetNamespace(),
+		attributes.GetWorkflowType(),
+		attributes.GetInitiatedEventId(),
+		attributes.GetStartedEventId(),
+		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+	)
+	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
@@ -1233,8 +1258,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		return nil
 	}
 	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
-	err := NewCanceledError(details)
-	childWorkflow.handle(nil, err)
+
+	childWorkflowExecutionError := NewChildWorkflowExecutionError(
+		attributes.GetNamespace(),
+		attributes.GetWorkflowType(),
+		attributes.GetInitiatedEventId(),
+		attributes.GetStartedEventId(),
+		NewCanceledError(details),
+	)
+	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
@@ -1246,9 +1278,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 	if childWorkflow.handled {
 		return nil
 	}
-	err := NewTimeoutError(attributes.GetTimeoutType(), nil)
-	childWorkflow.handle(nil, err)
 
+	childWorkflowExecutionError := NewChildWorkflowExecutionError(
+		attributes.GetNamespace(),
+		attributes.GetWorkflowType(),
+		attributes.GetInitiatedEventId(),
+		attributes.GetStartedEventId(),
+		NewTimeoutError(attributes.GetTimeoutType(), nil),
+	)
+	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
@@ -1260,9 +1298,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	if childWorkflow.handled {
 		return nil
 	}
-	err := newTerminatedError()
-	childWorkflow.handle(nil, err)
 
+	childWorkflowExecutionError := NewChildWorkflowExecutionError(
+		attributes.GetNamespace(),
+		attributes.GetWorkflowType(),
+		attributes.GetInitiatedEventId(),
+		attributes.GetStartedEventId(),
+		newTerminatedError(),
+	)
+	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
@@ -1275,7 +1319,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflo
 	// for cancellation of external workflow, we have to use cancellation ID
 	attribute := event.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 	workflowID := attribute.WorkflowExecution.GetWorkflowId()
-	cancellationID := string(attribute.Control)
+	cancellationID := attribute.Control
 	weh.decisionsHelper.handleRequestCancelExternalWorkflowExecutionInitiated(event.GetEventId(), workflowID, cancellationID)
 	return nil
 }

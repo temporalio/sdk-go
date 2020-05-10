@@ -43,7 +43,6 @@ import (
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
-	failurepb "go.temporal.io/temporal-proto/failure"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -933,7 +932,7 @@ ProcessEvents:
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewCustomError("FailWorkflow", true, nonDeterministicErr.Error()))
+			eventHandler.Complete(nil, NewCustomError("FailWorkflow", false, nonDeterministicErr.Error()))
 		case BlockWorkflow:
 			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
@@ -1004,11 +1003,14 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 }
 
 func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
-	failure := convertErrorToFailure(lar.err, dataConverter)
-	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, failure, now, lar.task.expireTime)
+	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, lar.err, now, lar.task.expireTime)
 }
 
-func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, failure *failurepb.Failure, now, expireTime time.Time) time.Duration {
+func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, expireTime time.Time) time.Duration {
+	if !IsRetryable(err, p.NonRetriableErrorReasons) {
+		return noRetryBackoff
+	}
+
 	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
 		return noRetryBackoff // max attempt reached
 	}
@@ -1030,11 +1032,6 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, failure *failurep
 
 	nextScheduleTime := now.Add(backoffInterval)
 	if !expireTime.IsZero() && nextScheduleTime.After(expireTime) {
-		return noRetryBackoff
-	}
-
-	// check if error is non-retriable
-	if failure.GetApplicationFailureInfo() != nil && !failure.GetApplicationFailureInfo().GetRetryable() {
 		return noRetryBackoff
 	}
 
@@ -1465,14 +1462,17 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	// complete decision task
 	var closeDecision *decisionpb.Decision
-	if canceledErr, ok := workflowContext.err.(*CanceledError); ok {
+	var canceledErr *CanceledError
+	var contErr *ContinueAsNewError
+
+	if errors.As(workflowContext.err, &canceledErr) {
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_CancelWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
-			Failure: convertErrorToFailure(canceledErr, wth.dataConverter),
+			Failure: convertErrorToFailure(workflowContext.err, wth.dataConverter),
 		}}
-	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
+	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
