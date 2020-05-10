@@ -12,8 +12,8 @@
         "taskList": {
           "name": "tl-1"
         },
-        "executionStartToCloseTimeoutSeconds": 10,
-        "taskStartToCloseTimeoutSeconds": 1,
+        "workflowRunTimeoutSeconds": 10,
+        "workflowTaskTimeoutSeconds": 1,
         "identity": "97228@samar-C02XG22GJGH6@"
       }
     },

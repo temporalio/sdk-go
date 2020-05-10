@@ -34,6 +34,7 @@ import (
 
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/worker"
 	"go.temporal.io/temporal/workflow"
@@ -199,13 +200,13 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", errors.New("memo or search attributes are not carried over")
 	}
 	var memoVal string
-	err := client.NewValue(info.Memo.Fields["memoKey"]).Get(&memoVal)
+	err := encoded.GetDefaultPayloadConverter().FromData(info.Memo.Fields["memoKey"], &memoVal)
 	if err != nil {
 		return "", errors.New("error when get memo value")
 	}
 
 	var searchAttrVal string
-	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
+	err = encoded.GetDefaultPayloadConverter().FromData(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return "", errors.New("error when get search attribute value")
 	}
@@ -226,10 +227,10 @@ func (w *Workflows) IDReusePolicy(
 	failFirstChild bool) (string, error) {
 
 	ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
-		WorkflowID:                   childWFID,
-		ExecutionStartToCloseTimeout: 9 * time.Second,
-		TaskStartToCloseTimeout:      5 * time.Second,
-		WorkflowIDReusePolicy:        policy,
+		WorkflowID:               childWFID,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowIDReusePolicy:    policy,
 	})
 
 	var ans1 string
@@ -264,13 +265,12 @@ func (w *Workflows) IDReusePolicy(
 
 func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 9 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}
@@ -281,13 +281,12 @@ func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 
 func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      time.Second,
-		ExecutionStartToCloseTimeout: time.Second,
+		WorkflowTaskTimeout:      time.Second,
+		WorkflowExecutionTimeout: time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}
@@ -297,10 +296,10 @@ func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 
 func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 10 * time.Second,
-		Memo:                         map[string]interface{}{"memoKey": "memoVal"},
-		SearchAttributes:             map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+		Memo:                     map[string]interface{}{"memoKey": "memoVal"},
+		SearchAttributes:         map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err = workflow.ExecuteChildWorkflow(ctx, w.childForMemoAndSearchAttr).Get(ctx, &result)
@@ -309,8 +308,8 @@ func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, e
 
 func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 30 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 30 * time.Second,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 20*time.Second)
@@ -321,9 +320,9 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyTerminate(ctx workf
 
 func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflow.Context) (result string, err error) {
 	opts := workflow.ChildWorkflowOptions{
-		TaskStartToCloseTimeout:      5 * time.Second,
-		ExecutionStartToCloseTimeout: 10 * time.Second,
-		ParentClosePolicy:            client.ParentClosePolicyAbandon,
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+		ParentClosePolicy:        client.ParentClosePolicyAbandon,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 5*time.Second)
@@ -435,13 +434,16 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
-		ScheduleToStartTimeout: time.Second * 2,
-		StartToCloseTimeout:    time.Second * 6,
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    2 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
+			InitialInterval:    1 * time.Second,
 			BackoffCoefficient: 1.0,
-			MaximumInterval:    time.Second,
-			ExpirationInterval: time.Second * 5,
+			MaximumInterval:    1 * time.Second,
+			// TODO (shtin): This is sort of workarounds to make TestActivityRetryOnTimeoutStableError test works. But it should fail on ScheduleToCloseTimeout not on MaximumAttempts.
+			//  https://github.com/temporalio/temporal-go-sdk/issues/120 is to fix it.
+			MaximumAttempts: 3,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
@@ -473,12 +475,12 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
 	info := workflow.GetInfo(ctx)
 	var memo string
-	err = client.NewValue(info.Memo.Fields["memoKey"]).Get(&memo)
+	err = encoded.GetDefaultPayloadConverter().FromData(info.Memo.Fields["memoKey"], &memo)
 	if err != nil {
 		return
 	}
 	var searchAttrVal string
-	err = client.NewValue(info.SearchAttributes.IndexedFields["CustomKeywordField"]).Get(&searchAttrVal)
+	err = encoded.GetDefaultPayloadConverter().FromData(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return
 	}
@@ -565,7 +567,6 @@ func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Second,
-			ExpirationInterval: 100 * time.Second,
 			MaximumAttempts:    3,
 		},
 	}

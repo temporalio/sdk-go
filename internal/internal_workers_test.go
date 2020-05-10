@@ -247,10 +247,11 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 			EventId:   1,
 			EventType: eventpb.EventType_WorkflowExecutionStarted,
 			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &tasklistpb.TaskList{Name: taskList},
-				ExecutionStartToCloseTimeoutSeconds: 10,
-				TaskStartToCloseTimeoutSeconds:      2,
-				WorkflowType:                        &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
+				TaskList:                        &tasklistpb.TaskList{Name: taskList},
+				WorkflowExecutionTimeoutSeconds: 10,
+				WorkflowRunTimeoutSeconds:       10,
+				WorkflowTaskTimeoutSeconds:      2,
+				WorkflowType:                    &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
 			}},
 		},
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
@@ -387,10 +388,11 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 			EventId:   1,
 			EventType: eventpb.EventType_WorkflowExecutionStarted,
 			Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &eventpb.WorkflowExecutionStartedEventAttributes{
-				TaskList:                            &tasklistpb.TaskList{Name: taskList},
-				ExecutionStartToCloseTimeoutSeconds: 10,
-				TaskStartToCloseTimeoutSeconds:      3,
-				WorkflowType:                        &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
+				TaskList:                        &tasklistpb.TaskList{Name: taskList},
+				WorkflowExecutionTimeoutSeconds: 10,
+				WorkflowRunTimeoutSeconds:       10,
+				WorkflowTaskTimeoutSeconds:      3,
+				WorkflowType:                    &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
@@ -486,7 +488,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	s.Equal(2, localActivityCalledCount)
 }
 
-func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payload {
+func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payloads {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),

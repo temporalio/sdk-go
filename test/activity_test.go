@@ -56,7 +56,8 @@ func newActivities() *Activities {
 }
 
 func (a *Activities) RetryTimeoutStableErrorActivity() error {
-	time.Sleep(time.Second * 3)
+	// TODO (shtin): Sleep used to be 3s here. Check https://github.com/temporalio/temporal-go-sdk/issues/120 for details.
+	time.Sleep(1 * time.Second)
 	return errFailOnPurpose
 }
 

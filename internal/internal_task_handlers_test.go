@@ -202,13 +202,13 @@ func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) 
 	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payload *commonpb.Payload) *eventpb.HistoryEvent {
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payloads *commonpb.Payloads) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:   eventID,
 		EventType: eventpb.EventType_WorkflowExecutionSignaled,
 		Attributes: &eventpb.HistoryEvent_WorkflowExecutionSignaledEventAttributes{WorkflowExecutionSignaledEventAttributes: &eventpb.WorkflowExecutionSignaledEventAttributes{
 			SignalName: signalName,
-			Input:      payload,
+			Input:      payloads,
 			Identity:   "test-identity",
 		}},
 	}
@@ -346,13 +346,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
-		createTestEventTimerStarted(5, 0),
-		createTestEventTimerFired(6, 0),
+		createTestEventTimerStarted(5, 5),
+		createTestEventTimerFired(6, 5),
 		createTestEventDecisionTaskScheduled(7, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(8),
 		createTestEventDecisionTaskCompleted(9, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
-		createTestEventTimerStarted(10, 1),
-		createTestEventTimerFired(11, 1),
+		createTestEventTimerStarted(10, 10),
+		createTestEventTimerFired(11, 10),
 		createTestEventDecisionTaskScheduled(12, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(13),
 	}
@@ -880,21 +880,23 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentNamespace := "parentNamespace"
 	var attempt int32 = 123
 	var executionTimeout int32 = 213456
+	var runTimeout int32 = 21098
 	var taskTimeout int32 = 21
 	workflowType := "GetWorkflowInfoWorkflow"
 	lastCompletionResult, err := getDefaultDataConverter().ToData("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &eventpb.WorkflowExecutionStartedEventAttributes{
-		Input:                               lastCompletionResult,
-		TaskList:                            &tasklistpb.TaskList{Name: taskList},
-		ParentWorkflowExecution:             parentExecution,
-		CronSchedule:                        cronSchedule,
-		ContinuedExecutionRunId:             continuedRunID,
-		ParentWorkflowNamespace:             parentNamespace,
-		Attempt:                             attempt,
-		ExecutionStartToCloseTimeoutSeconds: executionTimeout,
-		TaskStartToCloseTimeoutSeconds:      taskTimeout,
-		LastCompletionResult:                lastCompletionResult,
+		Input:                           lastCompletionResult,
+		TaskList:                        &tasklistpb.TaskList{Name: taskList},
+		ParentWorkflowExecution:         parentExecution,
+		CronSchedule:                    cronSchedule,
+		ContinuedExecutionRunId:         continuedRunID,
+		ParentWorkflowNamespace:         parentNamespace,
+		Attempt:                         attempt,
+		WorkflowExecutionTimeoutSeconds: executionTimeout,
+		WorkflowRunTimeoutSeconds:       runTimeout,
+		WorkflowTaskTimeoutSeconds:      taskTimeout,
+		LastCompletionResult:            lastCompletionResult,
 	}
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
@@ -927,8 +929,9 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
 	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)
 	t.EqualValues(attempt, result.Attempt)
-	t.EqualValues(executionTimeout, result.ExecutionStartToCloseTimeoutSeconds)
-	t.EqualValues(taskTimeout, result.TaskStartToCloseTimeoutSeconds)
+	t.EqualValues(executionTimeout, result.WorkflowExecutionTimeoutSeconds)
+	t.EqualValues(runTimeout, result.WorkflowRunTimeoutSeconds)
+	t.EqualValues(taskTimeout, result.WorkflowTaskTimeoutSeconds)
 	t.EqualValues(workflowType, result.WorkflowType.Name)
 	t.EqualValues(testNamespace, result.Namespace)
 }
@@ -1115,7 +1118,6 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 				InitialInterval:    backoffDuration,
 				BackoffCoefficient: 1.1,
 				MaximumInterval:    time.Minute,
-				ExpirationInterval: time.Minute,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, ao)
@@ -1136,8 +1138,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			TaskStartToCloseTimeoutSeconds: backoffIntervalInSeconds,
-			TaskList:                       &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}},
+			WorkflowTaskTimeoutSeconds: backoffIntervalInSeconds,
+			TaskList:                   &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}},
 		),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		decisionTaskStartedEvent,
@@ -1260,7 +1262,7 @@ type testActivityDeadline struct {
 	d      time.Duration
 }
 
-func (t *testActivityDeadline) Execute(ctx context.Context, _ *commonpb.Payload) (*commonpb.Payload, error) {
+func (t *testActivityDeadline) Execute(ctx context.Context, _ *commonpb.Payloads) (*commonpb.Payloads, error) {
 	if d, _ := ctx.Deadline(); d.IsZero() {
 		panic("invalid deadline provided")
 	}
@@ -1503,7 +1505,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultDataConverter.ToData(str)
+		payload, _ := DefaultPayloadConverter.ToData(str)
 		return payload
 	}
 

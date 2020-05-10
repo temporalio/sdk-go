@@ -67,7 +67,7 @@ type (
 		// - RespondQueryTaskCompletedRequest
 		// If waitLocalActivity is true, and there is outstanding local activities, this call will return nil.
 		CompleteDecisionTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
-		// GetDecisionTimeout returns the TaskStartToCloseTimeout
+		// GetWorkflowTaskTimeout returns the WorkflowTaskTimeout
 		GetDecisionTimeout() time.Duration
 		GetCurrentDecisionTask() *workflowservice.PollForDecisionTaskResponse
 		IsDestroyed() bool

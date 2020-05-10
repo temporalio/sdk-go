@@ -11,8 +11,8 @@
         "taskList": {
           "name": "taskList1"
         },
-        "executionStartToCloseTimeoutSeconds": 60,
-        "taskStartToCloseTimeoutSeconds": 60,
+        "workflowRunTimeoutSeconds": 60,
+        "workflowTaskTimeoutSeconds": 60,
         "identity": "temporal-cli@user-C02WC08UHTDG"
       }
     },
@@ -53,7 +53,7 @@
       "timestamp": 1528336257188469200,
       "eventType": "ActivityTaskScheduled",
       "activityTaskScheduledEventAttributes": {
-        "activityId": "0",
+        "activityId": "5",
         "activityType": {
           "name": "testActivityMultipleArgs"
         },

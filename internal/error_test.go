@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	commonpb "go.temporal.io/temporal-proto/common"
@@ -124,10 +125,11 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 	activityID := "activityID"
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityDecisionStateMachine(
+		5,
 		&decisionpb.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
-		callback: func(r *commonpb.Payload, e error) {
+		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
@@ -413,7 +415,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	)
 	di.state = decisionStateInitiated
 	di.setData(&scheduledSignal{
-		callback: func(r *commonpb.Payload, e error) {
+		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
@@ -437,8 +439,10 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
+	headerValue, err := DefaultPayloadConverter.ToData("test-data")
+	assert.NoError(t, err)
 	header := &commonpb.Header{
-		Fields: map[string][]byte{"test": []byte("test-data")},
+		Fields: map[string]*commonpb.Payload{"test": headerValue},
 	}
 
 	s := &WorkflowTestSuite{
@@ -450,7 +454,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 		Name: continueAsNewWfName,
 	})
 	wfEnv.ExecuteWorkflow(continueAsNewWorkflowFn, 101, "another random string")
-	err := wfEnv.GetWorkflowError()
+	err = wfEnv.GetWorkflowError()
 
 	require.Error(t, err)
 	continueAsNewErr, ok := err.(*ContinueAsNewError)

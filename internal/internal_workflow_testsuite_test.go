@@ -61,7 +61,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 		ScheduleToCloseTimeout: 3 * time.Second,
 	}
 	s.header = &commonpb.Header{
-		Fields: map[string][]byte{"test": []byte("test-data")},
+		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
 	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
 }
@@ -406,8 +406,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 	}
 
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string][]byte{
-			testHeader: []byte("test-data"),
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
 
@@ -611,7 +611,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 			return "", err
 		}
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
@@ -644,7 +644,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() 
 			return "", err
 		}
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		ctx = WithDataConverter(ctx, newTestDataConverter())
@@ -673,8 +673,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancel() {
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute,
-			WaitForCancellation:          true,
+			WorkflowRunTimeout:  time.Minute,
+			WaitForCancellation: true,
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		ctx1, cancel1 := WithCancel(ctx)
@@ -711,7 +711,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
 			return "", err
 		}
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
@@ -750,7 +750,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock() {
 // ExecuteChildWorkflow(...).GetChildWorkflowExecution().Get() doesn't block forever when mock panics
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkflowExecution() {
 	workflowFn := func(ctx Context) (string, error) {
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		childWorkflow := ExecuteChildWorkflow(ctx, testWorkflowHello)
@@ -778,7 +778,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
 	workflowFn := func(ctx Context) (string, error) {
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		err := ExecuteChildWorkflow(ctx, testWorkflowHello).GetChildWorkflowExecution().Get(ctx, nil)
 		if err != nil {
@@ -808,7 +808,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 			return "", err
 		}
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Minute}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
@@ -884,7 +884,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 		t1 := NewTimer(ctx, time.Minute)
 		t2 := NewTimer(ctx, time.Minute*10)
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour * 2}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour * 2}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f1 := ExecuteChildWorkflow(ctx, childWorkflowFn)
 
@@ -1046,7 +1046,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWaitFn() {
 func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour /* this is currently ignored by test suite */}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f1 := ExecuteChildWorkflow(ctx, testWorkflowHello)
 
@@ -1133,7 +1133,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
 	env := s.NewTestWorkflowEnvironment()
 	childWorkflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour /* this is currently ignored by test suite */}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f1 := ExecuteChildWorkflow(ctx, testWorkflowHello)
 
@@ -1154,7 +1154,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWithChild() {
 
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour /* this is currently ignored by test suite */}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f1 := ExecuteChildWorkflow(ctx, childWorkflowFn) // execute child workflow which in turn execute another child workflow
 
@@ -1253,7 +1253,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1313,7 +1313,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromData(changeVersionsBytes, &changeVersions)
+		err = DefaultPayloadConverter.FromData(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1379,7 +1379,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = DefaultDataConverter.FromData(valBytes, &result)
+		_ = DefaultPayloadConverter.FromData(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1441,31 +1441,31 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payload, wf2 *commonpb.Payload) (commonpb.Payload, error) {
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetData()))
-		actualValues = append(actualValues, string(wf1.GetItems()[0].GetMetadata()[metadataEncoding]))
-		actualValues = append(actualValues, string(wf2.GetItems()[0].GetData()))
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
+		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetData()))
+		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()[metadataEncoding]))
+		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
 
-		// If return type is *commonpb.Payload it will be automatically unwrpped (this is side effect of internal impementation).
-		// commonpb.Payload type is returned as is.
-		return commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, nil
+		// If return type is *commonpb.Payloads it will be automatically unwrpped (this is side effect of internal impementation).
+		// commonpb.Payloads type is returned as is.
+		return commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, nil
 	}
 
-	input1 := commonpb.Payload{Items: []*commonpb.PayloadItem{{ // This will be JSON
+	input1 := commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
 		Metadata: map[string][]byte{
 			metadataEncoding: []byte("someencoding"),
 		},
 		Data: []byte("input1")}}}
-	input2 := &commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("input2")}}}
+	input2 := &commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("input2")}}}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 	s.NoError(err)
 	s.EqualValues([]string{"input1", "someencoding", "input2"}, actualValues)
 
-	var ret commonpb.Payload
+	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.Equal(commonpb.Payload{Items: []*commonpb.PayloadItem{{Data: []byte("result")}}}, ret)
+	s.Equal(commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
@@ -1566,7 +1566,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 
 	workflowFn := func(ctx Context) error {
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour /* this is currently ignored by test suite */}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var result string
 		err := ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &result)
@@ -1605,7 +1605,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 			return fmt.Errorf("context did not propagate to workflow")
 		}
 
-		cwo := ChildWorkflowOptions{ExecutionStartToCloseTimeout: time.Hour /* this is currently ignored by test suite */}
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour /* this is currently ignored by test suite */}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var result string
 		if err := ExecuteChildWorkflow(ctx, testWorkflowContext).Get(ctx, &result); err != nil {
@@ -1628,8 +1628,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	s.SetHeader(&commonpb.Header{
-		Fields: map[string][]byte{
-			testHeader: []byte("test-data"),
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
 
@@ -1839,8 +1839,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
 
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute,
-			Namespace:                    "test-namespace",
+			WorkflowRunTimeout: time.Minute,
+			Namespace:          "test-namespace",
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, GetWorkflowInfo(ctx).WorkflowExecution)
@@ -1957,8 +1957,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 	workflowFn := func(ctx Context) error {
 
 		cwo := ChildWorkflowOptions{
-			Namespace:                    "test-namespace",
-			ExecutionStartToCloseTimeout: time.Minute,
+			Namespace:          "test-namespace",
+			WorkflowRunTimeout: time.Minute,
 		}
 
 		childCtx := WithChildWorkflowOptions(ctx, cwo)
@@ -2039,8 +2039,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_DisconnectedContext() {
 
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Hour,
-			WaitForCancellation:          true,
+			WorkflowRunTimeout:  time.Hour,
+			WaitForCancellation: true,
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childCtx, cancelChild := WithCancel(ctx)
@@ -2074,9 +2074,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_DisconnectedContext() {
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowIDReusePolicy() {
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute,
-			WorkflowID:                   "test-child-workflow-id",
-			WorkflowIDReusePolicy:        WorkflowIDReusePolicyRejectDuplicate,
+			WorkflowRunTimeout:    time.Minute,
+			WorkflowID:            "test-child-workflow-id",
+			WorkflowIDReusePolicy: WorkflowIDReusePolicyRejectDuplicate,
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
@@ -2262,7 +2262,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2287,7 +2286,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 
 	// set a workflow timeout timer to test
 	// if the timer will fire during activity retry
-	env.SetWorkflowTimeout(10 * time.Second)
+	env.SetWorkflowRunTimeout(10 * time.Second)
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -2333,7 +2332,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2376,7 +2374,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2420,7 +2417,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2454,7 +2450,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetryOnCancel() {
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2490,14 +2485,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowRunTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
 				MaximumAttempts:          3,
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2544,15 +2538,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{
-			WorkflowID:                   "test-retry-signal-child-workflow",
-			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowID:         "test-retry-signal-child-workflow",
+			WorkflowRunTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
 				MaximumAttempts:          3,
 				InitialInterval:          time.Second * 3,
 				MaximumInterval:          time.Second * 3,
 				BackoffCoefficient:       1,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Minute,
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2590,7 +2583,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestWorkflowTimeoutInBusyLoop() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetWorkflowTimeout((time.Hour * 10) + time.Minute)
+	env.SetWorkflowRunTimeout((time.Hour * 10) + time.Minute)
 	timerFiredCount := 0
 	env.SetOnTimerFiredListener(func(timerID string) {
 		timerFiredCount++
@@ -2612,7 +2605,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
 
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Hour * 3, // less than 5h that child workflow would take.
+			WorkflowRunTimeout: time.Hour * 3, // less than 5h that child workflow would take.
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
@@ -2625,7 +2618,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.SetWorkflowTimeout(time.Hour * 10)
+	env.SetWorkflowRunTimeout(time.Hour * 10)
 	timerFiredCount := 0
 	env.SetOnTimerFiredListener(func(timerID string) {
 		timerFiredCount++
@@ -2659,14 +2652,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameActivityIDFromDifferentChildWorkflo
 
 	workflowFn := func(ctx Context) (string, error) {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-			WorkflowID:                   "child_1",
-			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowID:         "child_1",
+			WorkflowRunTimeout: time.Minute,
 		})
 		f1 := ExecuteChildWorkflow(ctx1, childWorkflowFn)
 
 		ctx2 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-			WorkflowID:                   "child_2",
-			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowID:         "child_2",
+			WorkflowRunTimeout: time.Minute,
 		})
 		f2 := ExecuteChildWorkflow(ctx2, childWorkflowFn)
 
@@ -2698,9 +2691,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameActivityIDFromDifferentChildWorkflo
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-			WorkflowID:                   "Test_ChildWorkflowAlreadyRunning",
-			ExecutionStartToCloseTimeout: time.Minute,
-			WorkflowIDReusePolicy:        WorkflowIDReusePolicyAllowDuplicateFailedOnly,
+			WorkflowID:            "Test_ChildWorkflowAlreadyRunning",
+			WorkflowRunTimeout:    time.Minute,
+			WorkflowIDReusePolicy: WorkflowIDReusePolicyAllowDuplicateFailedOnly,
 		})
 
 		var result1, result2 string
@@ -2753,14 +2746,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 
 	testWorkflow := func(ctx Context) error {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute * 10,
+			WorkflowRunTimeout: time.Minute * 10,
 			RetryPolicy: &RetryPolicy{
 				MaximumAttempts:          5,
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
 				NonRetriableErrorReasons: []string{"bad-bug"},
-				ExpirationInterval:       time.Hour,
 			},
 			CronSchedule: "0 * * * *", // hourly
 		})

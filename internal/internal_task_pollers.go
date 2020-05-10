@@ -37,14 +37,13 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/temporal-proto/common"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	"go.uber.org/zap"
-
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
+	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
+	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
@@ -137,7 +136,7 @@ type (
 	}
 
 	localActivityResult struct {
-		result  *commonpb.Payload
+		result  *commonpb.Payloads
 		err     error
 		task    *localActivityTask
 		backoff time.Duration
@@ -511,7 +510,11 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		}
 	}()
 
-	timeoutDuration := time.Duration(task.params.ScheduleToCloseTimeoutSeconds) * time.Second
+	timeout := task.params.ScheduleToCloseTimeoutSeconds
+	if task.params.StartToCloseTimeoutSeconds != 0 && task.params.StartToCloseTimeoutSeconds < timeout {
+		timeout = task.params.StartToCloseTimeoutSeconds
+	}
+	timeoutDuration := time.Duration(timeout) * time.Second
 	deadline := time.Now().Add(timeoutDuration)
 	if task.attempt > 0 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
@@ -527,7 +530,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.cancelFunc = cancel
 	task.Unlock()
 
-	var laResult *commonpb.Payload
+	var laResult *commonpb.Payloads
 	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
@@ -1005,7 +1008,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	return reportErr
 }
 
-func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payload, err error,
+func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
 	dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1036,7 +1039,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result *commonpb.Payload, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payloads, err error, dataConverter DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

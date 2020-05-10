@@ -47,7 +47,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	ctx := context.Background()
 	ctx = opentracing.ContextWithSpan(ctx, span)
 	header := &commonpb.Header{
-		Fields: map[string][]byte{},
+		Fields: map[string]*commonpb.Payload{},
 	}
 
 	err = ctxProp.Inject(ctx, NewHeaderWriter(header))
@@ -66,7 +66,7 @@ func TestTracingContextPropagatorNoSpan(t *testing.T) {
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
-		Fields: map[string][]byte{},
+		Fields: map[string]*commonpb.Payload{},
 	}
 	err := ctxProp.Inject(context.Background(), NewHeaderWriter(header))
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	assert.NotNil(t, span.Context())
 	ctx := contextWithSpan(Background(), span.Context())
 	header := &commonpb.Header{
-		Fields: map[string][]byte{},
+		Fields: map[string]*commonpb.Payload{},
 	}
 
 	err = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
@@ -111,7 +111,7 @@ func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
-		Fields: map[string][]byte{},
+		Fields: map[string]*commonpb.Payload{},
 	}
 	err := ctxProp.InjectFromWorkflow(Background(), NewHeaderWriter(header))
 	require.NoError(t, err)

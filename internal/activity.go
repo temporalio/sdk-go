@@ -117,12 +117,16 @@ type (
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
 	LocalActivityOptions struct {
-		// ScheduleToCloseTimeout - The end to end timeout for the local activity.
+		// ScheduleToCloseTimeout - The end to end timeout for the local activity including retries.
 		// This field is required.
 		ScheduleToCloseTimeout time.Duration
 
+		// StartToCloseTimeout - The timeout for a single execution of the local activity.
+		// Optional: defaults to ScheduleToClose
+		StartToCloseTimeout time.Duration
+
 		// RetryPolicy specify how to retry activity if error happens.
-		// Optional: default is no retry
+		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
 		RetryPolicy *RetryPolicy
 	}
 )
@@ -201,7 +205,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 		// no-op for local activity
 		return
 	}
-	var data *commonpb.Payload
+	var data *commonpb.Payloads
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
@@ -222,7 +226,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
-	Heartbeat(details *commonpb.Payload) error
+	Heartbeat(details *commonpb.Payloads) error
 	Close(flushBufferedHeartbeat bool)
 	GetClient(namespace string, options ClientOptions) Client
 }

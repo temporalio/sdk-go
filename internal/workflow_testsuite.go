@@ -44,7 +44,7 @@ import (
 type (
 	// EncodedValues is a type alias used to encapsulate/extract encoded arguments from workflow/activity.
 	EncodedValues struct {
-		values        *commonpb.Payload
+		values        *commonpb.Payloads
 		dataConverter DataConverter
 	}
 
@@ -80,7 +80,7 @@ type (
 	}
 )
 
-func newEncodedValues(values *commonpb.Payload, dc DataConverter) Values {
+func newEncodedValues(values *commonpb.Payloads, dc DataConverter) Values {
 	if dc == nil {
 		dc = getDefaultDataConverter()
 	}
@@ -531,12 +531,12 @@ func (e *TestWorkflowEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 	return e
 }
 
-// SetWorkflowTimeout sets the execution timeout for this tested workflow. This test framework uses mock clock internally
-// and when workflow is blocked on timer, it will auto forward the mock clock. Use SetWorkflowTimeout() to enforce a
-// workflow execution timeout to return timeout error when the workflow mock clock is moved head of the timeout.
+// SetWorkflowRunTimeout sets the run timeout for this tested workflow. This test framework uses mock clock internally
+// and when workflow is blocked on timer, it will auto forward the mock clock. Use SetWorkflowRunTimeout() to enforce a
+// workflow run timeout to return timeout error when the workflow mock clock is moved head of the timeout.
 // This is based on the workflow time (a.k.a workflow.Now() time).
-func (e *TestWorkflowEnvironment) SetWorkflowTimeout(executionTimeout time.Duration) *TestWorkflowEnvironment {
-	e.impl.executionTimeout = executionTimeout
+func (e *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration) *TestWorkflowEnvironment {
+	e.impl.runTimeout = runTimeout
 	return e
 }
 
@@ -667,7 +667,7 @@ func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result inte
 
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (e *TestWorkflowEnvironment) CancelWorkflow() {
-	e.impl.cancelWorkflow(func(result *commonpb.Payload, err error) {})
+	e.impl.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
 }
 
 // SignalWorkflow sends signal to the currently running test workflow.

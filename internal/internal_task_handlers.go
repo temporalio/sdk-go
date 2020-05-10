@@ -70,7 +70,7 @@ type (
 		// Return List of decisions made, any error.
 		ProcessEvent(event *eventpb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
-		ProcessQuery(queryType string, queryArgs *commonpb.Payload) (*commonpb.Payload, error)
+		ProcessQuery(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -108,7 +108,7 @@ type (
 		eventHandler atomic.Value
 
 		isWorkflowCompleted bool
-		result              *commonpb.Payload
+		result              *commonpb.Payloads
 		err                 error
 
 		previousStartedEventID int64
@@ -496,7 +496,7 @@ func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEvent
 	return eventHandlerImpl
 }
 
-func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload, err error) {
+func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
@@ -617,19 +617,20 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			ID:    workflowID,
 			RunID: runID,
 		},
-		WorkflowType:                        WorkflowType{Name: task.WorkflowType.GetName()},
-		TaskListName:                        taskList.GetName(),
-		ExecutionStartToCloseTimeoutSeconds: attributes.GetExecutionStartToCloseTimeoutSeconds(),
-		TaskStartToCloseTimeoutSeconds:      attributes.GetTaskStartToCloseTimeoutSeconds(),
-		Namespace:                           wth.namespace,
-		Attempt:                             attributes.GetAttempt(),
-		lastCompletionResult:                attributes.LastCompletionResult,
-		CronSchedule:                        attributes.CronSchedule,
-		ContinuedExecutionRunID:             attributes.ContinuedExecutionRunId,
-		ParentWorkflowNamespace:             attributes.ParentWorkflowNamespace,
-		ParentWorkflowExecution:             parentWorkflowExecution,
-		Memo:                                attributes.Memo,
-		SearchAttributes:                    attributes.SearchAttributes,
+		WorkflowType:                    WorkflowType{Name: task.WorkflowType.GetName()},
+		TaskListName:                    taskList.GetName(),
+		WorkflowExecutionTimeoutSeconds: attributes.GetWorkflowExecutionTimeoutSeconds(),
+		WorkflowRunTimeoutSeconds:       attributes.GetWorkflowRunTimeoutSeconds(),
+		WorkflowTaskTimeoutSeconds:      attributes.GetWorkflowTaskTimeoutSeconds(),
+		Namespace:                       wth.namespace,
+		Attempt:                         attributes.GetAttempt(),
+		lastCompletionResult:            attributes.LastCompletionResult,
+		CronSchedule:                    attributes.CronSchedule,
+		ContinuedExecutionRunID:         attributes.ContinuedExecutionRunId,
+		ParentWorkflowNamespace:         attributes.ParentWorkflowNamespace,
+		ParentWorkflowExecution:         parentWorkflowExecution,
+		Memo:                            attributes.Memo,
+		SearchAttributes:                attributes.SearchAttributes,
 	}
 
 	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
@@ -770,7 +771,8 @@ processWorkflowLoop:
 		if err == nil && response == nil {
 		waitLocalActivityLoop:
 			for {
-				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) * float32(workflowContext.GetDecisionTimeout()))
+				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) *
+					float32(workflowContext.GetWorkflowTaskTimeout()))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
 				select {
 				case <-time.After(delayDuration):
@@ -963,7 +965,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	}
 
 	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
-	if retryBackoff > 0 && retryBackoff <= w.GetDecisionTimeout() {
+	if retryBackoff > 0 && retryBackoff <= w.GetWorkflowTaskTimeout() {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
 			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
@@ -1014,10 +1016,6 @@ func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter Data
 }
 
 func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
-	if p.MaximumAttempts == 0 && p.ExpirationInterval == 0 {
-		return noRetryBackoff
-	}
-
 	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
 		return noRetryBackoff // max attempt reached
 	}
@@ -1140,8 +1138,8 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollFo
 	return nil
 }
 
-func (w *workflowExecutionContextImpl) GetDecisionTimeout() time.Duration {
-	return time.Second * time.Duration(w.workflowInfo.TaskStartToCloseTimeoutSeconds)
+func (w *workflowExecutionContextImpl) GetWorkflowTaskTimeout() time.Duration {
+	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
 }
 
 func skipDeterministicCheckForDecision(d *decisionpb.Decision) bool {
@@ -1258,7 +1256,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		}
 		decisionAttributes := d.GetRequestCancelActivityTaskDecisionAttributes()
 		eventAttributes := e.GetActivityTaskCancelRequestedEventAttributes()
-		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() {
+		if eventAttributes.GetScheduledEventId() != decisionAttributes.GetScheduledEventId() {
 			return false
 		}
 
@@ -1490,14 +1488,14 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType:                        &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
-			Input:                               contErr.params.input,
-			TaskList:                            &tasklistpb.TaskList{Name: contErr.params.taskListName},
-			ExecutionStartToCloseTimeoutSeconds: contErr.params.executionStartToCloseTimeoutSeconds,
-			TaskStartToCloseTimeoutSeconds:      contErr.params.taskStartToCloseTimeoutSeconds,
-			Header:                              contErr.params.header,
-			Memo:                                workflowContext.workflowInfo.Memo,
-			SearchAttributes:                    workflowContext.workflowInfo.SearchAttributes,
+			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
+			Input:                      contErr.params.input,
+			TaskList:                   &tasklistpb.TaskList{Name: contErr.params.taskListName},
+			WorkflowRunTimeoutSeconds:  contErr.params.workflowRunTimeoutSeconds,
+			WorkflowTaskTimeoutSeconds: contErr.params.workflowTaskTimeoutSeconds,
+			Header:                     contErr.params.header,
+			Memo:                       workflowContext.workflowInfo.Memo,
+			SearchAttributes:           workflowContext.workflowInfo.SearchAttributes,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1619,12 +1617,12 @@ type temporalInvoker struct {
 	cancelHandler         func()
 	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
 	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport   **commonpb.Payload
+	lastDetailsToReport   **commonpb.Payloads
 	closeCh               chan struct{}
 	workerStopChannel     <-chan struct{}
 }
 
-func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
+func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -1665,7 +1663,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 			}
 
 			// We close the batch and report the progress.
-			var detailsToReport **commonpb.Payload
+			var detailsToReport **commonpb.Payloads
 
 			i.Lock()
 			detailsToReport = i.lastDetailsToReport
@@ -1682,7 +1680,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payload) error {
 	return err
 }
 
-func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payload) (bool, error) {
+func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, error) {
 	isActivityCancelled := false
 	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
 	if timeout <= 0 {
@@ -1857,7 +1855,7 @@ func recordActivityHeartbeat(
 	service workflowservice.WorkflowServiceClient,
 	identity string,
 	taskToken []byte,
-	details *commonpb.Payload,
+	details *commonpb.Payloads,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -1887,7 +1885,7 @@ func recordActivityHeartbeatByID(
 	service workflowservice.WorkflowServiceClient,
 	identity string,
 	namespace, workflowID, runID, activityID string,
-	details *commonpb.Payload,
+	details *commonpb.Payloads,
 ) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,

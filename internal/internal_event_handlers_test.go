@@ -151,7 +151,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeSearchAttributes(attr)
-	require.EqualError(t, err, "encode search attribute [JustKey] error: values[0]: unable to encode to JSON: json: unsupported type: chan int")
+	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode to JSON: json: unsupported type: chan int")
 
 	attr = map[string]interface{}{
 		"key": 1,
@@ -160,16 +160,18 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchAttr.IndexedFields))
 	var resp int
-	_ = DefaultDataConverter.FromData(searchAttr.IndexedFields["key"], &resp)
+	_ = DefaultPayloadConverter.FromData(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
 }
 
 func Test_UpsertSearchAttributes(t *testing.T) {
 	t.Parallel()
+	helper := newDecisionsHelper()
 	env := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
+		decisionsHelper: helper,
 		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
 	}
+	helper.setCurrentDecisionStartedEventID(4)
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
@@ -179,18 +181,18 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
-	require.Equal(t, int32(0), env.counterID)
+	require.Equal(t, int64(7), env.GenerateSequence())
 
 	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
 	require.NoError(t, err)
-	require.Equal(t, int32(1), env.counterID)
+	require.Equal(t, int64(8), env.GenerateSequence())
 }
 
 func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultDataConverter.ToData(str)
+		payload, _ := DefaultPayloadConverter.ToData(str)
 		return payload
 	}
 

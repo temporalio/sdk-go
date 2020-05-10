@@ -754,12 +754,12 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 }
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payload, error) {
+func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payloads, error) {
 	return dc.ToData(args...)
 }
 
 // decode multiple arguments(arguments to a function).
-func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (result []reflect.Value, err error) {
+func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
 	r, err := decodeArgsToValues(dc, fnType, data)
 	if err != nil {
 		return
@@ -770,7 +770,7 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (
 	return
 }
 
-func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payload) (result []interface{}, err error) {
+func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -788,12 +788,12 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payload, error) {
+func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payloads, error) {
 	return dc.ToData(arg)
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc DataConverter, data *commonpb.Payload, to interface{}) error {
+func decodeArg(dc DataConverter, data *commonpb.Payloads, to interface{}) error {
 	return dc.FromData(data, to)
 }
 
@@ -804,7 +804,7 @@ func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interfa
 	if rf := reflect.ValueOf(toValuePtr); rf.Type().Kind() != reflect.Ptr {
 		return errors.New("value parameter provided is not a pointer")
 	}
-	if data, ok := from.(*commonpb.Payload); ok {
+	if data, ok := from.(*commonpb.Payloads); ok {
 		if err := decodeArg(dc, data, toValuePtr); err != nil {
 			return err
 		}
@@ -836,7 +836,7 @@ type workflowExecutor struct {
 	interceptors []WorkflowInterceptorFactory
 }
 
-func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payload) (*commonpb.Payload, error) {
+func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
 	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
 	fnType := reflect.TypeOf(we.fn)
@@ -869,7 +869,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 	return ae.fn
 }
 
-func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload) (*commonpb.Payload, error) {
+func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	fnType := reflect.TypeOf(ae.fn)
 	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
@@ -892,7 +892,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
 }
 
-func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payload, error) {
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payloads, error) {
 	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
@@ -1259,7 +1259,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	if last.GetEventType() != eventpb.EventType_WorkflowExecutionCompleted && last.GetEventType() != eventpb.EventType_WorkflowExecutionContinuedAsNew {
 		return nil
 	}
-	err = fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
+
 	if resp != nil {
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
@@ -1285,7 +1285,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 			}
 		}
 	}
-	return err
+	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
 }
 
 func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.History, error) {

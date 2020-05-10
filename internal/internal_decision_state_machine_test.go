@@ -156,7 +156,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, attributes, decisions[0].GetStartTimerDecisionAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateInitiated, d.getState())
-	m := h.recordLocalActivityMarker(localActivityID, &commonpb.Payload{})
+	m := h.recordLocalActivityMarker(localActivityID, &commonpb.Payloads{})
 	require.Equal(t, decisionStateCreated, m.getState())
 	h.cancelTimer(timerID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
@@ -173,9 +173,11 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
-	d := h.scheduleActivityTask(attributes)
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes)
 	require.Equal(t, decisionStateCreated, d.getState())
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
@@ -183,7 +185,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	require.Equal(t, decisionpb.DecisionType_ScheduleActivityTask, decisions[0].GetDecisionType())
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(1, activityID)
+	h.handleActivityTaskScheduled(scheduleID, activityID)
 	require.Equal(t, decisionStateInitiated, d.getState())
 
 	// activity completed
@@ -198,9 +200,11 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
-	d := h.scheduleActivityTask(attributes)
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes)
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// cancel before decision sent, this will put decision state machine directly into completed state
@@ -219,9 +223,11 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
-	d := h.scheduleActivityTask(attributes)
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes)
 	require.Equal(t, decisionStateCreated, d.getState())
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
@@ -233,7 +239,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	require.Equal(t, 0, len(h.getDecisions(true)))
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(1, activityID)
+	h.handleActivityTaskScheduled(scheduleID, activityID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
@@ -252,9 +258,11 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
-	d := h.scheduleActivityTask(attributes)
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes)
 	require.Equal(t, decisionStateCreated, d.getState())
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
@@ -266,7 +274,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, 0, len(h.getDecisions(true)))
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(1, activityID)
+	h.handleActivityTaskScheduled(scheduleID, activityID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
@@ -285,9 +293,11 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
+	h.setCurrentDecisionStartedEventID(3)
 
 	// schedule activity
-	h.scheduleActivityTask(attributes)
+	scheduleID := h.getNextID()
+	h.scheduleActivityTask(scheduleID, attributes)
 
 	// verify that using invalid activity id will panic
 	err := runAndCatchPanic(func() {
@@ -298,7 +308,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	// send schedule decision
 	h.getDecisions(true)
 	// activity scheduled
-	h.handleActivityTaskScheduled(1, activityID)
+	h.handleActivityTaskScheduled(scheduleID, activityID)
 
 	// now simulate activity canceled, which is invalid transition
 	err = runAndCatchPanic(func() {
@@ -508,7 +518,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker(1, &commonpb.Payload{})
+	d := h.recordSideEffectMarker(1, &commonpb.Payloads{})
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// send decisions
@@ -557,7 +567,7 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
-			Control:           []byte(cancellationID),
+			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},
 		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),
@@ -603,7 +613,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
-			Control:           []byte(cancellationID),
+			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},
 		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),

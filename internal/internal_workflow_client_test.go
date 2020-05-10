@@ -92,7 +92,11 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, []byte(value))
+		encodedValue, err := DefaultPayloadConverter.ToData(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
 	}
 	return nil
 }
@@ -104,16 +108,25 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		writer.Set(key, []byte(value))
+		encodedValue, err := DefaultPayloadConverter.ToData(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
 	}
 	return nil
 }
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value []byte) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = context.WithValue(ctx, contextKey(key), string(value))
+			var decodedValue string
+			err := DefaultPayloadConverter.FromData(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
 		}
 		return nil
 	}); err != nil {
@@ -124,9 +137,14 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value []byte) error {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
-			ctx = WithValue(ctx, contextKey(key), string(value))
+			var decodedValue string
+			err := DefaultPayloadConverter.FromData(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = WithValue(ctx, contextKey(key), decodedValue)
 		}
 		return nil
 	}); err != nil {
@@ -372,11 +390,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -420,11 +438,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                    workflowID,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -466,11 +484,11 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -517,11 +535,11 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                    workflowID,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -567,10 +585,10 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -620,10 +638,10 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			TaskList:              tasklist,
+			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy: workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -664,11 +682,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -714,11 +732,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -754,11 +772,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Terminated() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -798,11 +816,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -865,11 +883,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	workflowRun, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                              workflowID,
-			TaskList:                        tasklist,
-			ExecutionStartToCloseTimeout:    timeoutInSeconds * time.Second,
-			DecisionTaskStartToCloseTimeout: timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:           workflowIDReusePolicy,
+			ID:                       workflowID,
+			TaskList:                 tasklist,
+			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
 	s.Nil(err)
@@ -968,10 +986,10 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	signalName := "my signal"
 	signalInput := []byte("my signal input")
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 
 	createResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
@@ -994,10 +1012,10 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
 		return "result"
@@ -1021,10 +1039,10 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) error {
 		value := ctx.Value(contextKey(testHeader))
@@ -1051,10 +1069,10 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
 		return "result"
@@ -1088,12 +1106,12 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 		"testAttr": "attr value",
 	}
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
-		Memo:                            memo,
-		SearchAttributes:                searchAttributes,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		Memo:                     memo,
+		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
 		return "result"
@@ -1103,11 +1121,11 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1122,12 +1140,12 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		"testAttr": "attr value",
 	}
 	options := StartWorkflowOptions{
-		ID:                              workflowID,
-		TaskList:                        tasklist,
-		ExecutionStartToCloseTimeout:    timeoutInSeconds,
-		DecisionTaskStartToCloseTimeout: timeoutInSeconds,
-		Memo:                            memo,
-		SearchAttributes:                searchAttributes,
+		ID:                       workflowID,
+		TaskList:                 tasklist,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		Memo:                     memo,
+		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
 		return "result"
@@ -1138,11 +1156,11 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1167,7 +1185,8 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	_ = decodeArg(s.dataConverter, result3.Fields["t1"], &resultString)
+	// TODO (shtin): use s.dataConverter here???
+	_ = DefaultPayloadConverter.FromData(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
@@ -1194,7 +1213,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
 
-	_ = DefaultDataConverter.FromData(result3.IndexedFields["t1"], &resultString)
+	_ = DefaultPayloadConverter.FromData(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
