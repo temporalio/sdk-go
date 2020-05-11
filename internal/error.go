@@ -428,6 +428,21 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+func convertErrDetailsToPayloads(details Values, dc DataConverter) *commonpb.Payloads {
+	switch d := details.(type) {
+	case ErrorDetailsValues:
+		data, err := encodeArgs(dc, d)
+		if err != nil {
+			panic(err)
+		}
+		return data
+	case *EncodedValues:
+		return d.values
+	default:
+		panic(fmt.Sprintf("unknown error details type %T", details))
+	}
+}
+
 func IsRetryable(err error, nonRetryableTypes []string) bool {
 	var terminatedErr *TerminatedError
 	var canceledErr *CanceledError
@@ -442,17 +457,18 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 			return false
 
 		}
-		errType := getErrorType(err)
-		for _, er := range nonRetryableTypes {
-			if er == errType {
-				return false
-			}
-		}
 	}
 
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
 		if timeoutErr.timeoutType != commonpb.TimeoutType_StartToClose {
+			return false
+		}
+	}
+
+	errType := getErrorType(err)
+	for _, er := range nonRetryableTypes {
+		if er == errType {
 			return false
 		}
 	}
@@ -469,7 +485,7 @@ func getErrorType(err error) string {
 }
 
 // convertErrorToFailure converts error to failure.
-func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Failure {
+func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 	if err == nil {
 		return nil
 	}
@@ -484,37 +500,14 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrorType(err),
 			NonRetryable: err.nonRetryable,
+			Details:      convertErrDetailsToPayloads(err.details, dc),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
-
-		var err0 error
-		switch details := err.details.(type) {
-		case ErrorDetailsValues:
-			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
-		case *EncodedValues:
-			failureInfo.Details = details.values
-		default:
-			panic("unknown error details type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
 	case *CanceledError:
-		failureInfo := &failurepb.CanceledFailureInfo{}
+		failureInfo := &failurepb.CanceledFailureInfo{
+			Details: convertErrDetailsToPayloads(err.details, dc),
+		}
 		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{CanceledFailureInfo: failureInfo}
-
-		var err0 error
-		switch details := err.details.(type) {
-		case ErrorDetailsValues:
-			failureInfo.Details, err0 = encodeArgs(dataConverter, details)
-		case *EncodedValues:
-			failureInfo.Details = details.values
-		default:
-			panic("unknown error details type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
 	case *PanicError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type: getErrorType(err),
@@ -530,23 +523,11 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 		failure.StackTrace = err.StackTrace()
 	case *TimeoutError:
 		failureInfo := &failurepb.TimeoutFailureInfo{
-			TimeoutType: err.timeoutType,
-			LastFailure: convertErrorToFailure(err.lastErr, dataConverter),
+			TimeoutType:          err.timeoutType,
+			LastFailure:          convertErrorToFailure(err.lastErr, dc),
+			LastHeartbeatDetails: convertErrDetailsToPayloads(err.lastHeartbeatDetails, dc),
 		}
 		failure.FailureInfo = &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: failureInfo}
-
-		var err0 error
-		switch lastHeartbeatDetails := err.lastHeartbeatDetails.(type) {
-		case ErrorDetailsValues:
-			failureInfo.LastHeartbeatDetails, err0 = encodeArgs(dataConverter, lastHeartbeatDetails)
-		case *EncodedValues:
-			failureInfo.LastHeartbeatDetails = lastHeartbeatDetails.values
-		default:
-			panic("unknown last heartbeat details type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
 	case *TerminatedError:
 		failureInfo := &failurepb.TerminatedFailureInfo{}
 		failure.FailureInfo = &failurepb.Failure_TerminatedFailureInfo{TerminatedFailureInfo: failureInfo}
@@ -573,28 +554,28 @@ func convertErrorToFailure(err error, dataConverter DataConverter) *failurepb.Fa
 	}
 
 	if innerErr := errors.Unwrap(err); innerErr != nil {
-		failure.Cause = convertErrorToFailure(innerErr, dataConverter)
+		failure.Cause = convertErrorToFailure(innerErr, dc)
 	}
 
 	return failure
 }
 
 // convertFailureToError converts failure to error.
-func convertFailureToError(failure *failurepb.Failure, dataConverter DataConverter) error {
+func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	if failure == nil {
 		return nil
 	}
 
 	if failure.GetTimeoutFailureInfo() != nil {
 		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
-		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dataConverter)
+		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
 		return NewTimeoutError(
 			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dataConverter),
+			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
 			lastHeartbeatDetails)
 	} else if failure.GetApplicationFailureInfo() != nil {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
-		details := newEncodedValues(applicationFailureInfo.GetDetails(), dataConverter)
+		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
 		case getErrorType(&CustomError{}):
 			return NewCustomError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
@@ -602,7 +583,7 @@ func convertFailureToError(failure *failurepb.Failure, dataConverter DataConvert
 			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
-		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dataConverter)
+		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
 		return NewCanceledError(details)
 	} else if failure.GetTerminatedFailureInfo() != nil {
 		return newTerminatedError()
@@ -612,7 +593,7 @@ func convertFailureToError(failure *failurepb.Failure, dataConverter DataConvert
 			activityTaskInfoFailure.GetScheduledEventId(),
 			activityTaskInfoFailure.GetStartedEventId(),
 			activityTaskInfoFailure.GetIdentity(),
-			convertFailureToError(failure.GetCause(), dataConverter),
+			convertFailureToError(failure.GetCause(), dc),
 		)
 		return activityTaskError
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
@@ -622,7 +603,7 @@ func convertFailureToError(failure *failurepb.Failure, dataConverter DataConvert
 			childWorkflowExecutionFailureInfo.GetWorkflowType(),
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
-			convertFailureToError(failure.GetCause(), dataConverter),
+			convertFailureToError(failure.GetCause(), dc),
 		)
 		return childWorkflowExecutionError
 	}

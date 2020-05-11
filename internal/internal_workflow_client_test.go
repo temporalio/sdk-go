@@ -661,8 +661,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCanceled
-	cancelledErr := NewCanceledError("some details")
-	failure := convertErrorToFailure(cancelledErr, getDefaultDataConverter())
+	details := "some details"
+	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -670,7 +670,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 				{
 					EventType: eventType,
 					Attributes: &eventpb.HistoryEvent_WorkflowExecutionCanceledEventAttributes{WorkflowExecutionCanceledEventAttributes: &eventpb.WorkflowExecutionCanceledEventAttributes{
-						Failure: failure,
+						Details: encodedDetails,
 					}},
 				},
 			},

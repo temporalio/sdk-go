@@ -471,3 +471,32 @@ func Test_ContinueAsNewError(t *testing.T) {
 	require.Equal(t, a2, stringArg)
 	require.Equal(t, header, continueAsNewErr.params.header)
 }
+
+func Test_GetErrorType(t *testing.T) {
+	require := require.New(t)
+	err := errors.New("some error")
+	errType := getErrorType(err)
+	require.Equal("errorString", errType)
+
+	err = NewCustomError("application error", false)
+	errType = getErrorType(err)
+	require.Equal("CustomError", errType)
+}
+
+type coolError struct{}
+
+func (e coolError) Error() string {
+	return "cool error"
+}
+
+func Test_GetErrorTypePointer(t *testing.T) {
+	require := require.New(t)
+
+	err := coolError{}
+	errType := getErrorType(err)
+	require.Equal("coolError", errType)
+
+	err2 := &coolError{}
+	errType2 := getErrorType(err2)
+	require.Equal("coolError", errType2)
+}

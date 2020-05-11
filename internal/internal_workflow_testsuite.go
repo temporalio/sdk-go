@@ -569,7 +569,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		return nil, convertFailureToError(request.GetFailure(), env.GetDataConverter())
+		details := newEncodedValues(request.Details, env.GetDataConverter())
+		return nil, NewCanceledError(details)
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		return nil, convertFailureToError(request.GetFailure(), env.GetDataConverter())
 	case *workflowservice.RespondActivityTaskCompletedRequest:
@@ -1336,7 +1337,8 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		err = convertFailureToError(request.GetFailure(), dataConverter)
+		details := newEncodedValues(request.Details, dataConverter)
+		err = NewCanceledError(details)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		err = convertFailureToError(request.GetFailure(), dataConverter)

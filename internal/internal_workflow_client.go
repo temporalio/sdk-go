@@ -1111,7 +1111,8 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case eventpb.EventType_WorkflowExecutionCanceled:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
-		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
+		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
+		err = NewCanceledError(details)
 	case eventpb.EventType_WorkflowExecutionTerminated:
 		err = newTerminatedError()
 	case eventpb.EventType_WorkflowExecutionTimedOut:

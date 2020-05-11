@@ -1359,7 +1359,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
 			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
+			if !proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
 				return false
 			}
 		}
@@ -1470,7 +1470,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_CancelWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
-			Failure: convertErrorToFailure(workflowContext.err, wth.dataConverter),
+			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
 		}}
 	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
