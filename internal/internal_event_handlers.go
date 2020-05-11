@@ -1063,6 +1063,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		var version Version
 		_ = encodedValues.Get(&changeID, &version)
 		weh.changeVersions[changeID] = version
+		weh.decisionsHelper.handleVersionMarker(eventID, changeID)
 		return nil
 	case localActivityMarkerName:
 		return weh.handleLocalActivityMarker(attributes.Details)

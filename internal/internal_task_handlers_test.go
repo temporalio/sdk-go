@@ -235,6 +235,41 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 		Attributes: &eventpb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
 }
 
+func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+	dataConverter := getDefaultDataConverter()
+	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
+	if err != nil {
+		panic(err)
+	}
+
+	return &eventpb.HistoryEvent{
+		EventId:   eventID,
+		EventType: eventpb.EventType_MarkerRecorded,
+		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{
+			MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
+				MarkerName:                   versionMarkerName,
+				Details:                      details,
+				DecisionTaskCompletedEventId: decisionCompletedID,
+			},
+		},
+	}
+}
+
+func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+	searchAttributes, _ := validateAndSerializeSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, nil))
+
+	return &eventpb.HistoryEvent{
+		EventId:   eventID,
+		EventType: eventpb.EventType_UpsertWorkflowSearchAttributes,
+		Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{
+			UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{
+				SearchAttributes:             searchAttributes,
+				DecisionTaskCompletedEventId: decisionCompletedID,
+			},
+		},
+	}
+}
+
 func createWorkflowTask(
 	events []*eventpb.HistoryEvent,
 	previousStartEventID int64,

@@ -312,6 +312,236 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	require.NoError(s.T(), err)
 }
 
+func testReplayWorkflowGetVersion(ctx Context) error {
+	version := GetVersion(ctx, "change_id_A", Version(3), Version(3))
+	if version != Version(3) {
+		return errors.New("Version mismatch")
+	}
+
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion() {
+	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersion")
+	history := &eventpb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowGetVersion)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func testReplayWorkflowGetVersionReplacedChangeID(ctx Context) error {
+	version := GetVersion(ctx, "change_id_B", DefaultVersion, Version(1))
+	if version != DefaultVersion {
+		return errors.New("Version mismatch")
+	}
+
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_ReplacedChangeID() {
+	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionReplacedChangeID")
+	history := &eventpb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowGetVersionReplacedChangeID)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func testReplayWorkflowGetVersionRemoved(ctx Context) error {
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionRemoved() {
+	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionRemoved")
+	history := &eventpb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowGetVersionRemoved)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func testReplayWorkflowGetVersionAddNewBefore(ctx Context) error {
+	version := GetVersion(ctx, "change_id_B", DefaultVersion, Version(1))
+	if version != DefaultVersion {
+		return errors.New("Unexpected version")
+	}
+
+	version = GetVersion(ctx, "change_id_A", Version(3), Version(3))
+	if version != Version(3) {
+		return errors.New("Version mismatch")
+	}
+
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_AddNewBefore() {
+	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionAddNewBefore")
+	history := &eventpb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowGetVersionAddNewBefore)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEvent {
+	taskList := "taskList1"
+	return []*eventpb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+		}),
+		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventVersionMarker(5, 4, "change_id_A", Version(3)),
+		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "change_id_A", Version(3)),
+		createTestEventActivityTaskScheduled(7, &eventpb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "7",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+		}),
+		createTestEventActivityTaskStarted(8, &eventpb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 7,
+		}),
+		createTestEventActivityTaskCompleted(9, &eventpb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 7,
+			StartedEventId:   8,
+		}),
+		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(11),
+		createTestEventDecisionTaskCompleted(12, &eventpb.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: 10,
+			StartedEventId:   11,
+		}),
+		createTestEventActivityTaskScheduled(13, &eventpb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+		}),
+		createTestEventActivityTaskStarted(14, &eventpb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 13,
+		}),
+		createTestEventActivityTaskCompleted(15, &eventpb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   14,
+		}),
+		createTestEventDecisionTaskScheduled(16, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(17),
+		createTestEventDecisionTaskCompleted(18, &eventpb.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: 16,
+			StartedEventId:   17,
+		}),
+		createTestEventActivityTaskScheduled(19, &eventpb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "19",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+		}),
+		createTestEventActivityTaskStarted(20, &eventpb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 19,
+		}),
+		createTestEventActivityTaskCompleted(21, &eventpb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 19,
+			StartedEventId:   20,
+		}),
+
+		createTestEventDecisionTaskScheduled(22, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(23),
+		createTestEventDecisionTaskCompleted(24, &eventpb.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: 22,
+			StartedEventId:   23,
+		}),
+		createTestEventWorkflowExecutionCompleted(25, &eventpb.WorkflowExecutionCompletedEventAttributes{
+			DecisionTaskCompletedEventId: 24,
+		}),
+	}
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
 	result, _ := DefaultDataConverter.ToData("some-incorrect-result")

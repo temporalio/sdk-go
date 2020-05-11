@@ -122,6 +122,7 @@ type (
 		scheduledEventIDToActivityID     map[int64]string
 		scheduledEventIDToCancellationID map[int64]string
 		scheduledEventIDToSignalID       map[int64]string
+		versionMarkerLookup              map[int64]string
 	}
 
 	// panic when decision state machine is in illegal state
@@ -696,6 +697,7 @@ func newDecisionsHelper() *decisionsHelper {
 		scheduledEventIDToActivityID:     make(map[int64]string),
 		scheduledEventIDToCancellationID: make(map[int64]string),
 		scheduledEventIDToSignalID:       make(map[int64]string),
+		versionMarkerLookup:              make(map[int64]string),
 	}
 }
 
@@ -708,6 +710,14 @@ func (h *decisionsHelper) setCurrentDecisionStartedEventID(decisionTaskStartedEv
 }
 
 func (h *decisionsHelper) getNextID() int64 {
+	// First check if we have a GetVersion marker in the lookup map
+	if _, ok := h.versionMarkerLookup[h.nextDecisionEventID]; ok {
+		// Remove the marker from the lookup map and increment nextDecisionEventID by 2 because call to GetVersion
+		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
+		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
+		delete(h.versionMarkerLookup, h.nextDecisionEventID)
+		h.nextDecisionEventID = h.nextDecisionEventID + 2
+	}
 	return h.nextDecisionEventID
 }
 
@@ -822,6 +832,19 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 	decision := h.newMarkerDecisionStateMachine(markerID, recordMarker)
 	h.addDecision(decision)
 	return decision
+}
+
+func (h *decisionsHelper) handleVersionMarker(eventID int64, changeID string) {
+	if _, ok := h.versionMarkerLookup[eventID]; ok {
+		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
+			eventID, changeID)
+		panicIllegalState(panicMsg)
+	}
+
+	// During processing of a decision we reorder all GetVersion markers and process them first
+	// Keep track of all GetVersion marker events during the processing of decision so we can
+	// generate correct eventIDs for other events during replay
+	h.versionMarkerLookup[eventID] = changeID
 }
 
 func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads) decisionStateMachine {
