@@ -686,6 +686,16 @@ func (r *registry) getRegisteredActivities() []activity {
 	return activities
 }
 
+func (r *registry) getRegisteredActivityTypes() []string {
+	r.Lock()
+	defer r.Unlock()
+	var result []string
+	for name := range r.activityFuncMap {
+		result = append(result, name)
+	}
+	return result
+}
+
 func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
 	lookup := wt.Name
 	if alias, ok := r.getWorkflowAlias(lookup); ok {
