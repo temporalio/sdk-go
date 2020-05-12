@@ -306,6 +306,11 @@ func (e *CustomError) Details(d ...interface{}) error {
 	return e.details.Get(d...)
 }
 
+// NonRetryable indicated if error is not retryable.
+func (e *CustomError) NonRetryable() bool {
+	return e.nonRetryable
+}
+
 // Error from error interface
 func (e *TimeoutError) Error() string {
 	return fmt.Sprintf("TimeoutType: %v, LastErr: %v", e.timeoutType, e.lastErr)
@@ -461,7 +466,8 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != commonpb.TimeoutType_StartToClose {
+		if timeoutErr.timeoutType != commonpb.TimeoutType_StartToClose &&
+			timeoutErr.timeoutType != commonpb.TimeoutType_Heartbeat {
 			return false
 		}
 	}
@@ -608,6 +614,6 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		return childWorkflowExecutionError
 	}
 
-	// All unknown types are considered to be ApplicationError.
+	// All unknown types are considered to be retryable ApplicationError.
 	return NewCustomError(failure.GetMessage(), false, nil)
 }

@@ -1247,7 +1247,7 @@ func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
 		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
 		MaximumAttempts:          p.GetMaximumAttempts(),
-		NonRetriableErrorReasons: p.NonRetriableErrorReasons,
+		NonRetryableErrorReasons: p.NonRetriableErrorReasons,
 	}
 }
 

@@ -2241,7 +2241,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2311,7 +2311,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2353,7 +2353,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2396,7 +2396,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2429,7 +2429,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetryOnCancel() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2471,7 +2471,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2525,7 +2525,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 				InitialInterval:          time.Second * 3,
 				MaximumInterval:          time.Second * 3,
 				BackoffCoefficient:       1,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2732,7 +2732,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 				InitialInterval:          time.Second,
 				MaximumInterval:          time.Second * 10,
 				BackoffCoefficient:       2,
-				NonRetriableErrorReasons: []string{"bad-bug"},
+				NonRetryableErrorReasons: []string{"bad-bug"},
 			},
 			CronSchedule: "0 * * * *", // hourly
 		})
@@ -2865,7 +2865,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 1.1,
 				MaximumAttempts:    3,
-				// NonRetriableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
+				// NonRetryableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
