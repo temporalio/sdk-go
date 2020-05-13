@@ -374,8 +374,12 @@ type (
 		Tracer opentracing.Tracer
 
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
-		// default: no ContextPropagators
+		// default: nil
 		ContextPropagators []ContextPropagator
+
+		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
+		// default: nil
+		ConnectionOptions ConnectionOptions
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -551,17 +555,22 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(connectionParameters{
-		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
-		DefaultServiceConfig: defaultServiceConfig,
-	})
+	connection, err := dial(generateConnectionParams(&options))
 
 	if err != nil {
 		return nil, err
 	}
 
 	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+}
+
+func generateConnectionParams(options *ClientOptions) connectionParameters {
+	return connectionParameters{
+		UserOptions:          options.ConnectionOptions,
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
+		DefaultServiceConfig: defaultServiceConfig,
+	}
 }
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
@@ -606,12 +615,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(connectionParameters{
-		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
-		DefaultServiceConfig: defaultServiceConfig,
-	})
-
+	connection, err := dial(generateConnectionParams(&options))
 	if err != nil {
 		return nil, err
 	}
