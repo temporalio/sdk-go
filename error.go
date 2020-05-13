@@ -34,20 +34,26 @@ import (
 )
 
 type (
-	// CustomError returned from workflow and activity implementations with reason and optional details.
-	CustomError = internal.CustomError
+	// ApplicationError returned from activity implementations with message and optional details.
+	ApplicationError = internal.ApplicationError
 
 	// CanceledError returned when operation was canceled.
 	CanceledError = internal.CanceledError
+
+	// ActivityTaskError returned from workflow when activity returned an error.
+	ActivityTaskError = internal.ActivityTaskError
+
+	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
+	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
 )
 
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
 var ErrNoData = internal.ErrNoData
 
-// NewCustomError create new instance of *CustomError with reason and optional details.
-// Use CustomError for any use case specific errors that cross activity and child workflow boundaries.
-func NewCustomError(reason string, nonRetryable bool, details ...interface{}) *CustomError {
-	return internal.NewCustomError(reason, nonRetryable, details...)
+// NewApplicationError create new instance of *ApplicationError with reason and optional details.
+// Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
+func NewApplicationError(reason string, nonRetryable bool, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(reason, nonRetryable, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -56,9 +62,9 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 	return internal.NewCanceledError(details...)
 }
 
-// IsCustomError return if the err is a CustomError
-func IsCustomError(err error) bool {
-	var applicationError *CustomError
+// IsApplicationError return if the err is a ApplicationError
+func IsApplicationError(err error) bool {
+	var applicationError *ApplicationError
 	return errors.As(err, &applicationError)
 }
 

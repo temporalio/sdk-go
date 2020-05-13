@@ -32,14 +32,14 @@ import (
 
 /*
 Below are the possible errors that activity or child workflow could return:
-1) *workflow.CustomError: (this should be the most common one)
-	If activity or child workflow implementation returns *CustomError by using NewCustomError() API, workflow code would receive *CustomError.
-	The err would contain a Reason and Details. The reason is what activity specified to NewCustomError(), which workflow
+1) *workflow.ApplicationError: (this should be the most common one)
+	If activity or child workflow implementation returns *ApplicationError by using NewApplicationError() API, workflow code would receive *ApplicationError.
+	The err would contain a Reason and Details. The reason is what activity specified to NewApplicationError(), which workflow
 	code could check to determine what kind of error it was and take actions based on the reason. The details is encoded
 	[]byte which workflow code could extract strong typed data. Workflow code needs to know what the types of the encoded
 	details are before extracting them.
 2) *workflow.GenericError:
-	If activity or child workflow implementation returns errors other than from NewCustomError() API,
+	If activity or child workflow implementation returns errors other than from NewApplicationError() API,
     workflow code would receive *GenericError.
 	Use err.Error() to get the string representation of the actual error.
 3) *workflow.CanceledError:
@@ -65,10 +65,10 @@ _, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
 if err != nil {
 	switch err := err.(type) {
 	case *workflowCustomError:
-		// handle activity errors (created via NewCustomError() API)
+		// handle activity errors (created via NewApplicationError() API)
 		switch err.Reason() {
 		case CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
-			var detailMsg string // assuming activity return error by NewCustomError(CustomErrReasonA, "string details")
+			var detailMsg string // assuming activity return error by NewApplicationError(CustomErrReasonA, "string details")
 			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
 			// handle CustomErrReasonA
 		case CustomErrReasonB:
@@ -77,7 +77,7 @@ if err != nil {
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
 	case *workflow.GenericError:
-		// handle generic error (errors created other than using NewCustomError() API)
+		// handle generic error (errors created other than using NewApplicationError() API)
 	case *workflow.CanceledError:
 		// handle cancellation
 	case *workflow.TimeoutError:

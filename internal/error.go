@@ -35,14 +35,14 @@ import (
 
 /*
 Below are the possible cases that activity could fail:
-1) *CustomError: (this should be the most common one)
-	If activity implementation returns *CustomError by using NewCustomError() API, workflow code would receive *CustomError.
-	The err would contain a Reason and Details. The reason is what activity specified to NewCustomError(), which workflow
+1) *ApplicationError: (this should be the most common one)
+	If activity implementation returns *ApplicationError by using NewApplicationError() API, workflow code would receive *ApplicationError.
+	The err would contain a Reason and Details. The reason is what activity specified to NewApplicationError(), which workflow
 	code could check to determine what kind of error it was and take actions based on the reason. The details is encoded
 	[]byte which workflow code could extract strong typed data. Workflow code needs to know what the types of the encoded
 	details are before extracting them.
 2) *GenericError:
-	If activity implementation returns errors other than from NewCustomError() API, workflow code would receive *GenericError.
+	If activity implementation returns errors other than from NewApplicationError() API, workflow code would receive *GenericError.
 	Use err.Error() to get the string representation of the actual error.
 3) *CanceledError:
 	If activity was canceled, workflow code will receive instance of *CanceledError. When activity cancels itself by
@@ -60,11 +60,11 @@ Workflow code could handle errors based on different types of error. Below is sa
 _, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
 if err != nil {
 	switch err := err.(type) {
-	case *workflow.CustomError:
-		// handle activity errors (created via NewCustomError() API)
+	case *workflow.ApplicationError:
+		// handle activity errors (created via NewApplicationError() API)
 		switch err.Reason() {
 		case CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
-			var detailMsg string // assuming activity return error by NewCustomError(CustomErrReasonA, "string details")
+			var detailMsg string // assuming activity return error by NewApplicationError(CustomErrReasonA, "string details")
 			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
 			// handle CustomErrReasonA
 		case CustomErrReasonB:
@@ -73,7 +73,7 @@ if err != nil {
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
 	case *workflow.GenericError:
-		// handle generic error (errors created other than using NewCustomError() API)
+		// handle generic error (errors created other than using NewApplicationError() API)
 	case *workflow.CanceledError:
 		// handle cancellation
 	case *workflow.TimeoutError:
@@ -89,9 +89,8 @@ That decision task will be retried at a later time (with exponential backoff ret
 */
 
 type (
-	// TODO: Rename to ApplicationError
-	// CustomError returned from workflow and activity implementations with reason and optional details.
-	CustomError struct {
+	// ApplicationError returned from activity implementations with message and optional details.
+	ApplicationError struct {
 		message      string
 		nonRetryable bool
 		details      Values
@@ -136,6 +135,7 @@ type (
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError struct{}
 
+	// ActivityTaskError returned from workflow when activity returned an error.
 	ActivityTaskError struct {
 		scheduledEventId int64
 		startedEventId   int64
@@ -143,6 +143,7 @@ type (
 		cause            error
 	}
 
+	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError struct {
 		namespace string
 		// execution.WorkflowExecution workflowExecution = 2;
@@ -173,16 +174,16 @@ var ErrTooManyArg = errors.New("too many arguments")
 // that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
-// NewCustomError create new instance of *CustomError with reason and optional details.
-func NewCustomError(message string, nonRetryable bool, details ...interface{}) *CustomError {
+// NewApplicationError create new instance of *ApplicationError with reason and optional details.
+func NewApplicationError(message string, nonRetryable bool, details ...interface{}) *ApplicationError {
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &CustomError{message: message, nonRetryable: nonRetryable, details: d}
+			return &ApplicationError{message: message, nonRetryable: nonRetryable, details: d}
 		}
 	}
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &CustomError{message: message, nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
+	return &ApplicationError{message: message, nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
 }
 
 // NewTimeoutError creates TimeoutError instance.
@@ -289,17 +290,17 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 }
 
 // Error from error interface
-func (e *CustomError) Error() string {
+func (e *ApplicationError) Error() string {
 	return e.message
 }
 
 // HasDetails return if this error has strong typed detail data.
-func (e *CustomError) HasDetails() bool {
+func (e *ApplicationError) HasDetails() bool {
 	return e.details != nil && e.details.HasValues()
 }
 
 // Details extracts strong typed detail data of this custom error. If there is no details, it will return ErrNoData.
-func (e *CustomError) Details(d ...interface{}) error {
+func (e *ApplicationError) Details(d ...interface{}) error {
 	if !e.HasDetails() {
 		return ErrNoData
 	}
@@ -307,7 +308,7 @@ func (e *CustomError) Details(d ...interface{}) error {
 }
 
 // NonRetryable indicated if error is not retryable.
-func (e *CustomError) NonRetryable() bool {
+func (e *ApplicationError) NonRetryable() bool {
 	return e.nonRetryable
 }
 
@@ -456,7 +457,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		return false
 	}
 
-	var applicationErr *CustomError
+	var applicationErr *ApplicationError
 	if errors.As(err, &applicationErr) {
 		if applicationErr.nonRetryable {
 			return false
@@ -502,7 +503,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 	}
 
 	switch err := err.(type) {
-	case *CustomError:
+	case *ApplicationError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrorType(err),
 			NonRetryable: err.nonRetryable,
@@ -552,9 +553,10 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			StartedEventId:   err.startedEventId,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
-	default: // All unknown errors are considered to be ApplicationFailureInfo.
+	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type: getErrorType(err),
+			Type:         getErrorType(err),
+			NonRetryable: false,
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
@@ -583,14 +585,18 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
-		case getErrorType(&CustomError{}):
-			return NewCustomError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
+		case getErrorType(&ApplicationError{}):
+			return NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
 		case getErrorType(&PanicError{}):
 			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
 		return NewCanceledError(details)
+	} else if failure.GetServerFailureInfo() != nil {
+		return NewApplicationError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), nil)
+	} else if failure.GetResetWorkflowFailureInfo() != nil {
+		return NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetTerminatedFailureInfo() != nil {
 		return newTerminatedError()
 	} else if failure.GetActivityTaskFailureInfo() != nil {
@@ -615,5 +621,5 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	}
 
 	// All unknown types are considered to be retryable ApplicationError.
-	return NewCustomError(failure.GetMessage(), false, nil)
+	return NewApplicationError(failure.GetMessage(), false, nil)
 }

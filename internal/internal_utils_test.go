@@ -78,23 +78,23 @@ func TestNewValue(t *testing.T) {
 	require.Equal(t, res, heartbeatDetail)
 }
 
-func TestConvertFailureToError_CustomError(t *testing.T) {
+func TestConvertFailureToError_ApplicationError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	customErr1 := NewCustomError(customErrReasonA, false, val)
-	failure := convertErrorToFailure(customErr1, dc)
-	require.Equal(t, customErrReasonA, failure.GetMessage())
+	applicationErr1 := NewApplicationError(applicationErrReasonA, false, val)
+	failure := convertErrorToFailure(applicationErr1, dc)
+	require.Equal(t, applicationErrReasonA, failure.GetMessage())
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
-	customErr2 := NewCustomError(customErrReasonA, false, testErrorDetails1)
+	applicationErr2 := NewApplicationError(applicationErrReasonA, false, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
-	failure = convertErrorToFailure(customErr2, dc)
-	require.Equal(t, customErrReasonA, failure.GetMessage())
+	failure = convertErrorToFailure(applicationErr2, dc)
+	require.Equal(t, applicationErrReasonA, failure.GetMessage())
 	require.Equal(t, val2, failure.GetApplicationFailureInfo().GetDetails())
 }
 

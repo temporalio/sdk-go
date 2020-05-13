@@ -391,7 +391,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowT
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
 // If the activity failed to complete then the future get error would indicate the failure, and it can be one of
-// CustomError, TimeoutError, CanceledError, PanicError, GenericError.
+// ApplicationError, TimeoutError, CanceledError, PanicError, GenericError.
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
 // error CanceledError.
 //
@@ -500,7 +500,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // the local activity again.
 //
 // If the activity failed to complete then the future get error would indicate the failure, and it can be one of
-// CustomError, TimeoutError, CanceledError, PanicError, GenericError.
+// ApplicationError, TimeoutError, CanceledError, PanicError, GenericError.
 // You can cancel the pending activity by cancel the context(workflow.WithCancel(ctx)) and that will fail the activity
 // with error CanceledError.
 //
@@ -618,7 +618,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 // Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.
 // Input args are the arguments that need to be passed to the child workflow function represented by childWorkflow.
 // If the child workflow failed to complete then the future get error would indicate the failure and it can be one of
-// CustomError, TimeoutError, CanceledError, GenericError.
+// ApplicationError, TimeoutError, CanceledError, GenericError.
 // You can cancel the pending child workflow using context(workflow.WithCancel(ctx)) and that will fail the workflow with
 // error CanceledError.
 // ExecuteChildWorkflow returns ChildWorkflowFuture.

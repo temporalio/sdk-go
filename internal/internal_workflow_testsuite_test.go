@@ -2219,7 +2219,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	attempt1Count := 0
 	activityFailedFn := func(ctx context.Context) (string, error) {
 		attempt1Count++
-		return "", NewCustomError("bad-bug", true)
+		return "", NewApplicationError("bad-bug", true)
 	}
 
 	attempt2Count := 0
@@ -2227,7 +2227,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 		attempt2Count++
 		info := GetActivityInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck", false)
+			return "", NewApplicationError("bad-luck", false)
 		}
 		return "retry-done", nil
 	}
@@ -2247,7 +2247,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 		ctx = WithActivityOptions(ctx, ao)
 
 		err := ExecuteActivity(ctx, activityFailedFn).Get(ctx, nil)
-		badBug, ok := err.(*CustomError)
+		badBug, ok := err.(*ApplicationError)
 		s.True(ok)
 		s.Equal("bad-bug", badBug.Error())
 
@@ -2295,7 +2295,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 			// process task i
 			RecordActivityHeartbeat(ctx, i)
 			if j == 2 && i < firstTaskID+taskCount-1 { // simulate failure after processing 3 tasks
-				return NewCustomError("bad-luck", false)
+				return NewApplicationError("bad-luck", false)
 			}
 		}
 
@@ -2340,7 +2340,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := GetActivityInfo(ctx)
 		if info.Attempt < 2 {
-			return int32(-1), NewCustomError("bad-luck", false)
+			return int32(-1), NewApplicationError("bad-luck", false)
 		}
 		return info.Attempt, nil
 	}
@@ -2458,7 +2458,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck", false)
+			return "", NewApplicationError("bad-luck", false)
 		}
 		return "retry-done", nil
 	}
@@ -2500,7 +2500,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
 		if info.Attempt < 2 {
-			return "", NewCustomError("bad-luck", false)
+			return "", NewApplicationError("bad-luck", false)
 		}
 
 		ch := GetSignalChannel(ctx, "test-signal-name")

@@ -288,7 +288,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 	}
 
 	tasklistChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
-	// Retry is only needed when creating new session and the error returned is NewCustomError(errTooManySessionsMsg)
+	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
 	retryPolicy := &RetryPolicy{
 		InitialInterval:    time.Second,
 		BackoffCoefficient: 1.1,
@@ -501,7 +501,7 @@ func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int
 
 func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
 	if !env.sessionTokenBucket.getToken() {
-		return nil, NewCustomError(errTooManySessionsMsg, true)
+		return nil, NewApplicationError(errTooManySessionsMsg, true)
 	}
 
 	env.Lock()

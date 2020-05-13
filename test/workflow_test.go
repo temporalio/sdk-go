@@ -77,7 +77,7 @@ func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error)
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
 	}
 
-	var applicationErr *temporal.CustomError
+	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
@@ -455,7 +455,7 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 	var a *Activities
 	err := workflow.ExecuteActivity(ctx, a.RetryTimeoutStableErrorActivity).Get(ctx, nil)
 
-	var applicationErr *temporal.CustomError
+	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	if !ok {
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)

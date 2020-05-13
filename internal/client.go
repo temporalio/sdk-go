@@ -175,7 +175,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, temporal.NewCustomError("reason", details)
+		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
@@ -483,7 +483,7 @@ type (
 
 		// TODO: Rename to NonRetryableErrorTypes and clean up comment.
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.
-		// Error reason for custom error is specified when your activity/workflow return temporal.NewCustomError(reason).
+		// Error reason for custom error is specified when your activity/workflow return temporal.NewApplicationError(reason).
 		// Error reason for panic error is "temporalInternal:Panic".
 		// Error reason for any other error is "temporalInternal:Generic".
 		// Error reason for timeouts is: "temporalInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be StartToClose or Heartbeat.

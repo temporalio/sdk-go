@@ -40,7 +40,7 @@ import (
 
 const (
 	// assume this is some error reason defined by activity implementation.
-	customErrReasonA = "CustomReasonA"
+	applicationErrReasonA = "CustomReasonA"
 )
 
 type testStruct struct {
@@ -71,7 +71,7 @@ func Test_GenericError(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	require.IsType(t, &CustomError{}, err)
+	require.IsType(t, &ApplicationError{}, err)
 	require.Equal(t, "error:foo", err.Error())
 
 	// test workflow error
@@ -83,7 +83,7 @@ func Test_GenericError(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	require.IsType(t, &CustomError{}, err)
+	require.IsType(t, &ApplicationError{}, err)
 	require.Equal(t, "error:foo", err.Error())
 }
 
@@ -153,17 +153,17 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	require.Equal(t, testErrorDetails1, data)
 }
 
-func Test_CustomError(t *testing.T) {
+func Test_ApplicationError(t *testing.T) {
 	// test ErrorDetailValues as Details
 	var a1 string
 	var a2 int
 	var a3 testStruct
-	err0 := NewCustomError(customErrReasonA, false, testErrorDetails1)
+	err0 := NewApplicationError(applicationErrReasonA, false, testErrorDetails1)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
-	err0 = NewCustomError(customErrReasonA, false, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	err0 = NewApplicationError(applicationErrReasonA, false, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
@@ -179,7 +179,7 @@ func Test_CustomError(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	err1, ok := err.(*CustomError)
+	err1, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err1.HasDetails())
 	var b1 string
@@ -192,11 +192,11 @@ func Test_CustomError(t *testing.T) {
 
 	// test reason and no detail
 	newReason := "another reason"
-	err2 := NewCustomError(newReason, false)
+	err2 := NewApplicationError(newReason, false)
 	require.True(t, !err2.HasDetails())
 	require.Equal(t, ErrNoData, err2.Details())
 	require.Equal(t, newReason, err2.Error())
-	err3 := NewCustomError(newReason, false, nil)
+	err3 := NewApplicationError(newReason, false, nil)
 	// TODO: probably we want to handle this case when details are nil, HasDetails return false
 	require.True(t, err3.HasDetails())
 
@@ -209,7 +209,7 @@ func Test_CustomError(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err4, ok := err.(*CustomError)
+	err4, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err4.HasDetails())
 	_ = err4.Details(&b1, &b2, &b3)
@@ -218,16 +218,16 @@ func Test_CustomError(t *testing.T) {
 	require.Equal(t, testErrorDetails3, b3)
 }
 
-func Test_CustomError_Pointer(t *testing.T) {
+func Test_ApplicationError_Pointer(t *testing.T) {
 	a1 := testStruct2{}
-	err1 := NewCustomError(customErrReasonA, false, testErrorDetails4)
+	err1 := NewApplicationError(applicationErrReasonA, false, testErrorDetails4)
 	require.True(t, err1.HasDetails())
 	err := err1.Details(&a1)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails4, a1)
 
 	a2 := &testStruct2{}
-	err2 := NewCustomError(customErrReasonA, false, &testErrorDetails4) // // pointer in details
+	err2 := NewApplicationError(applicationErrReasonA, false, &testErrorDetails4) // // pointer in details
 	require.True(t, err2.HasDetails())
 	err = err2.Details(&a2)
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err = env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	err3, ok := err.(*CustomError)
+	err3, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err3.HasDetails())
 	b1 := testStruct2{}
@@ -255,7 +255,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	env.RegisterActivity(errorActivityFn2)
 	_, err = env.ExecuteActivity(errorActivityFn2)
 	require.Error(t, err)
-	err4, ok := err.(*CustomError)
+	err4, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err4.HasDetails())
 	b2 := &testStruct2{}
@@ -271,7 +271,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err5, ok := err.(*CustomError)
+	err5, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err5.HasDetails())
 	_ = err5.Details(&b1)
@@ -286,7 +286,7 @@ func Test_CustomError_Pointer(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn2)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err6, ok := err.(*CustomError)
+	err6, ok := err.(*ApplicationError)
 	require.True(t, ok)
 	require.True(t, err6.HasDetails())
 	_ = err6.Details(&b2)
@@ -478,9 +478,9 @@ func Test_GetErrorType(t *testing.T) {
 	errType := getErrorType(err)
 	require.Equal("errorString", errType)
 
-	err = NewCustomError("application error", false)
+	err = NewApplicationError("application error", false)
 	errType = getErrorType(err)
-	require.Equal("CustomError", errType)
+	require.Equal("ApplicationError", errType)
 }
 
 type coolError struct{}
