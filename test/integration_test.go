@@ -36,7 +36,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
 	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	querypb "go.temporal.io/temporal-proto/query"
@@ -195,7 +195,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 		"test-activity-retry-on-start2close-timeout",
 		ts.workflows.ActivityRetryOnTimeout,
 		&expected,
-		eventpb.TimeoutType_StartToClose)
+		commonpb.TimeoutType_StartToClose)
 
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -302,9 +302,10 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 		false,
 	)
 	ts.Error(err)
-	gerr, ok := err.(*workflow.GenericError)
+	gerr, ok := err.(*temporal.CustomError)
 	ts.True(ok)
 	ts.Equal("Workflow execution already started", gerr.Error())
+	ts.False(gerr.NonRetryable())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -319,9 +320,10 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 		false,
 	)
 	ts.Error(err)
-	gerr, ok := err.(*workflow.GenericError)
+	gerr, ok := err.(*temporal.CustomError)
 	ts.True(ok)
 	ts.Equal("Workflow execution already started", gerr.Error())
+	ts.False(gerr.NonRetryable())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {

@@ -30,7 +30,7 @@ import (
 	"math/rand"
 	"time"
 
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
 
 	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/client"
@@ -77,12 +77,13 @@ func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error)
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
 	}
 
-	cerr, ok := err.(*temporal.CustomError)
+	var applicationErr *temporal.CustomError
+	ok := errors.As(err, &applicationErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	if cerr.Error() != errFailOnPurpose.Error() {
-		return nil, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Error())
+	if applicationErr.Error() != errFailOnPurpose.Error() {
+		return nil, fmt.Errorf("activity failed with unexpected error reason: %v", applicationErr.Error())
 	}
 
 	return []string{"fail", "fail", "fail"}, nil
@@ -102,12 +103,12 @@ func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, 
 	return []string{"fail", "fail"}, nil
 }
 
-func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType eventpb.TimeoutType) ([]string, error) {
+func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType commonpb.TimeoutType) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
 	switch timeoutType {
-	case eventpb.TimeoutType_ScheduleToClose:
+	case commonpb.TimeoutType_ScheduleToClose:
 		opts.ScheduleToCloseTimeout = time.Second
-	case eventpb.TimeoutType_StartToClose:
+	case commonpb.TimeoutType_StartToClose:
 		opts.StartToCloseTimeout = time.Second
 	}
 
@@ -124,13 +125,14 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType eve
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not: %v", elapsed)
 	}
 
-	terr, ok := err.(*workflow.TimeoutError)
+	var timeoutErr *workflow.TimeoutError
+	ok := errors.As(err, &timeoutErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if terr.TimeoutType() != timeoutType {
-		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", terr.TimeoutType())
+	if timeoutErr.TimeoutType() != timeoutType {
+		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", timeoutErr.TimeoutType())
 	}
 
 	return []string{"sleep", "sleep", "sleep"}, nil
@@ -153,20 +155,21 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
 	}
 
-	terr, ok := err.(*workflow.TimeoutError)
+	var timeoutErr *workflow.TimeoutError
+	ok := errors.As(err, &timeoutErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if terr.TimeoutType() != eventpb.TimeoutType_Heartbeat {
-		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", terr.TimeoutType())
+	if timeoutErr.TimeoutType() != commonpb.TimeoutType_Heartbeat {
+		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", timeoutErr.TimeoutType())
 	}
 
-	if !terr.HasDetails() {
+	if !timeoutErr.HasLastHeartbeatDetails() {
 		return nil, fmt.Errorf("timeout missing last heartbeat details")
 	}
 
-	if err := terr.Details(&result); err != nil {
+	if err := timeoutErr.LastHeartbeatDetails(&result); err != nil {
 		return nil, err
 	}
 
@@ -452,12 +455,13 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 	var a *Activities
 	err := workflow.ExecuteActivity(ctx, a.RetryTimeoutStableErrorActivity).Get(ctx, nil)
 
-	cerr, ok := err.(*temporal.CustomError)
+	var applicationErr *temporal.CustomError
+	ok := errors.As(err, &applicationErr)
 	if !ok {
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	if cerr.Error() != errFailOnPurpose.Error() {
-		return []string{}, fmt.Errorf("activity failed with unexpected error reason: %v", cerr.Error())
+	if applicationErr.Error() != errFailOnPurpose.Error() {
+		return []string{}, fmt.Errorf("activity failed with unexpected error reason: %v", applicationErr.Error())
 	}
 	return []string{}, nil
 }

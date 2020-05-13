@@ -1019,7 +1019,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 		timeoutError,
 	)
 
-	// if len(attributes.GetLastFailureReason()) > 0 && attributes.GetTimeoutType() == eventpb.TimeoutType_StartToClose {
+	// if len(attributes.GetLastFailureReason()) > 0 && attributes.GetTimeoutType() == commonpb.TimeoutType_StartToClose {
 	// 	// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
 	// 	// To stabilize the error type, we always return the customer error.
 	// 	// See more details of background: https://github.com/temporalio/temporal/issues/185
