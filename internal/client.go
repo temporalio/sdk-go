@@ -551,7 +551,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(ConnectionParameters{
+	connection, err := dial(connectionParameters{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,
@@ -606,7 +606,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(ConnectionParameters{
+	connection, err := dial(connectionParameters{
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
 		DefaultServiceConfig: defaultServiceConfig,

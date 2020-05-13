@@ -36,8 +36,8 @@ import (
 )
 
 type (
-	// ConnectionParameters are passed to GRPCDialer and must be used to create gRPC connection.
-	ConnectionParameters struct {
+	// connectionParameters are passed to GRPCDialer and must be used to create gRPC connection.
+	connectionParameters struct {
 		HostPort             string
 		RequiredInterceptors []grpc.UnaryClientInterceptor
 		DefaultServiceConfig string
@@ -52,7 +52,7 @@ const (
 	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 
-func dial(params ConnectionParameters) (*grpc.ClientConn, error) {
+func dial(params connectionParameters) (*grpc.ClientConn, error) {
 	return grpc.Dial(params.HostPort,
 		grpc.WithInsecure(),
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
