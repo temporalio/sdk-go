@@ -121,7 +121,7 @@ type (
 
 		metricsScope       tally.Scope
 		registry           *registry
-		dataConverter      DataConverter
+		payloadsConverter  PayloadsConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -184,7 +184,7 @@ func newWorkflowExecutionEventHandler(
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	registry *registry,
-	dataConverter DataConverter,
+	payloadsConverter PayloadsConverter,
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
 ) workflowExecutionEventHandler {
@@ -200,7 +200,7 @@ func newWorkflowExecutionEventHandler(
 		completeHandler:       completeHandler,
 		enableLoggingInReplay: enableLoggingInReplay,
 		registry:              registry,
-		dataConverter:         dataConverter,
+		payloadsConverter:     payloadsConverter,
 		contextPropagators:    contextPropagators,
 		tracer:                tracer,
 	}
@@ -356,7 +356,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.workflowID == "" {
 		params.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.memo, wc.dataConverter)
+	memo, err := getWorkflowMemo(params.memo, wc.payloadsConverter)
 	if err != nil {
 		return err
 	}
@@ -415,8 +415,8 @@ func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return wc.metricsScope
 }
 
-func (wc *workflowEnvironmentImpl) GetDataConverter() DataConverter {
-	return wc.dataConverter
+func (wc *workflowEnvironmentImpl) GetPayloadsConverter() PayloadsConverter {
+	return wc.payloadsConverter
 }
 
 func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
@@ -594,7 +594,7 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 		// GetVersion for changeID is called first time (non-replay mode), generate a marker decision for it.
 		// Also upsert search attributes to enable ability to search by changeVersion.
 		version = maxSupported
-		wc.decisionsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter())
+		wc.decisionsHelper.recordVersionMarker(changeID, version, wc.GetPayloadsConverter())
 		_ = wc.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions))
 	}
 
@@ -646,7 +646,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			callback(result, err)
 			return
 		}
-		details, err = encodeArgs(wc.GetDataConverter(), []interface{}{sideEffectID, result})
+		details, err = encodeArgs(wc.GetPayloadsConverter(), []interface{}{sideEffectID, result})
 		if err != nil {
 			callback(nil, fmt.Errorf("failure encoding sideEffectID: %v", err))
 			return
@@ -661,7 +661,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
 	if result, ok := wc.mutableSideEffect[id]; ok {
-		encodedResult := newEncodedValue(result, wc.GetDataConverter())
+		encodedResult := newEncodedValue(result, wc.GetPayloadsConverter())
 		if wc.isReplay {
 			return encodedResult
 		}
@@ -689,7 +689,7 @@ func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOld
 		return proto.Equal(newEncodedValue, encodedOldValue)
 	}
 
-	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
+	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetPayloadsConverter()), newValue)
 	return equals(newValue, oldValue)
 }
 
@@ -712,17 +712,17 @@ func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payl
 }
 
 func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payloads, error) {
-	return wc.GetDataConverter().ToData(arg)
+	return wc.GetPayloadsConverter().ToData(arg)
 }
 
 func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payloads) Value {
-	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, data})
+	details, err := encodeArgs(wc.GetPayloadsConverter(), []interface{}{id, data})
 	if err != nil {
 		panic(err)
 	}
 	wc.decisionsHelper.recordMutableSideEffectMarker(id, details)
 	wc.mutableSideEffect[id] = data
-	return newEncodedValue(data, wc.GetDataConverter())
+	return newEncodedValue(data, wc.GetPayloadsConverter())
 }
 
 func (wc *workflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {
@@ -985,7 +985,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 	}
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
-	err := constructError(attributes.Reason, attributes.Details, weh.GetDataConverter())
+	err := constructError(attributes.Reason, attributes.Details, weh.GetPayloadsConverter())
 	activity.handle(nil, err)
 	return nil
 }
@@ -1004,9 +1004,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 		// When retry activity timeout, it is possible that previous attempts got other customer timeout errors.
 		// To stabilize the error type, we always return the customer error.
 		// See more details of background: https://github.com/temporalio/temporal/issues/185
-		err = constructError(attributes.GetLastFailureReason(), attributes.LastFailureDetails, weh.GetDataConverter())
+		err = constructError(attributes.GetLastFailureReason(), attributes.LastFailureDetails, weh.GetPayloadsConverter())
 	} else {
-		details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+		details := newEncodedValues(attributes.Details, weh.GetPayloadsConverter())
 		err = NewTimeoutError(attributes.GetTimeoutType(), details)
 	}
 	activity.handle(nil, err)
@@ -1023,7 +1023,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 
 	if decision.isDone() || !activity.waitForCancelRequest {
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
-		details := newEncodedValues(event.GetActivityTaskCanceledEventAttributes().Details, weh.GetDataConverter())
+		details := newEncodedValues(event.GetActivityTaskCanceledEventAttributes().Details, weh.GetPayloadsConverter())
 		err := NewCanceledError(details)
 		activity.handle(nil, err)
 	}
@@ -1050,7 +1050,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
 	attributes *eventpb.MarkerRecordedEventAttributes,
 ) error {
-	encodedValues := newEncodedValues(attributes.Details, weh.dataConverter)
+	encodedValues := newEncodedValues(attributes.Details, weh.payloadsConverter)
 	switch attributes.GetMarkerName() {
 	case sideEffectMarkerName:
 		var sideEffectID int64
@@ -1082,7 +1082,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payloads) error {
 	lamd := localActivityMarkerData{}
 
-	if err := weh.dataConverter.FromData(markerData, &lamd); err != nil {
+	if err := weh.payloadsConverter.FromData(markerData, &lamd); err != nil {
 		return err
 	}
 
@@ -1099,7 +1099,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		if len(lamd.ErrReason) > 0 {
 			lar.attempt = lamd.Attempt
 			lar.backoff = lamd.Backoff
-			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
+			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetPayloadsConverter())
 		} else {
 			lar.result = lamd.Result
 		}
@@ -1124,7 +1124,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		Attempt:      lar.task.attempt,
 	}
 	if lar.err != nil {
-		errReason, errDetails := getErrorDetails(lar.err, weh.GetDataConverter())
+		errReason, errDetails := getErrorDetails(lar.err, weh.GetPayloadsConverter())
 		lamd.ErrReason = errReason
 		lamd.Err = errDetails
 		lamd.Backoff = lar.backoff
@@ -1212,7 +1212,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		return nil
 	}
 
-	err := constructError(attributes.GetReason(), attributes.Details, weh.GetDataConverter())
+	err := constructError(attributes.GetReason(), attributes.Details, weh.GetPayloadsConverter())
 	childWorkflow.handle(nil, err)
 
 	return nil
@@ -1226,7 +1226,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 	if childWorkflow.handled {
 		return nil
 	}
-	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+	details := newEncodedValues(attributes.Details, weh.GetPayloadsConverter())
 	err := NewCanceledError(details)
 	childWorkflow.handle(nil, err)
 	return nil

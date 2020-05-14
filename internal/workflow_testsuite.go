@@ -45,7 +45,7 @@ type (
 	// EncodedValues is a type alias used to encapsulate/extract encoded arguments from workflow/activity.
 	EncodedValues struct {
 		values        *commonpb.Payloads
-		dataConverter DataConverter
+		dataConverter PayloadsConverter
 	}
 
 	// ErrorDetailsValues is a type alias used hold error details objects.
@@ -80,9 +80,9 @@ type (
 	}
 )
 
-func newEncodedValues(values *commonpb.Payloads, dc DataConverter) Values {
+func newEncodedValues(values *commonpb.Payloads, dc PayloadsConverter) Values {
 	if dc == nil {
-		dc = getDefaultDataConverter()
+		dc = getDefaultPayloadsConverter()
 	}
 	return &EncodedValues{values, dc}
 }
@@ -192,8 +192,8 @@ func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestA
 }
 
 // SetDataConverter sets data converter.
-func (t *TestActivityEnvironment) SetDataConverter(dataConverter DataConverter) *TestActivityEnvironment {
-	t.impl.setDataConverter(dataConverter)
+func (t *TestActivityEnvironment) SetDataConverter(dataConverter PayloadsConverter) *TestActivityEnvironment {
+	t.impl.setPayloadsConverter(dataConverter)
 	return t
 }
 
@@ -498,8 +498,8 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 }
 
 // SetDataConverter sets data converter.
-func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter DataConverter) *TestWorkflowEnvironment {
-	e.impl.setDataConverter(dataConverter)
+func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter PayloadsConverter) *TestWorkflowEnvironment {
+	e.impl.setPayloadsConverter(dataConverter)
 	return e
 }
 
@@ -715,7 +715,7 @@ func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 
 // SetMemoOnStart sets the memo when start workflow.
 func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) error {
-	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter())
+	memoStruct, err := getWorkflowMemo(memo, e.impl.GetPayloadsConverter())
 	if err != nil {
 		return err
 	}

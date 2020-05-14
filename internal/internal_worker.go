@@ -190,7 +190,7 @@ type (
 		// The default behavior is to block workflow execution until the problem is fixed.
 		WorkflowPanicPolicy WorkflowPanicPolicy
 
-		DataConverter DataConverter
+		PayloadsConverter PayloadsConverter
 
 		// WorkerStopTimeout is the time delay before hard terminate worker
 		WorkerStopTimeout time.Duration
@@ -230,9 +230,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.MetricsScope = tally.NoopScope
 		params.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
-	if params.DataConverter == nil {
-		params.DataConverter = getDefaultDataConverter()
-		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
+	if params.PayloadsConverter == nil {
+		params.PayloadsConverter = getDefaultPayloadsConverter()
+		params.Logger.Info("No PayloadsConverter configured for temporal worker. Use default one.")
 	}
 }
 
@@ -754,12 +754,12 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 }
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payloads, error) {
+func encodeArgs(dc PayloadsConverter, args []interface{}) (*commonpb.Payloads, error) {
 	return dc.ToData(args...)
 }
 
 // decode multiple arguments(arguments to a function).
-func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
+func decodeArgs(dc PayloadsConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
 	r, err := decodeArgsToValues(dc, fnType, data)
 	if err != nil {
 		return
@@ -770,7 +770,7 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) 
 	return
 }
 
-func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
+func decodeArgsToValues(dc PayloadsConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -788,16 +788,16 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payloads, error) {
+func encodeArg(dc PayloadsConverter, arg interface{}) (*commonpb.Payloads, error) {
 	return dc.ToData(arg)
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc DataConverter, data *commonpb.Payloads, to interface{}) error {
+func decodeArg(dc PayloadsConverter, data *commonpb.Payloads, to interface{}) error {
 	return dc.FromData(data, to)
 }
 
-func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {
+func decodeAndAssignValue(dc PayloadsConverter, from interface{}, toValuePtr interface{}) error {
 	if toValuePtr == nil {
 		return nil
 	}
@@ -838,7 +838,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
+	dataConverter := getWorkflowEnvOptions(ctx).payloadsConverter
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
@@ -872,7 +872,7 @@ func (ae *activityExecutor) GetFunction() interface{} {
 func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	fnType := reflect.TypeOf(ae.fn)
 	var args []reflect.Value
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := getPayloadsConverterFromActivityCtx(ctx)
 
 	// activities optionally might not take context.
 	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
@@ -894,7 +894,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payloads, error) {
 	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
-	dataConverter := getDataConverterFromActivityCtx(ctx)
+	dataConverter := getPayloadsConverterFromActivityCtx(ctx)
 
 	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
 }
@@ -923,15 +923,15 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 	return retValues
 }
 
-func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
+func getPayloadsConverterFromActivityCtx(ctx context.Context) PayloadsConverter {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return getDefaultDataConverter()
+		return getDefaultPayloadsConverter()
 	}
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
-	if info.dataConverter == nil {
-		return getDefaultDataConverter()
+	if info.payloadsConverter == nil {
+		return getDefaultPayloadsConverter()
 	}
-	return info.dataConverter
+	return info.payloadsConverter
 }
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
@@ -1350,7 +1350,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
 		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
 		WorkflowPanicPolicy:                  options.NonDeterministicWorkflowPolicy,
-		DataConverter:                        client.dataConverter,
+		PayloadsConverter:                    client.payloadsConverter,
 		WorkerStopTimeout:                    options.WorkerStopTimeout,
 		ContextPropagators:                   client.contextPropagators,
 		Tracer:                               client.tracer,
@@ -1542,8 +1542,8 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 
 // setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
-	if client.dataConverter == nil {
-		client.dataConverter = getDefaultDataConverter()
+	if client.payloadsConverter == nil {
+		client.payloadsConverter = getDefaultPayloadsConverter()
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

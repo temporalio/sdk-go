@@ -147,7 +147,7 @@ func getWorkerTaskList(stickyUUID string) string {
 }
 
 // getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payloads) {
+func getErrorDetails(err error, dataConverter PayloadsConverter) (string, *commonpb.Payloads) {
 	switch err := err.(type) {
 	case *CustomError:
 		var data *commonpb.Payloads
@@ -211,7 +211,7 @@ func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.
 }
 
 // constructError construct error from reason and details sending down from server.
-func constructError(reason string, details *commonpb.Payloads, dataConverter DataConverter) error {
+func constructError(reason string, details *commonpb.Payloads, dataConverter PayloadsConverter) error {
 	if strings.HasPrefix(reason, errReasonTimeout) {
 		details := newEncodedValues(details, dataConverter)
 		timeoutType, err := getTimeoutTypeFromErrReason(reason)

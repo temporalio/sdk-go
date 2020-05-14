@@ -324,7 +324,7 @@ type (
 		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicemock.MockWorkflowServiceClient
 		workflowClient        Client
-		dataConverter         DataConverter
+		dataConverter         PayloadsConverter
 	}
 )
 
@@ -354,7 +354,7 @@ func (s *workflowRunSuite) SetupTest() {
 		Identity:     identity,
 	}
 	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
-	s.dataConverter = getDefaultDataConverter()
+	s.dataConverter = getDefaultPayloadsConverter()
 }
 
 func (s *workflowRunSuite) TearDownTest() {
@@ -370,7 +370,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultPayloadsConverter(), workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -415,7 +415,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultPayloadsConverter(), workflowResult)
 	events := []*eventpb.HistoryEvent{
 		&eventpb.HistoryEvent{
 			EventType: eventType,
@@ -506,7 +506,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultPayloadsConverter(), workflowResult)
 	events := []*eventpb.HistoryEvent{
 		{
 			EventType: eventType,
@@ -662,7 +662,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCanceled
 	details := "some details"
-	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
+	encodedDetails, _ := encodeArg(getDefaultPayloadsConverter(), details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -710,7 +710,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	dataConverter := getDefaultDataConverter()
+	dataConverter := getDefaultPayloadsConverter()
 	encodedDetails, _ := encodeArg(dataConverter, details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -861,7 +861,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), getRequest1, gomock.Any()).Return(getResponse1, nil).Times(1)
 
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultPayloadsConverter(), workflowResult)
 	eventType2 := eventpb.EventType_WorkflowExecutionCompleted
 	getRequest2 := getGetWorkflowExecutionHistoryRequest(filterType)
 	getRequest2.Execution.RunId = newRunID
@@ -903,7 +903,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionCompleted
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(getDefaultPayloadsConverter(), workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -957,7 +957,7 @@ type (
 		mockCtrl      *gomock.Controller
 		service       *workflowservicemock.MockWorkflowServiceClient
 		client        Client
-		dataConverter DataConverter
+		dataConverter PayloadsConverter
 	}
 )
 
@@ -975,7 +975,7 @@ func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 	s.client = NewServiceClient(s.service, nil, ClientOptions{})
-	s.dataConverter = getDefaultDataConverter()
+	s.dataConverter = getDefaultPayloadsConverter()
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -1027,7 +1027,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(getDefaultDataConverter(), client.dataConverter)
+	s.Equal(getDefaultPayloadsConverter(), client.payloadsConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1084,7 +1084,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	}
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
-			dc := client.dataConverter
+			dc := client.payloadsConverter
 			encodedArg, _ := dc.ToData(input)
 			s.Equal(req.Input, encodedArg)
 			var decodedArg []byte
@@ -1093,7 +1093,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, input)
-	s.Equal(newTestDataConverter(), client.dataConverter)
+	s.Equal(newTestDataConverter(), client.payloadsConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1185,7 +1185,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	// TODO (shtin): use s.dataConverter here???
+	// TODO (shtin): use s.payloadsConverter here???
 	_ = DefaultPayloadConverter.FromData(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 

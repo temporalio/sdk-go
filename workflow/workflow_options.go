@@ -65,7 +65,7 @@ func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithWorkflowTaskTimeout(ctx, d)
 }
 
-// WithDataConverter adds DataConverter to the context.
-func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
-	return internal.WithDataConverter(ctx, dc)
+// WithPayloadsConverter adds PayloadsConverter to the context.
+func WithPayloadsConverter(ctx Context, dc encoded.PayloadsConverter) Context {
+	return internal.WithPayloadsConverter(ctx, dc)
 }

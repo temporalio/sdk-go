@@ -131,7 +131,7 @@ type (
 		registry               *registry
 		laTunnel               *localActivityTunnel
 		workflowPanicPolicy    WorkflowPanicPolicy
-		dataConverter          DataConverter
+		payloadsConverter      PayloadsConverter
 		contextPropagators     []ContextPropagator
 		tracer                 opentracing.Tracer
 	}
@@ -148,7 +148,7 @@ type (
 		userContext        context.Context
 		registry           *registry
 		activityProvider   activityProvider
-		dataConverter      DataConverter
+		payloadsConverter  PayloadsConverter
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
@@ -387,7 +387,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		disableStickyExecution: params.DisableStickyExecution,
 		registry:               registry,
 		workflowPanicPolicy:    params.WorkflowPanicPolicy,
-		dataConverter:          params.DataConverter,
+		payloadsConverter:      params.PayloadsConverter,
 		contextPropagators:     params.ContextPropagators,
 		tracer:                 params.Tracer,
 	}
@@ -573,7 +573,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.enableLoggingInReplay,
 		w.wth.metricsScope,
 		w.wth.registry,
-		w.wth.dataConverter,
+		w.wth.payloadsConverter,
 		w.wth.contextPropagators,
 		w.wth.tracer,
 	)
@@ -964,7 +964,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		return false
 	}
 
-	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
+	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.payloadsConverter)
 	if retryBackoff > 0 && retryBackoff <= w.GetWorkflowTaskTimeout() {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
@@ -1002,7 +1002,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter PayloadsConverter) time.Duration {
 	p := lar.task.retryPolicy
 	var errReason string
 	if len(p.NonRetriableErrorReasons) > 0 {
@@ -1470,7 +1470,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.String("PanicError", panicErr.Error()),
 			zap.String("PanicStack", panicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.dataConverter)
+		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.payloadsConverter)
 	}
 
 	// complete decision task
@@ -1479,7 +1479,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_CancelWorkflowExecution)
-		_, details := getErrorDetails(canceledErr, wth.dataConverter)
+		_, details := getErrorDetails(canceledErr, wth.payloadsConverter)
 		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
 			Details: details,
 		}}
@@ -1501,7 +1501,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_FailWorkflowExecution)
-		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
+		reason, details := getErrorDetails(workflowContext.err, wth.payloadsConverter)
 		closeDecision.Attributes = &decisionpb.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &decisionpb.FailWorkflowExecutionDecisionAttributes{
 			Reason:  reason,
 			Details: details,
@@ -1552,7 +1552,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 }
 
-func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
+func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter PayloadsConverter) *workflowservice.RespondDecisionTaskFailedRequest {
 	_, details := getErrorDetails(err, dataConverter)
 	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
@@ -1602,7 +1602,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		userContext:        params.UserContext,
 		registry:           registry,
 		activityProvider:   activityProvider,
-		dataConverter:      params.DataConverter,
+		payloadsConverter:  params.PayloadsConverter,
 		workerStopCh:       params.WorkerStopChannel,
 		contextPropagators: params.ContextPropagators,
 		tracer:             params.Tracer,
@@ -1769,7 +1769,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.payloadsConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
@@ -1791,7 +1791,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 				zap.String("PanicStack", st))
 			metricsScope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
-			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
+			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.payloadsConverter), nil
 		}
 	}()
 
@@ -1822,7 +1822,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 			zap.Error(err),
 		)
 	}
-	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil
+	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.payloadsConverter), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

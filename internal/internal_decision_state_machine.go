@@ -817,7 +817,7 @@ func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 	return activityID
 }
 
-func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dataConverter DataConverter) decisionStateMachine {
+func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dataConverter PayloadsConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
 	if err != nil {

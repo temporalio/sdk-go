@@ -224,7 +224,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		panic("context is missing required options for continue as new")
 	}
 	env := getWorkflowEnvironment(ctx)
-	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.dataConverter, env.GetRegistry())
+	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.payloadsConverter, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}

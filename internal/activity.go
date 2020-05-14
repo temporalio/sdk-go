@@ -166,7 +166,7 @@ func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 	if env.heartbeatDetails == nil {
 		return ErrNoData
 	}
-	encoded := newEncodedValues(env.heartbeatDetails, env.dataConverter)
+	encoded := newEncodedValues(env.heartbeatDetails, env.payloadsConverter)
 	return encoded.Get(d...)
 }
 
@@ -209,7 +209,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	var err error
 	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
-		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
+		data, err = encodeArgs(getPayloadsConverterFromActivityCtx(ctx), details)
 		if err != nil {
 			panic(err)
 		}
@@ -240,7 +240,7 @@ func WithActivityTask(
 	invoker ServiceInvoker,
 	logger *zap.Logger,
 	scope tally.Scope,
-	dataConverter DataConverter,
+	payloadsConverter PayloadsConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
@@ -283,7 +283,7 @@ func WithActivityTask(
 		scheduledTimestamp: scheduled,
 		startedTimestamp:   started,
 		taskList:           taskList,
-		dataConverter:      dataConverter,
+		payloadsConverter:  payloadsConverter,
 		attempt:            task.GetAttempt(),
 		heartbeatDetails:   task.HeartbeatDetails,
 		workflowType: &WorkflowType{

@@ -76,14 +76,14 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		namespace     string
-		taskListName  string
-		identity      string
-		service       workflowservice.WorkflowServiceClient
-		taskHandler   WorkflowTaskHandler
-		metricsScope  tally.Scope
-		logger        *zap.Logger
-		dataConverter DataConverter
+		namespace         string
+		taskListName      string
+		identity          string
+		service           workflowservice.WorkflowServiceClient
+		taskHandler       WorkflowTaskHandler
+		metricsScope      tally.Scope
+		logger            *zap.Logger
+		payloadsConverter PayloadsConverter
 
 		stickyUUID                   string
 		disableStickyExecution       bool
@@ -130,7 +130,7 @@ type (
 		userContext        context.Context
 		metricsScope       *metrics.TaggedScope
 		logger             *zap.Logger
-		dataConverter      DataConverter
+		payloadsConverter  PayloadsConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -229,7 +229,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		taskHandler:                  taskHandler,
 		metricsScope:                 params.MetricsScope,
 		logger:                       params.Logger,
-		dataConverter:                params.DataConverter,
+		payloadsConverter:            params.PayloadsConverter,
 		stickyUUID:                   uuid.New(),
 		disableStickyExecution:       params.DisableStickyExecution,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
@@ -345,7 +345,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.Error(taskErr))
 		// convert err to DecisionTaskFailed
-		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
+		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity, wtp.payloadsConverter)
 	} else {
 		wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
 	}
@@ -420,7 +420,7 @@ func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localAct
 		userContext:        params.UserContext,
 		metricsScope:       metrics.NewTaggedScope(params.MetricsScope),
 		logger:             params.Logger,
-		dataConverter:      params.DataConverter,
+		payloadsConverter:  params.PayloadsConverter,
 		contextPropagators: params.ContextPropagators,
 		tracer:             params.Tracer,
 	}
@@ -482,7 +482,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		logger:            lath.logger,
 		metricsScope:      metricsScope,
 		isLocalActivity:   true,
-		dataConverter:     lath.dataConverter,
+		payloadsConverter: lath.payloadsConverter,
 		attempt:           task.attempt,
 	})
 
@@ -1009,7 +1009,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
-	dataConverter DataConverter) interface{} {
+	dataConverter PayloadsConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -1039,7 +1039,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result *commonpb.Payloads, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payloads, err error, dataConverter PayloadsConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

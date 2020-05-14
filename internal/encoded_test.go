@@ -45,7 +45,7 @@ var (
 	ErrUnableToDecodeGob = errors.New("unable to encode from gob")
 )
 
-func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
+func testPayloadsConverterFunction(t *testing.T, dc PayloadsConverter, f interface{}, args ...interface{}) string {
 	input, err := dc.ToData(args...)
 	require.NoError(t, err, err)
 
@@ -66,15 +66,15 @@ func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, ar
 	return retValues[0].Interface().(string)
 }
 
-func TestDefaultDataConverter(t *testing.T) {
+func TestDefaultPayloadsConverter(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 	t.Run("result", func(t *testing.T) {
 		t.Parallel()
 		f1 := func(ctx Context, r []byte) string {
 			return "result"
 		}
-		r1 := testDataConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
+		r1 := testPayloadsConverterFunction(t, dc, f1, new(emptyCtx), []byte("test"))
 		require.Equal(t, r1, "result")
 	})
 	t.Run("empty", func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestDefaultDataConverter(t *testing.T) {
 		f2 := func() string {
 			return "empty-result"
 		}
-		r2 := testDataConverterFunction(t, dc, f2)
+		r2 := testPayloadsConverterFunction(t, dc, f2)
 		require.Equal(t, r2, "empty-result")
 	})
 	t.Run("nil", func(t *testing.T) {
@@ -92,19 +92,19 @@ func TestDefaultDataConverter(t *testing.T) {
 		f3 := func(r []byte) string {
 			return "nil-result"
 		}
-		r3 := testDataConverterFunction(t, dc, f3, []byte(""))
+		r3 := testPayloadsConverterFunction(t, dc, f3, []byte(""))
 		require.Equal(t, r3, "nil-result")
 	})
 }
 
-// testDataConverter implements encoded.DataConverter using gob
-type testDataConverter struct{}
+// testPayloadsConverter implements encoded.PayloadsConverter using gob
+type testPayloadsConverter struct{}
 
-func newTestDataConverter() DataConverter {
-	return &testDataConverter{}
+func newTestDataConverter() PayloadsConverter {
+	return &testPayloadsConverter{}
 }
 
-func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *testPayloadsConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
 	result := &commonpb.Payloads{}
 
 	for i, arg := range values {
@@ -127,7 +127,7 @@ func (dc *testDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, 
 	return result, nil
 }
 
-func (dc *testDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *testPayloadsConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
 	for i, payload := range payloads.GetPayloads() {
 		encoding, ok := payload.GetMetadata()[metadataEncoding]
 
@@ -151,7 +151,7 @@ func (dc *testDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...
 
 func TestDecodeArg(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 
 	b, err := encodeArg(dc, testErrorDetails3)
 	require.NoError(t, err)

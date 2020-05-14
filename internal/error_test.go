@@ -117,8 +117,8 @@ func Test_TimeoutError_WithDetails(t *testing.T) {
 
 func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
-		dataConverter:   getDefaultDataConverter(),
+		decisionsHelper:   newDecisionsHelper(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	h := newDecisionsHelper()
 	var actualErr error
@@ -134,7 +134,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
 		},
 	})
 	context.decisionsHelper.addDecision(di)
-	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
+	encodedDetails1, _ := context.payloadsConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
 		Details:          encodedDetails1,
 		ScheduledEventId: 5,
@@ -401,8 +401,8 @@ func TestErrorDetailsValues(t *testing.T) {
 
 func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	context := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
-		dataConverter:   getDefaultDataConverter(),
+		decisionsHelper:   newDecisionsHelper(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	h := newDecisionsHelper()
 	var actualErr error

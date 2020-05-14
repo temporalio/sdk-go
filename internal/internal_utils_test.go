@@ -53,7 +53,7 @@ func TestNewValues(t *testing.T) {
 		Age:  heartbeatDetail2,
 	}
 	details = append(details, heartbeatDetail, heartbeatDetail2, heartbeatDetail3)
-	data, err := encodeArgs(getDefaultDataConverter(), details)
+	data, err := encodeArgs(getDefaultPayloadsConverter(), details)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +69,7 @@ func TestNewValues(t *testing.T) {
 func TestNewValue(t *testing.T) {
 	t.Parallel()
 	heartbeatDetail := "status-report-to-workflow"
-	data, err := encodeArg(getDefaultDataConverter(), heartbeatDetail)
+	data, err := encodeArg(getDefaultPayloadsConverter(), heartbeatDetail)
 	if err != nil {
 		panic(err)
 	}
@@ -80,7 +80,7 @@ func TestNewValue(t *testing.T) {
 
 func TestGetErrorDetails_CustomError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
@@ -100,7 +100,7 @@ func TestGetErrorDetails_CustomError(t *testing.T) {
 
 func TestGetErrorDetails_CancelError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
@@ -120,7 +120,7 @@ func TestGetErrorDetails_CancelError(t *testing.T) {
 
 func TestGetErrorDetails_TimeoutError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
@@ -140,7 +140,7 @@ func TestGetErrorDetails_TimeoutError(t *testing.T) {
 
 func TestConstructError_TimeoutError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := getDefaultPayloadsConverter()
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)
 

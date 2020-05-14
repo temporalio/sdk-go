@@ -84,7 +84,7 @@ func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 func TestDecodedValue(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: getDefaultDataConverter(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	testDecodeValueHelper(t, env)
 }
@@ -92,7 +92,7 @@ func TestDecodedValue(t *testing.T) {
 func TestDecodedValueWithDataConverter(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: newTestDataConverter(),
+		payloadsConverter: newTestDataConverter(),
 	}
 	testDecodeValueHelper(t, env)
 }
@@ -100,7 +100,7 @@ func TestDecodedValueWithDataConverter(t *testing.T) {
 func Test_DecodedValuePtr(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: getDefaultDataConverter(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		ao := a.(*ActivityOptions)
@@ -120,7 +120,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 func Test_DecodedValueNil(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: getDefaultDataConverter(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		return a == nil && b == nil

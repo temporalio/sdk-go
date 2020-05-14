@@ -110,15 +110,15 @@ type (
 	}
 
 	channelImpl struct {
-		name            string             // human readable channel name
-		size            int                // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}      // buffered messages
-		blockedSends    []*sendCallback    // puts waiting when buffer is full.
-		blockedReceives []*receiveCallback // receives waiting when no messages are available.
-		closed          bool               // true if channel is closed.
-		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
-		dataConverter   DataConverter      // for decode data
-		env             workflowEnvironment
+		name              string             // human readable channel name
+		size              int                // Channel buffer size. 0 for non buffered.
+		buffer            []interface{}      // buffered messages
+		blockedSends      []*sendCallback    // puts waiting when buffer is full.
+		blockedReceives   []*receiveCallback // receives waiting when no messages are available.
+		closed            bool               // true if channel is closed.
+		recValue          *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		payloadsConverter PayloadsConverter  // for decode data
+		env               workflowEnvironment
 	}
 
 	// Single case statement of the Select
@@ -178,7 +178,7 @@ type (
 		signalChannels                  map[string]Channel
 		queryHandlers                   map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
 		workflowIDReusePolicy           WorkflowIDReusePolicy
-		dataConverter                   DataConverter
+		payloadsConverter               PayloadsConverter
 		retryPolicy                     *commonpb.RetryPolicy
 		cronSchedule                    string
 		contextPropagators              []ContextPropagator
@@ -231,7 +231,7 @@ type (
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
-		dataConverter DataConverter
+		dataConverter PayloadsConverter
 	}
 )
 
@@ -310,7 +310,7 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
 		if _, ok2 := value.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, value); err != nil {
+			if err := decodeArg(getPayloadsConverterFromWorkflowContext(ctx), payload, value); err != nil {
 				return err
 			}
 			return f.err
@@ -435,7 +435,7 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
-	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
+	rootCtx = WithPayloadsConverter(rootCtx, env.GetPayloadsConverter())
 	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())
 	getActivityOptions(rootCtx).OriginalTaskListName = wInfo.TaskListName
 
@@ -768,7 +768,7 @@ func (c *channelImpl) Close() {
 
 // Takes a value and assigns that 'to' value. logs a metric if it is unable to deserialize
 func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
-	err := decodeAndAssignValue(c.dataConverter, from, to)
+	err := decodeAndAssignValue(c.payloadsConverter, from, to)
 	//add to metrics
 	if err != nil {
 		c.env.GetLogger().Error(fmt.Sprintf("Corrupt signal received on channel %s. Error deserializing", c.name), zap.Error(err))
@@ -1124,7 +1124,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter PayloadsConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1144,7 +1144,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	}
 
 	if dataConverter == nil {
-		dataConverter = getDefaultDataConverter()
+		dataConverter = getDefaultPayloadsConverter()
 	}
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1170,18 +1170,18 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.signalChannels = make(map[string]Channel)
 		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
-	if newOptions.dataConverter == nil {
-		newOptions.dataConverter = getDefaultDataConverter()
+	if newOptions.payloadsConverter == nil {
+		newOptions.payloadsConverter = getDefaultPayloadsConverter()
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
+func getPayloadsConverterFromWorkflowContext(ctx Context) PayloadsConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.dataConverter == nil {
-		return getDefaultDataConverter()
+	if options == nil || options.payloadsConverter == nil {
+		return getDefaultPayloadsConverter()
 	}
-	return options.dataConverter
+	return options.payloadsConverter
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
@@ -1244,7 +1244,7 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 	if rf.Type().Kind() != reflect.Ptr {
 		return errors.New("value parameter is not a pointer")
 	}
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := getPayloadsConverterFromWorkflowContext(ctx)
 	err := dataConverter.FromData(d.futureImpl.value.(*commonpb.Payloads), value)
 	if err != nil {
 		return err
@@ -1262,7 +1262,7 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
+	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getPayloadsConverterFromWorkflowContext(ctx)}
 	err := qh.validateHandlerFn()
 	if err != nil {
 		return err

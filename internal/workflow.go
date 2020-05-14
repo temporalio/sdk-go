@@ -160,8 +160,8 @@ type (
 
 	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
 	EncodedValue struct {
-		value         *commonpb.Payloads
-		dataConverter DataConverter
+		value             *commonpb.Payloads
+		payloadsConverter PayloadsConverter
 	}
 	// Version represents a change version. See GetVersion call.
 	Version int
@@ -299,20 +299,20 @@ func NewChannel(ctx Context) Channel {
 // Name appears in stack traces that are blocked on this channel.
 func NewNamedChannel(ctx Context, name string) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{name: name, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	return &channelImpl{name: name, payloadsConverter: getPayloadsConverterFromWorkflowContext(ctx), env: env}
 }
 
 // NewBufferedChannel create new buffered Channel instance
 func NewBufferedChannel(ctx Context, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{size: size, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	return &channelImpl{size: size, payloadsConverter: getPayloadsConverterFromWorkflowContext(ctx), env: env}
 }
 
 // NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
 // Name appears in stack traces that are blocked on this Channel.
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{name: name, size: size, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	return &channelImpl{name: name, size: size, payloadsConverter: getPayloadsConverterFromWorkflowContext(ctx), env: env}
 }
 
 // NewSelector creates a new Selector instance.
@@ -405,7 +405,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 
 func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
 	// Validate type and its arguments.
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := getPayloadsConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
 	activityType, err := getValidatedActivityFunction(typeName, args, registry)
@@ -442,11 +442,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	}
 
 	params := executeActivityParams{
-		activityOptions: *options,
-		ActivityType:    *activityType,
-		Input:           input,
-		DataConverter:   dataConverter,
-		Header:          header,
+		activityOptions:   *options,
+		ActivityType:      *activityType,
+		Input:             input,
+		PayloadsConverter: dataConverter,
+		Header:            header,
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -536,7 +536,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 		ActivityType:         activityType,
 		InputArgs:            args,
 		WorkflowInfo:         GetWorkflowInfo(ctx),
-		DataConverter:        getDataConverterFromWorkflowContext(ctx),
+		PayloadsConverter:    getPayloadsConverterFromWorkflowContext(ctx),
 		ScheduledTime:        Now(ctx), // initial scheduled time
 	}
 
@@ -637,7 +637,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := workflowOptionsFromCtx.dataConverter
+	dc := workflowOptionsFromCtx.payloadsConverter
 	env := getWorkflowEnvironment(ctx)
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
@@ -647,7 +647,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	options := getWorkflowEnvOptions(ctx)
-	options.dataConverter = dc
+	options.payloadsConverter = dc
 	options.contextPropagators = workflowOptionsFromCtx.contextPropagators
 	options.memo = workflowOptionsFromCtx.memo
 	options.searchAttributes = workflowOptionsFromCtx.searchAttributes
@@ -726,8 +726,8 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID         string
 	ParentWorkflowNamespace         string
 	ParentWorkflowExecution         *WorkflowExecution
-	Memo                            *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
-	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
+	Memo                            *commonpb.Memo             // Value can be decoded using data converter (DefaultPayloadsConverter, or custom one if set).
+	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using DefaultPayloadsConverter.
 	BinaryChecksum                  string
 }
 
@@ -900,7 +900,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	input, err := encodeArg(options.dataConverter, arg)
+	input, err := encodeArg(options.payloadsConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -1030,13 +1030,13 @@ func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 	return ctx1
 }
 
-// WithDataConverter adds DataConverter to the context.
-func WithDataConverter(ctx Context, dc DataConverter) Context {
+// WithPayloadsConverter adds PayloadsConverter to the context.
+func WithPayloadsConverter(ctx Context, dc PayloadsConverter) Context {
 	if dc == nil {
-		panic("data converter is nil for WithDataConverter")
+		panic("data converter is nil for WithPayloadsConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).dataConverter = dc
+	getWorkflowEnvOptions(ctx1).payloadsConverter = dc
 	return ctx1
 }
 
@@ -1057,9 +1057,9 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalNa
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
-func newEncodedValue(value *commonpb.Payloads, dc DataConverter) Value {
+func newEncodedValue(value *commonpb.Payloads, dc PayloadsConverter) Value {
 	if dc == nil {
-		dc = getDefaultDataConverter()
+		dc = getDefaultPayloadsConverter()
 	}
 	return &EncodedValue{value, dc}
 }
@@ -1069,7 +1069,7 @@ func (b EncodedValue) Get(valuePtr interface{}) error {
 	if !b.HasValue() {
 		return ErrNoData
 	}
-	return decodeArg(b.dataConverter, b.value, valuePtr)
+	return decodeArg(b.payloadsConverter, b.value, valuePtr)
 }
 
 // HasValue return whether there is value
@@ -1119,7 +1119,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
 }
 
 func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
-	dc := getDataConverterFromWorkflowContext(ctx)
+	dc := getPayloadsConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
 		r := f(ctx)
@@ -1338,7 +1338,7 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 		return ErrNoData
 	}
 
-	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
+	encodedVal := newEncodedValues(info.lastCompletionResult, getPayloadsConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
 }
 

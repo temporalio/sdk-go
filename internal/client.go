@@ -365,9 +365,9 @@ type (
 		// default: default identity that include hostname, groupName and process ID.
 		Identity string
 
-		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
-		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
-		DataConverter DataConverter
+		// Optional: Sets PayloadsConverter to customize serialization/deserialization of arguments in Temporal
+		// default: defaultPayloadsConverter, an combination of thriftEncoder and jsonEncoder
+		DataConverter PayloadsConverter
 
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
 		// default: no tracer - opentracing.NoopTracer
@@ -576,7 +576,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.DataConverter == nil {
-		options.DataConverter = getDefaultDataConverter()
+		options.DataConverter = getDefaultPayloadsConverter()
 	}
 
 	if options.Tracer != nil {
@@ -592,7 +592,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
 		identity:           options.Identity,
-		dataConverter:      options.DataConverter,
+		payloadsConverter:  options.DataConverter,
 		contextPropagators: options.ContextPropagators,
 		tracer:             options.Tracer,
 	}

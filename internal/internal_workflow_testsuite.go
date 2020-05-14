@@ -117,7 +117,7 @@ type (
 		name          string
 		fn            interface{}
 		isWorkflow    bool
-		dataConverter DataConverter
+		dataConverter PayloadsConverter
 		interceptors  []WorkflowInterceptorFactory
 	}
 
@@ -189,13 +189,13 @@ type (
 		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
-		isTestCompleted bool
-		testResult      Value
-		testError       error
-		doneChannel     chan struct{}
-		workerOptions   WorkerOptions
-		dataConverter   DataConverter
-		runTimeout      time.Duration
+		isTestCompleted   bool
+		testResult        Value
+		testError         error
+		doneChannel       chan struct{}
+		workerOptions     WorkerOptions
+		payloadsConverter PayloadsConverter
+		runTimeout        time.Duration
 
 		heartbeatDetails *commonpb.Payloads
 
@@ -255,7 +255,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
-		dataConverter:     getDefaultDataConverter(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 		runTimeout:        maxWorkflowTimeoutSeconds * time.Second,
 	}
 
@@ -293,7 +293,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
 		env.postCallback(func() {
 			if env.onActivityHeartbeatListener != nil {
-				env.onActivityHeartbeatListener(activityInfo, newEncodedValues(r.Details, env.GetDataConverter()))
+				env.onActivityHeartbeatListener(activityInfo, newEncodedValues(r.Details, env.GetPayloadsConverter()))
 			}
 		}, false)
 
@@ -337,7 +337,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
-	childEnv.dataConverter = params.dataConverter
+	childEnv.payloadsConverter = params.payloadsConverter
 	childEnv.registry = env.registry
 
 	if params.taskListName == "" {
@@ -402,8 +402,8 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 	env.identity = identity
 }
 
-func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter DataConverter) {
-	env.dataConverter = dataConverter
+func (env *testWorkflowEnvironmentImpl) setPayloadsConverter(payloadsConverter PayloadsConverter) {
+	env.payloadsConverter = payloadsConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
@@ -435,7 +435,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	if getKind(fType) == reflect.Func {
 		env.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 	}
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter(), env.GetRegistry())
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetPayloadsConverter(), env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
@@ -520,7 +520,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		panic(err)
 	}
 
-	input, err := encodeArgs(env.GetDataConverter(), args)
+	input, err := encodeArgs(env.GetPayloadsConverter(), args)
 	if err != nil {
 		panic(err)
 	}
@@ -562,7 +562,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	task.HeartbeatDetails = env.heartbeatDetails
 
 	// ensure activityFn is registered to defaultTestTaskList
-	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList, env.GetDataConverter())
+	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList, env.GetPayloadsConverter())
 	result, err := taskHandler.Execute(defaultTestTaskList, task)
 	if err != nil {
 		if err == context.DeadlineExceeded {
@@ -580,12 +580,12 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		details := newEncodedValues(request.Details, env.GetDataConverter())
+		details := newEncodedValues(request.Details, env.GetPayloadsConverter())
 		return nil, NewCanceledError(details)
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, constructError(request.GetReason(), request.Details, env.GetDataConverter())
+		return nil, constructError(request.GetReason(), request.Details, env.GetPayloadsConverter())
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		return newEncodedValue(request.Result, env.GetDataConverter()), nil
+		return newEncodedValue(request.Result, env.GetPayloadsConverter()), nil
 	default:
 		// will never happen
 		return nil, fmt.Errorf("unsupported respond type %T", result)
@@ -621,7 +621,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	if result.err != nil {
 		return nil, result.err
 	}
-	return newEncodedValue(result.result, env.GetDataConverter()), nil
+	return newEncodedValue(result.result, env.GetPayloadsConverter()), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) startDecisionTask() {
@@ -813,7 +813,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.workflowCancelHandler()
 	}
 
-	dc := env.GetDataConverter()
+	dc := env.GetPayloadsConverter()
 	env.isTestCompleted = true
 
 	if err != nil {
@@ -878,7 +878,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	params.lastCompletionResult = result
 
 	if params.retryPolicy != nil && env.testError != nil {
-		errReason, _ := getErrorDetails(env.testError, env.GetDataConverter())
+		errReason, _ := getErrorDetails(env.testError, env.GetPayloadsConverter())
 		var expireTime time.Time
 		if params.workflowOptions.workflowExecutionTimeoutSeconds > 0 {
 			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.workflowOptions.workflowExecutionTimeoutSeconds))
@@ -922,7 +922,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	var data *commonpb.Payloads
 	if result != nil {
 		var encodeErr error
-		data, encodeErr = encodeArg(env.GetDataConverter(), result)
+		data, encodeErr = encodeArg(env.GetPayloadsConverter(), result)
 		if encodeErr != nil {
 			return encodeErr
 		}
@@ -936,8 +936,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 				zap.String(tagActivityID, activityID))
 			return
 		}
-		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err, env.GetDataConverter())
-		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
+		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err, env.GetPayloadsConverter())
+		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetPayloadsConverter())
 	}, false /* do not auto schedule decision task, because activity might be still pending */)
 
 	return nil
@@ -951,8 +951,8 @@ func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return env.metricsScope
 }
 
-func (env *testWorkflowEnvironmentImpl) GetDataConverter() DataConverter {
-	return env.dataConverter
+func (env *testWorkflowEnvironmentImpl) GetPayloadsConverter() PayloadsConverter {
+	return env.payloadsConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
@@ -995,7 +995,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		scheduleTaskAttr,
 	)
 
-	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
+	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.PayloadsConverter)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
 	env.setActivityHandle(activityID, activityHandle)
@@ -1013,7 +1013,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 				}
 			} else if panicErr != nil {
 				reason := errReasonPanic
-				details, _ := env.GetDataConverter().ToData(fmt.Sprintf("%v", panicErr))
+				details, _ := env.GetPayloadsConverter().ToData(fmt.Sprintf("%v", panicErr))
 				result = &workflowservice.RespondActivityTaskFailedRequest{
 					Reason:  reason,
 					Details: details,
@@ -1021,7 +1021,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 			}
 			// post activity result to workflow dispatcher
 			env.postCallback(func() {
-				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
+				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.PayloadsConverter)
 				env.runningCount--
 			}, false /* do not auto schedule decision task, because activity might be still pending */)
 		}()
@@ -1295,7 +1295,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 		userContext:        env.workerOptions.BackgroundActivityContext,
 		metricsScope:       metrics.NewTaggedScope(env.metricsScope),
 		logger:             env.workerOptions.Logger,
-		dataConverter:      env.dataConverter,
+		payloadsConverter:  env.payloadsConverter,
 		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
 	}
@@ -1325,7 +1325,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 }
 
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string,
-	dataConverter DataConverter) {
+	dataConverter PayloadsConverter) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
 		zap.String(tagActivityID, activityID), zap.String(tagActivityType, activityType))
 	activityInfo := env.getActivityInfo(activityID, activityType)
@@ -1409,7 +1409,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
+		lar.backoff = getRetryBackoff(result, env.Now(), env.payloadsConverter)
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
@@ -1418,7 +1418,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 			env.onLocalActivityCanceledListener(activityInfo)
 		}
 	} else if env.onLocalActivityCompletedListener != nil {
-		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
+		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetPayloadsConverter()), nil)
 	}
 	env.startDecisionTask()
 }
@@ -1454,7 +1454,7 @@ func (env *testWorkflowEnvironmentImpl) runBeforeMockCallReturns(call *MockCallW
 // Execute executes the activity code.
 func (a *activityExecutorWrapper) Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	activityInfo := GetActivityInfo(ctx)
-	dc := getDataConverterFromActivityCtx(ctx)
+	dc := getPayloadsConverterFromActivityCtx(ctx)
 	if a.env.onActivityStartedListener != nil {
 		waitCh := make(chan struct{})
 		a.env.postCallback(func() {
@@ -1496,7 +1496,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads) (result *commonpb.Payloads, err error) {
 	env := w.env
 	if env.isChildWorkflow() && env.onChildWorkflowStartedListener != nil {
-		env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetDataConverter()))
+		env.onChildWorkflowStartedListener(GetWorkflowInfo(ctx), ctx, newEncodedValues(input, w.env.GetPayloadsConverter()))
 	}
 
 	if !env.isChildWorkflow() {
@@ -1507,7 +1507,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 	}
 
 	m := &mockWrapper{env: env, name: w.workflowType, fn: w.fn, isWorkflow: true,
-		dataConverter: env.GetDataConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
+		dataConverter: env.GetPayloadsConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
@@ -1665,7 +1665,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payloads, 
 				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
 					fnName, expectedType, mockResult, mockResult))
 			}
-			result, encodeErr := encodeArg(m.env.GetDataConverter(), mockResult)
+			result, encodeErr := encodeArg(m.env.GetPayloadsConverter(), mockResult)
 			if encodeErr != nil {
 				panic(fmt.Sprintf("encode result from mock of %v failed: %v", fnName, encodeErr))
 			}
@@ -1713,7 +1713,7 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 	return m.getMockValue(mockRet)
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter DataConverter) ActivityTaskHandler {
+func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter PayloadsConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
 		TaskList:           taskList,
@@ -1721,7 +1721,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		MetricsScope:       env.metricsScope,
 		Logger:             env.workerOptions.Logger,
 		UserContext:        env.workerOptions.BackgroundActivityContext,
-		DataConverter:      dataConverter,
+		PayloadsConverter:  dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
 		ContextPropagators: env.contextPropagators,
 		Tracer:             env.tracer,
@@ -2072,7 +2072,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 }
 
 func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) Value {
-	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
+	return newEncodedValue(env.encodeValue(f()), env.GetPayloadsConverter())
 }
 
 func (env *testWorkflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {
@@ -2084,7 +2084,7 @@ func (env *testWorkflowEnvironmentImpl) RemoveSession(sessionID string) {
 }
 
 func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payloads {
-	blob, err := env.GetDataConverter().ToData(value)
+	blob, err := env.GetPayloadsConverter().ToData(value)
 	if err != nil {
 		panic(err)
 	}
@@ -2119,7 +2119,7 @@ func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
 }
 
 func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interface{}, startDecisionTask bool) {
-	data, err := encodeArg(env.GetDataConverter(), input)
+	data, err := encodeArg(env.GetPayloadsConverter(), input)
 	if err != nil {
 		panic(err)
 	}
@@ -2129,7 +2129,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 }
 
 func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalName string, input interface{}) error {
-	data, err := encodeArg(env.GetDataConverter(), input)
+	data, err := encodeArg(env.GetPayloadsConverter(), input)
 	if err != nil {
 		panic(err)
 	}
@@ -2148,7 +2148,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {
-	data, err := encodeArgs(env.GetDataConverter(), args)
+	data, err := encodeArgs(env.GetPayloadsConverter(), args)
 	if err != nil {
 		return nil, err
 	}
@@ -2156,7 +2156,7 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	if err != nil {
 		return nil, err
 	}
-	return newEncodedValue(blob, env.GetDataConverter()), nil
+	return newEncodedValue(blob, env.GetPayloadsConverter()), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
@@ -2170,7 +2170,7 @@ func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrappe
 }
 
 func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface{}) {
-	data, err := encodeArg(env.GetDataConverter(), result)
+	data, err := encodeArg(env.GetPayloadsConverter(), result)
 	if err != nil {
 		panic(err)
 	}
@@ -2178,7 +2178,7 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {
-	data, err := encodeArg(env.GetDataConverter(), details)
+	data, err := encodeArg(env.GetPayloadsConverter(), details)
 	if err != nil {
 		panic(err)
 	}

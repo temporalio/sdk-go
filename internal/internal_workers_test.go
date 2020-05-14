@@ -72,7 +72,7 @@ type (
 		suite.Suite
 		mockCtrl      *gomock.Controller
 		service       *workflowservicemock.MockWorkflowServiceClient
-		dataConverter DataConverter
+		dataConverter PayloadsConverter
 	}
 )
 
@@ -80,7 +80,7 @@ type (
 func (s *WorkersTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	s.dataConverter = getDefaultDataConverter()
+	s.dataConverter = getDefaultPayloadsConverter()
 }
 
 func (s *WorkersTestSuite) TearDownTest() {

@@ -119,16 +119,16 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 
 type internalWorkerTestSuite struct {
 	suite.Suite
-	mockCtrl      *gomock.Controller
-	service       *workflowservicemock.MockWorkflowServiceClient
-	registry      *registry
-	dataConverter DataConverter
+	mockCtrl          *gomock.Controller
+	service           *workflowservicemock.MockWorkflowServiceClient
+	registry          *registry
+	payloadsConverter PayloadsConverter
 }
 
 func TestInternalWorkerTestSuite(t *testing.T) {
 	s := &internalWorkerTestSuite{
-		registry:      newRegistry(),
-		dataConverter: getDefaultDataConverter(),
+		registry:          newRegistry(),
+		payloadsConverter: getDefaultPayloadsConverter(),
 	}
 	testInternalWorkerRegister(s.registry)
 	suite.Run(t, s)
@@ -150,7 +150,7 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 
 	// encode marker data
-	markerData, err := s.dataConverter.ToData(lamd)
+	markerData, err := s.payloadsConverter.ToData(lamd)
 	s.NoError(err)
 	return markerData
 }
@@ -240,7 +240,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(getDefaultPayloadsConverter()),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -282,7 +282,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(getDefaultPayloadsConverter()),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -474,7 +474,7 @@ func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEven
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(getDefaultPayloadsConverter()),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -544,12 +544,12 @@ func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEven
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
-	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
+	result, _ := DefaultPayloadsConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(getDefaultPayloadsConverter()),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -586,12 +586,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
-	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
+	result, _ := DefaultPayloadsConverter.ToData("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(getDefaultPayloadsConverter()),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -638,7 +638,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			TaskList: &tasklistpb.TaskList{Name: taskList},
-			Input:    testEncodeFunctionArgs(params.DataConverter),
+			Input:    testEncodeFunctionArgs(params.PayloadsConverter),
 		}),
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
@@ -662,10 +662,10 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 
 func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 	params := workerExecutionParameters{
-		Namespace:     testNamespace,
-		Identity:      "identity",
-		Logger:        getLogger(),
-		DataConverter: newTestDataConverter(),
+		Namespace:         testNamespace,
+		Identity:          "identity",
+		Logger:            getLogger(),
+		PayloadsConverter: newTestDataConverter(),
 	}
 	s.testDecisionTaskHandlerHelper(params)
 }
@@ -804,7 +804,7 @@ func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *Aggre
 }
 
 func createWorkerWithThrottle(
-	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc DataConverter,
+	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc PayloadsConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
 	namespaceStatus := namespacepb.NamespaceStatus_Registered
@@ -1221,7 +1221,7 @@ type testErrorDetails struct {
 	T string
 }
 
-func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter PayloadsConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1284,11 +1284,11 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 
 func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
-	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{payloadsConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
-func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter PayloadsConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1347,11 +1347,11 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 
 func TestActivityCancelledErrorWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
-	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{payloadsConverter: dc})
 	testActivityCancelledErrorHelper(ctx, t, dc)
 }
 
-func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter PayloadsConverter) {
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 1}, nil
@@ -1377,7 +1377,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 	dc := newTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
-		dataConverter: dc,
+		payloadsConverter: dc,
 	})
 	testActivityExecutionVariousTypesHelper(ctx, t, dc)
 }
@@ -1395,7 +1395,7 @@ func TestActivityNilArgs(t *testing.T) {
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
-	dataConverter := getDefaultDataConverter()
+	dataConverter := getDefaultPayloadsConverter()
 	data, _ := encodeArgs(dataConverter, args)
 	reflectArgs, err := decodeArgs(dataConverter, reflect.TypeOf(activityFn), data)
 	require.NoError(t, err)
@@ -1428,7 +1428,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		TaskListActivitiesPerSecond:          defaultTaskListActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:       defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:         stickyDecisionScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                        getDefaultDataConverter(),
+		PayloadsConverter:                    getDefaultPayloadsConverter(),
 		Tracer:                               opentracing.NoopTracer{},
 		Logger:                               decisionWorker.executionParameters.Logger,
 		MetricsScope:                         decisionWorker.executionParameters.MetricsScope,
@@ -1455,7 +1455,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &defaultDataConverter{},
+		payloadsConverter:  &defaultPayloadsConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
 	}
@@ -1493,7 +1493,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
-		DataConverter:                        client.dataConverter,
+		PayloadsConverter:                    client.payloadsConverter,
 		Tracer:                               client.tracer,
 		Logger:                               options.Logger,
 		MetricsScope:                         client.metricsScope,
@@ -1510,7 +1510,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParameters, paramsB workerExecutionParameters) {
 	require.Equal(t, paramsA.TaskList, paramsA.TaskList)
 	require.Equal(t, paramsA.Identity, paramsB.Identity)
-	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
+	require.Equal(t, paramsA.PayloadsConverter, paramsB.PayloadsConverter)
 	require.Equal(t, paramsA.Tracer, paramsB.Tracer)
 	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
 	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
@@ -1581,7 +1581,7 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payloads {
+func testEncodeFunctionArgs(dataConverter PayloadsConverter, args ...interface{}) *commonpb.Payloads {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)

@@ -77,21 +77,21 @@ type (
 
 	executeActivityParams struct {
 		activityOptions
-		ActivityType  ActivityType
-		Input         *commonpb.Payloads
-		DataConverter DataConverter
-		Header        *commonpb.Header
+		ActivityType      ActivityType
+		Input             *commonpb.Payloads
+		PayloadsConverter PayloadsConverter
+		Header            *commonpb.Header
 	}
 
 	executeLocalActivityParams struct {
 		localActivityOptions
-		ActivityFn    interface{} // local activity function pointer
-		ActivityType  string      // local activity type
-		InputArgs     []interface{}
-		WorkflowInfo  *WorkflowInfo
-		DataConverter DataConverter
-		Attempt       int32
-		ScheduledTime time.Time
+		ActivityFn        interface{} // local activity function pointer
+		ActivityType      string      // local activity type
+		InputArgs         []interface{}
+		WorkflowInfo      *WorkflowInfo
+		PayloadsConverter PayloadsConverter
+		Attempt           int32
+		ScheduledTime     time.Time
 	}
 
 	// asyncActivityClient for requesting activity execution
@@ -128,7 +128,7 @@ type (
 		scheduledTimestamp time.Time
 		startedTimestamp   time.Time
 		taskList           string
-		dataConverter      DataConverter
+		payloadsConverter  PayloadsConverter
 		attempt            int32 // starts from 0.
 		heartbeatDetails   *commonpb.Payloads
 		workflowType       *WorkflowType
@@ -269,7 +269,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) (*commonpb.Payloads, error) {
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value, payloadsConverter PayloadsConverter) (*commonpb.Payloads, error) {
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
@@ -289,7 +289,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 		if result, ok = retValue.Interface().(*commonpb.Payloads); !ok {
 			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
 				var err error
-				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
+				if result, err = encodeArg(payloadsConverter, retValue.Interface()); err != nil {
 					return nil, err
 				}
 			}
@@ -310,7 +310,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result *commonpb.Payloads, err error) {
+func serializeResults(f interface{}, results []interface{}, payloadsConverter PayloadsConverter) (result *commonpb.Payloads, err error) {
 	// results contain all results including error
 	resultSize := len(results)
 
@@ -324,7 +324,7 @@ func serializeResults(f interface{}, results []interface{}, dataConverter DataCo
 	if resultSize > 1 {
 		retValue := results[0]
 		if retValue != nil {
-			result, err = encodeArg(dataConverter, retValue)
+			result, err = encodeArg(payloadsConverter, retValue)
 			if err != nil {
 				return nil, err
 			}

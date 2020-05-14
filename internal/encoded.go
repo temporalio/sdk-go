@@ -58,15 +58,15 @@ type (
 		Get(valuePtr ...interface{}) error
 	}
 
-	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
+	// PayloadsConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in for Client, through client.Options.
-	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
-	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
+	// To encode/decode workflow arguments, one should set PayloadsConverter in for Client, through client.Options.
+	// To encode/decode Activity/ChildWorkflow arguments, one should set PayloadsConverter in two places:
+	//   1. Inside workflow code, use workflow.WithPayloadsConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
-	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
+	// Temporal support using different PayloadsConverters for different activity/childWorkflow in same workflow.
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through cleint.Options.
-	DataConverter interface {
+	PayloadsConverter interface {
 		// ToData implements conversion of a list of values.
 		ToData(value ...interface{}) (*commonpb.Payloads, error)
 		// FromData implements conversion of an array of values of different types.
@@ -84,7 +84,7 @@ type (
 
 	defaultPayloadConverter struct{}
 
-	defaultDataConverter struct {
+	defaultPayloadsConverter struct {
 		payloadConverter PayloadConverter
 	}
 )
@@ -93,8 +93,8 @@ var (
 	// DefaultPayloadConverter is default single value serializer.
 	DefaultPayloadConverter = &defaultPayloadConverter{}
 
-	// DefaultDataConverter is default data converter used by Temporal worker.
-	DefaultDataConverter = &defaultDataConverter{
+	// DefaultPayloadsConverter is default data converter used by Temporal worker.
+	DefaultPayloadsConverter = &defaultPayloadsConverter{
 		payloadConverter: DefaultPayloadConverter,
 	}
 
@@ -112,12 +112,12 @@ var (
 	ErrUnableToSetBytes = errors.New("unable to set []byte value")
 )
 
-// getDefaultDataConverter return default data converter used by Temporal worker.
-func getDefaultDataConverter() DataConverter {
-	return DefaultDataConverter
+// getDefaultPayloadsConverter return default data converter used by Temporal worker.
+func getDefaultPayloadsConverter() PayloadsConverter {
+	return DefaultPayloadsConverter
 }
 
-func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *defaultPayloadsConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -135,7 +135,7 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 	return result, nil
 }
 
-func (dc *defaultDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *defaultPayloadsConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
 	if payloads == nil {
 		return nil
 	}

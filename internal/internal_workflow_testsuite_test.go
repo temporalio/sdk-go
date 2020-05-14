@@ -121,14 +121,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter()
 		ctx = WithActivityOptions(ctx, ao)
 
 		var result string
-		ctx = WithDataConverter(ctx, newTestDataConverter())
+		ctx = WithPayloadsConverter(ctx, newTestDataConverter())
 		err := ExecuteActivity(ctx, testActivityHello, "world").Get(ctx, &result)
 		if err != nil {
 			return "", err
 		}
 
 		var result1 string
-		ctx1 := WithDataConverter(ctx, getDefaultDataConverter()) // use another converter to run activity
+		ctx1 := WithPayloadsConverter(ctx, getDefaultPayloadsConverter()) // use another converter to run activity
 		err1 := ExecuteActivity(ctx1, testActivityHello, "world1").Get(ctx1, &result1)
 		if err1 != nil {
 			return "", err1
@@ -647,7 +647,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() 
 		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
-		ctx = WithDataConverter(ctx, newTestDataConverter())
+		ctx = WithPayloadsConverter(ctx, newTestDataConverter())
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
 		if err != nil {
 			return "", err

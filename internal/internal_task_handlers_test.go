@@ -110,7 +110,7 @@ func panicWorkflowFunc(Context, []byte) error {
 func getWorkflowInfoWorkflowFunc(ctx Context, expectedLastCompletionResult string) (info *WorkflowInfo, err error) {
 	result := GetWorkflowInfo(ctx)
 	var lastCompletionResult string
-	err = getDefaultDataConverter().FromData(result.lastCompletionResult, &lastCompletionResult)
+	err = getDefaultPayloadsConverter().FromData(result.lastCompletionResult, &lastCompletionResult)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 }
 
 func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
-	dataConverter := getDefaultDataConverter()
+	dataConverter := getDefaultPayloadsConverter()
 	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
 	if err != nil {
 		panic(err)
@@ -364,10 +364,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
 	params := workerExecutionParameters{
-		TaskList:      testWorkflowTaskTasklist,
-		Identity:      "test-id-1",
-		Logger:        t.logger,
-		DataConverter: newTestDataConverter(),
+		TaskList:          testWorkflowTaskTasklist,
+		Identity:          "test-id-1",
+		Logger:            t.logger,
+		PayloadsConverter: newTestDataConverter(),
 	}
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
@@ -408,7 +408,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(decisionpb.DecisionType_CompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
 	checksumsPayload := response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 	var checksums []string
-	_ = DefaultDataConverter.FromData(checksumsPayload, &checksums)
+	_ = DefaultPayloadsConverter.FromData(checksumsPayload, &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
@@ -870,7 +870,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
 	t.EqualValues("temporalInternal:Panic", attr.GetReason())
 	var details string
-	_ = DefaultDataConverter.FromData(attr.GetDetails(), &details)
+	_ = DefaultPayloadsConverter.FromData(attr.GetDetails(), &details)
 	t.True(strings.HasPrefix(details, "panicError"), details)
 }
 
@@ -898,7 +898,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.True(ok)
 	t.EqualValues(eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure, r.Cause)
 	var details string
-	_ = DefaultDataConverter.FromData(r.GetDetails(), &details)
+	_ = DefaultPayloadsConverter.FromData(r.GetDetails(), &details)
 	t.EqualValues("panicError", details)
 }
 
@@ -918,7 +918,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	var runTimeout int32 = 21098
 	var taskTimeout int32 = 21
 	workflowType := "GetWorkflowInfoWorkflow"
-	lastCompletionResult, err := getDefaultDataConverter().ToData("lastCompletionData")
+	lastCompletionResult, err := getDefaultPayloadsConverter().ToData("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &eventpb.WorkflowExecutionStartedEventAttributes{
 		Input:                           lastCompletionResult,
@@ -956,7 +956,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(decisionpb.DecisionType_CompleteWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes()
 	var result WorkflowInfo
-	t.NoError(getDefaultDataConverter().FromData(attr.Result, &result))
+	t.NoError(getDefaultPayloadsConverter().FromData(attr.Result, &result))
 	t.EqualValues(taskList, result.TaskListName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
@@ -1000,9 +1000,9 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	taskList := "tl1"
 	checksum1 := "chck1"
-	numberOfSignalsToComplete, err := getDefaultDataConverter().ToData(2)
+	numberOfSignalsToComplete, err := getDefaultPayloadsConverter().ToData(2)
 	t.NoError(err)
-	signal, err := getDefaultDataConverter().ToData("signal data")
+	signal, err := getDefaultPayloadsConverter().ToData("signal data")
 	t.NoError(err)
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
@@ -1037,7 +1037,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 0)
-	answer, _ := DefaultDataConverter.ToData(startingQueryValue)
+	answer, _ := DefaultPayloadsConverter.ToData(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
@@ -1057,7 +1057,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 1)
-	answer, _ = DefaultDataConverter.ToData("signal data")
+	answer, _ = DefaultPayloadsConverter.ToData("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
@@ -1348,9 +1348,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	for i, d := range deadlineTests {
 		a.d = d.actWaitDuration
 		wep := workerExecutionParameters{
-			Logger:        t.logger,
-			DataConverter: getDefaultDataConverter(),
-			Tracer:        opentracing.NoopTracer{},
+			Logger:            t.logger,
+			PayloadsConverter: getDefaultPayloadsConverter(),
+			Tracer:            opentracing.NoopTracer{},
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollForActivityTaskResponse{
@@ -1402,7 +1402,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	ctx, cancel := context.WithCancel(context.Background())
 	wep := workerExecutionParameters{
 		Logger:            t.logger,
-		DataConverter:     getDefaultDataConverter(),
+		PayloadsConverter: getDefaultPayloadsConverter(),
 		UserContext:       ctx,
 		UserContextCancel: cancel,
 		WorkerStopChannel: workerStopCh,
