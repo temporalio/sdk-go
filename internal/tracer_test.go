@@ -120,3 +120,34 @@ func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	_, err = ctxProp.ExtractToWorkflow(returnCtx, NewHeaderReader(header))
 	assert.NoError(t, err)
 }
+
+func TestConsistentInjectionExtraction(t *testing.T) {
+	t.Parallel()
+	tracer, closer, err := jaeger_config.Configuration{ServiceName: "test-service"}.NewTracer()
+	require.NoError(t, err)
+	defer closer.Close()
+	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
+
+	span := tracer.StartSpan("test-operation")
+	// base64 encoded string '{}'
+	var baggageVal = "e30="
+	span.SetBaggageItem("request-tenancy", baggageVal)
+	assert.NotNil(t, span.Context())
+	ctx := contextWithSpan(Background(), span.Context())
+	header := &shared.Header{
+		Fields: map[string][]byte{},
+	}
+	err = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
+	require.NoError(t, err)
+
+	extractedCtx, err := ctxProp.ExtractToWorkflow(Background(), NewHeaderReader(header))
+	require.NoError(t, err)
+
+	extractedSpanContext := spanFromContext(extractedCtx)
+	extractedSpanContext.ForeachBaggageItem(func(k, v string) bool {
+		if k == "request-tenancy" {
+			assert.Equal(t, v, baggageVal)
+		}
+		return false
+	})
+}
