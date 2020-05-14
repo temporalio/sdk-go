@@ -378,7 +378,7 @@ type (
 		ContextPropagators []ContextPropagator
 
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
-		// default: nil
+		// default: no extra options
 		ConnectionOptions ConnectionOptions
 	}
 
