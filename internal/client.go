@@ -555,7 +555,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(newConnectionParams(&options))
+	connection, err := dial(newDialParameters(&options))
 
 	if err != nil {
 		return nil, err
@@ -564,8 +564,8 @@ func NewClient(options ClientOptions) (Client, error) {
 	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func newConnectionParams(options *ClientOptions) connectionParameters {
-	return connectionParameters{
+func newDialParameters(options *ClientOptions) dialParameters {
+	return dialParameters{
 		UserOptions:          options.ConnectionOptions,
 		HostPort:             options.HostPort,
 		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
@@ -615,7 +615,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(newConnectionParams(&options))
+	connection, err := dial(newDialParameters(&options))
 	if err != nil {
 		return nil, err
 	}
