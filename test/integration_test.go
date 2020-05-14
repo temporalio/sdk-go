@@ -460,7 +460,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	_ = client.CloseConnection()
+	client.CloseConnection()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}
