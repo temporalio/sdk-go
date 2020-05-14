@@ -327,10 +327,10 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	}).Times(2)
 
 	options := WorkerOptions{
-		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
 	}
 	clientOptions := ClientOptions{
+		Logger:   zap.NewNop(),
 		Identity: "test-worker-identity",
 	}
 
@@ -460,10 +460,10 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	}).Times(1)
 
 	options := WorkerOptions{
-		Logger:                zap.NewNop(),
 		DisableActivityWorker: true,
 	}
 	clientOptions := ClientOptions{
+		Logger:   zap.NewNop(),
 		Identity: "test-worker-identity",
 	}
 

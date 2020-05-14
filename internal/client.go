@@ -313,7 +313,7 @@ type (
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -326,6 +326,10 @@ type (
 		// Optional: To set the namespace name for this client to work with.
 		// default: default
 		Namespace string
+
+		// Optional: Logger framework can use to log.
+		// default: default logger provided.
+		Logger *zap.Logger
 
 		// Optional: Metrics to be reported.
 		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
@@ -506,7 +510,7 @@ type (
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
@@ -591,6 +595,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		namespace:          options.Namespace,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
+		logger:             options.Logger,
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
@@ -628,6 +633,7 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 		workflowService:  workflowServiceClient,
 		connectionCloser: clientConn,
 		metricsScope:     options.MetricsScope,
+		logger:           options.Logger,
 		identity:         options.Identity,
 	}
 }

@@ -350,7 +350,7 @@ type (
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
@@ -381,7 +381,7 @@ type (
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 )
 

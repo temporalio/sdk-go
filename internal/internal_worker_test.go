@@ -1458,6 +1458,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		dataConverter:      &defaultDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
+		logger:             zap.NewNop(),
 	}
 
 	options := WorkerOptions{
@@ -1473,7 +1474,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		WorkerActivitiesPerSecond:               99,
 		StickyScheduleToStartTimeout:            555 * time.Minute,
 		BackgroundActivityContext:               context.Background(),
-		Logger:                                  zap.NewNop(),
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskList, options)
@@ -1495,7 +1495,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
 		DataConverter:                        client.dataConverter,
 		Tracer:                               client.tracer,
-		Logger:                               options.Logger,
+		Logger:                               client.logger,
 		MetricsScope:                         client.metricsScope,
 		Identity:                             client.identity,
 	}

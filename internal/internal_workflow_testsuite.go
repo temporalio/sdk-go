@@ -313,10 +313,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 	env.service = mockService
 
-	if env.workerOptions.Logger == nil {
-		env.workerOptions.Logger = env.logger
-	}
-
 	return env
 }
 
@@ -1294,7 +1290,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
 		metricsScope:       metrics.NewTaggedScope(env.metricsScope),
-		logger:             env.workerOptions.Logger,
+		logger:             env.logger,
 		dataConverter:      env.dataConverter,
 		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
@@ -1719,7 +1715,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		TaskList:           taskList,
 		Identity:           env.identity,
 		MetricsScope:       env.metricsScope,
-		Logger:             env.workerOptions.Logger,
+		Logger:             env.logger,
 		UserContext:        env.workerOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
