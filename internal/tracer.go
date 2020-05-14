@@ -117,7 +117,7 @@ func (t *tracingContextPropagator) InjectFromWorkflow(
 	if spanContext == nil {
 		return nil
 	}
-	return t.tracer.Inject(spanContext, opentracing.HTTPHeaders, tracingWriter{hw})
+	return t.tracer.Inject(spanContext, opentracing.TextMap, tracingWriter{hw})
 }
 
 func (t *tracingContextPropagator) ExtractToWorkflow(
