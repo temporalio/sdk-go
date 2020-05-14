@@ -555,7 +555,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(generateConnectionParams(&options))
+	connection, err := dial(newConnectionParams(&options))
 
 	if err != nil {
 		return nil, err
@@ -564,7 +564,7 @@ func NewClient(options ClientOptions) (Client, error) {
 	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
-func generateConnectionParams(options *ClientOptions) connectionParameters {
+func newConnectionParams(options *ClientOptions) connectionParameters {
 	return connectionParameters{
 		UserOptions:          options.ConnectionOptions,
 		HostPort:             options.HostPort,
@@ -615,7 +615,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(generateConnectionParams(&options))
+	connection, err := dial(newConnectionParams(&options))
 	if err != nil {
 		return nil, err
 	}
