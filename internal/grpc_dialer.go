@@ -43,8 +43,8 @@ type (
 		TLS *tls.Config
 	}
 
-	// connectionParameters are passed to GRPCDialer and must be used to create gRPC connection.
-	connectionParameters struct {
+	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
+	dialParameters struct {
 		HostPort             string
 		UserOptions          ConnectionOptions
 		RequiredInterceptors []grpc.UnaryClientInterceptor
@@ -60,7 +60,7 @@ const (
 	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 
-func dial(params connectionParameters) (*grpc.ClientConn, error) {
+func dial(params dialParameters) (*grpc.ClientConn, error) {
 	grpcSecurityOptions := grpc.WithInsecure()
 	if params.UserOptions.TLS != nil {
 		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserOptions.TLS))
