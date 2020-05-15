@@ -1342,7 +1342,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
 		Identity:                             client.identity,
 		MetricsScope:                         client.metricsScope,
-		Logger:                               options.Logger,
+		Logger:                               client.logger,
 		EnableLoggingInReplay:                options.EnableLoggingInReplay,
 		UserContext:                          backgroundActivityContext,
 		UserContextCancel:                    backgroundActivityContextCancel,

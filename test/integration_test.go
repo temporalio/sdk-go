@@ -102,16 +102,20 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
-	var err error
-	ts.client, err = client.NewClient(client.Options{HostPort: ts.config.ServiceAddr, Namespace: namespace})
+	logger, err := zap.NewDevelopment()
+	ts.NoError(err)
+	ts.client, err = client.NewClient(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: namespace,
+		Logger:    logger,
+	})
 	ts.NoError(err)
 	ts.registerNamespace()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	err := ts.client.CloseConnection()
-	ts.NoError(err)
+	ts.client.CloseConnection()
 
 	// allow the pollers to shut down, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
@@ -141,12 +145,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.seq++
 	ts.activities.clearInvoked()
 	ts.taskListName = fmt.Sprintf("tl-%v-%s", ts.seq, ts.T().Name())
-	logger, err := zap.NewDevelopment()
-	ts.NoError(err)
 	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
-		Logger:                            logger,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
@@ -459,7 +460,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	_ = client.CloseConnection()
+	client.CloseConnection()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}

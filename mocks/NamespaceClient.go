@@ -90,15 +90,10 @@ func (_m *NamespaceClient) Update(ctx context.Context, request *workflowservice.
 }
 
 // CloseConnection provides a mock function without given fields
-func (_m *NamespaceClient) CloseConnection() error {
+func (_m *NamespaceClient) CloseConnection() {
 	ret := _m.Called()
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func() error); ok {
-		r0 = rf()
-	} else {
-		r0 = ret.Error(0)
+	if rf, ok := ret.Get(0).(func()); ok {
+		rf()
 	}
-
-	return r0
 }
