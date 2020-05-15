@@ -26,19 +26,27 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
 
 	"github.com/gogo/status"
 	"github.com/uber-go/tally"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
 
 type (
-	// connectionParameters are passed to GRPCDialer and must be used to create gRPC connection.
-	connectionParameters struct {
+	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	ConnectionOptions struct {
+		TLS *tls.Config
+	}
+
+	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
+	dialParameters struct {
 		HostPort             string
+		UserOptions          ConnectionOptions
 		RequiredInterceptors []grpc.UnaryClientInterceptor
 		DefaultServiceConfig string
 	}
@@ -52,9 +60,14 @@ const (
 	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
 )
 
-func dial(params connectionParameters) (*grpc.ClientConn, error) {
+func dial(params dialParameters) (*grpc.ClientConn, error) {
+	grpcSecurityOptions := grpc.WithInsecure()
+	if params.UserOptions.TLS != nil {
+		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserOptions.TLS))
+	}
+
 	return grpc.Dial(params.HostPort,
-		grpc.WithInsecure(),
+		grpcSecurityOptions,
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
 	)
