@@ -71,6 +71,7 @@ func testInternalWorkerRegister(r *registry) {
 		testActivityMultipleArgs,
 		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
 	)
+	r.RegisterActivity(testActivityMultipleArgsWithStruct)
 	r.RegisterActivity(testActivityReturnString)
 	r.RegisterActivity(testActivityReturnEmptyString)
 	r.RegisterActivity(testActivityReturnEmptyStruct)
@@ -103,6 +104,7 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 		testActivityMultipleArgs,
 		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
 	)
+	env.RegisterActivity(testActivityMultipleArgsWithStruct)
 	env.RegisterActivity(testActivityReturnString)
 	env.RegisterActivity(testActivityReturnEmptyString)
 	env.RegisterActivity(testActivityReturnEmptyStruct)
@@ -674,6 +676,7 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 func sampleWorkflowExecute(ctx Context, input []byte) (result []byte, err error) {
 	ExecuteActivity(ctx, testActivityByteArgs, input)
 	ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true)
+	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}}).Get(ctx, nil)
 	return []byte("Done"), nil
 }
 
@@ -686,6 +689,12 @@ func testActivityByteArgs(context.Context, []byte) ([]byte, error) {
 // test testActivityMultipleArgs
 func testActivityMultipleArgs(context.Context, int, []string, bool) ([]byte, error) {
 	fmt.Println("Executing Activity2")
+	return nil, nil
+}
+
+// test testActivityMultipleArgsWithStruct
+func testActivityMultipleArgsWithStruct(_ context.Context, i int, s testActivityArg) ([]byte, error) {
+	fmt.Printf("Executing testActivityMultipleArgsWithStruct: %d, %v\n", i, s)
 	return nil, nil
 }
 
@@ -994,6 +1003,9 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
+	err = ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}}).Get(ctx, nil)
+	require.NoError(w.t, err, err)
+
 	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
@@ -1115,6 +1127,12 @@ func testActivityReturnEmptyString() (string, error) {
 	// Return is mocked to retrun nil from server.
 	// expect to convert it to appropriate default value.
 	return "", nil
+}
+
+type testActivityArg struct {
+	Index int
+	Name  string
+	Data  []byte
 }
 
 type testActivityResult struct {
