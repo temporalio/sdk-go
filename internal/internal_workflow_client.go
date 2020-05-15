@@ -950,7 +950,7 @@ func (wc *WorkflowClient) CloseConnection() {
 		return
 	}
 	if err := wc.connectionCloser.Close(); err != nil {
-		wc.logger.Error("unable to close connection", zap.Error(err))
+		wc.logger.Warn("unable to close connection", zap.Error(err))
 	}
 }
 
@@ -1030,7 +1030,7 @@ func (nc *namespaceClient) CloseConnection() {
 		return
 	}
 	if err := nc.connectionCloser.Close(); err != nil {
-		nc.logger.Error("unable to close connection", zap.Error(err))
+		nc.logger.Warn("unable to close connection", zap.Error(err))
 	}
 }
 
