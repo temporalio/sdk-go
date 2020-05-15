@@ -33,20 +33,18 @@ import (
 	"sync"
 	"time"
 
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-
 	commonpb "go.temporal.io/temporal-proto/common"
+	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
 	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
@@ -65,9 +63,9 @@ const (
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
 
 	// These are copied from service implementation
-	reservedTaskListPrefix    = "/__temporal_sys/"
-	maxIDLengthLimit          = 1000
-	maxWorkflowTimeoutSeconds = 60 * 24 * 365 * 10
+	reservedTaskListPrefix = "/__temporal_sys/"
+	maxIDLengthLimit       = 1000
+	maxWorkflowTimeout     = 24 * time.Hour * 365 * 10
 )
 
 type (
@@ -245,7 +243,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
-			WorkflowExecutionTimeoutSeconds: maxWorkflowTimeoutSeconds,
+			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
 			WorkflowTaskTimeoutSeconds:      1,
 		},
 		registry: r,
@@ -256,7 +254,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     getDefaultDataConverter(),
-		runTimeout:        maxWorkflowTimeoutSeconds * time.Second,
+		runTimeout:        maxWorkflowTimeout,
 	}
 
 	// move forward the mock clock to start time.
@@ -452,7 +450,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		wInfo.WorkflowRunTimeoutSeconds = common.Int32Ceil(env.runTimeout.Seconds())
 	}
 	if wInfo.WorkflowExecutionTimeoutSeconds == 0 {
-		wInfo.WorkflowExecutionTimeoutSeconds = maxWorkflowTimeoutSeconds
+		wInfo.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(maxWorkflowTimeout.Seconds())
 	}
 	if wInfo.WorkflowTaskTimeoutSeconds == 0 {
 		wInfo.WorkflowTaskTimeoutSeconds = 1
