@@ -676,7 +676,7 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 func sampleWorkflowExecute(ctx Context, input []byte) (result []byte, err error) {
 	ExecuteActivity(ctx, testActivityByteArgs, input)
 	ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true)
-	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}}).Get(ctx, nil)
+	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}})
 	return []byte("Done"), nil
 }
 
