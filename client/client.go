@@ -61,6 +61,9 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
+	// ConnectionOptions are optional parameters that can be specified in ClientOptions
+	ConnectionOptions = internal.ConnectionOptions
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
