@@ -127,9 +127,6 @@ func HistoryEventToString(e *eventpb.HistoryEvent) string {
 	case eventpb.EventType_ActivityTaskCancelRequested:
 		data = e.GetActivityTaskCancelRequestedEventAttributes()
 
-	case eventpb.EventType_RequestCancelActivityTaskFailed:
-		data = e.GetRequestCancelActivityTaskFailedEventAttributes()
-
 	case eventpb.EventType_ActivityTaskCanceled:
 		data = e.GetActivityTaskCanceledEventAttributes()
 

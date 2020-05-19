@@ -40,7 +40,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -234,6 +233,41 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 		Attributes: &eventpb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
 }
 
+func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+	dataConverter := getDefaultDataConverter()
+	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
+	if err != nil {
+		panic(err)
+	}
+
+	return &eventpb.HistoryEvent{
+		EventId:   eventID,
+		EventType: eventpb.EventType_MarkerRecorded,
+		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{
+			MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
+				MarkerName:                   versionMarkerName,
+				Details:                      details,
+				DecisionTaskCompletedEventId: decisionCompletedID,
+			},
+		},
+	}
+}
+
+func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+	searchAttributes, _ := validateAndSerializeSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, nil))
+
+	return &eventpb.HistoryEvent{
+		EventId:   eventID,
+		EventType: eventpb.EventType_UpsertWorkflowSearchAttributes,
+		Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{
+			UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{
+				SearchAttributes:             searchAttributes,
+				DecisionTaskCompletedEventId: decisionCompletedID,
+			},
+		},
+	}
+}
+
 func createWorkflowTask(
 	events []*eventpb.HistoryEvent,
 	previousStartEventID int64,
@@ -254,7 +288,7 @@ func createWorkflowTaskWithQueries(
 		PreviousStartedEventId: previousStartEventID,
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowName},
 		History:                &eventpb.History{Events: eventsCopy},
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
 			RunId:      uuid.New(),
 		},
@@ -345,13 +379,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
-		createTestEventTimerStarted(5, 0),
-		createTestEventTimerFired(6, 0),
+		createTestEventTimerStarted(5, 5),
+		createTestEventTimerFired(6, 5),
 		createTestEventDecisionTaskScheduled(7, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(8),
 		createTestEventDecisionTaskCompleted(9, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
-		createTestEventTimerStarted(10, 1),
-		createTestEventTimerFired(11, 1),
+		createTestEventTimerStarted(10, 10),
+		createTestEventTimerFired(11, 10),
 		createTestEventDecisionTaskScheduled(12, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(13),
 	}
@@ -427,7 +461,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "sticky-tl"
-	execution := &executionpb.WorkflowExecution{
+	execution := &commonpb.WorkflowExecution{
 		WorkflowId: "fake-workflow-id",
 		RunId:      uuid.New(),
 	}
@@ -871,7 +905,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
 	continuedRunID := uuid.New()
-	parentExecution := &executionpb.WorkflowExecution{
+	parentExecution := &commonpb.WorkflowExecution{
 		WorkflowId: parentID,
 		RunId:      parentRunID,
 	}
@@ -1318,7 +1352,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollForActivityTaskResponse{
 			TaskToken: []byte("token"),
-			WorkflowExecution: &executionpb.WorkflowExecution{
+			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
 			ActivityType:                  &commonpb.ActivityType{Name: "test"},
@@ -1374,7 +1408,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
 		ActivityType:                  &commonpb.ActivityType{Name: "test"},

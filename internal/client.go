@@ -313,7 +313,7 @@ type (
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -326,6 +326,10 @@ type (
 		// Optional: To set the namespace name for this client to work with.
 		// default: default
 		Namespace string
+
+		// Optional: Logger framework can use to log.
+		// default: default logger provided.
+		Logger *zap.Logger
 
 		// Optional: Metrics to be reported.
 		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
@@ -374,20 +378,12 @@ type (
 		Tracer opentracing.Tracer
 
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
-		// default: no ContextPropagators
+		// default: nil
 		ContextPropagators []ContextPropagator
 
-		// Optional: Sets GRPCDialer that can be used to create gRPC connection
-		// GRPCDialer must add params.RequiredInterceptors and set params.DefaultServiceConfig if round-robin load balancer needs to be enabled:
-		// func customGRPCDialer(params GRPCDialerParams) (*grpc.ClientConn, error) {
-		//	return grpc.Dial(params.HostPort,
-		//		grpc.WithInsecure(),                                            // Replace this with required transport security if needed
-		//		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...), // Add custom interceptors here but params.RequiredInterceptors must be added anyway.
-		//		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),     // DefaultServiceConfig enables round-robin. Any valid gRPC service config can be used here (https://github.com/grpc/grpc/blob/master/doc/service_config.md).
-		//	)
-		// }
-		// default: defaultGRPCDialer (same as above)
-		GRPCDialer GRPCDialer
+		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
+		// default: no extra options
+		ConnectionOptions ConnectionOptions
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -519,7 +515,7 @@ type (
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
@@ -564,21 +560,22 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	if options.GRPCDialer == nil {
-		options.GRPCDialer = defaultGRPCDialer
-	}
-
-	connection, err := options.GRPCDialer(GRPCDialerParams{
-		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
-		DefaultServiceConfig: defaultServiceConfig,
-	})
+	connection, err := dial(newDialParameters(&options))
 
 	if err != nil {
 		return nil, err
 	}
 
 	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+}
+
+func newDialParameters(options *ClientOptions) dialParameters {
+	return dialParameters{
+		UserOptions:          options.ConnectionOptions,
+		HostPort:             options.HostPort,
+		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
+		DefaultServiceConfig: defaultServiceConfig,
+	}
 }
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
@@ -608,6 +605,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		namespace:          options.Namespace,
 		registry:           newRegistry(),
 		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
+		logger:             options.Logger,
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
@@ -623,16 +621,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	if options.GRPCDialer == nil {
-		options.GRPCDialer = defaultGRPCDialer
-	}
-
-	connection, err := options.GRPCDialer(GRPCDialerParams{
-		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
-		DefaultServiceConfig: defaultServiceConfig,
-	})
-
+	connection, err := dial(newDialParameters(&options))
 	if err != nil {
 		return nil, err
 	}
@@ -649,6 +638,7 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 		workflowService:  workflowServiceClient,
 		connectionCloser: clientConn,
 		metricsScope:     options.MetricsScope,
+		logger:           options.Logger,
 		identity:         options.Identity,
 	}
 }

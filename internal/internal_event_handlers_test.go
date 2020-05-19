@@ -166,10 +166,12 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 
 func Test_UpsertSearchAttributes(t *testing.T) {
 	t.Parallel()
+	helper := newDecisionsHelper()
 	env := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
+		decisionsHelper: helper,
 		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
 	}
+	helper.setCurrentDecisionStartedEventID(4)
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
@@ -179,11 +181,11 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
-	require.Equal(t, int32(0), env.counterID)
+	require.Equal(t, int64(7), env.GenerateSequence())
 
 	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
 	require.NoError(t, err)
-	require.Equal(t, int32(1), env.counterID)
+	require.Equal(t, int64(8), env.GenerateSequence())
 }
 
 func Test_MergeSearchAttributes(t *testing.T) {

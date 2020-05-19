@@ -52,7 +52,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -686,6 +685,16 @@ func (r *registry) getRegisteredActivities() []activity {
 	return activities
 }
 
+func (r *registry) getRegisteredActivityTypes() []string {
+	r.Lock()
+	defer r.Unlock()
+	var result []string
+	for name := range r.activityFuncMap {
+		result = append(result, name)
+	}
+	return result
+}
+
 func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
 	lookup := wt.Name
 	if alias, ok := r.getWorkflowAlias(lookup); ok {
@@ -1160,7 +1169,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
 func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution WorkflowExecution) error {
-	sharedExecution := &executionpb.WorkflowExecution{
+	sharedExecution := &commonpb.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
 	}
@@ -1205,7 +1214,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("corrupted WorkflowExecutionStarted")
 	}
 	workflowType := attr.WorkflowType
-	execution := &executionpb.WorkflowExecution{
+	execution := &commonpb.WorkflowExecution{
 		RunId:      uuid.NewRandom().String(),
 		WorkflowId: "ReplayId",
 	}
@@ -1332,7 +1341,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
 		Identity:                             client.identity,
 		MetricsScope:                         client.metricsScope,
-		Logger:                               options.Logger,
+		Logger:                               client.logger,
 		EnableLoggingInReplay:                options.EnableLoggingInReplay,
 		UserContext:                          backgroundActivityContext,
 		UserContextCancel:                    backgroundActivityContextCancel,

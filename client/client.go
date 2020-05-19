@@ -61,11 +61,8 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
-	// GRPCDialer can be used to set custom gRPC connection creation logic.
-	GRPCDialer = internal.GRPCDialer
-
-	// GRPCDialerParams are passed to GRPCDialer and must be used to create gRPC connection.
-	GRPCDialerParams = internal.GRPCDialerParams
+	// ConnectionOptions are optional parameters that can be specified in ClientOptions
+	ConnectionOptions = internal.ConnectionOptions
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
@@ -356,7 +353,7 @@ type (
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
@@ -387,7 +384,7 @@ type (
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// CloseConnection closes underlying gRPC connection.
-		CloseConnection() error
+		CloseConnection()
 	}
 )
 

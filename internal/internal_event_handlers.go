@@ -36,11 +36,10 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	failurepb "go.temporal.io/temporal-proto/failure"
-
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
+	failurepb "go.temporal.io/temporal-proto/failure"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.uber.org/zap"
@@ -101,14 +100,13 @@ type (
 		workflowInfo *WorkflowInfo
 
 		decisionsHelper   *decisionsHelper
-		sideEffectResult  map[int32]*commonpb.Payloads
+		sideEffectResult  map[int64]*commonpb.Payloads
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
 		mutableSideEffect map[string]*commonpb.Payloads
 		unstartedLaTasks  map[string]struct{}
 		openSessions      map[string]*SessionInfo
 
-		counterID         int32     // To generate sequence IDs for activity/timer etc.
 		currentReplayTime time.Time // Indicates current replay time of the decision.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
@@ -192,7 +190,7 @@ func newWorkflowExecutionEventHandler(
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
 		decisionsHelper:       newDecisionsHelper(),
-		sideEffectResult:      make(map[int32]*commonpb.Payloads),
+		sideEffectResult:      make(map[int64]*commonpb.Payloads),
 		mutableSideEffect:     make(map[string]*commonpb.Payloads),
 		changeVersions:        make(map[string]Version),
 		pendingLaTasks:        make(map[string]*localActivityTask),
@@ -429,13 +427,11 @@ func (wc *workflowEnvironmentImpl) IsReplaying() bool {
 }
 
 func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
-	return fmt.Sprintf("%d", wc.GenerateSequence())
+	return getStringID(wc.GenerateSequence())
 }
 
-func (wc *workflowEnvironmentImpl) GenerateSequence() int32 {
-	result := wc.counterID
-	wc.counterID++
-	return result
+func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
+	return wc.decisionsHelper.getNextID()
 }
 
 func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType decisionpb.DecisionType) *decisionpb.Decision {
@@ -446,8 +442,9 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType decisionpb.Dec
 
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleID := wc.GenerateSequence()
 	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = wc.GenerateSequenceID()
+		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
@@ -462,7 +459,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 
-	decision := wc.decisionsHelper.scheduleActivityTask(scheduleTaskAttr)
+	decision := wc.decisionsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	decision.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
@@ -472,7 +469,10 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 		zap.String(tagActivityID, activityID),
 		zap.String(tagActivityType, scheduleTaskAttr.ActivityType.GetName()))
 
-	return &activityInfo{activityID: activityID}
+	return &activityInfo{
+		scheduleID: wc.GenerateSequence(),
+		activityID: activityID,
+	}
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
@@ -628,7 +628,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		var ok bool
 		result, ok = wc.sideEffectResult[sideEffectID]
 		if !ok {
-			keys := make([]int32, 0, len(wc.sideEffectResult))
+			keys := make([]int64, 0, len(wc.sideEffectResult))
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
@@ -636,7 +636,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 				sideEffectID, keys))
 		}
 		wc.logger.Debug("SideEffect returning already calculated result.",
-			zap.Int32(tagSideEffectID, sideEffectID))
+			zap.Int64(tagSideEffectID, sideEffectID))
 		details = result
 	} else {
 		var err error
@@ -655,7 +655,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, details)
 
 	callback(result, nil)
-	wc.logger.Debug("SideEffect Marker added", zap.Int32(tagSideEffectID, sideEffectID))
+	wc.logger.Debug("SideEffect Marker added", zap.Int64(tagSideEffectID, sideEffectID))
 }
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
@@ -787,6 +787,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case eventpb.EventType_DecisionTaskStarted:
 		// Set replay clock.
 		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
+		// Reset the counter on decision helper used for generating ID for decisions
+		weh.decisionsHelper.setCurrentDecisionStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnDecisionTaskStarted()
 
 	case eventpb.EventType_DecisionTaskTimedOut:
@@ -813,11 +815,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case eventpb.EventType_ActivityTaskCancelRequested:
 		weh.decisionsHelper.handleActivityTaskCancelRequested(
-			event.GetActivityTaskCancelRequestedEventAttributes().GetActivityId())
-
-	case eventpb.EventType_RequestCancelActivityTaskFailed:
-		weh.decisionsHelper.handleRequestCancelActivityTaskFailed(
-			event.GetRequestCancelActivityTaskFailedEventAttributes().GetActivityId())
+			event.GetActivityTaskCancelRequestedEventAttributes().GetScheduledEventId())
 
 	case eventpb.EventType_ActivityTaskCanceled:
 		err = weh.handleActivityTaskCanceled(event)
@@ -1082,7 +1080,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	encodedValues := newEncodedValues(attributes.Details, weh.dataConverter)
 	switch attributes.GetMarkerName() {
 	case sideEffectMarkerName:
-		var sideEffectID int32
+		var sideEffectID int64
 		var result *commonpb.Payloads
 		_ = encodedValues.Get(&sideEffectID, result)
 		weh.sideEffectResult[sideEffectID] = result
@@ -1092,6 +1090,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		var version Version
 		_ = encodedValues.Get(&changeID, &version)
 		weh.changeVersions[changeID] = version
+		weh.decisionsHelper.handleVersionMarker(eventID, changeID)
 		return nil
 	case localActivityMarkerName:
 		return weh.handleLocalActivityMarker(attributes.Details)

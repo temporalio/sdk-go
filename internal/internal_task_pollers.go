@@ -39,7 +39,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -110,7 +109,7 @@ type (
 
 	historyIteratorImpl struct {
 		iteratorFunc  func(nextPageToken []byte) (*eventpb.History, []byte, error)
-		execution     *executionpb.WorkflowExecution
+		execution     *commonpb.WorkflowExecution
 		nextPageToken []byte
 		namespace     string
 		service       workflowservice.WorkflowServiceClient
@@ -737,7 +736,7 @@ func newGetHistoryPageFunc(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
 	namespace string,
-	execution *executionpb.WorkflowExecution,
+	execution *commonpb.WorkflowExecution,
 	atDecisionTaskCompletedEventID int64,
 	metricsScope tally.Scope,
 ) func(nextPageToken []byte) (*eventpb.History, []byte, error) {

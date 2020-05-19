@@ -33,19 +33,16 @@ import (
 	"sync"
 	"time"
 
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-
 	commonpb "go.temporal.io/temporal-proto/common"
-	executionpb "go.temporal.io/temporal-proto/execution"
+	decisionpb "go.temporal.io/temporal-proto/decision"
 	"go.temporal.io/temporal-proto/serviceerror"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
 	"go.uber.org/zap"
@@ -64,9 +61,9 @@ const (
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
 
 	// These are copied from service implementation
-	reservedTaskListPrefix    = "/__temporal_sys/"
-	maxIDLengthLimit          = 1000
-	maxWorkflowTimeoutSeconds = 60 * 24 * 365 * 10
+	reservedTaskListPrefix = "/__temporal_sys/"
+	maxIDLengthLimit       = 1000
+	maxWorkflowTimeout     = 24 * time.Hour * 365 * 10
 )
 
 type (
@@ -78,7 +75,7 @@ type (
 		duration       time.Duration
 		mockTimeToFire time.Time
 		wallTimeToFire time.Time
-		timerID        int
+		timerID        int64
 	}
 
 	testActivityHandle struct {
@@ -147,7 +144,7 @@ type (
 		testTimeout     time.Duration
 		header          *commonpb.Header
 
-		counterID        int
+		counterID        int64
 		activities       map[string]*testActivityHandle
 		localActivities  map[string]*localActivityTask
 		timers           map[string]*testTimerHandle
@@ -244,7 +241,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
 			TaskListName: defaultTestTaskList,
 
-			WorkflowExecutionTimeoutSeconds: maxWorkflowTimeoutSeconds,
+			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
 			WorkflowTaskTimeoutSeconds:      1,
 		},
 		registry: r,
@@ -255,7 +252,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     getDefaultDataConverter(),
-		runTimeout:        maxWorkflowTimeoutSeconds * time.Second,
+		runTimeout:        maxWorkflowTimeout,
 	}
 
 	// move forward the mock clock to start time.
@@ -311,10 +308,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	}).AnyTimes()
 
 	env.service = mockService
-
-	if env.workerOptions.Logger == nil {
-		env.workerOptions.Logger = env.logger
-	}
 
 	return env
 }
@@ -385,6 +378,16 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
 	env.workerOptions = options
 	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
+		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
+			Name:                          sessionCreationActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
+		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
+			Name:                          sessionCompletionActivityName,
+			DisableAlreadyRegisteredCheck: true,
+		})
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
@@ -445,7 +448,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		wInfo.WorkflowRunTimeoutSeconds = common.Int32Ceil(env.runTimeout.Seconds())
 	}
 	if wInfo.WorkflowExecutionTimeoutSeconds == 0 {
-		wInfo.WorkflowExecutionTimeoutSeconds = maxWorkflowTimeoutSeconds
+		wInfo.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(maxWorkflowTimeout.Seconds())
 	}
 	if wInfo.WorkflowTaskTimeoutSeconds == 0 {
 		wInfo.WorkflowTaskTimeoutSeconds = 1
@@ -706,7 +709,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	fireTimer := func(th *testTimerHandle) {
 		skipDuration := th.mockTimeToFire.Sub(env.mockClock.Now())
 		env.logger.Debug("Auto fire timer",
-			zap.Int(tagTimerID, th.timerID),
+			zap.Int64(tagTimerID, th.timerID),
 			zap.Duration("TimerDuration", th.duration),
 			zap.Duration("TimeSkipped", skipDuration))
 
@@ -952,8 +955,10 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+
+	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
+		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
@@ -968,7 +973,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
-	activityInfo := &activityInfo{activityID: activityID}
+	activityInfo := &activityInfo{
+		scheduleID: scheduleID,
+		activityID: activityID,
+	}
 	if err != nil {
 		callback(nil, err)
 		return activityInfo
@@ -984,7 +992,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
-	env.setActivityHandle(activityInfo.activityID, activityHandle)
+	env.setActivityHandle(activityID, activityHandle)
 	env.runningCount++
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
@@ -1005,7 +1013,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 			}
 			// post activity result to workflow dispatcher
 			env.postCallback(func() {
-				env.handleActivityResult(activityInfo.activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
+				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
 				env.runningCount--
 			}, false /* do not auto schedule decision task, because activity might be still pending */)
 		}()
@@ -1247,7 +1255,7 @@ func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
 		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
 		MaximumAttempts:          p.GetMaximumAttempts(),
-		NonRetryableErrorReasons: p.NonRetriableErrorReasons,
+		NonRetryableErrorReasons: p.NonRetryableErrorTypes,
 	}
 }
 
@@ -1278,7 +1286,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
 		metricsScope:       metrics.NewTaggedScope(env.metricsScope),
-		logger:             env.workerOptions.Logger,
+		logger:             env.logger,
 		dataConverter:      env.dataConverter,
 		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
@@ -1703,7 +1711,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		TaskList:           taskList,
 		Identity:           env.identity,
 		MetricsScope:       env.metricsScope,
-		Logger:             env.workerOptions.Logger,
+		Logger:             env.logger,
 		UserContext:        env.workerOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
@@ -1715,14 +1723,6 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 		params.UserContext = context.Background()
 	}
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
-		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
-			Name:                          sessionCreationActivityName,
-			DisableAlreadyRegisteredCheck: true,
-		})
-		env.registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
-			Name:                          sessionCompletionActivityName,
-			DisableAlreadyRegisteredCheck: true,
-		})
 		env.sessionEnvironment = newTestSessionEnvironment(env, &params, env.workerOptions.MaxConcurrentSessionExecutionSize)
 	}
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
@@ -1768,7 +1768,7 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	attr *decisionpb.ScheduleActivityTaskDecisionAttributes) *workflowservice.PollForActivityTaskResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollForActivityTaskResponse{
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -2083,14 +2083,10 @@ func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb
 	return blob
 }
 
-func (env *testWorkflowEnvironmentImpl) nextID() int {
+func (env *testWorkflowEnvironmentImpl) nextID() int64 {
 	activityID := env.counterID
 	env.counterID++
 	return activityID
-}
-
-func getStringID(intID int) string {
-	return fmt.Sprintf("%d", intID)
 }
 
 func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType string) *ActivityInfo {

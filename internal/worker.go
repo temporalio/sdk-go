@@ -27,8 +27,6 @@ package internal
 import (
 	"context"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 type (
@@ -96,10 +94,6 @@ type (
 		// rate at which the worker is able to consume tasks from a task list.
 		// default: 2
 		MaxConcurrentDecisionTaskPollers int
-
-		// Optional: Logger framework can use to log.
-		// default: default logger provided.
-		Logger *zap.Logger
 
 		// Optional: Enable logging in replay.
 		// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log

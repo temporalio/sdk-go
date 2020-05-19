@@ -75,7 +75,26 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	env.OnActivity("testActivityHello", mock.Anything, mock.Anything).Return(mockActivity).Once()
+	env.OnActivity(testActivityHello, mock.Anything, "world").Return(mockActivity).Once()
+	env.RegisterWorkflow(testWorkflowHello)
+	env.ExecuteWorkflow(testWorkflowHello)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	_ = env.GetWorkflowResult(&result)
+	s.Equal("mock_world", result)
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityByNameMockFunction() {
+	mockActivity := func(ctx context.Context, msg string) (string, error) {
+		return "mock_" + msg, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testActivityHello)
+	env.OnActivity("testActivityHello", mock.Anything, "world").Return(mockActivity).Once()
 	env.RegisterWorkflow(testWorkflowHello)
 	env.ExecuteWorkflow(testWorkflowHello)
 
@@ -2827,8 +2846,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 
 	wf := func(ctx Context) error {
 		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    5 * time.Second,
+			StartToCloseTimeout: 5 * time.Second,
 		}
 		ctx = WithActivityOptions(ctx, ao)
 		err := ExecuteActivity(ctx, fn).Get(ctx, nil)
@@ -2859,8 +2877,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 
 	timeoutWf := func(ctx Context) error {
 		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    5 * time.Second,
+			StartToCloseTimeout: 5 * time.Second,
 			RetryPolicy: &RetryPolicy{
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 1.1,

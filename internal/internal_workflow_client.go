@@ -35,10 +35,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
@@ -70,6 +70,7 @@ type (
 		connectionCloser   io.Closer
 		namespace          string
 		registry           *registry
+		logger             *zap.Logger
 		metricsScope       *metrics.TaggedScope
 		identity           string
 		dataConverter      DataConverter
@@ -82,6 +83,7 @@ type (
 		workflowService  workflowservice.WorkflowServiceClient
 		connectionCloser io.Closer
 		metricsScope     tally.Scope
+		logger           *zap.Logger
 		identity         string
 	}
 
@@ -319,7 +321,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -433,7 +435,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -460,7 +462,7 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -488,7 +490,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 	paginate := func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 		request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 			Namespace: namespace,
-			Execution: &executionpb.WorkflowExecution{
+			Execution: &commonpb.WorkflowExecution{
 				WorkflowId: workflowID,
 				RunId:      runID,
 			},
@@ -771,7 +773,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -873,7 +875,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 	req := &workflowservice.QueryWorkflowRequest{
 		Namespace: wc.namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: request.WorkflowID,
 			RunId:      request.RunID,
 		},
@@ -942,12 +944,13 @@ func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string,
 }
 
 // CloseConnection closes underlying gRPC connection.
-func (wc *WorkflowClient) CloseConnection() error {
+func (wc *WorkflowClient) CloseConnection() {
 	if wc.connectionCloser == nil {
-		return nil
+		return
 	}
-
-	return wc.connectionCloser.Close()
+	if err := wc.connectionCloser.Close(); err != nil {
+		wc.logger.Warn("unable to close connection", zap.Error(err))
+	}
 }
 
 func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Header {
@@ -966,13 +969,13 @@ func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Heade
 //	- NamespaceAlreadyExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
+func (nc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			_, err = dc.workflowService.RegisterNamespace(tchCtx, request)
+			_, err = nc.workflowService.RegisterNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
@@ -985,7 +988,7 @@ func (dc *namespaceClient) Register(ctx context.Context, request *workflowservic
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *namespaceClient) Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error) {
+func (nc *namespaceClient) Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error) {
 	request := &workflowservice.DescribeNamespaceRequest{
 		Name: name,
 	}
@@ -996,7 +999,7 @@ func (dc *namespaceClient) Describe(ctx context.Context, name string) (*workflow
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			response, err = dc.workflowService.DescribeNamespace(tchCtx, request)
+			response, err = nc.workflowService.DescribeNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	if err != nil {
@@ -1010,23 +1013,24 @@ func (dc *namespaceClient) Describe(ctx context.Context, name string) (*workflow
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (dc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
+func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
-			_, err := dc.workflowService.UpdateNamespace(tchCtx, request)
+			_, err := nc.workflowService.UpdateNamespace(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
 // CloseConnection closes underlying gRPC connection.
-func (dc *namespaceClient) CloseConnection() error {
-	if dc.connectionCloser == nil {
-		return nil
+func (nc *namespaceClient) CloseConnection() {
+	if nc.connectionCloser == nil {
+		return
 	}
-
-	return dc.connectionCloser.Close()
+	if err := nc.connectionCloser.Close(); err != nil {
+		nc.logger.Warn("unable to close connection", zap.Error(err))
+	}
 }
 
 func (iter *historyEventIteratorImpl) HasNext() bool {
