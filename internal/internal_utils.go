@@ -40,8 +40,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	"google.golang.org/grpc/metadata"
 
-	eventpb "go.temporal.io/temporal-proto/event"
-
 	"go.temporal.io/temporal/internal/common/metrics"
 )
 
@@ -282,11 +280,11 @@ func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, loca
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
 }
 
-func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
+func getTimeoutTypeFromErrReason(reason string) (commonpb.TimeoutType, error) {
 	// "reason" is a string like "temporalInternal:Timeout StartToClose"
 	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	if timeoutType, found := eventpb.TimeoutType_value[timeoutTypeStr]; found {
-		return eventpb.TimeoutType(timeoutType), nil
+	if timeoutType, found := commonpb.TimeoutType_value[timeoutTypeStr]; found {
+		return commonpb.TimeoutType(timeoutType), nil
 	}
 
 	// this happens when the timeout error reason is constructed by an prior constructed by prior client version

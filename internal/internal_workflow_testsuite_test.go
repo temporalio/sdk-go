@@ -36,7 +36,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -2873,7 +2872,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(eventpb.TimeoutType_StartToClose, testErrorDetails1)
+		return NewTimeoutError(commonpb.TimeoutType_StartToClose, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {
@@ -2900,7 +2899,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)
@@ -2915,7 +2914,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	err = timeoutErr.Details(&details)
 	s.NoError(err)
@@ -2946,7 +2945,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(eventpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasDetails())
 	var details string
 	err = timeoutErr.Details(&details)

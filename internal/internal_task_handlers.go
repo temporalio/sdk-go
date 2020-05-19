@@ -42,7 +42,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -535,7 +534,7 @@ func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
 	task.task = &workflowservice.ResetStickyTaskListRequest{
 		Namespace: w.workflowInfo.Namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
 			RunId:      w.workflowInfo.WorkflowExecution.RunID,
 		},
@@ -1007,7 +1006,7 @@ func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter Data
 	var errReason string
 	if len(p.NonRetriableErrorReasons) > 0 {
 		if lar.err == ErrDeadlineExceeded {
-			errReason = "timeout:" + eventpb.TimeoutType_ScheduleToClose.String()
+			errReason = "timeout:" + commonpb.TimeoutType_ScheduleToClose.String()
 		} else {
 			errReason, _ = getErrorDetails(lar.err, dataConverter)
 		}

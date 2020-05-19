@@ -30,7 +30,7 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal-proto/failure"
+	"go.temporal.io/temporal-proto/errordetails"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -53,7 +53,7 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 
 	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
-			st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&failure.WorkflowExecutionAlreadyStarted{
+			st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{
 				StartRequestId: "srId",
 				RunId:          "rId",
 			})

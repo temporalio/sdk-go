@@ -41,8 +41,6 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -561,7 +559,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(eventpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
+			return nil, NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -1257,7 +1255,7 @@ func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 		BackoffCoefficient:       p.GetBackoffCoefficient(),
 		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
 		MaximumAttempts:          p.GetMaximumAttempts(),
-		NonRetriableErrorReasons: p.NonRetriableErrorReasons,
+		NonRetriableErrorReasons: p.NonRetryableErrorTypes,
 	}
 }
 
@@ -1358,7 +1356,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(eventpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
+			err = NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))
@@ -1770,7 +1768,7 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	attr *decisionpb.ScheduleActivityTaskDecisionAttributes) *workflowservice.PollForActivityTaskResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollForActivityTaskResponse{
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},

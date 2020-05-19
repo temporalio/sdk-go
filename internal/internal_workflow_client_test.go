@@ -37,7 +37,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -796,7 +795,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionTimedOut
-	timeType := eventpb.TimeoutType_ScheduleToStart
+	timeType := commonpb.TimeoutType_ScheduleToStart
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -939,7 +938,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 func getGetWorkflowExecutionHistoryRequest(filterType filterpb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 		Namespace: DefaultNamespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},

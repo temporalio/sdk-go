@@ -98,7 +98,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(eventpb.TimeoutType_ScheduleToStart)
+	timeoutErr := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart)
 	require.False(t, timeoutErr.HasDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.Details(&data))
@@ -110,12 +110,12 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_Heartbeat)
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_ScheduleToClose)
-	testTimeoutErrorDetails(t, eventpb.TimeoutType_StartToClose)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_Heartbeat)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_ScheduleToClose)
+	testTimeoutErrorDetails(t, commonpb.TimeoutType_StartToClose)
 }
 
-func testTimeoutErrorDetails(t *testing.T, timeoutType eventpb.TimeoutType) {
+func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   getDefaultDataConverter(),

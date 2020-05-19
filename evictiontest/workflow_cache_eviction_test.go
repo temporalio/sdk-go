@@ -43,7 +43,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal-proto/workflowservicemock"
@@ -128,7 +127,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		// after polling it or giving an error
 		ret := &workflowservice.PollForDecisionTaskResponse{
 			TaskToken:              make([]byte, 5),
-			WorkflowExecution:      &executionpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+			WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 			WorkflowType:           &commonpb.WorkflowType{Name: "testReplayWorkflow"},
 			History:                &eventpb.History{Events: testEvents},
 			PreviousStartedEventId: 5}
