@@ -41,7 +41,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -290,7 +289,7 @@ func createWorkflowTaskWithQueries(
 		PreviousStartedEventId: previousStartEventID,
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowName},
 		History:                &eventpb.History{Events: eventsCopy},
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
 			RunId:      uuid.New(),
 		},
@@ -463,7 +462,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "sticky-tl"
-	execution := &executionpb.WorkflowExecution{
+	execution := &commonpb.WorkflowExecution{
 		WorkflowId: "fake-workflow-id",
 		RunId:      uuid.New(),
 	}
@@ -908,7 +907,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
 	continuedRunID := uuid.New()
-	parentExecution := &executionpb.WorkflowExecution{
+	parentExecution := &commonpb.WorkflowExecution{
 		WorkflowId: parentID,
 		RunId:      parentRunID,
 	}
@@ -1355,7 +1354,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollForActivityTaskResponse{
 			TaskToken: []byte("token"),
-			WorkflowExecution: &executionpb.WorkflowExecution{
+			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
 			ActivityType:                  &commonpb.ActivityType{Name: "test"},
@@ -1411,7 +1410,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
 		ActivityType:                  &commonpb.ActivityType{Name: "test"},

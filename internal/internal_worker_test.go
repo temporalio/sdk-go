@@ -43,7 +43,6 @@ import (
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	namespacepb "go.temporal.io/temporal-proto/namespace"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -649,7 +648,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	runID := "testRunID"
 
 	task := &workflowservice.PollForDecisionTaskResponse{
-		WorkflowExecution:      &executionpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+		WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowType},
 		History:                &eventpb.History{Events: testEvents},
 		PreviousStartedEventId: 0,

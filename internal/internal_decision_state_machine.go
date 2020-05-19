@@ -31,7 +31,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 
 	"go.temporal.io/temporal/internal/common/util"
 )
@@ -987,7 +986,7 @@ func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(ini
 func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, signalID string, childWorkflowOnly bool) decisionStateMachine {
 	attributes := &decisionpb.SignalExternalWorkflowExecutionDecisionAttributes{
 		Namespace: namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
