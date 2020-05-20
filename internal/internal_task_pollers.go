@@ -28,6 +28,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -1022,10 +1023,16 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 			Identity:  identity}
 	}
 
-	if cancelledErr, ok := err.(*CanceledError); ok || err == context.Canceled {
+	var cancelledErr *CanceledError
+	if errors.As(err, &cancelledErr) {
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
 			Details:   convertErrDetailsToPayloads(cancelledErr.details, dataConverter),
+			Identity:  identity}
+	}
+	if errors.Is(err, context.Canceled) {
+		return &workflowservice.RespondActivityTaskCanceledRequest{
+			TaskToken: taskToken,
 			Identity:  identity}
 	}
 
@@ -1053,7 +1060,8 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 			Identity:   identity}
 	}
 
-	if cancelledErr, ok := err.(*CanceledError); ok || err == context.Canceled {
+	var cancelledErr *CanceledError
+	if errors.As(err, &cancelledErr) {
 		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
 			Namespace:  namespace,
 			WorkflowId: workflowID,
@@ -1063,12 +1071,20 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 			Identity:   identity}
 	}
 
-	failure := convertErrorToFailure(err, dataConverter)
+	if errors.Is(err, context.Canceled) {
+		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
+			Namespace:  namespace,
+			WorkflowId: workflowID,
+			RunId:      runID,
+			ActivityId: activityID,
+			Identity:   identity}
+	}
+
 	return &workflowservice.RespondActivityTaskFailedByIdRequest{
 		Namespace:  namespace,
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
-		Failure:    failure,
+		Failure:    convertErrorToFailure(err, dataConverter),
 		Identity:   identity}
 }

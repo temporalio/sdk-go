@@ -358,7 +358,8 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		if err == nil {
 			return
 		}
-		if _, ok := err.(*CanceledError); !ok {
+		var canceledErr *CanceledError
+		if errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
 			GetLogger(creationCtx).Debug("Session failed", zap.String("sessionID", sessionID), zap.Error(err))
 			sessionInfo.sessionState = sessionStateFailed

@@ -145,12 +145,12 @@ type (
 
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError struct {
-		namespace string
-		// execution.WorkflowExecution workflowExecution = 2;
-		workflowType     *commonpb.WorkflowType
-		initiatedEventId int64
-		startedEventId   int64
-		cause            error
+		namespace         string
+		workflowExecution *commonpb.WorkflowExecution
+		workflowType      *commonpb.WorkflowType
+		initiatedEventId  int64
+		startedEventId    int64
+		cause             error
 	}
 )
 
@@ -235,25 +235,26 @@ func NewActivityTaskError(
 
 func NewChildWorkflowExecutionError(
 	namespace string,
-	// execution.WorkflowExecution workflowExecution,
+	workflowExecution *commonpb.WorkflowExecution,
 	workflowType *commonpb.WorkflowType,
 	initiatedEventId int64,
 	startedEventId int64,
 	cause error,
 ) *ChildWorkflowExecutionError {
 	return &ChildWorkflowExecutionError{
-		namespace:        namespace,
-		workflowType:     workflowType,
-		initiatedEventId: initiatedEventId,
-		startedEventId:   startedEventId,
-		cause:            cause,
+		namespace:         namespace,
+		workflowExecution: workflowExecution,
+		workflowType:      workflowType,
+		initiatedEventId:  initiatedEventId,
+		startedEventId:    startedEventId,
+		cause:             cause,
 	}
 }
 
 // IsCanceledError return whether error in CanceledError
 func IsCanceledError(err error) bool {
-	_, ok := err.(*CanceledError)
-	return ok
+	var canceledErr *CanceledError
+	return errors.As(err, &canceledErr)
 }
 
 // NewContinueAsNewError creates ContinueAsNewError instance
@@ -547,10 +548,11 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: failureInfo}
 	case *ChildWorkflowExecutionError:
 		failureInfo := &failurepb.ChildWorkflowExecutionFailureInfo{
-			Namespace:        err.namespace,
-			WorkflowType:     err.workflowType,
-			InitiatedEventId: err.initiatedEventId,
-			StartedEventId:   err.startedEventId,
+			Namespace:         err.namespace,
+			WorkflowExecution: err.workflowExecution,
+			WorkflowType:      err.workflowType,
+			InitiatedEventId:  err.initiatedEventId,
+			StartedEventId:    err.startedEventId,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
@@ -612,6 +614,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
 		childWorkflowExecutionError := NewChildWorkflowExecutionError(
 			childWorkflowExecutionFailureInfo.GetNamespace(),
+			childWorkflowExecutionFailureInfo.GetWorkflowExecution(),
 			childWorkflowExecutionFailureInfo.GetWorkflowType(),
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),

@@ -801,7 +801,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
-	if _, ok := err.(*CanceledError); ok && env.workflowCancelHandler != nil {
+	var cancelledErr *CanceledError
+	if errors.As(err, &cancelledErr) && env.workflowCancelHandler != nil {
 		env.workflowCancelHandler()
 	}
 
@@ -809,7 +810,6 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	env.isTestCompleted = true
 
 	if err != nil {
-		var cancelledErr *CanceledError
 		var continueAsNewErr *ContinueAsNewError
 		var timeoutErr *TimeoutError
 		var workflowPanicErr *workflowPanicError
@@ -1405,7 +1405,8 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
-	if _, ok := result.err.(*CanceledError); ok {
+	var canceledErr *CanceledError
+	if errors.As(result.err, &canceledErr) {
 		if env.onLocalActivityCanceledListener != nil {
 			env.onLocalActivityCanceledListener(activityInfo)
 		}

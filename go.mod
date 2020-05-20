@@ -36,4 +36,3 @@ require (
 )
 
 replace go.temporal.io/temporal-proto v0.23.2 => ../temporal-proto-go
-

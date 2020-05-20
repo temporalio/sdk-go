@@ -1239,6 +1239,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 
 	childWorkflowExecutionError := NewChildWorkflowExecutionError(
 		attributes.GetNamespace(),
+		attributes.GetWorkflowExecution(),
 		attributes.GetWorkflowType(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
@@ -1260,6 +1261,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 
 	childWorkflowExecutionError := NewChildWorkflowExecutionError(
 		attributes.GetNamespace(),
+		attributes.GetWorkflowExecution(),
 		attributes.GetWorkflowType(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
@@ -1280,6 +1282,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 
 	childWorkflowExecutionError := NewChildWorkflowExecutionError(
 		attributes.GetNamespace(),
+		attributes.GetWorkflowExecution(),
 		attributes.GetWorkflowType(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
@@ -1300,6 +1303,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 
 	childWorkflowExecutionError := NewChildWorkflowExecutionError(
 		attributes.GetNamespace(),
+		attributes.GetWorkflowExecution(),
 		attributes.GetWorkflowType(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),

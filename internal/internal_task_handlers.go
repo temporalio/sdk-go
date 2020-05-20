@@ -1428,7 +1428,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
-		if panicErr, ok := workflowContext.err.(*PanicError); ok {
+		var panicErr *PanicError
+		if errors.As(workflowContext.err, &panicErr) {
 			queryCompletedRequest.CompletedType = querypb.QueryResultType_Failed
 			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
 			return queryCompletedRequest
@@ -1448,15 +1449,16 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
 
 	// fail decision task on decider panic
-	if panicErr, ok := workflowContext.err.(*workflowPanicError); ok {
+	var workflowPanicErr *workflowPanicError
+	if errors.As(workflowContext.err, &workflowPanicErr) {
 		// Workflow panic
 		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.String("PanicError", panicErr.Error()),
-			zap.String("PanicStack", panicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.dataConverter)
+			zap.String("PanicError", workflowPanicErr.Error()),
+			zap.String("PanicStack", workflowPanicErr.StackTrace()))
+		return errorToFailDecisionTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
 	}
 
 	// complete decision task
