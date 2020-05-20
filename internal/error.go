@@ -137,8 +137,8 @@ type (
 
 	// ActivityTaskError returned from workflow when activity returned an error.
 	ActivityTaskError struct {
-		scheduledEventId int64
-		startedEventId   int64
+		scheduledEventID int64
+		startedEventID   int64
 		identity         string
 		cause            error
 	}
@@ -148,8 +148,8 @@ type (
 		namespace         string
 		workflowExecution *commonpb.WorkflowExecution
 		workflowType      *commonpb.WorkflowType
-		initiatedEventId  int64
-		startedEventId    int64
+		initiatedEventID  int64
+		startedEventID    int64
 		cause             error
 	}
 )
@@ -180,7 +180,7 @@ func NewApplicationError(message string, nonRetryable bool, details ...interface
 }
 
 // NewTimeoutError creates TimeoutError instance.
-// Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
+// Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
 func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, lastHeatbeatDetails ...interface{}) *TimeoutError {
 	timeoutErr := &TimeoutError{
 		timeoutType: timeoutType,
@@ -197,12 +197,12 @@ func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, lastHeatbe
 	return timeoutErr
 }
 
-// NewHeartbeatTimeoutError creates TimeoutError instance
+// NewHeartbeatTimeoutError creates TimeoutError instance.
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
 	return NewTimeoutError(commonpb.TimeoutType_Heartbeat, nil, details...)
 }
 
-// NewCanceledError creates CanceledError instance
+// NewCanceledError creates CanceledError instance.
 func NewCanceledError(details ...interface{}) *CanceledError {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
@@ -212,39 +212,41 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 	return &CanceledError{details: ErrorDetailsValues(details)}
 }
 
+// NewActivityTaskError creates ActivityTaskError instance.
 func NewActivityTaskError(
-	scheduledEventId int64,
-	startedEventId int64,
+	scheduledEventID int64,
+	startedEventID int64,
 	identity string,
 	cause error,
 ) *ActivityTaskError {
 	return &ActivityTaskError{
-		scheduledEventId: scheduledEventId,
-		startedEventId:   startedEventId,
+		scheduledEventID: scheduledEventID,
+		startedEventID:   startedEventID,
 		identity:         identity,
 		cause:            cause,
 	}
 }
 
+// NewChildWorkflowExecutionError creates ChildWorkflowExecutionError instance.
 func NewChildWorkflowExecutionError(
 	namespace string,
 	workflowExecution *commonpb.WorkflowExecution,
 	workflowType *commonpb.WorkflowType,
-	initiatedEventId int64,
-	startedEventId int64,
+	initiatedEventID int64,
+	startedEventID int64,
 	cause error,
 ) *ChildWorkflowExecutionError {
 	return &ChildWorkflowExecutionError{
 		namespace:         namespace,
 		workflowExecution: workflowExecution,
 		workflowType:      workflowType,
-		initiatedEventId:  initiatedEventId,
-		startedEventId:    startedEventId,
+		initiatedEventID:  initiatedEventID,
+		startedEventID:    startedEventID,
 		cause:             cause,
 	}
 }
 
-// IsCanceledError return whether error in CanceledError
+// IsCanceledError returns whether error in CanceledError.
 func IsCanceledError(err error) bool {
 	var canceledErr *CanceledError
 	return errors.As(err, &canceledErr)
@@ -411,7 +413,7 @@ func (e *UnknownExternalWorkflowExecutionError) Error() string {
 }
 
 func (e *ActivityTaskError) Error() string {
-	return fmt.Sprintf("activity task error (scheduledEventId: %d, startedEventId: %d, identity: %s): %v", e.scheduledEventId, e.startedEventId, e.identity, e.cause)
+	return fmt.Sprintf("activity task error (scheduledEventID: %d, startedEventID: %d, identity: %s): %v", e.scheduledEventID, e.startedEventID, e.identity, e.cause)
 }
 
 func (e *ActivityTaskError) Unwrap() error {
@@ -420,8 +422,8 @@ func (e *ActivityTaskError) Unwrap() error {
 
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
-	return fmt.Sprintf("child workflow execution error (initiatedEventId: %d, startedEventId: %d, workflowType: %s): %v",
-		e.initiatedEventId, e.startedEventId, e.workflowType, e.cause)
+	return fmt.Sprintf("child workflow execution error (initiatedEventID: %d, startedEventID: %d, workflowType: %s): %v",
+		e.initiatedEventID, e.startedEventID, e.workflowType, e.cause)
 }
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
@@ -443,6 +445,7 @@ func convertErrDetailsToPayloads(details Values, dc DataConverter) *commonpb.Pay
 	}
 }
 
+// IsRetryable returns if error retryable or not.
 func IsRetryable(err error, nonRetryableTypes []string) bool {
 	var terminatedErr *TerminatedError
 	var canceledErr *CanceledError
@@ -534,8 +537,8 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_TerminatedFailureInfo{TerminatedFailureInfo: failureInfo}
 	case *ActivityTaskError:
 		failureInfo := &failurepb.ActivityTaskFailureInfo{
-			ScheduledEventId: err.scheduledEventId,
-			StartedEventId:   err.startedEventId,
+			ScheduledEventId: err.scheduledEventID,
+			StartedEventId:   err.startedEventID,
 			Identity:         err.identity,
 		}
 		failure.FailureInfo = &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: failureInfo}
@@ -544,8 +547,8 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			Namespace:         err.namespace,
 			WorkflowExecution: err.workflowExecution,
 			WorkflowType:      err.workflowType,
-			InitiatedEventId:  err.initiatedEventId,
-			StartedEventId:    err.startedEventId,
+			InitiatedEventId:  err.initiatedEventID,
+			StartedEventId:    err.startedEventID,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
