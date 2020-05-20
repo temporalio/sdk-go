@@ -1444,6 +1444,6 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		InitialIntervalInSeconds: common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
 		BackoffCoefficient:       retryPolicy.BackoffCoefficient,
 		MaximumAttempts:          retryPolicy.MaximumAttempts,
-		NonRetryableErrorTypes:   retryPolicy.NonRetryableErrorReasons,
+		NonRetryableErrorTypes:   retryPolicy.NonRetryableErrorTypes,
 	}
 }

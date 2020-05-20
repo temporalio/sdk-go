@@ -154,13 +154,6 @@ type (
 	}
 )
 
-// const (
-// 	errReasonPanic    = "temporalInternal:Panic"
-// 	errReasonGeneric  = "temporalInternal:Generic"
-// 	errReasonCanceled = "temporalInternal:Canceled"
-// 	errReasonTimeout  = "temporalInternal:Timeout"
-// )
-
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
 var ErrNoData = errors.New("no data available")
 

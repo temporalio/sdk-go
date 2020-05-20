@@ -293,12 +293,6 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		InitialInterval:    time.Second,
 		BackoffCoefficient: 1.1,
 		MaximumInterval:    time.Second * 10,
-		NonRetryableErrorReasons: []string{
-			"temporalInternal:Panic",
-			"temporalInternal:Generic",
-			"temporalInternal:Timeout TimeoutTypeStartToClose",
-			"temporalInternal:Timeout TimeoutTypeHeartbeat",
-		},
 	}
 
 	heartbeatTimeout := defaultSessionHeartBeatTimeout

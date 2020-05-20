@@ -2256,11 +2256,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          5,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        5,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2326,11 +2326,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2368,11 +2368,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 		lao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2411,11 +2411,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 		lao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
@@ -2444,11 +2444,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetryOnCancel() {
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2486,11 +2486,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 		cwo := ChildWorkflowOptions{
 			WorkflowRunTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2540,11 +2540,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 			WorkflowID:         "test-retry-signal-child-workflow",
 			WorkflowRunTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          3,
-				InitialInterval:          time.Second * 3,
-				MaximumInterval:          time.Second * 3,
-				BackoffCoefficient:       1,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        3,
+				InitialInterval:        time.Second * 3,
+				MaximumInterval:        time.Second * 3,
+				BackoffCoefficient:     1,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
@@ -2747,11 +2747,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
 			WorkflowRunTimeout: time.Minute * 10,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:          5,
-				InitialInterval:          time.Second,
-				MaximumInterval:          time.Second * 10,
-				BackoffCoefficient:       2,
-				NonRetryableErrorReasons: []string{"bad-bug"},
+				MaximumAttempts:        5,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
 			},
 			CronSchedule: "0 * * * *", // hourly
 		})
@@ -2882,7 +2882,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 1.1,
 				MaximumAttempts:    3,
-				// NonRetryableErrorReasons: []string{"temporalInternal:Timeout StartToClose"},
+				// NonRetryableErrorTypes: []string{"temporalInternal:Timeout StartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)

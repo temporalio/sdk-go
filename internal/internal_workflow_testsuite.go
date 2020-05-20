@@ -1251,11 +1251,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
-		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
-		BackoffCoefficient:       p.GetBackoffCoefficient(),
-		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
-		MaximumAttempts:          p.GetMaximumAttempts(),
-		NonRetryableErrorReasons: p.NonRetryableErrorTypes,
+		InitialInterval:        time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
+		BackoffCoefficient:     p.GetBackoffCoefficient(),
+		MaximumInterval:        time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
+		MaximumAttempts:        p.GetMaximumAttempts(),
+		NonRetryableErrorTypes: p.NonRetryableErrorTypes,
 	}
 }
 

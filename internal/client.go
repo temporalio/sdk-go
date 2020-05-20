@@ -477,14 +477,11 @@ type (
 		// If not set or set to 0, it means unlimited, and rely on activity ScheduleToCloseTimeout to stop.
 		MaximumAttempts int32
 
-		// TODO: Rename to NonRetryableErrorTypes and clean up comment.
-		// Non-Retriable errors. This is optional. Temporal server will stop retry if error reason matches this list.
-		// Error reason for custom error is specified when your activity/workflow return temporal.NewApplicationError(reason).
-		// Error reason for panic error is "temporalInternal:Panic".
-		// Error reason for any other error is "temporalInternal:Generic".
-		// Error reason for timeouts is: "temporalInternal:Timeout TIMEOUT_TYPE". TIMEOUT_TYPE could be StartToClose or Heartbeat.
-		// Note, cancellation is not a failure, so it won't be retried.
-		NonRetryableErrorReasons []string
+		// Non-Retriable errors. This is optional. Temporal server will stop retry if error type matches this list.
+		// Note:
+		//  - cancellation is not a failure, so it won't be retried,
+		//  - only StartToClose or Heartbeat timeouts are retryable.
+		NonRetryableErrorTypes []string
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.

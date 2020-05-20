@@ -1006,7 +1006,7 @@ func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter Data
 }
 
 func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, expireTime time.Time) time.Duration {
-	if !IsRetryable(err, p.NonRetryableErrorReasons) {
+	if !IsRetryable(err, p.NonRetryableErrorTypes) {
 		return noRetryBackoff
 	}
 
