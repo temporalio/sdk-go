@@ -45,6 +45,9 @@ type (
 
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
+
+	// WorkflowExecutionError returned from workflow.
+	WorkflowExecutionError = internal.WorkflowExecutionError
 )
 
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.

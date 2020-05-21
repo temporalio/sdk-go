@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -692,10 +693,13 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.NotNil(err)
-	_, ok := err.(*CanceledError)
+	s.Error(err)
+	_, ok := err.(*WorkflowExecutionError)
 	s.True(ok)
+	var canceledErr *CanceledError
+	s.True(errors.As(err, &canceledErr))
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -709,8 +713,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	applicaionErr := NewApplicationError(reason, false, details)
-	failure := convertErrorToFailure(applicaionErr, getDefaultDataConverter())
+	applicationError := NewApplicationError(reason, false, details)
+	failure := convertErrorToFailure(applicationError, getDefaultDataConverter())
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -742,8 +746,14 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Equal(convertFailureToError(failure, getDefaultDataConverter()), err)
+	_, ok := err.(*WorkflowExecutionError)
+	s.True(ok)
+	var applicationErr2 *ApplicationError
+	s.True(errors.As(err, &applicationErr2))
+	s.Equal(applicationError.message, applicationErr2.message)
+	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -782,8 +792,12 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Terminated() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Equal(newTerminatedError(), err)
+	_, ok := err.(*WorkflowExecutionError)
+	s.True(ok)
+	var terminatedErr *TerminatedError
+	s.True(errors.As(err, &terminatedErr))
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -826,11 +840,14 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.NotNil(err)
-	_, ok := err.(*TimeoutError)
+	s.Error(err)
+	_, ok := err.(*WorkflowExecutionError)
 	s.True(ok)
-	s.Equal(timeType, err.(*TimeoutError).TimeoutType())
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(timeType, timeoutErr.TimeoutType())
 	s.Equal(time.Minute, decodedResult)
 }
 

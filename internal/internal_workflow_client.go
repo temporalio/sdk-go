@@ -1109,7 +1109,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		err = workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
+		return workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
@@ -1127,8 +1127,15 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)
 	default:
-		err = fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
+		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
+
+	err = NewWorkflowExecutionError(
+		workflowRun.workflowID,
+		workflowRun.currentRunID,
+		getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn),
+		err)
+
 	return err
 }
 
