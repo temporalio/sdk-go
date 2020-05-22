@@ -34,64 +34,82 @@ import (
 )
 
 /*
-Below are the possible cases that activity could fail:
+If activity fails then *ActivityTaskError is returned to the workflow code. The error has important information about activity
+and actual error which caused activity failure. This internal error can be unrapped using errors.Unwrap() or checked using errors.As().
+Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
-	If activity implementation returns *ApplicationError by using NewApplicationError() API, workflow code would receive *ApplicationError.
-	The err would contain a Reason and Details. The reason is what activity specified to NewApplicationError(), which workflow
-	code could check to determine what kind of error it was and take actions based on the reason. The details is encoded
-	[]byte which workflow code could extract strong typed data. Workflow code needs to know what the types of the encoded
-	details are before extracting them.
-2) *GenericError:
-	If activity implementation returns errors other than from NewApplicationError() API, workflow code would receive *GenericError.
-	Use err.Error() to get the string representation of the actual error.
-3) *CanceledError:
-	If activity was canceled, workflow code will receive instance of *CanceledError. When activity cancels itself by
+	*ApplicationError can be returned in two cases:
+		- If activity implementation returns *ApplicationError by using NewApplicationError() API.
+		  The err would contain a message, details, and NonRetryable flag. Workflow code could check this flag and details to determine
+		  what kind of error it was and take actions based on it. The details is encoded payload which workflow code could extract
+		  to strong typed variable. Workflow code needs to know what the types of the encoded details are before extracting them.
+		- If activity implementation returns errors other than from NewApplicationError() API. In this case GetOriginalType()
+		  will return orginal type of an error represented as string. Workflow code could check this type to determine what kind of error it was
+		  and take actions based on the type. These errors are retryable by default, unless error type is specified in retry policy.
+2) *CanceledError:
+	If activity was canceled, internal error will be an instance of *CanceledError. When activity cancels itself by
 	returning NewCancelError() it would supply optional details which could be extracted by workflow code.
-4) *TimeoutError:
-	If activity was timed out (several timeout types), workflow code will receive instance of *TimeoutError. The err contains
+3) *TimeoutError:
+	If activity was timed out (several timeout types), internal error will be an instance of *TimeoutError. The err contains
 	details about what type of timeout it was.
-5) *PanicError:
+4) *PanicError:
 	If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
-	The temporal client library will present that failure as *PanicError to workflow code. The err contains a string
-	representation of the panic message and the call stack when panic was happen.
+	The SDK will present that failure as *PanicError. The err contains a string	representation of the panic message and
+	the call stack when panic was happen.
 
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
 
 _, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
 if err != nil {
-	switch err := err.(type) {
-	case *workflow.ApplicationError:
+	var applicationErr *ApplicationError
+	if errors.As(err, &applicationError) {
 		// handle activity errors (created via NewApplicationError() API)
-		switch err.Reason() {
-		case CustomErrReasonA: // assume CustomErrReasonA is constant defined by activity implementation
-			var detailMsg string // assuming activity return error by NewApplicationError(CustomErrReasonA, "string details")
-			err.Details(&detailMsg) // extract strong typed details (corresponding to CustomErrReasonA)
-			// handle CustomErrReasonA
-		case CustomErrReasonB:
-			// handle CustomErrReasonB
+		if !applicationErr.NonRetryable() {
+			// manually retry activity
+		}
+		var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
+		applicationErr.Details(&detailMsg) // extract strong typed details
+
+		// handle activity errors (errors created other than using NewApplicationError() API)
+		switch err.OriginalType() {
+		case "CustomErrTypeA":
+			// handle CustomErrTypeA
+		case CustomErrTypeB:
+			// handle CustomErrTypeB
 		default:
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
-	case *workflow.GenericError:
-		// handle generic error (errors created other than using NewApplicationError() API)
-	case *workflow.CanceledError:
+	}
+
+	var canceledErr *CanceledError
+	if errors.As(err, &canceledErr) {
 		// handle cancellation
-	case *workflow.TimeoutError:
-		// handle timeout, could check timeout type by err.TimeoutType()
-	case *workflow.PanicError:
-		// handle panic
+	}
+
+	var timeoutErr *TimeoutError
+	if errors.As(err, &timeoutErr) {
+		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
+	}
+
+	var panicErr *PanicError
+	if errors.As(err, &panicErr) {
+		// handle panic, message and stack trace are available by panicErr.Error() and panicErr.StackTrace()
 	}
 }
 
-Errors from child workflow should be handled in a similar way, except that there should be no *PanicError from child workflow.
-When panic happen in workflow implementation code, temporal client library catches that panic and causing the decision timeout.
+Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
+workflow code. It will contains *ActivityTaskError, which in turn will contains on of the errors above.
+When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
 That decision task will be retried at a later time (with exponential backoff retry intervals).
+
+Workflow consumers will get an instance of *WorkflowExecutionError. This error will contains one of errors above.
 */
 
 type (
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		message      string
+		orginalType  string
 		nonRetryable bool
 		details      Values
 	}
@@ -135,7 +153,15 @@ type (
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError struct{}
 
+	// ServerError can be returned from server.
+	ServerError struct {
+		message      string
+		nonRetryable bool
+		cause        error
+	}
+
 	// ActivityTaskError is returned from workflow when activity returned an error.
+	// Unwrap this error to get actual cause.
 	ActivityTaskError struct {
 		scheduledEventID int64
 		startedEventID   int64
@@ -144,6 +170,7 @@ type (
 	}
 
 	// ChildWorkflowExecutionError is returned from workflow when child workflow returned an error.
+	// Unwrap this error to get actual cause.
 	ChildWorkflowExecutionError struct {
 		namespace        string
 		workflowID       string
@@ -155,6 +182,7 @@ type (
 	}
 
 	// WorkflowExecutionError is returned from workflow.
+	// Unwrap this error to get actual cause.
 	WorkflowExecutionError struct {
 		workflowID   string
 		runID        string
@@ -176,16 +204,16 @@ var ErrTooManyArg = errors.New("too many arguments")
 // that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
-// NewApplicationError create new instance of *ApplicationError with reason and optional details.
+// NewApplicationError create new instance of *ApplicationError with message and optional details.
 func NewApplicationError(message string, nonRetryable bool, details ...interface{}) *ApplicationError {
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &ApplicationError{message: message, nonRetryable: nonRetryable, details: d}
+			return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
 		}
 	}
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &ApplicationError{message: message, nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
+	return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
 }
 
 // NewTimeoutError creates TimeoutError instance.
@@ -219,6 +247,11 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 		}
 	}
 	return &CanceledError{details: ErrorDetailsValues(details)}
+}
+
+// NewServerError create new instance of *ServerError with message.
+func NewServerError(message string, nonRetryable bool, cause error) *ServerError {
+	return &ServerError{message: message, nonRetryable: nonRetryable, cause: cause}
 }
 
 // NewActivityTaskError creates ActivityTaskError instance.
@@ -314,6 +347,11 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 // Error from error interface
 func (e *ApplicationError) Error() string {
 	return e.message
+}
+
+// OriginalType returns orginal error type represented as string.
+func (e *ApplicationError) OriginalType() string {
+	return e.orginalType
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -438,6 +476,15 @@ func (e *UnknownExternalWorkflowExecutionError) Error() string {
 	return "UnknownExternalWorkflowExecution"
 }
 
+// Error from error interface
+func (e *ServerError) Error() string {
+	return e.message
+}
+
+func (e *ServerError) Unwrap() error {
+	return e.cause
+}
+
 func (e *ActivityTaskError) Error() string {
 	return fmt.Sprintf("activity task error (scheduledEventID: %d, startedEventID: %d, identity: %s): %v", e.scheduledEventID, e.startedEventID, e.identity, e.cause)
 }
@@ -491,11 +538,12 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 	}
 
 	var applicationErr *ApplicationError
+	var applicationErrOriginalType string
 	if errors.As(err, &applicationErr) {
 		if applicationErr.nonRetryable {
 			return false
-
 		}
+		applicationErrOriginalType = applicationErr.orginalType
 	}
 
 	var timeoutErr *TimeoutError
@@ -506,9 +554,23 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		}
 	}
 
+	var serverErr *ServerError
+	if errors.As(err, &serverErr) {
+		if serverErr.nonRetryable {
+			return false
+		}
+	}
+
+	for {
+		causeErr := errors.Unwrap(err)
+		if causeErr == nil {
+			break
+		}
+		err = causeErr
+	}
 	errType := getErrorType(err)
-	for _, er := range nonRetryableTypes {
-		if er == errType {
+	for _, nonRetryableType := range nonRetryableTypes {
+		if nonRetryableType == errType || nonRetryableType == applicationErrOriginalType {
 			return false
 		}
 	}
@@ -571,6 +633,11 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 	case *TerminatedError:
 		failureInfo := &failurepb.TerminatedFailureInfo{}
 		failure.FailureInfo = &failurepb.Failure_TerminatedFailureInfo{TerminatedFailureInfo: failureInfo}
+	case *ServerError:
+		failureInfo := &failurepb.ServerFailureInfo{
+			NonRetryable: err.nonRetryable,
+		}
+		failure.FailureInfo = &failurepb.Failure_ServerFailureInfo{ServerFailureInfo: failureInfo}
 	case *ActivityTaskError:
 		failureInfo := &failurepb.ActivityTaskFailureInfo{
 			ScheduledEventId: err.scheduledEventID,
@@ -598,8 +665,8 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	if innerErr := errors.Unwrap(err); innerErr != nil {
-		failure.Cause = convertErrorToFailure(innerErr, dc)
+	if causeErr := errors.Unwrap(err); causeErr != nil {
+		failure.Cause = convertErrorToFailure(causeErr, dc)
 	}
 
 	return failure
@@ -627,11 +694,14 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		case getErrorType(&PanicError{}):
 			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		}
+		applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
+		applicationErr.orginalType = failure.GetApplicationFailureInfo().GetType()
+		return applicationErr
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
 		return NewCanceledError(details)
 	} else if failure.GetServerFailureInfo() != nil {
-		return NewApplicationError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), nil)
+		return NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
 		return NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetTerminatedFailureInfo() != nil {

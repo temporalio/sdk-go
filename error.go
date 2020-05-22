@@ -43,6 +43,9 @@ type (
 	// ActivityTaskError returned from workflow when activity returned an error.
 	ActivityTaskError = internal.ActivityTaskError
 
+	// ServerError can be returned from server.
+	ServerError = internal.ServerError
+
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
 

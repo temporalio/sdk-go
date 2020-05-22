@@ -390,10 +390,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowT
 // Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
-// If the activity failed to complete then the future get error would indicate the failure, and it can be one of
-// ApplicationError, TimeoutError, CanceledError, PanicError, GenericError.
+// If the activity failed to complete then the future get error would indicate the failure.
+// The error will be of type *ActivityTaskError. It will have important activity information and actual error that caused
+// activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
+//
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// error CanceledError.
+// *CanceledError set as cause for *ActivityTaskError.
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
@@ -499,10 +502,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // as history to temporal server so if the workflow crashes, a different worker can replay the history without running
 // the local activity again.
 //
-// If the activity failed to complete then the future get error would indicate the failure, and it can be one of
-// ApplicationError, TimeoutError, CanceledError, PanicError, GenericError.
-// You can cancel the pending activity by cancel the context(workflow.WithCancel(ctx)) and that will fail the activity
-// with error CanceledError.
+// If the activity failed to complete then the future get error would indicate the failure.
+// The error will be of type *ActivityTaskError. It will have important activity information and actual error that caused
+// activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
+//
+// You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
+// *CanceledError set as cause for *ActivityTaskError.
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
@@ -617,10 +623,15 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 //  ctx := WithChildWorkflowOptions(ctx, cwo)
 // Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.
 // Input args are the arguments that need to be passed to the child workflow function represented by childWorkflow.
-// If the child workflow failed to complete then the future get error would indicate the failure and it can be one of
-// ApplicationError, TimeoutError, CanceledError, GenericError.
+//
+// If the child workflow failed to complete then the future get error would indicate the failure.
+// The error will be of type *ChildWorkflowExecutionError. It will have important child workflow information and actual error that caused
+// child workflow failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// *ApplicationError, *TimeoutError, or *CanceledError.
+//
 // You can cancel the pending child workflow using context(workflow.WithCancel(ctx)) and that will fail the workflow with
-// error CanceledError.
+// *CanceledError set as cause for *ChildWorkflowExecutionError.
+//
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	i := getWorkflowInterceptor(ctx)

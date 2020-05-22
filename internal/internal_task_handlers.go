@@ -920,7 +920,6 @@ ProcessEvents:
 	}
 
 	if nonDeterministicErr != nil {
-
 		w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
 		w.wth.logger.Error("non-deterministic-error",
 			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
