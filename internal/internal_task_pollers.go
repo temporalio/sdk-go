@@ -69,7 +69,7 @@ type (
 
 	// basePoller is the base class for all poller implementations
 	basePoller struct {
-		shutdownC <-chan struct{}
+		stopC <-chan struct{}
 	}
 
 	// workflowTaskPoller implements polling/processing a workflow task
@@ -179,10 +179,10 @@ func isClientSideError(err error) bool {
 	return err == context.DeadlineExceeded
 }
 
-// shuttingDown returns true if worker is shutting down right now
-func (bp *basePoller) shuttingDown() bool {
+// stopping returns true if worker is stopping right now
+func (bp *basePoller) stopping() bool {
 	select {
-	case <-bp.shutdownC:
+	case <-bp.stopC:
 		return true
 	default:
 		return false
@@ -190,10 +190,10 @@ func (bp *basePoller) shuttingDown() bool {
 }
 
 // doPoll runs the given pollFunc in a separate go routine. Returns when either of the conditions are met:
-// - poll succeeds, poll fails or worker is shutting down
+// - poll succeeds, poll fails or worker is stopping
 func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, error)) (interface{}, error) {
-	if bp.shuttingDown() {
-		return nil, errShutdown
+	if bp.stopping() {
+		return nil, errStop
 	}
 
 	var err error
@@ -211,16 +211,16 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 	select {
 	case <-doneC:
 		return result, err
-	case <-bp.shutdownC:
+	case <-bp.stopC:
 		cancel()
-		return nil, errShutdown
+		return nil, errStop
 	}
 }
 
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		basePoller:                   basePoller{shutdownC: params.WorkerStopChannel},
+		basePoller:                   basePoller{stopC: params.WorkerStopChannel},
 		service:                      service,
 		namespace:                    params.Namespace,
 		taskListName:                 params.TaskList,
@@ -248,8 +248,8 @@ func (wtp *workflowTaskPoller) PollTask() (interface{}, error) {
 
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
-	if wtp.shuttingDown() {
-		return errShutdown
+	if wtp.stopping() {
+		return errStop
 	}
 
 	switch task := task.(type) {
@@ -424,7 +424,7 @@ func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localAct
 		tracer:             params.Tracer,
 	}
 	return &localActivityTaskPoller{
-		basePoller:   basePoller{shutdownC: params.WorkerStopChannel},
+		basePoller:   basePoller{stopC: params.WorkerStopChannel},
 		handler:      handler,
 		metricsScope: params.MetricsScope,
 		logger:       params.Logger,
@@ -437,8 +437,8 @@ func (latp *localActivityTaskPoller) PollTask() (interface{}, error) {
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
-	if latp.shuttingDown() {
-		return errShutdown
+	if latp.stopping() {
+		return errStop
 	}
 
 	result := latp.handler.executeLocalActivityTask(task.(*localActivityTask))
@@ -794,7 +794,7 @@ func newGetHistoryPageFunc(
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		basePoller:          basePoller{shutdownC: params.WorkerStopChannel},
+		basePoller:          basePoller{stopC: params.WorkerStopChannel},
 		taskHandler:         taskHandler,
 		service:             service,
 		namespace:           params.Namespace,
@@ -857,8 +857,8 @@ func (atp *activityTaskPoller) PollTask() (interface{}, error) {
 
 // ProcessTask processes a new task
 func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
-	if atp.shuttingDown() {
-		return errShutdown
+	if atp.stopping() {
+		return errStop
 	}
 
 	activityTask := task.(*activityTask)
@@ -887,9 +887,9 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
-	// if worker is shutting down, don't bother reporting activity completion
-	if atp.shuttingDown() {
-		return errShutdown
+	// if worker is stopping, don't bother reporting activity completion
+	if atp.stopping() {
+		return errStop
 	}
 
 	responseStartTime := time.Now()

@@ -943,8 +943,8 @@ func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string,
 	return resp, nil
 }
 
-// CloseConnection closes underlying gRPC connection.
-func (wc *WorkflowClient) CloseConnection() {
+// Close client and clean up underlying resources.
+func (wc *WorkflowClient) Close() {
 	if wc.connectionCloser == nil {
 		return
 	}
@@ -1023,8 +1023,8 @@ func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
-// CloseConnection closes underlying gRPC connection.
-func (nc *namespaceClient) CloseConnection() {
+// Close client and clean up underlying resources.
+func (nc *namespaceClient) Close() {
 	if nc.connectionCloser == nil {
 		return
 	}

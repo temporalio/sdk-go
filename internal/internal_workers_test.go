@@ -188,7 +188,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
 
-	<-worker.worker.shutdownCh
+	<-worker.worker.stopCh
 	err := ctx.Err()
 	s.NoError(err)
 

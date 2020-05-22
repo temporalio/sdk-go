@@ -53,7 +53,7 @@ var (
 	pollOperationRetryPolicy = createPollRetryPolicy()
 )
 
-var errShutdown = errors.New("worker shutting down")
+var errStop = errors.New("worker stopping")
 
 type (
 	// resultHandler that returns result
@@ -115,7 +115,7 @@ type (
 		taskWorker        taskPoller
 		identity          string
 		workerType        string
-		shutdownTimeout   time.Duration
+		stopTimeout       time.Duration
 		userContextCancel context.CancelFunc
 	}
 
@@ -123,8 +123,8 @@ type (
 	baseWorker struct {
 		options              baseWorkerOptions
 		isWorkerStarted      bool
-		shutdownCh           chan struct{}  // Channel used to shut down the go routines.
-		shutdownWG           sync.WaitGroup // The WaitGroup for shutting down existing routines.
+		stopCh               chan struct{}  // Channel used to stop the go routines.
+		stopWG               sync.WaitGroup // The WaitGroup for stopping existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
 		limiterContext       context.Context
@@ -159,7 +159,7 @@ func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope t
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
-		shutdownCh:      make(chan struct{}),
+		stopCh:          make(chan struct{}),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
@@ -187,11 +187,11 @@ func (bw *baseWorker) Start() {
 	bw.metricsScope.Counter(metrics.WorkerStartCounter).Inc(1)
 
 	for i := 0; i < bw.options.pollerCount; i++ {
-		bw.shutdownWG.Add(1)
+		bw.stopWG.Add(1)
 		go bw.runPoller()
 	}
 
-	bw.shutdownWG.Add(1)
+	bw.stopWG.Add(1)
 	go bw.runTaskDispatcher()
 
 	bw.isWorkerStarted = true
@@ -204,9 +204,9 @@ func (bw *baseWorker) Start() {
 	})
 }
 
-func (bw *baseWorker) isShutdown() bool {
+func (bw *baseWorker) isStop() bool {
 	select {
-	case <-bw.shutdownCh:
+	case <-bw.stopCh:
 		return true
 	default:
 		return false
@@ -214,12 +214,12 @@ func (bw *baseWorker) isShutdown() bool {
 }
 
 func (bw *baseWorker) runPoller() {
-	defer bw.shutdownWG.Done()
+	defer bw.stopWG.Done()
 	bw.metricsScope.Counter(metrics.PollerStartCounter).Inc(1)
 
 	for {
 		select {
-		case <-bw.shutdownCh:
+		case <-bw.stopCh:
 			return
 		case <-bw.pollerRequestCh:
 			if bw.sessionTokenBucket != nil {
@@ -231,26 +231,26 @@ func (bw *baseWorker) runPoller() {
 }
 
 func (bw *baseWorker) runTaskDispatcher() {
-	defer bw.shutdownWG.Done()
+	defer bw.stopWG.Done()
 
 	for i := 0; i < bw.options.maxConcurrentTask; i++ {
 		bw.pollerRequestCh <- struct{}{}
 	}
 
 	for {
-		// wait for new task or shutdown
+		// wait for new task or worker stop
 		select {
-		case <-bw.shutdownCh:
+		case <-bw.stopCh:
 			return
 		case task := <-bw.taskQueueCh:
 			// for non-polled-task (local activity result as task), we don't need to rate limit
 			_, isPolledTask := task.(*polledTask)
 			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
-				if bw.isShutdown() {
+				if bw.isStop() {
 					return
 				}
 			}
-			bw.shutdownWG.Add(1)
+			bw.stopWG.Add(1)
 			go bw.processTask(task)
 		}
 	}
@@ -275,7 +275,7 @@ func (bw *baseWorker) pollTask() {
 	if task != nil {
 		select {
 		case bw.taskQueueCh <- &polledTask{task}:
-		case <-bw.shutdownCh:
+		case <-bw.stopCh:
 		}
 	} else {
 		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new poll
@@ -283,7 +283,7 @@ func (bw *baseWorker) pollTask() {
 }
 
 func (bw *baseWorker) processTask(task interface{}) {
-	defer bw.shutdownWG.Done()
+	defer bw.stopWG.Done()
 	// If the task is from poller, after processing it we would need to request a new poll. Otherwise, the task is from
 	// local activity worker, we don't need a new poll from server.
 	polledTask, isPolledTask := task.(*polledTask)
@@ -323,17 +323,17 @@ func (bw *baseWorker) Run() {
 	bw.Stop()
 }
 
-// Shutdown is a blocking call and cleans up all the resources associated with worker.
+// Stop is a blocking call and cleans up all the resources associated with worker.
 func (bw *baseWorker) Stop() {
 	if !bw.isWorkerStarted {
 		return
 	}
-	close(bw.shutdownCh)
+	close(bw.stopCh)
 	bw.limiterContextCancel()
 
-	if success := awaitWaitGroup(&bw.shutdownWG, bw.options.shutdownTimeout); !success {
+	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
-			bw.logger.Info("Worker graceful shutdown timed out.", zap.Duration("Shutdown timeout", bw.options.shutdownTimeout))
+			bw.logger.Info("Worker graceful stop timed out.", zap.Duration("Stop timeout", bw.options.stopTimeout))
 		})
 	}
 
