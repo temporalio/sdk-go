@@ -461,7 +461,7 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 	if applicationErr.Error() != errFailOnPurpose.Error() {
-		return []string{}, fmt.Errorf("activity failed with unexpected error reason: %v", applicationErr.Error())
+		return []string{}, fmt.Errorf("activity failed with unexpected error message: %v", applicationErr.Error())
 	}
 	return []string{}, nil
 }

@@ -377,6 +377,10 @@ func (e *TimeoutError) Error() string {
 	return fmt.Sprintf("TimeoutType: %v, LastErr: %v", e.timeoutType, e.lastErr)
 }
 
+func (e *TimeoutError) Unwrap() error {
+	return e.lastErr
+}
+
 // TimeoutType return timeout type of this error
 func (e *TimeoutError) TimeoutType() commonpb.TimeoutType {
 	return e.timeoutType

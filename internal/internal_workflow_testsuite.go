@@ -559,7 +559,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded)
+			return nil, NewTimeoutError(commonpb.TimeoutType_StartToClose, err)
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
