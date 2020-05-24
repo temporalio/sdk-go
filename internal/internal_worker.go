@@ -513,8 +513,8 @@ func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
 ) {
-	// Support direct registration of workflowDefinition
-	wd, ok := af.(workflowDefinition)
+	// Support direct registration of WorkflowDefinition
+	wd, ok := af.(WorkflowDefinition)
 	if ok {
 		r.addWorkflowFn(options.Name, wd)
 		return
@@ -707,7 +707,7 @@ func (r *registry) getRegisteredActivityTypes() []string {
 	return result
 }
 
-func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
 	lookup := wt.Name
 	if alias, ok := r.getWorkflowAlias(lookup); ok {
 		lookup = alias
@@ -717,7 +717,7 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	wd, ok := wf.(workflowDefinition)
+	wd, ok := wf.(WorkflowDefinition)
 	if ok {
 		return wd, nil
 	}

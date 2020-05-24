@@ -176,7 +176,7 @@ type (
 		registry  *registry
 
 		workflowInfo   *WorkflowInfo
-		workflowDef    workflowDefinition
+		workflowDef    WorkflowDefinition
 		changeVersions map[string]Version
 		openSessions   map[string]*SessionInfo
 
@@ -490,7 +490,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	env.startMainLoop()
 }
 
-func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
 	wf, ok := env.registry.getWorkflowFn(wt.Name)
 	if !ok {
 		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")

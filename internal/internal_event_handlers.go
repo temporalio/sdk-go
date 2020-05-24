@@ -64,7 +64,7 @@ type (
 	// workflowExecutionEventHandlerImpl handler to handle workflowExecutionEventHandler
 	workflowExecutionEventHandlerImpl struct {
 		*workflowEnvironmentImpl
-		workflowDefinition workflowDefinition
+		workflowDefinition WorkflowDefinition
 	}
 
 	scheduledTimer struct {
