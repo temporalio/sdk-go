@@ -67,9 +67,9 @@ type (
 		backoff time.Duration
 	}
 
-	// workflowEnvironment Represents the environment for workflow/decider.
+	// WorkflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition
-	workflowEnvironment interface {
+	WorkflowEnvironment interface {
 		asyncActivityClient
 		localActivityClient
 		workflowTimerClient
@@ -98,7 +98,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
-		Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
+		Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to WorkflowDefinition
 		OnDecisionTaskStarted()

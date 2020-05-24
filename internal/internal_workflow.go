@@ -118,7 +118,7 @@ type (
 		closed          bool               // true if channel is closed.
 		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
 		dataConverter   DataConverter      // for decode data
-		env             workflowEnvironment
+		env             WorkflowEnvironment
 	}
 
 	// Single case statement of the Select
@@ -262,12 +262,12 @@ func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
 	return rpp.(**workflowResult)
 }
 
-func getWorkflowEnvironment(ctx Context) workflowEnvironment {
+func getWorkflowEnvironment(ctx Context) WorkflowEnvironment {
 	wc := ctx.Value(workflowEnvironmentContextKey)
 	if wc == nil {
 		panic("getWorkflowContext: Not a workflow context")
 	}
-	return wc.(workflowEnvironment)
+	return wc.(WorkflowEnvironment)
 }
 
 func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
@@ -279,7 +279,7 @@ func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
 }
 
 type workflowEnvironmentInterceptor struct {
-	env                  workflowEnvironment
+	env                  WorkflowEnvironment
 	interceptorChainHead WorkflowInterceptor
 	fn                   interface{}
 }
@@ -419,7 +419,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func newWorkflowContext(env workflowEnvironment, interceptors WorkflowInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
+func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
 	rootCtx = WithValue(rootCtx, workflowEnvInterceptorContextKey, envInterceptor)
 	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, interceptors)
@@ -442,7 +442,7 @@ func newWorkflowContext(env workflowEnvironment, interceptors WorkflowIntercepto
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterceptorFactory) (WorkflowInterceptor, *workflowEnvironmentInterceptor) {
+func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptorFactory) (WorkflowInterceptor, *workflowEnvironmentInterceptor) {
 	envInterceptor := &workflowEnvironmentInterceptor{env: env}
 	var interceptor WorkflowInterceptor = envInterceptor
 	for i := len(factories) - 1; i >= 0; i-- {
@@ -452,7 +452,7 @@ func newWorkflowInterceptors(env workflowEnvironment, factories []WorkflowInterc
 	return interceptor, envInterceptor
 }
 
-func (d *syncWorkflowDefinition) Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
 	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}

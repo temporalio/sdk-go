@@ -54,7 +54,7 @@ const (
 )
 
 // Assert that structs do indeed implement the interfaces
-var _ workflowEnvironment = (*workflowEnvironmentImpl)(nil)
+var _ WorkflowEnvironment = (*workflowEnvironmentImpl)(nil)
 var _ workflowExecutionEventHandler = (*workflowExecutionEventHandlerImpl)(nil)
 
 type (
@@ -95,7 +95,7 @@ type (
 		handled  bool
 	}
 
-	// workflowEnvironmentImpl an implementation of workflowEnvironment represents a environment for workflow execution.
+	// workflowEnvironmentImpl an implementation of WorkflowEnvironment represents a environment for workflow execution.
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
@@ -296,7 +296,7 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID,
 }
 
 func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]interface{}) error {
-	// This has to be used in workflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
+	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
 	attr, err := validateAndSerializeSearchAttributes(attributes)
 	if err != nil {
 		return err

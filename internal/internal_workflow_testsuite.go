@@ -2234,7 +2234,7 @@ func mockFnGetVersion(string, Version, Version) Version {
 }
 
 // make sure interface is implemented
-var _ workflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
+var _ WorkflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
 
 type testReporter struct {
 	logger *zap.Logger
