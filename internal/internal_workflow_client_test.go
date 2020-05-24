@@ -1184,7 +1184,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	// TODO (shtin): use s.dataConverter here???
+	// TODO (shtin): use s.DataConverter here???
 	_ = DefaultPayloadConverter.FromData(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 

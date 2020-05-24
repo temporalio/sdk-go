@@ -575,19 +575,19 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 	f := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	la := wc.env.ExecuteLocalActivity(*params, func(lar *localActivityResultWrapper) {
+	la := wc.env.ExecuteLocalActivity(*params, func(lar *LocalActivityResultWrapper) {
 		if cancellable {
 			// future is done, we don't need cancellation anymore
 			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
 
-		if lar.err == nil || IsCanceledError(lar.err) || lar.backoff <= 0 {
-			f.Set(lar.result, lar.err)
+		if lar.Err == nil || IsCanceledError(lar.Err) || lar.Backoff <= 0 {
+			f.Set(lar.Result, lar.Err)
 			return
 		}
 
 		// set retry error, and it will be handled by workflow.ExecuteLocalActivity().
-		f.Set(nil, &needRetryError{Backoff: lar.backoff, Attempt: lar.attempt})
+		f.Set(nil, &needRetryError{Backoff: lar.Backoff, Attempt: lar.Attempt})
 	})
 
 	if cancellable {
@@ -637,7 +637,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := workflowOptionsFromCtx.dataConverter
+	dc := workflowOptionsFromCtx.DataConverter
 	env := getWorkflowEnvironment(ctx)
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
@@ -647,16 +647,16 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	options := getWorkflowEnvOptions(ctx)
-	options.dataConverter = dc
-	options.contextPropagators = workflowOptionsFromCtx.contextPropagators
-	options.memo = workflowOptionsFromCtx.memo
-	options.searchAttributes = workflowOptionsFromCtx.searchAttributes
+	options.DataConverter = dc
+	options.ContextPropagators = workflowOptionsFromCtx.ContextPropagators
+	options.Memo = workflowOptionsFromCtx.Memo
+	options.SearchAttributes = workflowOptionsFromCtx.SearchAttributes
 
-	params := executeWorkflowParams{
-		workflowOptions: *options,
-		input:           input,
-		workflowType:    wfType,
-		header:          getWorkflowHeader(ctx, options.contextPropagators),
+	params := ExecuteWorkflowParams{
+		WorkflowOptions: *options,
+		Input:           input,
+		WorkflowType:    wfType,
+		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
 		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
 	}
 
@@ -687,7 +687,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
 				// child workflow started, and ctx cancelled
-				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.namespace, childWorkflowExecution.ID)
+				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, childWorkflowExecution.ID)
 			}
 			return false
 		}
@@ -862,7 +862,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	}
 
 	wc.env.RequestCancelExternalWorkflow(
-		options.namespace,
+		options.Namespace,
 		workflowID,
 		runID,
 		resultCallback,
@@ -900,7 +900,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	input, err := encodeArg(options.dataConverter, arg)
+	input, err := encodeArg(options.DataConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
@@ -910,7 +910,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		settable.Set(result, err)
 	}
 	env.SignalExternalWorkflow(
-		options.namespace,
+		options.Namespace,
 		workflowID,
 		runID,
 		signalName,
@@ -968,22 +968,22 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	wfOptions := getWorkflowEnvOptions(ctx1)
 	if len(cwo.Namespace) > 0 {
-		wfOptions.namespace = cwo.Namespace
+		wfOptions.Namespace = cwo.Namespace
 	}
 	if len(cwo.TaskList) > 0 {
-		wfOptions.taskListName = cwo.TaskList
+		wfOptions.TaskListName = cwo.TaskList
 	}
-	wfOptions.workflowID = cwo.WorkflowID
-	wfOptions.workflowExecutionTimeoutSeconds = common.Int32Ceil(cwo.WorkflowExecutionTimeout.Seconds())
-	wfOptions.workflowRunTimeoutSeconds = common.Int32Ceil(cwo.WorkflowRunTimeout.Seconds())
-	wfOptions.workflowTaskTimeoutSeconds = common.Int32Ceil(cwo.WorkflowTaskTimeout.Seconds())
-	wfOptions.waitForCancellation = cwo.WaitForCancellation
-	wfOptions.workflowIDReusePolicy = cwo.WorkflowIDReusePolicy
-	wfOptions.retryPolicy = convertRetryPolicy(cwo.RetryPolicy)
-	wfOptions.cronSchedule = cwo.CronSchedule
-	wfOptions.memo = cwo.Memo
-	wfOptions.searchAttributes = cwo.SearchAttributes
-	wfOptions.parentClosePolicy = cwo.ParentClosePolicy
+	wfOptions.WorkflowID = cwo.WorkflowID
+	wfOptions.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(cwo.WorkflowExecutionTimeout.Seconds())
+	wfOptions.WorkflowRunTimeoutSeconds = common.Int32Ceil(cwo.WorkflowRunTimeout.Seconds())
+	wfOptions.WorkflowTaskTimeoutSeconds = common.Int32Ceil(cwo.WorkflowTaskTimeout.Seconds())
+	wfOptions.WaitForCancellation = cwo.WaitForCancellation
+	wfOptions.WorkflowIDReusePolicy = cwo.WorkflowIDReusePolicy
+	wfOptions.RetryPolicy = convertRetryPolicy(cwo.RetryPolicy)
+	wfOptions.CronSchedule = cwo.CronSchedule
+	wfOptions.Memo = cwo.Memo
+	wfOptions.SearchAttributes = cwo.SearchAttributes
+	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 
 	return ctx1
 }
@@ -991,7 +991,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 // WithWorkflowNamespace adds a namespace to the context.
 func WithWorkflowNamespace(ctx Context, name string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).namespace = name
+	getWorkflowEnvOptions(ctx1).Namespace = name
 	return ctx1
 }
 
@@ -1001,14 +1001,14 @@ func WithWorkflowTaskList(ctx Context, name string) Context {
 		panic("empty task list name")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).taskListName = name
+	getWorkflowEnvOptions(ctx1).TaskListName = name
 	return ctx1
 }
 
 // WithWorkflowID adds a workflowID to the context.
 func WithWorkflowID(ctx Context, workflowID string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).workflowID = workflowID
+	getWorkflowEnvOptions(ctx1).WorkflowID = workflowID
 	return ctx1
 }
 
@@ -1017,7 +1017,7 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 // subjected to change in the future.
 func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).workflowRunTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).WorkflowRunTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
@@ -1026,7 +1026,7 @@ func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).workflowTaskTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).WorkflowTaskTimeoutSeconds = common.Int32Ceil(d.Seconds())
 	return ctx1
 }
 
@@ -1036,14 +1036,14 @@ func WithDataConverter(ctx Context, dc DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).dataConverter = dc
+	getWorkflowEnvOptions(ctx1).DataConverter = dc
 	return ctx1
 }
 
 // withContextPropagators adds ContextPropagators to the context.
 func withContextPropagators(ctx Context, contextPropagators []ContextPropagator) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).contextPropagators = contextPropagators
+	getWorkflowEnvOptions(ctx1).ContextPropagators = contextPropagators
 	return ctx1
 }
 

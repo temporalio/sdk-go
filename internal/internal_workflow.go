@@ -165,33 +165,35 @@ type (
 		closed           bool
 	}
 
+	// WorkflowOptions options passed to the workflow function
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
-	workflowOptions struct {
-		taskListName                    string
-		workflowExecutionTimeoutSeconds int32
-		workflowRunTimeoutSeconds       int32
-		workflowTaskTimeoutSeconds      int32
-		namespace                       string
-		workflowID                      string
-		waitForCancellation             bool
+	WorkflowOptions struct {
+		TaskListName                    string
+		WorkflowExecutionTimeoutSeconds int32
+		WorkflowRunTimeoutSeconds       int32
+		WorkflowTaskTimeoutSeconds      int32
+		Namespace                       string
+		WorkflowID                      string
+		WaitForCancellation             bool
+		WorkflowIDReusePolicy           WorkflowIDReusePolicy
+		DataConverter                   DataConverter
+		RetryPolicy                     *commonpb.RetryPolicy
+		CronSchedule                    string
+		ContextPropagators              []ContextPropagator
+		Memo                            map[string]interface{}
+		SearchAttributes                map[string]interface{}
+		ParentClosePolicy               ParentClosePolicy
 		signalChannels                  map[string]Channel
 		queryHandlers                   map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
-		workflowIDReusePolicy           WorkflowIDReusePolicy
-		dataConverter                   DataConverter
-		retryPolicy                     *commonpb.RetryPolicy
-		cronSchedule                    string
-		contextPropagators              []ContextPropagator
-		memo                            map[string]interface{}
-		searchAttributes                map[string]interface{}
-		parentClosePolicy               ParentClosePolicy
 	}
 
-	executeWorkflowParams struct {
-		workflowOptions
-		workflowType         *WorkflowType
-		input                *commonpb.Payloads
-		header               *commonpb.Header
+	// ExecuteWorkflowParams parameters of the workflow invocation
+	ExecuteWorkflowParams struct {
+		WorkflowOptions
+		WorkflowType         *WorkflowType
+		Input                *commonpb.Payloads
+		Header               *commonpb.Header
 		attempt              int32              // used by test framework to support child workflow retry
 		scheduledTime        time.Time          // used by test framework to support child workflow retry
 		lastCompletionResult *commonpb.Payloads // used by test framework to support cron
@@ -431,7 +433,7 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowIntercepto
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
-	getWorkflowEnvOptions(rootCtx).workflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
+	getWorkflowEnvOptions(rootCtx).WorkflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
 	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
 	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
@@ -1153,35 +1155,35 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	return &WorkflowType{Name: fnName}, input, nil
 }
 
-func getWorkflowEnvOptions(ctx Context) *workflowOptions {
+func getWorkflowEnvOptions(ctx Context) *WorkflowOptions {
 	options := ctx.Value(workflowEnvOptionsContextKey)
 	if options != nil {
-		return options.(*workflowOptions)
+		return options.(*WorkflowOptions)
 	}
 	return nil
 }
 
 func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	options := getWorkflowEnvOptions(ctx)
-	var newOptions workflowOptions
+	var newOptions WorkflowOptions
 	if options != nil {
 		newOptions = *options
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
 		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
-	if newOptions.dataConverter == nil {
-		newOptions.dataConverter = getDefaultDataConverter()
+	if newOptions.DataConverter == nil {
+		newOptions.DataConverter = getDefaultDataConverter()
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
 func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.dataConverter == nil {
+	if options == nil || options.DataConverter == nil {
 		return getDefaultDataConverter()
 	}
-	return options.dataConverter
+	return options.DataConverter
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
@@ -1191,7 +1193,7 @@ func getRegistryFromWorkflowContext(ctx Context) *registry {
 
 func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
 	options := getWorkflowEnvOptions(ctx)
-	return options.contextPropagators
+	return options.ContextPropagators
 }
 
 func getHeadersFromContext(ctx Context) *commonpb.Header {
@@ -1206,7 +1208,7 @@ func getHeadersFromContext(ctx Context) *commonpb.Header {
 }
 
 // getSignalChannel finds the associated channel for the signal.
-func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) ReceiveChannel {
+func (w *WorkflowOptions) getSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
 	}
@@ -1216,7 +1218,7 @@ func (w *workflowOptions) getSignalChannel(ctx Context, signalName string) Recei
 }
 
 // getUnhandledSignals checks if there are any signal channels that have data to be consumed.
-func (w *workflowOptions) getUnhandledSignals() []string {
+func (w *WorkflowOptions) getUnhandledSignals() []string {
 	var unhandledSignals []string
 	for k, c := range w.signalChannels {
 		ch := c.(*channelImpl)

@@ -232,6 +232,6 @@ func (s *InterfacesTestSuite) TestInterface() {
 		WorkflowTaskTimeout:      10 * time.Second,
 	}
 	workflowClient := NewServiceClient(s.service, nil, ClientOptions{})
-	_, err := workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, "workflowType")
+	_, err := workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, "WorkflowType")
 	s.NoError(err)
 }

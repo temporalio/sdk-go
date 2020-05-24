@@ -131,7 +131,7 @@ type (
 	ContinueAsNewError struct {
 		wfn    interface{}
 		args   []interface{}
-		params *executeWorkflowParams
+		params *ExecuteWorkflowParams
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -224,16 +224,16 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		panic("context is missing required options for continue as new")
 	}
 	env := getWorkflowEnvironment(ctx)
-	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.dataConverter, env.GetRegistry())
+	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.DataConverter, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
 
-	params := &executeWorkflowParams{
-		workflowOptions: *options,
-		workflowType:    workflowType,
-		input:           input,
-		header:          getWorkflowHeader(ctx, options.contextPropagators),
+	params := &ExecuteWorkflowParams{
+		WorkflowOptions: *options,
+		WorkflowType:    workflowType,
+		Input:           input,
+		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
 	}
 	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
@@ -340,9 +340,9 @@ func (e *ContinueAsNewError) Error() string {
 	return "ContinueAsNew"
 }
 
-// WorkflowType return workflowType of the new run
+// WorkflowType return WorkflowType of the new run
 func (e *ContinueAsNewError) WorkflowType() *WorkflowType {
-	return e.params.workflowType
+	return e.params.WorkflowType
 }
 
 // Args return workflow argument of the new run

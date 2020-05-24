@@ -713,7 +713,7 @@ func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 	e.impl.setLastCompletionResult(result)
 }
 
-// SetMemoOnStart sets the memo when start workflow.
+// SetMemoOnStart sets the Memo when start workflow.
 func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) error {
 	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter())
 	if err != nil {

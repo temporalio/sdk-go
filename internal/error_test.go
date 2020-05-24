@@ -468,5 +468,5 @@ func Test_ContinueAsNewError(t *testing.T) {
 	stringArg, ok := args[1].(string)
 	require.True(t, ok)
 	require.Equal(t, a2, stringArg)
-	require.Equal(t, header, continueAsNewErr.params.header)
+	require.Equal(t, header, continueAsNewErr.params.Header)
 }

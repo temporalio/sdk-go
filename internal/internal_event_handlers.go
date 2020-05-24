@@ -68,30 +68,30 @@ type (
 	}
 
 	scheduledTimer struct {
-		callback resultHandler
+		callback ResultHandler
 		handled  bool
 	}
 
 	scheduledActivity struct {
-		callback             resultHandler
+		callback             ResultHandler
 		waitForCancelRequest bool
 		handled              bool
 	}
 
 	scheduledChildWorkflow struct {
-		resultCallback      resultHandler
+		resultCallback      ResultHandler
 		startedCallback     func(r WorkflowExecution, e error)
 		waitForCancellation bool
 		handled             bool
 	}
 
 	scheduledCancellation struct {
-		callback resultHandler
+		callback ResultHandler
 		handled  bool
 	}
 
 	scheduledSignal struct {
-		callback resultHandler
+		callback ResultHandler
 		handled  bool
 	}
 
@@ -131,7 +131,7 @@ type (
 		workflowTask *workflowTask
 		activityID   string
 		params       *executeLocalActivityParams
-		callback     laResultHandler
+		callback     LaResultHandler
 		wc           *workflowExecutionContextImpl
 		canceled     bool
 		cancelFunc   func()
@@ -280,7 +280,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelChildWorkflow(namespace string, 
 	wc.decisionsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, "", "", true)
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler) {
+func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
 	// for cancellation of external workflow, we have to use cancellation ID and set isChildWorkflowOnly to false
 	cancellationID := wc.GenerateSequenceID()
 	decision := wc.decisionsHelper.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
@@ -288,7 +288,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, work
 }
 
 func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string,
-	input *commonpb.Payloads, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback resultHandler) {
+	input *commonpb.Payloads, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback ResultHandler) {
 
 	signalID := wc.GenerateSequenceID()
 	decision := wc.decisionsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input, signalID, childWorkflowOnly)
@@ -352,49 +352,49 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
-	params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	if params.workflowID == "" {
-		params.workflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+	if params.WorkflowID == "" {
+		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.memo, wc.dataConverter)
+	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
 		return err
 	}
-	searchAttr, err := serializeSearchAttributes(params.searchAttributes)
+	searchAttr, err := serializeSearchAttributes(params.SearchAttributes)
 	if err != nil {
 		return err
 	}
 
 	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{}
 
-	attributes.Namespace = params.namespace
-	attributes.TaskList = &tasklistpb.TaskList{Name: params.taskListName}
-	attributes.WorkflowId = params.workflowID
-	attributes.WorkflowExecutionTimeoutSeconds = params.workflowExecutionTimeoutSeconds
-	attributes.WorkflowRunTimeoutSeconds = params.workflowRunTimeoutSeconds
-	attributes.WorkflowTaskTimeoutSeconds = params.workflowTaskTimeoutSeconds
-	attributes.Input = params.input
-	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.workflowType.Name}
-	attributes.WorkflowIdReusePolicy = params.workflowIDReusePolicy.toProto()
-	attributes.ParentClosePolicy = params.parentClosePolicy.toProto()
-	attributes.RetryPolicy = params.retryPolicy
-	attributes.Header = params.header
+	attributes.Namespace = params.Namespace
+	attributes.TaskList = &tasklistpb.TaskList{Name: params.TaskListName}
+	attributes.WorkflowId = params.WorkflowID
+	attributes.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
+	attributes.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
+	attributes.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
+	attributes.Input = params.Input
+	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.WorkflowType.Name}
+	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy.toProto()
+	attributes.ParentClosePolicy = params.ParentClosePolicy.toProto()
+	attributes.RetryPolicy = params.RetryPolicy
+	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
-	if len(params.cronSchedule) > 0 {
-		attributes.CronSchedule = params.cronSchedule
+	if len(params.CronSchedule) > 0 {
+		attributes.CronSchedule = params.CronSchedule
 	}
 
 	decision := wc.decisionsHelper.startChildWorkflowExecution(attributes)
 	decision.setData(&scheduledChildWorkflow{
 		resultCallback:      callback,
 		startedCallback:     startedHandler,
-		waitForCancellation: params.waitForCancellation,
+		waitForCancellation: params.WaitForCancellation,
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
-		zap.String(tagChildWorkflowID, params.workflowID),
-		zap.String(tagWorkflowType, params.workflowType.Name))
+		zap.String(tagChildWorkflowID, params.WorkflowID),
+		zap.String(tagWorkflowType, params.WorkflowType.Name))
 
 	return nil
 }
@@ -441,7 +441,7 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType decisionpb.Dec
 	}
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback ResultHandler) *activityInfo {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
 	scheduleID := wc.GenerateSequence()
 	if parameters.ActivityID == "" {
@@ -490,7 +490,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback LaResultHandler) *localActivityInfo {
 	activityID := wc.GenerateSequenceID()
 	task := newLocalActivityTask(params, callback, activityID)
 
@@ -499,7 +499,7 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActiv
 	return &localActivityInfo{activityID: activityID}
 }
 
-func newLocalActivityTask(params executeLocalActivityParams, callback laResultHandler, activityID string) *localActivityTask {
+func newLocalActivityTask(params executeLocalActivityParams, callback LaResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
 		activityID:  activityID,
 		params:      &params,
@@ -532,7 +532,7 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 	return wc.currentReplayTime
 }
 
-func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
+func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerInfo {
 	if d < 0 {
 		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
@@ -554,7 +554,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHand
 		zap.String(tagTimerID, startTimerAttr.GetTimerId()),
 		zap.Duration("Duration", d))
 
-	return &timerInfo{timerID: timerID}
+	return &TimerInfo{timerID: timerID}
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
@@ -621,7 +621,7 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback resultHandler) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
 	sideEffectID := wc.GenerateSequence()
 	var details *commonpb.Payloads
 	var result *commonpb.Payloads
@@ -1095,13 +1095,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
-		lar := &localActivityResultWrapper{}
+		lar := &LocalActivityResultWrapper{}
 		if len(lamd.ErrReason) > 0 {
-			lar.attempt = lamd.Attempt
-			lar.backoff = lamd.Backoff
-			lar.err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
+			lar.Attempt = lamd.Attempt
+			lar.Backoff = lamd.Backoff
+			lar.Err = constructError(lamd.ErrReason, lamd.Err, weh.GetDataConverter())
 		} else {
-			lar.result = lamd.Result
+			lar.Result = lamd.Result
 		}
 		la.callback(lar)
 

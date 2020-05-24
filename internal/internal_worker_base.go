@@ -56,35 +56,37 @@ var (
 var errShutdown = errors.New("worker shutting down")
 
 type (
-	// resultHandler that returns result
-	resultHandler   func(result *commonpb.Payloads, err error)
-	laResultHandler func(lar *localActivityResultWrapper)
+	// ResultHandler that returns result
+	ResultHandler func(result *commonpb.Payloads, err error)
+	// LaResultHandler that returns local activity result
+	LaResultHandler func(lar *LocalActivityResultWrapper)
 
-	localActivityResultWrapper struct {
-		err     error
-		result  *commonpb.Payloads
-		attempt int32
-		backoff time.Duration
+	// LocalActivityResultWrapper contains result of a local activity
+	LocalActivityResultWrapper struct {
+		Err     error
+		Result  *commonpb.Payloads
+		Attempt int32
+		Backoff time.Duration
 	}
 
 	// WorkflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition
 	WorkflowEnvironment interface {
-		asyncActivityClient
-		localActivityClient
-		workflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback resultHandler)
+		AsyncActivityClient
+		LocalActivityClient
+		WorkflowTimerClient
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler)
-		ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
+		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback resultHandler)
+		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value

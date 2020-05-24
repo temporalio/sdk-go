@@ -94,22 +94,22 @@ type (
 		ScheduledTime time.Time
 	}
 
-	// asyncActivityClient for requesting activity execution
-	asyncActivityClient interface {
+	// AsyncActivityClient for requesting activity execution
+	AsyncActivityClient interface {
 		// The ExecuteActivity schedules an activity with a callback handler.
 		// If the activity failed to complete the callback error would indicate the failure
 		// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError
-		ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo
+		ExecuteActivity(parameters executeActivityParams, callback ResultHandler) *activityInfo
 
-		// This only initiates cancel request for activity. if the activity is configured to not waitForCancellation then
+		// This only initiates cancel request for activity. if the activity is configured to not WaitForCancellation then
 		// it would invoke the callback handler immediately with error code ActivityTaskCanceledError.
 		// If the activity is not running(either scheduled or started) then it is a no-operation.
 		RequestCancelActivity(activityID string)
 	}
 
-	// localActivityClient for requesting local activity execution
-	localActivityClient interface {
-		ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo
+	// LocalActivityClient for requesting local activity execution
+	LocalActivityClient interface {
+		ExecuteLocalActivity(params executeLocalActivityParams, callback LaResultHandler) *localActivityInfo
 
 		RequestCancelLocalActivity(activityID string)
 	}
