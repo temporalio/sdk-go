@@ -609,6 +609,7 @@ func (s *SessionTestSuite) TestUserTimerWithinSession() {
 func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Minute,
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
 			HeartbeatTimeout:       time.Second * 20,
