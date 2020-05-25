@@ -35,7 +35,7 @@ import (
 
 /*
 If activity fails then *ActivityTaskError is returned to the workflow code. The error has important information about activity
-and actual error which caused activity failure. This internal error can be unrapped using errors.Unwrap() or checked using errors.As().
+and actual error which caused activity failure. This internal error can be unwrapped using errors.Unwrap() or checked using errors.As().
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
 	*ApplicationError can be returned in two cases:
