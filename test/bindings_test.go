@@ -190,7 +190,9 @@ func (ts *AsyncBindingsTestSuite) TestSingleActivityWorkflowDefinition() {
 	ts.NoError(ts.worker.Start())
 	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskList: ts.taskListName}, name)
 	ts.NoError(err)
+	err = ts.client.SignalWorkflow(context.Background(), wr.GetID(), wr.GetRunID(), "signalFoo", "!!")
+	ts.NoError(err)
 	var result string
 	ts.NoError(wr.Get(context.Background(), &result))
-	ts.Equal("Hello World!", result)
+	ts.Equal("Hello World!!!", result)
 }

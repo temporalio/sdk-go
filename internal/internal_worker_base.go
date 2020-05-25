@@ -85,6 +85,7 @@ type (
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
+		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
 		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
@@ -106,6 +107,7 @@ type (
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
+		// Implementation must be asynchronous
 		Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
 		// Called for each non timed out startDecision event.
 		// Executed after all history events since the previous decision are applied to WorkflowDefinition

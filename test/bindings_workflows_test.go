@@ -72,6 +72,10 @@ type SingleActivityWorkflowDefinition struct {
 }
 
 func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+	var signalInput string
+	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads) {
+		_ = encoded.GetDefaultDataConverter().FromData(input, &signalInput)
+	})
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := encoded.GetDefaultDataConverter().ToData("World")
@@ -93,8 +97,12 @@ func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, he
 					WorkflowType: &b.WorkflowType{Name: "ChildWorkflow"},
 					Input:        result,
 				}
-				env.ExecuteChildWorkflow(childParams, d.addCallback(func(result *commonpb.Payloads, err error) {
-					env.Complete(result, err)
+				env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
+					var childResult string
+					_ = encoded.GetDefaultDataConverter().FromData(r, &childResult)
+					result := childResult + signalInput
+					encodedResult, _ := encoded.GetDefaultDataConverter().ToData(result)
+					env.Complete(encodedResult, err)
 				}), func(r b.WorkflowExecution, e error) {})
 			}))
 		}))
