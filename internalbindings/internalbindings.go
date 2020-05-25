@@ -22,7 +22,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package interceptors
+// Package internalbindings contains low level APIs to be used by non Go SDKs
+// built on top of the Go SDK.
+//
+// ATTENTION!
+// The APIs found in this package should never be referenced from any application code.
+// There is absolutely no guarantee of compatibility between releases.
+// Always talk to Temporal team before building anything on top of them.
+package internalbindings
 
 import "go.temporal.io/temporal/internal"
 

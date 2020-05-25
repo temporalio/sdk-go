@@ -22,13 +22,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package async_bindings_test
+package internalbindings_test
 
 import (
 	"context"
 	commonpb "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal/encoded"
-	"go.temporal.io/temporal/interceptors"
+	b "go.temporal.io/temporal/internalbindings"
 	"go.temporal.io/temporal/workflow"
 	"time"
 )
@@ -36,14 +36,14 @@ import (
 type EmptyWorkflowDefinitionFactory struct {
 }
 
-func (e EmptyWorkflowDefinitionFactory) NewWorkflowDefinition() interceptors.WorkflowDefinition {
+func (e EmptyWorkflowDefinitionFactory) NewWorkflowDefinition() b.WorkflowDefinition {
 	return &EmptyWorkflowDefinition{}
 }
 
 type EmptyWorkflowDefinition struct {
 }
 
-func (wd *EmptyWorkflowDefinition) Execute(env interceptors.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+func (wd *EmptyWorkflowDefinition) Execute(env b.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	payload, err := encoded.GetDefaultDataConverter().ToData("EmptyResult")
 	env.Complete(payload, err)
 }
@@ -63,7 +63,7 @@ func (wd *EmptyWorkflowDefinition) Close() {
 type SingleActivityWorkflowDefinitionFactory struct {
 }
 
-func (e SingleActivityWorkflowDefinitionFactory) NewWorkflowDefinition() interceptors.WorkflowDefinition {
+func (e SingleActivityWorkflowDefinitionFactory) NewWorkflowDefinition() b.WorkflowDefinition {
 	return &SingleActivityWorkflowDefinition{}
 }
 
@@ -71,37 +71,37 @@ type SingleActivityWorkflowDefinition struct {
 	callbacks []func()
 }
 
-func (d *SingleActivityWorkflowDefinition) Execute(env interceptors.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := encoded.GetDefaultDataConverter().ToData("World")
-			parameters := interceptors.ExecuteActivityParams{
-				ExecuteActivityOptions: interceptors.ExecuteActivityOptions{
+			parameters := b.ExecuteActivityParams{
+				ExecuteActivityOptions: b.ExecuteActivityOptions{
 					TaskListName:               env.WorkflowInfo().TaskListName,
 					StartToCloseTimeoutSeconds: 10,
 					ActivityID:                 "id1",
 				},
-				ActivityType: interceptors.ActivityType{Name: "SingleActivity"},
+				ActivityType: b.ActivityType{Name: "SingleActivity"},
 				Input:        input,
 			}
 			_ = env.ExecuteActivity(parameters, d.addCallback(func(result *commonpb.Payloads, err error) {
-				childParams := interceptors.ExecuteWorkflowParams{
-					WorkflowOptions: interceptors.WorkflowOptions{
+				childParams := b.ExecuteWorkflowParams{
+					WorkflowOptions: b.WorkflowOptions{
 						TaskListName: env.WorkflowInfo().TaskListName,
 						WorkflowID:   "ID1",
 					},
-					WorkflowType: &interceptors.WorkflowType{Name: "ChildWorkflow"},
+					WorkflowType: &b.WorkflowType{Name: "ChildWorkflow"},
 					Input:        result,
 				}
 				env.ExecuteChildWorkflow(childParams, d.addCallback(func(result *commonpb.Payloads, err error) {
 					env.Complete(result, err)
-				}), func(r interceptors.WorkflowExecution, e error) {})
+				}), func(r b.WorkflowExecution, e error) {})
 			}))
 		}))
 	})
 }
 
-func (d *SingleActivityWorkflowDefinition) addCallback(callback interceptors.ResultHandler) interceptors.ResultHandler {
+func (d *SingleActivityWorkflowDefinition) addCallback(callback b.ResultHandler) b.ResultHandler {
 	return func(result *commonpb.Payloads, err error) {
 		d.callbacks = append(d.callbacks, func() {
 			callback(result, err)
