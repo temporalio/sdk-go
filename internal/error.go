@@ -401,7 +401,7 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 
 // Error from error interface
 func (e *CanceledError) Error() string {
-	return "CanceledError"
+	return "Canceled"
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -669,9 +669,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	if causeErr := errors.Unwrap(err); causeErr != nil {
-		failure.Cause = convertErrorToFailure(causeErr, dc)
-	}
+	failure.Cause = convertErrorToFailure(errors.Unwrap(err), dc)
 
 	return failure
 }
@@ -682,14 +680,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		return nil
 	}
 
-	if failure.GetTimeoutFailureInfo() != nil {
-		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
-		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		return NewTimeoutError(
-			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
-			lastHeartbeatDetails)
-	} else if failure.GetApplicationFailureInfo() != nil {
+	if failure.GetApplicationFailureInfo() != nil {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
@@ -704,12 +695,19 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
 		return NewCanceledError(details)
+	} else if failure.GetTimeoutFailureInfo() != nil {
+		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
+		return NewTimeoutError(
+			timeoutFailureInfo.GetTimeoutType(),
+			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
+			lastHeartbeatDetails)
+	} else if failure.GetTerminatedFailureInfo() != nil {
+		return newTerminatedError()
 	} else if failure.GetServerFailureInfo() != nil {
 		return NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
 		return NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
-	} else if failure.GetTerminatedFailureInfo() != nil {
-		return newTerminatedError()
 	} else if failure.GetActivityTaskFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityTaskFailureInfo()
 		activityTaskError := NewActivityTaskError(
