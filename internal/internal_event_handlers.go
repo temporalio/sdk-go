@@ -130,7 +130,7 @@ type (
 		sync.Mutex
 		workflowTask *workflowTask
 		activityID   string
-		params       *executeLocalActivityParams
+		params       *ExecuteLocalActivityParams
 		callback     LaResultHandler
 		wc           *workflowExecutionContextImpl
 		canceled     bool
@@ -352,17 +352,19 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
-	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
-		return err
+		callback(nil, err)
+		return
 	}
 	searchAttr, err := serializeSearchAttributes(params.SearchAttributes)
 	if err != nil {
-		return err
+		callback(nil, err)
+		return
 	}
 
 	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{}
@@ -395,8 +397,6 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	wc.logger.Debug("ExecuteChildWorkflow",
 		zap.String(tagChildWorkflowID, params.WorkflowID),
 		zap.String(tagWorkflowType, params.WorkflowType.Name))
-
-	return nil
 }
 
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads)) {
@@ -441,7 +441,7 @@ func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType decisionpb.Dec
 	}
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback ResultHandler) *activityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
 	scheduleID := wc.GenerateSequence()
 	if parameters.ActivityID == "" {
@@ -470,7 +470,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters executeActivityPar
 		zap.String(tagActivityID, activityID),
 		zap.String(tagActivityType, scheduleTaskAttr.ActivityType.GetName()))
 
-	return &activityInfo{
+	return &ActivityID{
 		scheduleID: wc.GenerateSequence(),
 		activityID: activityID,
 	}
@@ -490,16 +490,16 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback LaResultHandler) *localActivityInfo {
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LaResultHandler) *LocalActivityID {
 	activityID := wc.GenerateSequenceID()
 	task := newLocalActivityTask(params, callback, activityID)
 
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
-	return &localActivityInfo{activityID: activityID}
+	return &LocalActivityID{activityID: activityID}
 }
 
-func newLocalActivityTask(params executeLocalActivityParams, callback LaResultHandler, activityID string) *localActivityTask {
+func newLocalActivityTask(params ExecuteLocalActivityParams, callback LaResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
 		activityID:  activityID,
 		params:      &params,

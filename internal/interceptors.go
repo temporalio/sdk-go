@@ -46,8 +46,8 @@ type WorkflowInterceptorFactory interface {
 // that apply to the workflow code should be obeyed by the interceptor implementation.
 // Use workflow.IsReplaying(ctx) to filter out duplicated calls.
 type WorkflowInterceptor interface {
-	// Intercepts workflow function invocation. As calls to other intercepted functions are done from a workflow
-	// function this function is the first to be called and completes workflow as soon as it returns.
+	// ExecuteWorkflow intercepts workflow function invocation. As calls to other intercepted functions are done from
+	// a workflow function this function is the first to be called and completes workflow as soon as it returns.
 	// WorkflowType argument is for information purposes only and should not be mutated.
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 

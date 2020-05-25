@@ -27,7 +27,6 @@ package test
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -75,33 +74,12 @@ func TestIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
 }
 
-// waitForTCP waits until target tcp address is available.
-func waitForTCP(timeout time.Duration, addr string) error {
-	var d net.Dialer
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("failed to wait until %s: %v", addr, ctx.Err())
-		default:
-			conn, err := d.DialContext(ctx, "tcp", addr)
-			if err != nil {
-				continue
-			}
-			_ = conn.Close()
-			return nil
-		}
-	}
-}
-
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = newConfig()
+	ts.config = NewConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
+	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.client, err = client.NewClient(client.Options{

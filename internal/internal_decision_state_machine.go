@@ -717,6 +717,9 @@ func (h *decisionsHelper) getNextID() int64 {
 		delete(h.versionMarkerLookup, h.nextDecisionEventID)
 		h.nextDecisionEventID = h.nextDecisionEventID + 2
 	}
+	if h.nextDecisionEventID == 0 {
+		panic("Attempt to generate a decision before processing DecisionTaskStarted event")
+	}
 	return h.nextDecisionEventID
 }
 

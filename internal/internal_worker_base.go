@@ -82,7 +82,7 @@ type (
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
-		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error
+		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
@@ -96,6 +96,12 @@ type (
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
 		GetRegistry() *registry
+	}
+
+	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.
+	WorkflowDefinitionFactory interface {
+		// NewWorkflowDefinition must return a new instance of WorkflowDefinition on each call
+		NewWorkflowDefinition() WorkflowDefinition
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.

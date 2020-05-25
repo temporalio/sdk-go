@@ -47,17 +47,19 @@ type (
 		GetFunction() interface{}
 	}
 
-	activityInfo struct {
+	// ActivityID uniquely identifies an activity execution
+	ActivityID struct {
 		scheduleID int64
 		activityID string
 	}
 
-	localActivityInfo struct {
+	// LocalActivityID uniquely identifies a local activity execution
+	LocalActivityID struct {
 		activityID string
 	}
 
-	// activityOptions configuration parameters for scheduling an activity
-	activityOptions struct {
+	// ExecuteActivityOptions option for executing an activity
+	ExecuteActivityOptions struct {
 		ActivityID                    string // Users can choose IDs but our framework makes it optional to decrease the crust.
 		TaskListName                  string
 		ScheduleToCloseTimeoutSeconds int32
@@ -69,22 +71,25 @@ type (
 		RetryPolicy                   *commonpb.RetryPolicy
 	}
 
-	localActivityOptions struct {
+	// ExecuteLocalActivityOptions options for executing a local activity
+	ExecuteLocalActivityOptions struct {
 		ScheduleToCloseTimeoutSeconds int32
 		StartToCloseTimeoutSeconds    int32
 		RetryPolicy                   *RetryPolicy
 	}
 
-	executeActivityParams struct {
-		activityOptions
+	// ExecuteActivityParams parameters for executing an activity
+	ExecuteActivityParams struct {
+		ExecuteActivityOptions
 		ActivityType  ActivityType
 		Input         *commonpb.Payloads
 		DataConverter DataConverter
 		Header        *commonpb.Header
 	}
 
-	executeLocalActivityParams struct {
-		localActivityOptions
+	// ExecuteLocalActivityParams parameters for executing a local activity
+	ExecuteLocalActivityParams struct {
+		ExecuteLocalActivityOptions
 		ActivityFn    interface{} // local activity function pointer
 		ActivityType  string      // local activity type
 		InputArgs     []interface{}
@@ -99,7 +104,7 @@ type (
 		// The ExecuteActivity schedules an activity with a callback handler.
 		// If the activity failed to complete the callback error would indicate the failure
 		// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError
-		ExecuteActivity(parameters executeActivityParams, callback ResultHandler) *activityInfo
+		ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID
 
 		// This only initiates cancel request for activity. if the activity is configured to not WaitForCancellation then
 		// it would invoke the callback handler immediately with error code ActivityTaskCanceledError.
@@ -109,7 +114,7 @@ type (
 
 	// LocalActivityClient for requesting local activity execution
 	LocalActivityClient interface {
-		ExecuteLocalActivity(params executeLocalActivityParams, callback LaResultHandler) *localActivityInfo
+		ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LaResultHandler) *LocalActivityID
 
 		RequestCancelLocalActivity(activityID string)
 	}
@@ -156,23 +161,23 @@ func getActivityEnv(ctx context.Context) *activityEnvironment {
 	return env.(*activityEnvironment)
 }
 
-func getActivityOptions(ctx Context) *activityOptions {
+func getActivityOptions(ctx Context) *ExecuteActivityOptions {
 	eap := ctx.Value(activityOptionsContextKey)
 	if eap == nil {
 		return nil
 	}
-	return eap.(*activityOptions)
+	return eap.(*ExecuteActivityOptions)
 }
 
-func getLocalActivityOptions(ctx Context) *localActivityOptions {
+func getLocalActivityOptions(ctx Context) *ExecuteLocalActivityOptions {
 	opts := ctx.Value(localActivityOptionsContextKey)
 	if opts == nil {
 		return nil
 	}
-	return opts.(*localActivityOptions)
+	return opts.(*ExecuteLocalActivityOptions)
 }
 
-func getValidatedLocalActivityOptions(ctx Context) (*localActivityOptions, error) {
+func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions, error) {
 	p := getLocalActivityOptions(ctx)
 	if p == nil {
 		return nil, errLocalActivityParamsBadRequest
@@ -345,7 +350,7 @@ func serializeResults(f interface{}, results []interface{}, dataConverter DataCo
 
 func setActivityParametersIfNotExist(ctx Context) Context {
 	params := getActivityOptions(ctx)
-	var newParams activityOptions
+	var newParams ExecuteActivityOptions
 	if params != nil {
 		newParams = *params
 		if params.RetryPolicy != nil {
@@ -358,7 +363,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 
 func setLocalActivityParametersIfNotExist(ctx Context) Context {
 	params := getLocalActivityOptions(ctx)
-	var newParams localActivityOptions
+	var newParams ExecuteLocalActivityOptions
 	if params != nil {
 		newParams = *params
 	}

@@ -441,12 +441,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		panic(err)
 	}
 
-	params := executeActivityParams{
-		activityOptions: *options,
-		ActivityType:    *activityType,
-		Input:           input,
-		DataConverter:   dataConverter,
-		Header:          header,
+	params := ExecuteActivityParams{
+		ExecuteActivityOptions: *options,
+		ActivityType:           *activityType,
+		Input:                  input,
+		DataConverter:          dataConverter,
+		Header:                 header,
 	}
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
@@ -530,14 +530,14 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 		settable.Set(nil, err)
 		return future
 	}
-	params := &executeLocalActivityParams{
-		localActivityOptions: *options,
-		ActivityFn:           activityFn,
-		ActivityType:         activityType,
-		InputArgs:            args,
-		WorkflowInfo:         GetWorkflowInfo(ctx),
-		DataConverter:        getDataConverterFromWorkflowContext(ctx),
-		ScheduledTime:        Now(ctx), // initial scheduled time
+	params := &ExecuteLocalActivityParams{
+		ExecuteLocalActivityOptions: *options,
+		ActivityFn:                  activityFn,
+		ActivityType:                activityType,
+		InputArgs:                   args,
+		WorkflowInfo:                GetWorkflowInfo(ctx),
+		DataConverter:               getDataConverterFromWorkflowContext(ctx),
+		ScheduledTime:               Now(ctx), // initial scheduled time
 	}
 
 	Go(ctx, func(ctx Context) {
@@ -571,7 +571,7 @@ func (e *needRetryError) Error() string {
 	return fmt.Sprintf("Retry backoff: %v, Attempt: %v", e.Backoff, e.Attempt)
 }
 
-func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, params *executeLocalActivityParams) Future {
+func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, params *ExecuteLocalActivityParams) Future {
 	f := &futureImpl{channel: NewChannel(ctx).(*channelImpl)}
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -664,7 +664,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	err = getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
+	getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
 		mainSettable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -676,12 +676,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		}
 		executionSettable.Set(r, e)
 	})
-
-	if err != nil {
-		executionSettable.Set(nil, err)
-		mainSettable.Set(nil, err)
-		return result
-	}
 
 	if cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {

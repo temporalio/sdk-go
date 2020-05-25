@@ -517,8 +517,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		panic(err)
 	}
 
-	parameters := executeActivityParams{
-		activityOptions: activityOptions{
+	parameters := ExecuteActivityParams{
+		ExecuteActivityOptions: ExecuteActivityOptions{
 			ScheduleToCloseTimeoutSeconds: 600,
 			StartToCloseTimeoutSeconds:    600,
 		},
@@ -588,8 +588,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (val Value, err error) {
-	params := executeLocalActivityParams{
-		localActivityOptions: localActivityOptions{
+	params := ExecuteLocalActivityParams{
+		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
 		},
 		ActivityFn:   activityFn,
@@ -881,7 +881,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 			// the childWorkflowID will be the same for retry run.
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt++
-			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 
 			return true
 		}
@@ -899,7 +899,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt = 0
 			params.scheduledTime = env.Now()
-			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
 		}
 	}
@@ -951,7 +951,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 	return env.contextPropagators
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback ResultHandler) *activityInfo {
+func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
 
 	scheduleID := env.nextID()
@@ -971,7 +971,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
-	activityInfo := &activityInfo{
+	activityInfo := &ActivityID{
 		scheduleID: scheduleID,
 		activityID: activityID,
 	}
@@ -1198,7 +1198,7 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueID(id string) string {
 
 func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	taskHandler ActivityTaskHandler,
-	parameters executeActivityParams,
+	parameters ExecuteActivityParams,
 	task *workflowservice.PollForActivityTaskResponse,
 ) (result interface{}) {
 	var expireTime time.Time
@@ -1268,7 +1268,7 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 	return getRetryBackoffWithNowTime(p, attempt, errReason, now, expireTime)
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback LaResultHandler) *localActivityInfo {
+func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LaResultHandler) *LocalActivityID {
 	activityID := getStringID(env.nextID())
 	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
 	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
@@ -1303,7 +1303,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 		}, false)
 	}()
 
-	return &localActivityInfo{activityID: activityID}
+	return &LocalActivityID{activityID: activityID}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
@@ -1966,15 +1966,17 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 	}()
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	return env.executeChildWorkflowWithDelay(0, params, callback, startedHandler)
+func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
+	env.executeChildWorkflowWithDelay(0, params, callback, startedHandler)
 }
 
-func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
 		env.logger.Sugar().Infof("ExecuteChildWorkflow failed: %v", err)
-		return err
+		callback(nil, err)
+		startedHandler(WorkflowExecution{}, err)
+		return
 	}
 
 	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", params.WorkflowType.Name)
@@ -1982,8 +1984,6 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 
 	// run child workflow in separate goroutinue
 	go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
-
-	return nil
 }
 
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {

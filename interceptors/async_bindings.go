@@ -27,6 +27,30 @@ package interceptors
 import "go.temporal.io/temporal/internal"
 
 type (
+	// WorkflowType information
+	WorkflowType = internal.WorkflowType
+	// WorkflowExecution identifiers
+	WorkflowExecution = internal.WorkflowExecution
+	// WorkflowDefinitionFactory used to create instances of WorkflowDefinition
+	WorkflowDefinitionFactory = internal.WorkflowDefinitionFactory
 	// WorkflowDefinition is an asynchronous workflow definition
 	WorkflowDefinition = internal.WorkflowDefinition
+	// WorkflowEnvironment exposes APIs to the WorkflowDefinition
+	WorkflowEnvironment = internal.WorkflowEnvironment
+	// ExecuteWorkflowParams parameters of the workflow invocation
+	ExecuteWorkflowParams = internal.ExecuteWorkflowParams
+	// WorkflowOptions options passed to the workflow function
+	WorkflowOptions = internal.WorkflowOptions
+	// ExecuteActivityParams activity invocation parameters
+	ExecuteActivityParams = internal.ExecuteActivityParams
+	// ActivityID uniquely identifies activity
+	ActivityID = internal.ActivityID
+	// ExecuteActivityOptions option for executing an activity
+	ExecuteActivityOptions = internal.ExecuteActivityOptions
+	// ExecuteLocalActivityOptions options for executing a local activity
+	ExecuteLocalActivityOptions = internal.ExecuteLocalActivityOptions
+	// ActivityType type of activity
+	ActivityType = internal.ActivityType
+	// ResultHandler result handler function
+	ResultHandler = internal.ResultHandler
 )

@@ -514,9 +514,12 @@ func (r *registry) RegisterWorkflowWithOptions(
 	options RegisterWorkflowOptions,
 ) {
 	// Support direct registration of WorkflowDefinition
-	wd, ok := af.(WorkflowDefinition)
+	factory, ok := af.(WorkflowDefinitionFactory)
 	if ok {
-		r.addWorkflowFn(options.Name, wd)
+		if len(options.Name) == 0 {
+			panic("WorkflowDefinitionFactory must be registered with a name")
+		}
+		r.addWorkflowFn(options.Name, factory)
 		return
 	}
 	// Validate that it is a function
@@ -717,9 +720,9 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	wd, ok := wf.(WorkflowDefinition)
+	wdf, ok := wf.(WorkflowDefinitionFactory)
 	if ok {
-		return wd, nil
+		return wdf.NewWorkflowDefinition(), nil
 	}
 	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.getInterceptors()}
 	return newSyncWorkflowDefinition(executor), nil
