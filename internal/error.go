@@ -109,7 +109,7 @@ type (
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		message      string
-		orginalType  string
+		originalType string
 		nonRetryable bool
 		details      Values
 	}
@@ -209,11 +209,11 @@ func NewApplicationError(message string, nonRetryable bool, details ...interface
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
+			return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
 		}
 	}
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
+	return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
 }
 
 // NewTimeoutError creates TimeoutError instance.
@@ -349,9 +349,9 @@ func (e *ApplicationError) Error() string {
 	return e.message
 }
 
-// OriginalType returns orginal error type represented as string.
+// OriginalType returns original error type represented as string.
 func (e *ApplicationError) OriginalType() string {
-	return e.orginalType
+	return e.originalType
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -547,7 +547,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		if applicationErr.nonRetryable {
 			return false
 		}
-		applicationErrOriginalType = applicationErr.orginalType
+		applicationErrOriginalType = applicationErr.originalType
 	}
 
 	var timeoutErr *TimeoutError
@@ -699,7 +699,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		}
 		applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
-		applicationErr.orginalType = failure.GetApplicationFailureInfo().GetType()
+		applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
 		return applicationErr
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
