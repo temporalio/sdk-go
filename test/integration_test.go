@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package test
+package test_test
 
 import (
 	"context"
@@ -233,7 +233,7 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.NotNil(value)
 	var trace string
 	ts.Nil(value.Get(&trace))
-	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test.(*Workflows).Basic"))
+	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test_test.(*Workflows).Basic"), trace)
 }
 
 func (ts *IntegrationTestSuite) TestConsistentQuery() {

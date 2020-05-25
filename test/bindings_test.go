@@ -22,12 +22,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internalbindings_test
+package test_test
 
 import (
 	"context"
 	"fmt"
-	"go.temporal.io/temporal/test"
 	"testing"
 	"time"
 
@@ -46,18 +45,12 @@ import (
 type AsyncBindingsTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config       test.Config
+	config       Config
 	client       client.Client
 	worker       worker.Worker
 	taskListName string
 	seq          int64
 }
-
-const (
-	ctxTimeout                    = 15 * time.Second
-	namespace                     = "async-bindings-test-namespace"
-	namespaceCacheRefreshInterval = 20 * time.Second
-)
 
 func SimplestWorkflow(ctx workflow.Context) error {
 	return nil
@@ -69,8 +62,8 @@ func TestAsyncBindingsTestSuite(t *testing.T) {
 
 func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = test.NewConfig()
-	ts.NoError(test.WaitForTCP(time.Minute, ts.config.ServiceAddr))
+	ts.config = NewConfig()
+	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.client, err = client.NewClient(client.Options{
