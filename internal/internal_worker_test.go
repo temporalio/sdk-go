@@ -675,7 +675,7 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 func sampleWorkflowExecute(ctx Context, input []byte) (result []byte, err error) {
 	ExecuteActivity(ctx, testActivityByteArgs, input)
 	ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true)
-	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}})
+	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, newTestActivityArg())
 	return []byte("Done"), nil
 }
 
@@ -1002,7 +1002,7 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, &testActivityArg{Name: "JohnSmith", Index: 22, Data: []byte{22, 8, 78}}).Get(ctx, nil)
+	err = ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, newTestActivityArg()).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
 	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
@@ -1129,13 +1129,31 @@ func testActivityReturnEmptyString() (string, error) {
 }
 
 type testActivityArg struct {
-	Index int
-	Name  string
-	Data  []byte
+	Index    int
+	Name     string
+	Data     []byte
+	IndexPtr *int
+	NamePtr  *string
+	DataPtr  *[]byte
 }
 
 type testActivityResult struct {
 	Index int
+}
+
+func newTestActivityArg() *testActivityArg {
+	name := "JohnSmith"
+	index := 22
+	data := []byte{22, 8, 78}
+
+	return &testActivityArg{
+		Name:     name,
+		Index:    index,
+		Data:     data,
+		NamePtr:  &name,
+		IndexPtr: &index,
+		DataPtr:  &data,
+	}
 }
 
 // testActivityReturnEmptyStruct
