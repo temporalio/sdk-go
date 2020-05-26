@@ -35,7 +35,7 @@ import (
 
 /*
 If activity fails then *ActivityTaskError is returned to the workflow code. The error has important information about activity
-and actual error which caused activity failure. This internal error can be unrapped using errors.Unwrap() or checked using errors.As().
+and actual error which caused activity failure. This internal error can be unwrapped using errors.Unwrap() or checked using errors.As().
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
 	*ApplicationError can be returned in two cases:
@@ -109,7 +109,7 @@ type (
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		message      string
-		orginalType  string
+		originalType string
 		nonRetryable bool
 		details      Values
 	}
@@ -209,11 +209,11 @@ func NewApplicationError(message string, nonRetryable bool, details ...interface
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
+			return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
 		}
 	}
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &ApplicationError{message: message, orginalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
+	return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
 }
 
 // NewTimeoutError creates TimeoutError instance.
@@ -349,9 +349,9 @@ func (e *ApplicationError) Error() string {
 	return e.message
 }
 
-// OriginalType returns orginal error type represented as string.
+// OriginalType returns original error type represented as string.
 func (e *ApplicationError) OriginalType() string {
-	return e.orginalType
+	return e.originalType
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -401,7 +401,7 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 
 // Error from error interface
 func (e *CanceledError) Error() string {
-	return "CanceledError"
+	return "Canceled"
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -547,7 +547,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		if applicationErr.nonRetryable {
 			return false
 		}
-		applicationErrOriginalType = applicationErr.orginalType
+		applicationErrOriginalType = applicationErr.originalType
 	}
 
 	var timeoutErr *TimeoutError
@@ -669,9 +669,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	if causeErr := errors.Unwrap(err); causeErr != nil {
-		failure.Cause = convertErrorToFailure(causeErr, dc)
-	}
+	failure.Cause = convertErrorToFailure(errors.Unwrap(err), dc)
 
 	return failure
 }
@@ -682,14 +680,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		return nil
 	}
 
-	if failure.GetTimeoutFailureInfo() != nil {
-		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
-		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		return NewTimeoutError(
-			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
-			lastHeartbeatDetails)
-	} else if failure.GetApplicationFailureInfo() != nil {
+	if failure.GetApplicationFailureInfo() != nil {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
@@ -699,17 +690,24 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		}
 		applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
-		applicationErr.orginalType = failure.GetApplicationFailureInfo().GetType()
+		applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
 		return applicationErr
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
 		return NewCanceledError(details)
+	} else if failure.GetTimeoutFailureInfo() != nil {
+		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
+		return NewTimeoutError(
+			timeoutFailureInfo.GetTimeoutType(),
+			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
+			lastHeartbeatDetails)
+	} else if failure.GetTerminatedFailureInfo() != nil {
+		return newTerminatedError()
 	} else if failure.GetServerFailureInfo() != nil {
 		return NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
 		return NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
-	} else if failure.GetTerminatedFailureInfo() != nil {
-		return newTerminatedError()
 	} else if failure.GetActivityTaskFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityTaskFailureInfo()
 		activityTaskError := NewActivityTaskError(
