@@ -288,17 +288,11 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 	}
 
 	tasklistChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
-	// Retry is only needed when creating new session and the error returned is NewCustomError(errTooManySessionsMsg)
+	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
 	retryPolicy := &RetryPolicy{
 		InitialInterval:    time.Second,
 		BackoffCoefficient: 1.1,
 		MaximumInterval:    time.Second * 10,
-		NonRetriableErrorReasons: []string{
-			"temporalInternal:Panic",
-			"temporalInternal:Generic",
-			"temporalInternal:Timeout TimeoutTypeStartToClose",
-			"temporalInternal:Timeout TimeoutTypeHeartbeat",
-		},
 	}
 
 	heartbeatTimeout := defaultSessionHeartBeatTimeout
@@ -358,7 +352,8 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		if err == nil {
 			return
 		}
-		if _, ok := err.(*CanceledError); !ok {
+		var canceledErr *CanceledError
+		if errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
 			GetLogger(creationCtx).Debug("Session failed", zap.String("sessionID", sessionID), zap.Error(err))
 			sessionInfo.sessionState = sessionStateFailed
@@ -501,7 +496,7 @@ func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int
 
 func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
 	if !env.sessionTokenBucket.getToken() {
-		return nil, NewCustomError(errTooManySessionsMsg)
+		return nil, NewApplicationError(errTooManySessionsMsg, true)
 	}
 
 	env.Lock()

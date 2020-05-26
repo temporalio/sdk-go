@@ -25,6 +25,8 @@
 package temporal
 
 import (
+	"errors"
+
 	"go.temporal.io/temporal-proto/serviceerror"
 
 	"go.temporal.io/temporal/internal"
@@ -32,20 +34,32 @@ import (
 )
 
 type (
-	// CustomError returned from workflow and activity implementations with reason and optional details.
-	CustomError = internal.CustomError
+	// ApplicationError returned from activity implementations with message and optional details.
+	ApplicationError = internal.ApplicationError
 
 	// CanceledError returned when operation was canceled.
 	CanceledError = internal.CanceledError
+
+	// ActivityTaskError returned from workflow when activity returned an error.
+	ActivityTaskError = internal.ActivityTaskError
+
+	// ServerError can be returned from server.
+	ServerError = internal.ServerError
+
+	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
+	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
+
+	// WorkflowExecutionError returned from workflow.
+	WorkflowExecutionError = internal.WorkflowExecutionError
 )
 
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
 var ErrNoData = internal.ErrNoData
 
-// NewCustomError create new instance of *CustomError with reason and optional details.
-// Use CustomError for any use case specific errors that cross activity and child workflow boundaries.
-func NewCustomError(reason string, details ...interface{}) *CustomError {
-	return internal.NewCustomError(reason, details...)
+// NewApplicationError create new instance of *ApplicationError with reason and optional details.
+// Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
+func NewApplicationError(reason string, nonRetryable bool, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(reason, nonRetryable, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -54,10 +68,10 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 	return internal.NewCanceledError(details...)
 }
 
-// IsCustomError return if the err is a CustomError
-func IsCustomError(err error) bool {
-	_, ok := err.(*CustomError)
-	return ok
+// IsApplicationError return if the err is a ApplicationError
+func IsApplicationError(err error) bool {
+	var applicationError *ApplicationError
+	return errors.As(err, &applicationError)
 }
 
 // IsWorkflowExecutionAlreadyStartedError return if the err is a WorkflowExecutionAlreadyStartedError
@@ -68,30 +82,24 @@ func IsWorkflowExecutionAlreadyStartedError(err error) bool {
 
 // IsCanceledError return if the err is a CanceledError
 func IsCanceledError(err error) bool {
-	_, ok := err.(*CanceledError)
-	return ok
-}
-
-// IsGenericError return if the err is a GenericError
-func IsGenericError(err error) bool {
-	_, ok := err.(*workflow.GenericError)
-	return ok
+	var cancelError *CanceledError
+	return errors.As(err, &cancelError)
 }
 
 // IsTimeoutError return if the err is a TimeoutError
 func IsTimeoutError(err error) bool {
-	_, ok := err.(*workflow.TimeoutError)
-	return ok
+	var timeoutError *workflow.TimeoutError
+	return errors.As(err, &timeoutError)
 }
 
 // IsTerminatedError return if the err is a TerminatedError
 func IsTerminatedError(err error) bool {
-	_, ok := err.(*workflow.TerminatedError)
-	return ok
+	var terminateError *workflow.TerminatedError
+	return errors.As(err, &terminateError)
 }
 
 // IsPanicError return if the err is a PanicError
 func IsPanicError(err error) bool {
-	_, ok := err.(*workflow.PanicError)
-	return ok
+	var panicError *workflow.PanicError
+	return errors.As(err, &panicError)
 }

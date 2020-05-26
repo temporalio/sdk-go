@@ -559,7 +559,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
+			return nil, NewTimeoutError(commonpb.TimeoutType_StartToClose, err)
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -575,7 +575,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		details := newEncodedValues(request.Details, env.GetDataConverter())
 		return nil, NewCanceledError(details)
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, constructError(request.GetReason(), request.Details, env.GetDataConverter())
+		return nil, convertFailureToError(request.GetFailure(), env.GetDataConverter())
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -801,7 +801,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
-	if _, ok := err.(*CanceledError); ok && env.workflowCancelHandler != nil {
+	var cancelledErr *CanceledError
+	if errors.As(err, &cancelledErr) && env.workflowCancelHandler != nil {
 		env.workflowCancelHandler()
 	}
 
@@ -809,14 +810,16 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	env.isTestCompleted = true
 
 	if err != nil {
-		switch err := err.(type) {
-		case *CanceledError, *ContinueAsNewError, *TimeoutError:
+		var continueAsNewErr *ContinueAsNewError
+		var timeoutErr *TimeoutError
+		var workflowPanicErr *workflowPanicError
+		if errors.As(err, &cancelledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) {
 			env.testError = err
-		case *workflowPanicError:
-			env.testError = newPanicError(err.value, err.stackTrace)
-		default:
-			reason, details := getErrorDetails(err, dc)
-			env.testError = constructError(reason, details, dc)
+		} else if errors.As(err, &workflowPanicErr) {
+			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
+		} else {
+			failure := convertErrorToFailure(err, dc)
+			env.testError = convertFailureToError(failure, dc)
 		}
 	} else {
 		env.testResult = newEncodedValue(result, dc)
@@ -859,7 +862,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 
 	// pass down the last completion result
 	var result *commonpb.Payloads
-	// TODO: convert env.testResult to *commonpb.Payloads
+	// TODO (shtin): convert env.testResult to *commonpb.Payloads
 	if ev, ok := env.testResult.(*EncodedValue); ev != nil && ok {
 		result = ev.value
 	}
@@ -870,12 +873,11 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	params.lastCompletionResult = result
 
 	if params.retryPolicy != nil && env.testError != nil {
-		errReason, _ := getErrorDetails(env.testError, env.GetDataConverter())
 		var expireTime time.Time
 		if params.workflowOptions.workflowExecutionTimeoutSeconds > 0 {
 			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.workflowOptions.workflowExecutionTimeoutSeconds))
 		}
-		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, errReason, env.Now(), expireTime)
+		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, env.testError, env.Now(), expireTime)
 		if backoff > 0 {
 			// remove the current child workflow from the pending child workflow map because
 			// the childWorkflowID will be the same for retry run.
@@ -999,16 +1001,14 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 		defer func() {
 			panicErr := recover()
 			if result == nil && panicErr == nil {
-				reason := "activity called runtime.Goexit"
+				failureErr := errors.New("activity called runtime.Goexit")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Reason: reason,
+					Failure: convertErrorToFailure(failureErr, env.GetDataConverter()),
 				}
 			} else if panicErr != nil {
-				reason := errReasonPanic
-				details, _ := env.GetDataConverter().ToData(fmt.Sprintf("%v", panicErr))
+				failureErr := newPanicError(fmt.Sprintf("%v", panicErr), "")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Reason:  reason,
-					Details: details,
+					Failure: convertErrorToFailure(failureErr, env.GetDataConverter()),
 				}
 			}
 			// post activity result to workflow dispatcher
@@ -1219,7 +1219,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 		// check if a retry is needed
 		if request, ok := result.(*workflowservice.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
 			p := fromProtoRetryPolicy(parameters.RetryPolicy)
-			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), request.Reason, env.Now(), expireTime)
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), convertFailureToError(request.GetFailure(), env.GetDataConverter()), env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
 				waitCh := make(chan struct{})
@@ -1251,21 +1251,21 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
-		InitialInterval:          time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
-		BackoffCoefficient:       p.GetBackoffCoefficient(),
-		MaximumInterval:          time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
-		MaximumAttempts:          p.GetMaximumAttempts(),
-		NonRetriableErrorReasons: p.NonRetryableErrorTypes,
+		InitialInterval:        time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
+		BackoffCoefficient:     p.GetBackoffCoefficient(),
+		MaximumInterval:        time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
+		MaximumAttempts:        p.GetMaximumAttempts(),
+		NonRetryableErrorTypes: p.NonRetryableErrorTypes,
 	}
 }
 
-func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int32, err error, now, expireTime time.Time) time.Duration {
 	if prp == nil {
 		return noRetryBackoff
 	}
 
 	p := fromProtoRetryPolicy(prp)
-	return getRetryBackoffWithNowTime(p, attempt, errReason, now, expireTime)
+	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
@@ -1349,14 +1349,14 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		err = NewCanceledError(details)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		err = constructError(request.Reason, request.Details, dataConverter)
+		err = convertFailureToError(request.GetFailure(), dataConverter)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		blob = request.Result
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded.Error())
+			err = NewTimeoutError(commonpb.TimeoutType_StartToClose, context.DeadlineExceeded)
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))
@@ -1405,7 +1405,8 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		lar.attempt = task.attempt
 	}
 	task.callback(lar)
-	if _, ok := result.err.(*CanceledError); ok {
+	var canceledErr *CanceledError
+	if errors.As(result.err, &canceledErr) {
 		if env.onLocalActivityCanceledListener != nil {
 			env.onLocalActivityCanceledListener(activityInfo)
 		}
