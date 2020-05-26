@@ -27,6 +27,7 @@ package workflow
 import (
 	"time"
 
+	"go.temporal.io/temporal"
 	"go.temporal.io/temporal/internal"
 )
 
@@ -51,6 +52,11 @@ func WithTaskList(ctx Context, name string) Context {
 	return internal.WithTaskList(ctx, name)
 }
 
+// WithRetryPolicy adds retry policy to the copy of the context.
+func WithRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
+	return internal.WithRetryPolicy(ctx, retryPolicy)
+}
+
 // WithScheduleToCloseTimeout adds a timeout to the copy of the context.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithScheduleToCloseTimeout(ctx, d)
@@ -71,7 +77,7 @@ func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithHeartbeatTimeout(ctx, d)
 }
 
-// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
+// WithWaitForCancellation adds wait for the cancellation to the copy of the context.
 func WithWaitForCancellation(ctx Context, wait bool) Context {
 	return internal.WithWaitForCancellation(ctx, wait)
 }
