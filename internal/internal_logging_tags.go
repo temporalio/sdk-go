@@ -41,4 +41,5 @@ const (
 	tagChildWorkflowID   = "ChildWorkflowID"
 	tagLocalActivityType = "LocalActivityType"
 	tagQueryType         = "QueryType"
+	tagResult            = "Result"
 )

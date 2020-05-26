@@ -70,6 +70,7 @@ func testInternalWorkerRegister(r *registry) {
 		testActivityMultipleArgs,
 		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
 	)
+	r.RegisterActivity(testActivityMultipleArgsWithStruct)
 	r.RegisterActivity(testActivityReturnString)
 	r.RegisterActivity(testActivityReturnEmptyString)
 	r.RegisterActivity(testActivityReturnEmptyStruct)
@@ -102,6 +103,7 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 		testActivityMultipleArgs,
 		RegisterActivityOptions{Name: "testActivityMultipleArgs"},
 	)
+	env.RegisterActivity(testActivityMultipleArgsWithStruct)
 	env.RegisterActivity(testActivityReturnString)
 	env.RegisterActivity(testActivityReturnEmptyString)
 	env.RegisterActivity(testActivityReturnEmptyStruct)
@@ -673,6 +675,7 @@ func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
 func sampleWorkflowExecute(ctx Context, input []byte) (result []byte, err error) {
 	ExecuteActivity(ctx, testActivityByteArgs, input)
 	ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true)
+	ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, newTestActivityArg())
 	return []byte("Done"), nil
 }
 
@@ -685,6 +688,12 @@ func testActivityByteArgs(context.Context, []byte) ([]byte, error) {
 // test testActivityMultipleArgs
 func testActivityMultipleArgs(context.Context, int, []string, bool) ([]byte, error) {
 	fmt.Println("Executing Activity2")
+	return nil, nil
+}
+
+// test testActivityMultipleArgsWithStruct
+func testActivityMultipleArgsWithStruct(_ context.Context, i int, s testActivityArg) ([]byte, error) {
+	fmt.Printf("Executing testActivityMultipleArgsWithStruct: %d, %v\n", i, s)
 	return nil, nil
 }
 
@@ -993,6 +1002,9 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true).Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
+	err = ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, newTestActivityArg()).Get(ctx, nil)
+	require.NoError(w.t, err, err)
+
 	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
 	require.NoError(w.t, err, err)
 
@@ -1116,8 +1128,32 @@ func testActivityReturnEmptyString() (string, error) {
 	return "", nil
 }
 
+type testActivityArg struct {
+	Index    int
+	Name     string
+	Data     []byte
+	IndexPtr *int
+	NamePtr  *string
+	DataPtr  *[]byte
+}
+
 type testActivityResult struct {
 	Index int
+}
+
+func newTestActivityArg() *testActivityArg {
+	name := "JohnSmith"
+	index := 22
+	data := []byte{22, 8, 78}
+
+	return &testActivityArg{
+		Name:     name,
+		Index:    index,
+		Data:     data,
+		NamePtr:  &name,
+		IndexPtr: &index,
+		DataPtr:  &data,
+	}
 }
 
 // testActivityReturnEmptyStruct
@@ -1224,12 +1260,12 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewCustomError("testReason", "testStringDetails")
+			return NewApplicationError("testReason", false, "testStringDetails")
 		}}
 	_, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
-	errWD := e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD := e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var strDetails string
 	_ = errWD.Details(&strDetails)
 	require.Equal(t, "testStringDetails", strDetails)
@@ -1237,12 +1273,12 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a2 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewCustomError("testReason", testErrorDetails{T: "testErrorStack"})
+			return NewApplicationError("testReason", false, testErrorDetails{T: "testErrorStack"})
 		}}
 	_, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var td testErrorDetails
 	_ = errWD.Details(&td)
 	require.Equal(t, testErrorDetails{T: "testErrorStack"}, td)
@@ -1250,7 +1286,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a3 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult", NewCustomError("testReason", testErrorDetails{T: "testErrorStack3"})
+			return "testResult", NewApplicationError("testReason", false, testErrorDetails{T: "testErrorStack3"})
 		}}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var result string
@@ -1258,23 +1294,23 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	require.NoError(t, err)
 	require.Equal(t, "testResult", result)
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	_ = errWD.Details(&td)
 	require.Equal(t, testErrorDetails{T: "testErrorStack3"}, td)
 
 	a4 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult4", NewCustomError("testReason", "testMultipleString", testErrorDetails{T: "testErrorStack4"})
+			return "testResult4", NewApplicationError("testReason", false, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	err = dataConverter.FromData(encResult, &result)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", result)
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var ed string
 	_ = errWD.Details(&ed, &td)
 	require.Equal(t, "testMultipleString", ed)
