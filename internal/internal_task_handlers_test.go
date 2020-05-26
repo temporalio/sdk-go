@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +40,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -290,7 +288,7 @@ func createWorkflowTaskWithQueries(
 		PreviousStartedEventId: previousStartEventID,
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowName},
 		History:                &eventpb.History{Events: eventsCopy},
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
 			RunId:      uuid.New(),
 		},
@@ -463,7 +461,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "sticky-tl"
-	execution := &executionpb.WorkflowExecution{
+	execution := &commonpb.WorkflowExecution{
 		WorkflowId: "fake-workflow-id",
 		RunId:      uuid.New(),
 	}
@@ -834,7 +832,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.True(len(response.Decisions) > 0)
 	closeDecision := response.Decisions[len(response.Decisions)-1]
 	t.Equal(closeDecision.DecisionType, decisionpb.DecisionType_FailWorkflowExecution)
-	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().Reason, "FailWorkflow")
+	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
@@ -868,10 +866,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.True(ok)
 	t.EqualValues(decisionpb.DecisionType_FailWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
-	t.EqualValues("temporalInternal:Panic", attr.GetReason())
-	var details string
-	_ = DefaultDataConverter.FromData(attr.GetDetails(), &details)
-	t.True(strings.HasPrefix(details, "panicError"), details)
+	t.EqualValues("panicError", attr.GetFailure().GetMessage())
+	t.NotNil(attr.GetFailure().GetApplicationFailureInfo())
+	t.EqualValues("PanicError", attr.GetFailure().GetApplicationFailureInfo().GetType())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
@@ -897,9 +894,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	r, ok := request.(*workflowservice.RespondDecisionTaskFailedRequest)
 	t.True(ok)
 	t.EqualValues(eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure, r.Cause)
-	var details string
-	_ = DefaultDataConverter.FromData(r.GetDetails(), &details)
-	t.EqualValues("panicError", details)
+	t.NotNil(r.GetFailure().GetApplicationFailureInfo())
+	t.Equal("PanicError", r.GetFailure().GetApplicationFailureInfo().GetType())
+	t.Equal("panicError", r.GetFailure().GetMessage())
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
@@ -908,7 +905,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
 	continuedRunID := uuid.New()
-	parentExecution := &executionpb.WorkflowExecution{
+	parentExecution := &commonpb.WorkflowExecution{
 		WorkflowId: parentID,
 		RunId:      parentRunID,
 	}
@@ -1355,7 +1352,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollForActivityTaskResponse{
 			TaskToken: []byte("token"),
-			WorkflowExecution: &executionpb.WorkflowExecution{
+			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
 			ActivityType:                  &commonpb.ActivityType{Name: "test"},
@@ -1411,7 +1408,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
 		ActivityType:                  &commonpb.ActivityType{Name: "test"},

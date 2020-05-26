@@ -31,16 +31,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
 	"google.golang.org/grpc/metadata"
-
-	eventpb "go.temporal.io/temporal-proto/event"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -60,7 +56,7 @@ const (
 	defaultRPCTimeout = 10 * time.Second
 	// minRPCTimeout is minimum rpc call timeout allowed
 	minRPCTimeout = 1 * time.Second
-	//maxRPCTimeout is maximum rpc call timeout allowed
+	// maxRPCTimeout is maximum rpc call timeout allowed
 	maxRPCTimeout = 5 * time.Second
 )
 
@@ -146,107 +142,6 @@ func getWorkerTaskList(stickyUUID string) string {
 	return fmt.Sprintf("%s:%s", getHostName(), stickyUUID)
 }
 
-// getErrorDetails gets reason and details.
-func getErrorDetails(err error, dataConverter DataConverter) (string, *commonpb.Payloads) {
-	switch err := err.(type) {
-	case *CustomError:
-		var data *commonpb.Payloads
-		var err0 error
-		switch details := err.details.(type) {
-		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
-		case *EncodedValues:
-			data = details.values
-		default:
-			panic("unknown error type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
-		return err.Reason(), data
-	case *CanceledError:
-		var data *commonpb.Payloads
-		var err0 error
-		switch details := err.details.(type) {
-		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
-		case *EncodedValues:
-			data = details.values
-		default:
-			panic("unknown error type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
-		return errReasonCanceled, data
-	case *PanicError:
-		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error(), err.StackTrace()})
-		if err0 != nil {
-			panic(err0)
-		}
-		return errReasonPanic, data
-	case *TimeoutError:
-		var data *commonpb.Payloads
-		var err0 error
-		switch details := err.details.(type) {
-		case ErrorDetailsValues:
-			data, err0 = encodeArgs(dataConverter, details)
-		case *EncodedValues:
-			data = details.values
-		default:
-			panic("unknown error type")
-		}
-		if err0 != nil {
-			panic(err0)
-		}
-		return fmt.Sprintf("%v %v", errReasonTimeout, err.timeoutType), data
-	default:
-		data, err0 := encodeArgs(dataConverter, []interface{}{err.Error()})
-		if err0 != nil {
-			panic(err0)
-		}
-		// will be convert to GenericError when receiving from server.
-		return errReasonGeneric, data
-	}
-}
-
-// constructError construct error from reason and details sending down from server.
-func constructError(reason string, details *commonpb.Payloads, dataConverter DataConverter) error {
-	if strings.HasPrefix(reason, errReasonTimeout) {
-		details := newEncodedValues(details, dataConverter)
-		timeoutType, err := getTimeoutTypeFromErrReason(reason)
-		if err != nil {
-			// prior client version uses details to indicate timeoutType
-			if err := details.Get(&timeoutType); err != nil {
-				panic(err)
-			}
-			return NewTimeoutError(timeoutType)
-		}
-		return NewTimeoutError(timeoutType, details)
-	}
-
-	switch reason {
-	case errReasonPanic:
-		// panic error
-		var msg, st string
-		details := newEncodedValues(details, dataConverter)
-		_ = details.Get(&msg, &st)
-		return newPanicError(msg, st)
-	case errReasonGeneric:
-		// errors created other than using NewCustomError() API.
-		var msg string
-		_ = dataConverter.FromData(details, &msg)
-		return &GenericError{err: msg}
-	case errReasonCanceled:
-		details := newEncodedValues(details, dataConverter)
-		return NewCanceledError(details)
-	default:
-		details := newEncodedValues(details, dataConverter)
-		err := NewCustomError(reason, details)
-		return err
-	}
-}
-
 // AwaitWaitGroup calls Wait on the given wait
 // Returns true if the Wait() call succeeded before the timeout
 // Returns false if the Wait() did not return before the timeout
@@ -280,17 +175,6 @@ func getMetricsScopeForActivity(ts *metrics.TaggedScope, workflowType, activityT
 // getMetricsScopeForLocalActivity return properly tagged tally scope for local activity
 func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, localActivityType string) tally.Scope {
 	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
-}
-
-func getTimeoutTypeFromErrReason(reason string) (eventpb.TimeoutType, error) {
-	// "reason" is a string like "temporalInternal:Timeout StartToClose"
-	timeoutTypeStr := reason[strings.Index(reason, " ")+1:]
-	if timeoutType, found := eventpb.TimeoutType_value[timeoutTypeStr]; found {
-		return eventpb.TimeoutType(timeoutType), nil
-	}
-
-	// this happens when the timeout error reason is constructed by an prior constructed by prior client version
-	return 0, fmt.Errorf("timeout type %q is not defined", timeoutTypeStr)
 }
 
 func getStringID(intID int64) string {

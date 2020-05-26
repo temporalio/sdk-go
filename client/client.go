@@ -61,6 +61,9 @@ type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
 
+	// ConnectionOptions are optional parameters that can be specified in ClientOptions
+	ConnectionOptions = internal.ConnectionOptions
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
@@ -203,7 +206,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, temporal.NewCustomError("reason", details)
+		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 

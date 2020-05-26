@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"
@@ -179,7 +179,7 @@ var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
-var ErrDeadlineExceeded = NewTimeoutError(eventpb.TimeoutType_ScheduleToClose)
+var ErrDeadlineExceeded = NewTimeoutError(commonpb.TimeoutType_ScheduleToClose, nil)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.

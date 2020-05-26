@@ -37,7 +37,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -147,7 +146,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 
 	pats := &workflowservice.PollForActivityTaskResponse{
 		TaskToken: []byte("token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
 		ActivityType:                  &commonpb.ActivityType{Name: "test"},
@@ -285,7 +284,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "long-running-decision-workflow-id",
 			RunId:      "long-running-decision-workflow-run-id",
 		},
@@ -426,7 +425,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	task := &workflowservice.PollForDecisionTaskResponse{
 		TaskToken: []byte("test-token"),
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "multiple-local-activities-workflow-id",
 			RunId:      "multiple-local-activities-workflow-run-id",
 		},

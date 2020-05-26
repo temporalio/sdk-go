@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -37,7 +38,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.temporal.io/temporal-proto/workflowservice"
@@ -693,10 +693,13 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.NotNil(err)
-	_, ok := err.(*CanceledError)
+	s.Error(err)
+	_, ok := err.(*WorkflowExecutionError)
 	s.True(ok)
+	var canceledErr *CanceledError
+	s.True(errors.As(err, &canceledErr))
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -710,8 +713,9 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	dataConverter := getDefaultDataConverter()
-	encodedDetails, _ := encodeArg(dataConverter, details)
+	applicationError := NewApplicationError(reason, false, details)
+	failure := convertErrorToFailure(applicationError, getDefaultDataConverter())
+
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -719,8 +723,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 				{
 					EventType: eventType,
 					Attributes: &eventpb.HistoryEvent_WorkflowExecutionFailedEventAttributes{WorkflowExecutionFailedEventAttributes: &eventpb.WorkflowExecutionFailedEventAttributes{
-						Reason:  reason,
-						Details: encodedDetails,
+						Failure: failure,
 					}},
 				},
 			},
@@ -743,8 +746,14 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Equal(constructError(reason, encodedDetails, dataConverter), err)
+	_, ok := err.(*WorkflowExecutionError)
+	s.True(ok)
+	var applicationErr2 *ApplicationError
+	s.True(errors.As(err, &applicationErr2))
+	s.Equal(applicationError.message, applicationErr2.message)
+	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -783,8 +792,12 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Terminated() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Equal(newTerminatedError(), err)
+	_, ok := err.(*WorkflowExecutionError)
+	s.True(ok)
+	var terminatedErr *TerminatedError
+	s.True(errors.As(err, &terminatedErr))
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -796,7 +809,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionTimedOut
-	timeType := eventpb.TimeoutType_ScheduleToStart
+	timeType := commonpb.TimeoutType_ScheduleToStart
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -827,11 +840,14 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
 	decodedResult := time.Minute
+
 	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.NotNil(err)
-	_, ok := err.(*TimeoutError)
+	s.Error(err)
+	_, ok := err.(*WorkflowExecutionError)
 	s.True(ok)
-	s.Equal(timeType, err.(*TimeoutError).TimeoutType())
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(timeType, timeoutErr.TimeoutType())
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -939,7 +955,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 func getGetWorkflowExecutionHistoryRequest(filterType filterpb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 		Namespace: DefaultNamespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},

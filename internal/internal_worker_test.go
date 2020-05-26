@@ -43,7 +43,6 @@ import (
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	namespacepb "go.temporal.io/temporal-proto/namespace"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -651,7 +650,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	runID := "testRunID"
 
 	task := &workflowservice.PollForDecisionTaskResponse{
-		WorkflowExecution:      &executionpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+		WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowType},
 		History:                &eventpb.History{Events: testEvents},
 		PreviousStartedEventId: 0,
@@ -1243,12 +1242,12 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewCustomError("testReason", "testStringDetails")
+			return NewApplicationError("testReason", false, "testStringDetails")
 		}}
 	_, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
-	errWD := e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD := e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var strDetails string
 	_ = errWD.Details(&strDetails)
 	require.Equal(t, "testStringDetails", strDetails)
@@ -1256,12 +1255,12 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a2 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewCustomError("testReason", testErrorDetails{T: "testErrorStack"})
+			return NewApplicationError("testReason", false, testErrorDetails{T: "testErrorStack"})
 		}}
 	_, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var td testErrorDetails
 	_ = errWD.Details(&td)
 	require.Equal(t, testErrorDetails{T: "testErrorStack"}, td)
@@ -1269,7 +1268,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a3 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult", NewCustomError("testReason", testErrorDetails{T: "testErrorStack3"})
+			return "testResult", NewApplicationError("testReason", false, testErrorDetails{T: "testErrorStack3"})
 		}}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var result string
@@ -1277,23 +1276,23 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	require.NoError(t, err)
 	require.Equal(t, "testResult", result)
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	_ = errWD.Details(&td)
 	require.Equal(t, testErrorDetails{T: "testErrorStack3"}, td)
 
 	a4 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult4", NewCustomError("testReason", "testMultipleString", testErrorDetails{T: "testErrorStack4"})
+			return "testResult4", NewApplicationError("testReason", false, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	err = dataConverter.FromData(encResult, &result)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", result)
 	require.Error(t, e)
-	errWD = e.(*CustomError)
-	require.Equal(t, "testReason", errWD.Reason())
+	errWD = e.(*ApplicationError)
+	require.Equal(t, "testReason", errWD.Error())
 	var ed string
 	_ = errWD.Details(&ed, &td)
 	require.Equal(t, "testMultipleString", ed)

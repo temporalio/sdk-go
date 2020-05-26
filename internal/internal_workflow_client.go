@@ -39,7 +39,6 @@ import (
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	filterpb "go.temporal.io/temporal-proto/filter"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
@@ -322,7 +321,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -436,7 +435,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -463,7 +462,7 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 	request := &workflowservice.TerminateWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		WorkflowExecution: &executionpb.WorkflowExecution{
+		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -491,7 +490,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID str
 	paginate := func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 		request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 			Namespace: namespace,
-			Execution: &executionpb.WorkflowExecution{
+			Execution: &commonpb.WorkflowExecution{
 				WorkflowId: workflowID,
 				RunId:      runID,
 			},
@@ -774,7 +773,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Namespace: wc.namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
@@ -876,7 +875,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 	req := &workflowservice.QueryWorkflowRequest{
 		Namespace: wc.namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: request.WorkflowID,
 			RunId:      request.RunID,
 		},
@@ -1110,10 +1109,10 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		err = workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
+		return workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
-		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)
+		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case eventpb.EventType_WorkflowExecutionCanceled:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
@@ -1122,14 +1121,21 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = newTerminatedError()
 	case eventpb.EventType_WorkflowExecutionTimedOut:
 		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
-		err = NewTimeoutError(attributes.GetTimeoutType())
+		err = NewTimeoutError(attributes.GetTimeoutType(), nil)
 	case eventpb.EventType_WorkflowExecutionContinuedAsNew:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)
 	default:
-		err = fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
+		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
+
+	err = NewWorkflowExecutionError(
+		workflowRun.workflowID,
+		workflowRun.currentRunID,
+		getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn),
+		err)
+
 	return err
 }
 

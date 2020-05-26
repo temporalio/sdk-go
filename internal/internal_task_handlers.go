@@ -42,7 +42,6 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
-	executionpb "go.temporal.io/temporal-proto/execution"
 	querypb "go.temporal.io/temporal-proto/query"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist"
@@ -535,7 +534,7 @@ func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
 	task.task = &workflowservice.ResetStickyTaskListRequest{
 		Namespace: w.workflowInfo.Namespace,
-		Execution: &executionpb.WorkflowExecution{
+		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
 			RunId:      w.workflowInfo.WorkflowExecution.RunID,
 		},
@@ -921,7 +920,6 @@ ProcessEvents:
 	}
 
 	if nonDeterministicErr != nil {
-
 		w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
 		w.wth.logger.Error("non-deterministic-error",
 			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
@@ -932,7 +930,7 @@ ProcessEvents:
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewCustomError("FailWorkflow", nonDeterministicErr.Error()))
+			eventHandler.Complete(nil, NewApplicationError("FailWorkflow", false, nonDeterministicErr.Error()))
 		case BlockWorkflow:
 			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
@@ -1003,19 +1001,14 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 }
 
 func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
-	p := lar.task.retryPolicy
-	var errReason string
-	if len(p.NonRetriableErrorReasons) > 0 {
-		if lar.err == ErrDeadlineExceeded {
-			errReason = "timeout:" + eventpb.TimeoutType_ScheduleToClose.String()
-		} else {
-			errReason, _ = getErrorDetails(lar.err, dataConverter)
-		}
-	}
-	return getRetryBackoffWithNowTime(p, lar.task.attempt, errReason, now, lar.task.expireTime)
+	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, lar.err, now, lar.task.expireTime)
 }
 
-func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string, now, expireTime time.Time) time.Duration {
+func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, expireTime time.Time) time.Duration {
+	if !IsRetryable(err, p.NonRetryableErrorTypes) {
+		return noRetryBackoff
+	}
+
 	if p.MaximumAttempts > 0 && attempt > p.MaximumAttempts-1 {
 		return noRetryBackoff // max attempt reached
 	}
@@ -1038,13 +1031,6 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, errReason string,
 	nextScheduleTime := now.Add(backoffInterval)
 	if !expireTime.IsZero() && nextScheduleTime.After(expireTime) {
 		return noRetryBackoff
-	}
-
-	// check if error is non-retriable
-	for _, er := range p.NonRetriableErrorReasons {
-		if er == errReason {
-			return noRetryBackoff
-		}
 	}
 
 	return backoffInterval
@@ -1318,8 +1304,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *eventpb.HistoryEvent, stric
 			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
 			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
 
-			if eventAttributes.GetReason() != decisionAttributes.GetReason() ||
-				!proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
+			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
 				return false
 			}
 		}
@@ -1442,7 +1427,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
-		if panicErr, ok := workflowContext.err.(*PanicError); ok {
+		var panicErr *PanicError
+		if errors.As(workflowContext.err, &panicErr) {
 			queryCompletedRequest.CompletedType = querypb.QueryResultType_Failed
 			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
 			return queryCompletedRequest
@@ -1462,28 +1448,31 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
 
 	// fail decision task on decider panic
-	if panicErr, ok := workflowContext.err.(*workflowPanicError); ok {
+	var workflowPanicErr *workflowPanicError
+	if errors.As(workflowContext.err, &workflowPanicErr) {
 		// Workflow panic
 		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.String("PanicError", panicErr.Error()),
-			zap.String("PanicStack", panicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, panicErr, wth.identity, wth.dataConverter)
+			zap.String("PanicError", workflowPanicErr.Error()),
+			zap.String("PanicStack", workflowPanicErr.StackTrace()))
+		return errorToFailDecisionTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
 	}
 
 	// complete decision task
 	var closeDecision *decisionpb.Decision
-	if canceledErr, ok := workflowContext.err.(*CanceledError); ok {
+	var canceledErr *CanceledError
+	var contErr *ContinueAsNewError
+
+	if errors.As(workflowContext.err, &canceledErr) {
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_CancelWorkflowExecution)
-		_, details := getErrorDetails(canceledErr, wth.dataConverter)
 		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
-			Details: details,
+			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
 		}}
-	} else if contErr, ok := workflowContext.err.(*ContinueAsNewError); ok {
+	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
@@ -1501,10 +1490,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_FailWorkflowExecution)
-		reason, details := getErrorDetails(workflowContext.err, wth.dataConverter)
+		failure := convertErrorToFailure(workflowContext.err, wth.dataConverter)
 		closeDecision.Attributes = &decisionpb.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &decisionpb.FailWorkflowExecutionDecisionAttributes{
-			Reason:  reason,
-			Details: details,
+			Failure: failure,
 		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
@@ -1553,11 +1541,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 }
 
 func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
-	_, details := getErrorDetails(err, dataConverter)
 	return &workflowservice.RespondDecisionTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          eventpb.DecisionTaskFailedCause_WorkflowWorkerUnhandledFailure,
-		Details:        details,
+		Failure:        convertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
 	}
@@ -1812,6 +1799,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
+		ath.logger.Info("Activity complete after timeout.",
+			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
+			zap.String(tagActivityType, activityType),
+			zap.Any(tagResult, output),
+			zap.Error(err),
+		)
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {

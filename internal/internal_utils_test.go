@@ -25,12 +25,12 @@
 package internal
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common"
+	failurepb "go.temporal.io/temporal-proto/failure"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
@@ -78,27 +78,27 @@ func TestNewValue(t *testing.T) {
 	require.Equal(t, res, heartbeatDetail)
 }
 
-func TestGetErrorDetails_CustomError(t *testing.T) {
+func TestConvertFailureToError_ApplicationError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	customErr1 := NewCustomError(customErrReasonA, val)
-	reason, data := getErrorDetails(customErr1, dc)
-	require.Equal(t, customErrReasonA, reason)
-	require.Equal(t, val.values, data)
+	applicationErr1 := NewApplicationError(applicationErrReasonA, false, val)
+	failure := convertErrorToFailure(applicationErr1, dc)
+	require.Equal(t, applicationErrReasonA, failure.GetMessage())
+	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
-	customErr2 := NewCustomError(customErrReasonA, testErrorDetails1)
+	applicationErr2 := NewApplicationError(applicationErrReasonA, false, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
-	reason, data = getErrorDetails(customErr2, dc)
-	require.Equal(t, customErrReasonA, reason)
-	require.Equal(t, val2, data)
+	failure = convertErrorToFailure(applicationErr2, dc)
+	require.Equal(t, applicationErrReasonA, failure.GetMessage())
+	require.Equal(t, val2, failure.GetApplicationFailureInfo().GetDetails())
 }
 
-func TestGetErrorDetails_CancelError(t *testing.T) {
+func TestConvertFailureToError_CancelError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
@@ -106,61 +106,58 @@ func TestGetErrorDetails_CancelError(t *testing.T) {
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
 	canceledErr1 := NewCanceledError(val)
-	reason, data := getErrorDetails(canceledErr1, dc)
-	require.Equal(t, errReasonCanceled, reason)
-	require.Equal(t, val.values, data)
+	failure := convertErrorToFailure(canceledErr1, dc)
+	require.NotNil(t, failure.GetCanceledFailureInfo())
+	require.Equal(t, val.values, failure.GetCanceledFailureInfo().GetDetails())
 
 	canceledErr2 := NewCanceledError(testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
-	reason, data = getErrorDetails(canceledErr2, dc)
-	require.Equal(t, errReasonCanceled, reason)
-	require.Equal(t, val2, data)
+	failure = convertErrorToFailure(canceledErr2, dc)
+	require.NotNil(t, failure.GetCanceledFailureInfo())
+	require.Equal(t, val2, failure.GetCanceledFailureInfo().GetDetails())
 }
 
-func TestGetErrorDetails_TimeoutError(t *testing.T) {
+func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError(eventpb.TimeoutType_ScheduleToStart, val)
-	reason, data := getErrorDetails(timeoutErr1, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_ScheduleToStart), reason)
-	require.Equal(t, val.values, data)
+	timeoutErr1 := NewTimeoutError(commonpb.TimeoutType_ScheduleToStart, nil, val)
+	failure := convertErrorToFailure(timeoutErr1, dc)
+	require.NotNil(t, failure.GetTimeoutFailureInfo())
+	require.Equal(t, commonpb.TimeoutType_ScheduleToStart, failure.GetTimeoutFailureInfo().GetTimeoutType())
+	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 
-	timeoutErr2 := NewTimeoutError(eventpb.TimeoutType_Heartbeat, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError(commonpb.TimeoutType_Heartbeat, nil, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
-	reason, data = getErrorDetails(timeoutErr2, dc)
-	require.Equal(t, fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_Heartbeat), reason)
-	require.Equal(t, val2, data)
+	failure = convertErrorToFailure(timeoutErr2, dc)
+	require.NotNil(t, failure.GetTimeoutFailureInfo())
+	require.Equal(t, commonpb.TimeoutType_Heartbeat, failure.GetTimeoutFailureInfo().GetTimeoutType())
+	require.Equal(t, val2, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 }
 
-func TestConstructError_TimeoutError(t *testing.T) {
+func TestConvertFailureToError_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 	details, err := dc.ToData(testErrorDetails1)
 	require.NoError(t, err)
 
-	reason := fmt.Sprintf("%v %v", errReasonTimeout, eventpb.TimeoutType_Heartbeat)
-	constructedErr := constructError(reason, details, dc)
+	failure := &failurepb.Failure{
+		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+			TimeoutType:          commonpb.TimeoutType_Heartbeat,
+			LastHeartbeatDetails: details,
+		}},
+	}
+	constructedErr := convertFailureToError(failure, dc)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
-	require.True(t, timeoutErr.HasDetails())
+	require.True(t, timeoutErr.HasLastHeartbeatDetails())
 	var detailValue string
-	err = timeoutErr.Details(&detailValue)
+	err = timeoutErr.LastHeartbeatDetails(&detailValue)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails1, detailValue)
-
-	// Backward compatibility test
-	reason = errReasonTimeout
-	details, err = dc.ToData(eventpb.TimeoutType_Heartbeat)
-	require.NoError(t, err)
-	constructedErr = constructError(reason, details, dc)
-	timeoutErr, ok = constructedErr.(*TimeoutError)
-	require.True(t, ok)
-	require.Equal(t, eventpb.TimeoutType_Heartbeat, timeoutErr.TimeoutType())
-	require.False(t, timeoutErr.HasDetails())
 }
