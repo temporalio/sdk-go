@@ -1799,6 +1799,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
+		ath.logger.Info("Activity complete after timeout.",
+			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
+			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
+			zap.String(tagActivityType, activityType),
+			zap.Any(tagResult, output),
+			zap.Error(err),
+		)
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
