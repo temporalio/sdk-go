@@ -78,5 +78,5 @@ func isServiceTransientError(err error) bool {
 		*serviceerror.CancellationAlreadyRequested:
 		return false
 	}
-	return err != errShutdown
+	return err != errStop
 }

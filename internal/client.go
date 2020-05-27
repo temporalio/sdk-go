@@ -312,8 +312,8 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
-		// CloseConnection closes underlying gRPC connection.
-		CloseConnection()
+		// Close client and clean up underlying resources.
+		Close()
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -511,8 +511,8 @@ type (
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
-		// CloseConnection closes underlying gRPC connection.
-		CloseConnection()
+		// Close client and clean up underlying resources.
+		Close()
 	}
 
 	// WorkflowIDReusePolicy defines workflow ID reuse behavior.

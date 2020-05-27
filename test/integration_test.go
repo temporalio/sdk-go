@@ -116,9 +116,9 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.client.CloseConnection()
+	ts.client.Close()
 
-	// allow the pollers to shut down, and ensure there are no goroutine leaks.
+	// allow the pollers to stop, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
 	max := time.After(time.Minute)
 	var last error
@@ -465,7 +465,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	client.CloseConnection()
+	client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}
