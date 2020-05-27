@@ -127,18 +127,6 @@ type (
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
-
-	// ActivityTaskError is returned from workflow when activity returned an error.
-	// Unwrap this error to get actual cause.
-	ActivityTaskError = internal.ActivityTaskError
-
-	// ChildWorkflowExecutionError is returned from workflow when child workflow returned an error.
-	// Unwrap this error to get actual cause.
-	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
-
-	// WorkflowExecutionError is returned from workflow.
-	// Unwrap this error to get actual cause.
-	WorkflowExecutionError = internal.WorkflowExecutionError
 )
 
 // NewContinueAsNewError creates ContinueAsNewError instance
