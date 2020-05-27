@@ -125,7 +125,7 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType com
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not: %v", elapsed)
 	}
 
-	var timeoutErr *workflow.TimeoutError
+	var timeoutErr *temporal.TimeoutError
 	ok := errors.As(err, &timeoutErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
@@ -155,7 +155,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
 	}
 
-	var timeoutErr *workflow.TimeoutError
+	var timeoutErr *temporal.TimeoutError
 	ok := errors.As(err, &timeoutErr)
 	if !ok {
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
@@ -189,7 +189,7 @@ func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskList stri
 		return 999, nil
 	}
 	ctx = workflow.WithTaskList(ctx, taskList)
-	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
+	return -1, temporal.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
 }
 
 func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskList string) (string, error) {
@@ -219,7 +219,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	}
 	ctx = workflow.WithTaskList(ctx, taskList)
 
-	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
+	return "", temporal.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
 }
 
 func (w *Workflows) IDReusePolicy(
