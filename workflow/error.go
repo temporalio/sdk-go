@@ -56,7 +56,7 @@ Below are the possible types of internal error:
 
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
 
-_, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
+err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(ctx, nil)
 if err != nil {
 	var applicationErr *ApplicationError
 	if errors.As(err, &applicationError) {
@@ -86,6 +86,15 @@ if err != nil {
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
 		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
+        switch err.TimeoutType() {
+        case commonpb.ScheduleToStart:
+                // Handle ScheduleToStart timeout.
+        case commonpb.StartToClose:
+                // Handle StartToClose timeout.
+        case commonpb.Heartbeat:
+                // Handle heartbeat timeout.
+        default:
+        }
 	}
 
 	var panicErr *PanicError
@@ -118,6 +127,18 @@ type (
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
+
+	// ActivityTaskError is returned from workflow when activity returned an error.
+	// Unwrap this error to get actual cause.
+	ActivityTaskError = internal.ActivityTaskError
+
+	// ChildWorkflowExecutionError is returned from workflow when child workflow returned an error.
+	// Unwrap this error to get actual cause.
+	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
+
+	// WorkflowExecutionError is returned from workflow.
+	// Unwrap this error to get actual cause.
+	WorkflowExecutionError = internal.WorkflowExecutionError
 )
 
 // NewContinueAsNewError creates ContinueAsNewError instance
