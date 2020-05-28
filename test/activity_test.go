@@ -46,7 +46,7 @@ type Activities2 struct {
 	impl *Activities
 }
 
-var errFailOnPurpose = temporal.NewApplicationError("failing-on-purpose", false)
+var errFailOnPurpose = temporal.NewRetryableApplicationError("failing on purpose")
 
 func newActivities() *Activities {
 	activities2 := &Activities2{}
