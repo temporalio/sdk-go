@@ -57,10 +57,8 @@ Below are the possible types of internal error:
 	If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
 	The SDK will present that failure as *PanicError. The err contains a string	representation of the panic message and
 	the call stack when panic was happen.
-
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
-
-_, err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(nil)
+err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(ctx, nil)
 if err != nil {
 	var applicationErr *ApplicationError
 	if errors.As(err, &applicationError) {
@@ -70,7 +68,6 @@ if err != nil {
 		}
 		var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
 		applicationErr.Details(&detailMsg) // extract strong typed details
-
 		// handle activity errors (errors created other than using NewApplicationError() API)
 		switch err.OriginalType() {
 		case "CustomErrTypeA":
@@ -81,28 +78,32 @@ if err != nil {
 			// newer version of activity could return new errors that workflow was not aware of.
 		}
 	}
-
 	var canceledErr *CanceledError
 	if errors.As(err, &canceledErr) {
 		// handle cancellation
 	}
-
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
 		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
+        switch err.TimeoutType() {
+        case commonpb.ScheduleToStart:
+                // Handle ScheduleToStart timeout.
+        case commonpb.StartToClose:
+                // Handle StartToClose timeout.
+        case commonpb.Heartbeat:
+                // Handle heartbeat timeout.
+        default:
+        }
 	}
-
 	var panicErr *PanicError
 	if errors.As(err, &panicErr) {
 		// handle panic, message and stack trace are available by panicErr.Error() and panicErr.StackTrace()
 	}
 }
-
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
 workflow code. It will contains *ActivityTaskError, which in turn will contains on of the errors above.
 When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
 That decision task will be retried at a later time (with exponential backoff retry intervals).
-
 Workflow consumers will get an instance of *WorkflowExecutionError. This error will contains one of errors above.
 */
 
