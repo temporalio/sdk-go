@@ -22,11 +22,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package test
+package test_test
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"os"
 	"strings"
+	"time"
 
 	"go.temporal.io/temporal/client"
 )
@@ -38,7 +42,8 @@ type Config struct {
 	Debug       bool
 }
 
-func newConfig() Config {
+// NewConfig creates new Config instance
+func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr: client.DefaultHostPort,
 		IsStickyOff: true,
@@ -65,4 +70,25 @@ func getEnvStickyOff() string {
 
 func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
+}
+
+// WaitForTCP waits until target tcp address is available.
+func WaitForTCP(timeout time.Duration, addr string) error {
+	var d net.Dialer
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("failed to wait until %s: %v", addr, ctx.Err())
+		default:
+			conn, err := d.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				continue
+			}
+			_ = conn.Close()
+			return nil
+		}
+	}
 }

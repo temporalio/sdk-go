@@ -162,7 +162,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
-	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
+	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "HelloWorld_Workflow", nil, false)
 
 	historyIterator := &historyIteratorImpl{
 		iteratorFunc: func(nextToken []byte) (*eventpb.History, []byte, error) {

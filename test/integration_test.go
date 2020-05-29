@@ -22,13 +22,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package test
+package test_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -76,33 +75,12 @@ func TestIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
 }
 
-// waitForTCP waits until target tcp address is available.
-func waitForTCP(timeout time.Duration, addr string) error {
-	var d net.Dialer
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("failed to wait until %s: %v", addr, ctx.Err())
-		default:
-			conn, err := d.DialContext(ctx, "tcp", addr)
-			if err != nil {
-				continue
-			}
-			_ = conn.Close()
-			return nil
-		}
-	}
-}
-
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = newConfig()
+	ts.config = NewConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(waitForTCP(time.Minute, ts.config.ServiceAddr))
+	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.client, err = client.NewClient(client.Options{
@@ -256,7 +234,7 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.NotNil(value)
 	var trace string
 	ts.Nil(value.Get(&trace))
-	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test.(*Workflows).Basic"))
+	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test_test.(*Workflows).Basic"), trace)
 }
 
 func (ts *IntegrationTestSuite) TestConsistentQuery() {

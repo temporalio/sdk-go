@@ -56,35 +56,38 @@ var (
 var errStop = errors.New("worker stopping")
 
 type (
-	// resultHandler that returns result
-	resultHandler   func(result *commonpb.Payloads, err error)
-	laResultHandler func(lar *localActivityResultWrapper)
+	// ResultHandler that returns result
+	ResultHandler func(result *commonpb.Payloads, err error)
+	// LocalActivityResultHandler that returns local activity result
+	LocalActivityResultHandler func(lar *LocalActivityResultWrapper)
 
-	localActivityResultWrapper struct {
-		err     error
-		result  *commonpb.Payloads
-		attempt int32
-		backoff time.Duration
+	// LocalActivityResultWrapper contains result of a local activity
+	LocalActivityResultWrapper struct {
+		Err     error
+		Result  *commonpb.Payloads
+		Attempt int32
+		Backoff time.Duration
 	}
 
-	// workflowEnvironment Represents the environment for workflow/decider.
+	// WorkflowEnvironment Represents the environment for workflow/decider.
 	// Should only be used within the scope of workflow definition
-	workflowEnvironment interface {
-		asyncActivityClient
-		localActivityClient
-		workflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback resultHandler)
+	WorkflowEnvironment interface {
+		AsyncActivityClient
+		LocalActivityClient
+		WorkflowTimerClient
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler)
-		ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error
+		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		GetLogger() *zap.Logger
 		GetMetricsScope() tally.Scope
+		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback resultHandler)
+		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value
@@ -96,11 +99,21 @@ type (
 		GetRegistry() *registry
 	}
 
+	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.
+	WorkflowDefinitionFactory interface {
+		// NewWorkflowDefinition must return a new instance of WorkflowDefinition on each call
+		NewWorkflowDefinition() WorkflowDefinition
+	}
+
 	// WorkflowDefinition wraps the code that can execute a workflow.
-	workflowDefinition interface {
-		Execute(env workflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
+	WorkflowDefinition interface {
+		// Implementation must be asynchronous
+		Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
 		// Called for each non timed out startDecision event.
-		// Executed after all history events since the previous decision are applied to workflowDefinition
+		// Executed after all history events since the previous decision are applied to WorkflowDefinition
+		// Application level code must be executed from this function only.
+		// Execute call as well as callbacks called from WorkflowEnvironment functions can only schedule callbacks
+		// which can be executed from OnDecisionTaskStarted()
 		OnDecisionTaskStarted()
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 		Close()
