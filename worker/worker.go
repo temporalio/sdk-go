@@ -112,12 +112,12 @@ type (
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
 
-		// Start starts the worker in a non-blocking fashion
+		// Start the worker in a non-blocking fashion.
 		Start() error
-		// Run is a blocking start and cleans up resources when killed
-		// returns error only if it fails to start the worker
+		// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+		// Returns error only if worker fails to start.
 		Run() error
-		// Stop cleans up any resources opened by worker
+		// Stop the worker.
 		Stop()
 	}
 

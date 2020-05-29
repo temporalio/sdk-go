@@ -206,7 +206,7 @@ type (
 		//	To complete with a result.
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
-		//      CompleteActivity(token, nil, temporal.NewCustomError("reason", details)
+		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
@@ -352,8 +352,8 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
-		// CloseConnection closes underlying gRPC connection.
-		CloseConnection()
+		// Close client and clean up underlying resources.
+		Close()
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
@@ -383,8 +383,8 @@ type (
 		//	- InternalServiceError
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
-		// CloseConnection closes underlying gRPC connection.
-		CloseConnection()
+		// Close client and clean up underlying resources.
+		Close()
 	}
 )
 

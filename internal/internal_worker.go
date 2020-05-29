@@ -292,7 +292,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "DecisionWorker",
-		shutdownTimeout:   params.WorkerStopTimeout},
+		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
 		nil,
@@ -315,7 +315,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 		taskWorker:        localActivityTaskPoller,
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker",
-		shutdownTimeout:   params.WorkerStopTimeout},
+		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
 		nil,
@@ -356,7 +356,7 @@ func (ww *workflowWorker) Run() error {
 	return nil
 }
 
-// Shutdown the worker.
+// Stop the worker.
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
 	// TODO: remove the stop methods in favor of the workerStopChannel
@@ -445,7 +445,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			taskWorker:        poller,
 			identity:          workerParams.Identity,
 			workerType:        "ActivityWorker",
-			shutdownTimeout:   workerParams.WorkerStopTimeout,
+			stopTimeout:       workerParams.WorkerStopTimeout,
 			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
 		workerParams.MetricsScope,
@@ -482,7 +482,7 @@ func (aw *activityWorker) Run() error {
 	return nil
 }
 
-// Shutdown the worker.
+// Stop the worker.
 func (aw *activityWorker) Stop() {
 	close(aw.stopC)
 	aw.worker.Stop()
@@ -981,7 +981,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
-// Start starts the worker in a non-blocking fashion
+// Start the worker in a non-blocking fashion.
 func (aw *AggregatedWorker) Start() error {
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
@@ -1095,8 +1095,8 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
-// Run is a blocking start and cleans up resources when killed
-// returns error only if it fails to start the worker
+// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+// Returns error only if worker fails to start.
 func (aw *AggregatedWorker) Run() error {
 	if err := aw.Start(); err != nil {
 		return err
@@ -1107,7 +1107,7 @@ func (aw *AggregatedWorker) Run() error {
 	return nil
 }
 
-// Stop cleans up any resources opened by worker
+// Stop the worker.
 func (aw *AggregatedWorker) Stop() {
 	if !isInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()

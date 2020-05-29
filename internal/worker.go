@@ -134,7 +134,7 @@ type (
 		// default: BlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy WorkflowPanicPolicy
 
-		// Optional: worker graceful shutdown timeout
+		// Optional: worker graceful stop timeout
 		// default: 0s
 		WorkerStopTimeout time.Duration
 

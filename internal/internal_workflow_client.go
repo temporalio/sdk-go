@@ -943,8 +943,8 @@ func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string,
 	return resp, nil
 }
 
-// CloseConnection closes underlying gRPC connection.
-func (wc *WorkflowClient) CloseConnection() {
+// Close client and clean up underlying resources.
+func (wc *WorkflowClient) Close() {
 	if wc.connectionCloser == nil {
 		return
 	}
@@ -1023,8 +1023,8 @@ func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }
 
-// CloseConnection closes underlying gRPC connection.
-func (nc *namespaceClient) CloseConnection() {
+// Close client and clean up underlying resources.
+func (nc *namespaceClient) Close() {
 	if nc.connectionCloser == nil {
 		return
 	}
@@ -1109,10 +1109,10 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		err = workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
+		return workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
-		err = constructError(attributes.GetReason(), attributes.Details, workflowRun.dataConverter)
+		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case eventpb.EventType_WorkflowExecutionCanceled:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
@@ -1121,14 +1121,21 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = newTerminatedError()
 	case eventpb.EventType_WorkflowExecutionTimedOut:
 		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
-		err = NewTimeoutError(attributes.GetTimeoutType())
+		err = NewTimeoutError(attributes.GetTimeoutType(), nil)
 	case eventpb.EventType_WorkflowExecutionContinuedAsNew:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)
 	default:
-		err = fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
+		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
+
+	err = NewWorkflowExecutionError(
+		workflowRun.workflowID,
+		workflowRun.currentRunID,
+		getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn),
+		err)
+
 	return err
 }
 

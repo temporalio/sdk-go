@@ -183,7 +183,7 @@
         "scheduledEventId": 11,
         "startedEventId": 12,
         "cause": "WorkflowWorkerUnhandledFailure",
-        "details": null,
+        "failure": null,
         "identity": "97228@samar-C02XG22GJGH6@tl-1"
       }
     },

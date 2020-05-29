@@ -26,6 +26,7 @@ package test_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -93,9 +94,9 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.client.CloseConnection()
+	ts.client.Close()
 
-	// allow the pollers to shut down, and ensure there are no goroutine leaks.
+	// allow the pollers to stop, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
 	max := time.After(time.Minute)
 	var last error
@@ -218,8 +219,8 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.Nil(ts.client.CancelWorkflow(ctx, "test-cancellation", run.GetRunID()))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
-	_, ok := err.(*temporal.CanceledError)
-	ts.True(ok)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
 }
 
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
@@ -281,9 +282,11 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 		false,
 	)
 	ts.Error(err)
-	gerr, ok := err.(*workflow.GenericError)
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("Workflow execution already started", gerr.Error())
+	ts.Equal("Workflow execution already started", applicationErr.Error())
+	ts.False(applicationErr.NonRetryable())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
@@ -298,9 +301,11 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 		false,
 	)
 	ts.Error(err)
-	gerr, ok := err.(*workflow.GenericError)
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("Workflow execution already started", gerr.Error())
+	ts.Equal("Workflow execution already started", applicationErr.Error())
+	ts.False(applicationErr.NonRetryable())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
@@ -438,7 +443,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	client.CloseConnection()
+	client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}

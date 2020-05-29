@@ -518,8 +518,8 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	return r0
 }
 
-// CloseConnection provides a mock function without given fields
-func (_m *Client) CloseConnection() {
+// Close provides a mock function without given fields
+func (_m *Client) Close() {
 	ret := _m.Called()
 
 	if rf, ok := ret.Get(0).(func()); ok {
