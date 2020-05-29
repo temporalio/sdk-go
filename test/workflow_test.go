@@ -438,15 +438,12 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: 1 * time.Second,
-		StartToCloseTimeout:    2 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    1 * time.Second,
+		ScheduleToCloseTimeout: 5 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    1 * time.Second,
 			BackoffCoefficient: 1.0,
 			MaximumInterval:    1 * time.Second,
-			// TODO (shtin): This is sort of workarounds to make TestActivityRetryOnTimeoutStableError test works. But it should fail on ScheduleToCloseTimeout not on MaximumAttempts.
-			//  https://github.com/temporalio/temporal-go-sdk/issues/120 is to fix it.
-			MaximumAttempts: 3,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
@@ -455,14 +452,25 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 	var a *Activities
 	err := workflow.ExecuteActivity(ctx, a.RetryTimeoutStableErrorActivity).Get(ctx, nil)
 
-	var applicationErr *temporal.ApplicationError
-	ok := errors.As(err, &applicationErr)
+	var timeoutErr *temporal.TimeoutError
+	ok := errors.As(err, &timeoutErr)
 	if !ok {
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	if applicationErr.Error() != errFailOnPurpose.Error() {
-		return []string{}, fmt.Errorf("activity failed with unexpected error message: %v", applicationErr.Error())
+	// TODO (shtin): This TimeoutType should be ScheduleToClose. Fix on server is needed.
+	if timeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
+		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type: %v", timeoutErr.TimeoutType())
 	}
+
+	lastTimeoutErr, ok := timeoutErr.LastErr().(*temporal.TimeoutError)
+	if !ok {
+		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", timeoutErr.LastErr())
+	}
+
+	if lastTimeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
+		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type of last timeout: %v", lastTimeoutErr.TimeoutType())
+	}
+
 	return []string{}, nil
 }
 

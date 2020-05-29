@@ -408,6 +408,11 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 	return e.lastHeartbeatDetails.Get(d...)
 }
 
+// LastErr returns error which caused timeout.
+func (e *TimeoutError) LastErr() error {
+	return e.lastErr
+}
+
 // Error from error interface
 func (e *CanceledError) Error() string {
 	return "Canceled"
