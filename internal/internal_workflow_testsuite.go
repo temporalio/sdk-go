@@ -815,7 +815,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		var continueAsNewErr *ContinueAsNewError
 		var timeoutErr *TimeoutError
 		var workflowPanicErr *workflowPanicError
-		if errors.As(err, &cancelledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) {
+		var workflowExecutionAlreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &cancelledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) {
 			env.testError = err
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
