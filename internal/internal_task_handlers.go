@@ -1751,6 +1751,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	defer func() {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
+		cancel()
 	}()
 
 	workflowType := t.WorkflowType.GetName()
