@@ -58,8 +58,8 @@ var errStop = errors.New("worker stopping")
 type (
 	// ResultHandler that returns result
 	ResultHandler func(result *commonpb.Payloads, err error)
-	// LaResultHandler that returns local activity result
-	LaResultHandler func(lar *LocalActivityResultWrapper)
+	// LocalActivityResultHandler that returns local activity result
+	LocalActivityResultHandler func(lar *LocalActivityResultWrapper)
 
 	// LocalActivityResultWrapper contains result of a local activity
 	LocalActivityResultWrapper struct {

@@ -131,7 +131,7 @@ type (
 		workflowTask *workflowTask
 		activityID   string
 		params       *ExecuteLocalActivityParams
-		callback     LaResultHandler
+		callback     LocalActivityResultHandler
 		wc           *workflowExecutionContextImpl
 		canceled     bool
 		cancelFunc   func()
@@ -489,7 +489,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LaResultHandler) *LocalActivityID {
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
 	activityID := wc.GenerateSequenceID()
 	task := newLocalActivityTask(params, callback, activityID)
 
@@ -498,7 +498,7 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActiv
 	return &LocalActivityID{activityID: activityID}
 }
 
-func newLocalActivityTask(params ExecuteLocalActivityParams, callback LaResultHandler, activityID string) *localActivityTask {
+func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
 		activityID:  activityID,
 		params:      &params,

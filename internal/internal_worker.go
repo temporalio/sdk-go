@@ -555,6 +555,9 @@ func (r *registry) RegisterActivityWithOptions(
 	// Support direct registration of activity
 	a, ok := af.(activity)
 	if ok {
+		if options.Name == "" {
+			panic("registration of activity interface requires name")
+		}
 		r.addActivity(options.Name, a)
 		return
 	}

@@ -114,7 +114,7 @@ type (
 
 	// LocalActivityClient for requesting local activity execution
 	LocalActivityClient interface {
-		ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LaResultHandler) *LocalActivityID
+		ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID
 
 		RequestCancelLocalActivity(activityID string)
 	}

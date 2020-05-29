@@ -28,7 +28,7 @@ import (
 	"context"
 	commonpb "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal/encoded"
-	b "go.temporal.io/temporal/internalbindings"
+	bindings "go.temporal.io/temporal/internalbindings"
 	"go.temporal.io/temporal/workflow"
 	"time"
 )
@@ -36,14 +36,14 @@ import (
 type EmptyWorkflowDefinitionFactory struct {
 }
 
-func (e EmptyWorkflowDefinitionFactory) NewWorkflowDefinition() b.WorkflowDefinition {
+func (e EmptyWorkflowDefinitionFactory) NewWorkflowDefinition() bindings.WorkflowDefinition {
 	return &EmptyWorkflowDefinition{}
 }
 
 type EmptyWorkflowDefinition struct {
 }
 
-func (wd *EmptyWorkflowDefinition) Execute(env b.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+func (wd *EmptyWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	payload, err := encoded.GetDefaultDataConverter().ToData("EmptyResult")
 	env.Complete(payload, err)
 }
@@ -63,7 +63,7 @@ func (wd *EmptyWorkflowDefinition) Close() {
 type SingleActivityWorkflowDefinitionFactory struct {
 }
 
-func (e SingleActivityWorkflowDefinitionFactory) NewWorkflowDefinition() b.WorkflowDefinition {
+func (e SingleActivityWorkflowDefinitionFactory) NewWorkflowDefinition() bindings.WorkflowDefinition {
 	return &SingleActivityWorkflowDefinition{}
 }
 
@@ -71,7 +71,7 @@ type SingleActivityWorkflowDefinition struct {
 	callbacks []func()
 }
 
-func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
+func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	var signalInput string
 	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads) {
 		_ = encoded.GetDefaultDataConverter().FromData(input, &signalInput)
@@ -79,22 +79,22 @@ func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, he
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := encoded.GetDefaultDataConverter().ToData("World")
-			parameters := b.ExecuteActivityParams{
-				ExecuteActivityOptions: b.ExecuteActivityOptions{
+			parameters := bindings.ExecuteActivityParams{
+				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
 					TaskListName:               env.WorkflowInfo().TaskListName,
 					StartToCloseTimeoutSeconds: 10,
 					ActivityID:                 "id1",
 				},
-				ActivityType: b.ActivityType{Name: "SingleActivity"},
+				ActivityType: bindings.ActivityType{Name: "SingleActivity"},
 				Input:        input,
 			}
 			_ = env.ExecuteActivity(parameters, d.addCallback(func(result *commonpb.Payloads, err error) {
-				childParams := b.ExecuteWorkflowParams{
-					WorkflowOptions: b.WorkflowOptions{
+				childParams := bindings.ExecuteWorkflowParams{
+					WorkflowOptions: bindings.WorkflowOptions{
 						TaskListName: env.WorkflowInfo().TaskListName,
 						WorkflowID:   "ID1",
 					},
-					WorkflowType: &b.WorkflowType{Name: "ChildWorkflow"},
+					WorkflowType: &bindings.WorkflowType{Name: "ChildWorkflow"},
 					Input:        result,
 				}
 				env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
@@ -103,13 +103,13 @@ func (d *SingleActivityWorkflowDefinition) Execute(env b.WorkflowEnvironment, he
 					result := childResult + signalInput
 					encodedResult, _ := encoded.GetDefaultDataConverter().ToData(result)
 					env.Complete(encodedResult, err)
-				}), func(r b.WorkflowExecution, e error) {})
+				}), func(r bindings.WorkflowExecution, e error) {})
 			}))
 		}))
 	})
 }
 
-func (d *SingleActivityWorkflowDefinition) addCallback(callback b.ResultHandler) b.ResultHandler {
+func (d *SingleActivityWorkflowDefinition) addCallback(callback bindings.ResultHandler) bindings.ResultHandler {
 	return func(result *commonpb.Payloads, err error) {
 		d.callbacks = append(d.callbacks, func() {
 			callback(result, err)

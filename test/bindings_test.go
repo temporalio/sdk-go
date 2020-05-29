@@ -86,7 +86,7 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 		Name:                                   name,
 		WorkflowExecutionRetentionPeriodInDays: retention,
 	})
-	client.CloseConnection()
+	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
 		return
 	}
@@ -148,7 +148,7 @@ func (ts *AsyncBindingsTestSuite) startWorkflowOptions(wfID string) client.Start
 
 func (ts *AsyncBindingsTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.client.CloseConnection()
+	ts.client.Close()
 }
 
 func (ts *AsyncBindingsTestSuite) SetupTest() {
