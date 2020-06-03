@@ -139,10 +139,15 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	context.decisionsHelper.addDecision(di)
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
-		LastHeartbeatDetails: encodedDetails1,
-		ScheduledEventId:     5,
-		StartedEventId:       6,
-		TimeoutType:          timeoutType,
+		Failure: &failurepb.Failure{
+			FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+				LastHeartbeatDetails: encodedDetails1,
+				TimeoutType:          timeoutType,
+			}},
+		},
+		RetryStatus:      commonpb.RetryStatus_Timeout,
+		ScheduledEventId: 5,
+		StartedEventId:   6,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	_ = weh.handleActivityTaskTimedOut(event)
@@ -483,6 +488,9 @@ func Test_GetErrorType(t *testing.T) {
 	err = NewApplicationError("application error", false)
 	errType = getErrorType(err)
 	require.Equal("ApplicationError", errType)
+
+	errType = getErrorType(nil)
+	require.Equal("<nil>", errType)
 }
 
 type coolError struct{}
@@ -528,7 +536,7 @@ func Test_IsRetryable(t *testing.T) {
 	require.True(IsRetryable(coolErr, []string{}))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
 
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", coolErr))
+	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", commonpb.RetryStatus_NonRetryableError, coolErr))
 	require.True(IsRetryable(workflowExecutionErr, []string{}))
 	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
 }
@@ -601,9 +609,9 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 
 	err := NewTimeoutError(commonpb.TimeoutType_Heartbeat, &coolError{})
 	f := convertErrorToFailure(err, DefaultDataConverter)
-	require.Equal("TimeoutType: Heartbeat, LastErr: cool error", f.GetMessage())
+	require.Equal("TimeoutType: Heartbeat, Cause: cool error", f.GetMessage())
 	require.Equal(commonpb.TimeoutType_Heartbeat, f.GetTimeoutFailureInfo().GetTimeoutType())
-	require.Equal(convertErrorToFailure(&coolError{}, DefaultDataConverter), f.GetTimeoutFailureInfo().GetLastFailure())
+	require.Equal(convertErrorToFailure(&coolError{}, DefaultDataConverter), f.GetCause())
 	require.Equal(f.GetCause(), convertErrorToFailure(&coolError{}, DefaultDataConverter))
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -646,12 +654,13 @@ func Test_convertErrorToFailure_ActivityTaskError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewActivityTaskError(8, 22, "alex", applicationErr)
+	err := NewActivityTaskError(8, 22, "alex", commonpb.RetryStatus_NonRetryableError, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityTaskFailureInfo().GetScheduledEventId())
 	require.Equal(int64(22), f.GetActivityTaskFailureInfo().GetStartedEventId())
 	require.Equal("alex", f.GetActivityTaskFailureInfo().GetIdentity())
+	require.Equal(commonpb.RetryStatus_NonRetryableError, f.GetActivityTaskFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -670,12 +679,13 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, applicationErr)
+	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, commonpb.RetryStatus_NonRetryableError, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
+	require.Equal(commonpb.RetryStatus_NonRetryableError, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -786,14 +796,13 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
 			TimeoutType:          commonpb.TimeoutType_Heartbeat,
 			LastHeartbeatDetails: nil,
-			LastFailure:          nil,
 		}},
 	}
 
 	err := convertFailureToError(f, DefaultDataConverter)
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	require.Equal("TimeoutType: Heartbeat, LastErr: <nil>", timeoutErr.Error())
+	require.Equal("TimeoutType: Heartbeat, Cause: <nil>", timeoutErr.Error())
 	require.Equal(commonpb.TimeoutType_Heartbeat, timeoutErr.TimeoutType())
 }
 

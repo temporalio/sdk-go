@@ -988,6 +988,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetIdentity(),
+		attributes.GetRetryStatus(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 
@@ -1004,16 +1005,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	lastHeartbeatDetails := newEncodedValues(attributes.GetLastHeartbeatDetails(), weh.GetDataConverter())
-	timeoutError := NewTimeoutError(
-		attributes.GetTimeoutType(),
-		convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter()),
-		lastHeartbeatDetails)
+	timeoutError := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 
 	activityTaskErr := NewActivityTaskError(
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		"",
+		attributes.GetRetryStatus(),
 		timeoutError,
 	)
 
@@ -1039,6 +1037,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 			attributes.GetScheduledEventId(),
 			attributes.GetStartedEventId(),
 			attributes.GetIdentity(),
+			commonpb.RetryStatus_NonRetryableError,
 			NewCanceledError(details),
 		)
 
@@ -1234,6 +1233,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		attributes.GetRetryStatus(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1257,6 +1257,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		commonpb.RetryStatus_NonRetryableError,
 		NewCanceledError(details),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1279,6 +1280,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		attributes.GetRetryStatus(),
 		NewTimeoutError(attributes.GetTimeoutType(), nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1301,6 +1303,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		commonpb.RetryStatus_NonRetryableError,
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
