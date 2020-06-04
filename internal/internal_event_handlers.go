@@ -1045,7 +1045,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 			attributes.GetIdentity(),
 			&commonpb.ActivityType{Name: activity.activityType.Name},
 			activityID,
-			commonpb.RetryStatus_NonRetryableError,
+			commonpb.RetryStatus_NonRetryableFailure,
 			NewCanceledError(details),
 		)
 
@@ -1307,7 +1307,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		commonpb.RetryStatus_NonRetryableError,
+		commonpb.RetryStatus_NonRetryableFailure,
 		NewCanceledError(details),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1353,7 +1353,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		commonpb.RetryStatus_NonRetryableError,
+		commonpb.RetryStatus_NonRetryableFailure,
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)

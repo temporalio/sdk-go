@@ -536,7 +536,7 @@ func Test_IsRetryable(t *testing.T) {
 	require.True(IsRetryable(coolErr, []string{}))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
 
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", nil, "", commonpb.RetryStatus_NonRetryableError, coolErr))
+	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", nil, "", commonpb.RetryStatus_NonRetryableFailure, coolErr))
 	require.True(IsRetryable(workflowExecutionErr, []string{}))
 	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
 }
@@ -654,7 +654,7 @@ func Test_convertErrorToFailure_ActivityTaskError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewActivityTaskError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RetryStatus_NonRetryableError, applicationErr)
+	err := NewActivityTaskError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RetryStatus_NonRetryableFailure, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityTaskFailureInfo().GetScheduledEventId())
@@ -662,7 +662,7 @@ func Test_convertErrorToFailure_ActivityTaskError(t *testing.T) {
 	require.Equal("alex", f.GetActivityTaskFailureInfo().GetIdentity())
 	require.Equal("activityType", f.GetActivityTaskFailureInfo().GetActivityType().GetName())
 	require.Equal("32283", f.GetActivityTaskFailureInfo().GetActivityId())
-	require.Equal(commonpb.RetryStatus_NonRetryableError, f.GetActivityTaskFailureInfo().GetRetryStatus())
+	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetActivityTaskFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -681,13 +681,13 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, commonpb.RetryStatus_NonRetryableError, applicationErr)
+	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, commonpb.RetryStatus_NonRetryableFailure, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
-	require.Equal(commonpb.RetryStatus_NonRetryableError, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
+	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
