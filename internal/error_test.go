@@ -488,9 +488,6 @@ func Test_GetErrorType(t *testing.T) {
 	err = NewApplicationError("application error", false)
 	errType = getErrorType(err)
 	require.Equal("ApplicationError", errType)
-
-	errType = getErrorType(nil)
-	require.Equal("<nil>", errType)
 }
 
 type coolError struct{}

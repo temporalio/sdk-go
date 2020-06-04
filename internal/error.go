@@ -580,6 +580,10 @@ func convertErrDetailsToPayloads(details Values, dc DataConverter) *commonpb.Pay
 
 // IsRetryable returns if error retryable or not.
 func IsRetryable(err error, nonRetryableTypes []string) bool {
+	if err == nil {
+		return false
+	}
+
 	var terminatedErr *TerminatedError
 	var canceledErr *CanceledError
 	var workflowPanicErr *workflowPanicError
@@ -629,10 +633,6 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 }
 
 func getErrorType(err error) string {
-	if err == nil {
-		return "<nil>"
-	}
-
 	var t reflect.Type
 	for t = reflect.TypeOf(err); t.Kind() == reflect.Ptr; t = t.Elem() {
 	}
