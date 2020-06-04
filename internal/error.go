@@ -117,6 +117,7 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 type (
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
+		temporalError
 		message      string
 		originalType string
 		nonRetryable bool
@@ -125,6 +126,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
+		temporalError
 		timeoutType          commonpb.TimeoutType
 		lastErr              error
 		lastHeartbeatDetails Values
@@ -132,15 +134,18 @@ type (
 
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
+		temporalError
 		details Values
 	}
 
 	// TerminatedError returned when workflow was terminated.
 	TerminatedError struct {
+		temporalError
 	}
 
 	// PanicError contains information about panicked workflow/activity.
 	PanicError struct {
+		temporalError
 		value      interface{}
 		stackTrace string
 	}
@@ -164,6 +169,7 @@ type (
 
 	// ServerError can be returned from server.
 	ServerError struct {
+		temporalError
 		message      string
 		nonRetryable bool
 		cause        error
@@ -172,6 +178,7 @@ type (
 	// ActivityTaskError is returned from workflow when activity returned an error.
 	// Unwrap this error to get actual cause.
 	ActivityTaskError struct {
+		temporalError
 		scheduledEventID int64
 		startedEventID   int64
 		identity         string
@@ -181,6 +188,7 @@ type (
 	// ChildWorkflowExecutionError is returned from workflow when child workflow returned an error.
 	// Unwrap this error to get actual cause.
 	ChildWorkflowExecutionError struct {
+		temporalError
 		namespace        string
 		workflowID       string
 		runID            string
@@ -197,6 +205,15 @@ type (
 		runID        string
 		workflowType string
 		cause        error
+	}
+
+	temporalError struct {
+		originalFailure *failurepb.Failure
+	}
+
+	failureHolder interface {
+		setFailure(*failurepb.Failure)
+		failure() *failurepb.Failure
 	}
 )
 
@@ -312,6 +329,14 @@ func NewWorkflowExecutionError(
 		workflowType: workflowType,
 		cause:        cause,
 	}
+}
+
+func (e *temporalError) setFailure(f *failurepb.Failure) {
+	e.originalFailure = f
+}
+
+func (e *temporalError) failure() *failurepb.Failure {
+	return e.originalFailure
 }
 
 // IsCanceledError returns whether error in CanceledError.
@@ -605,6 +630,12 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		return nil
 	}
 
+	if fh, ok := err.(failureHolder); ok {
+		if fh.failure() != nil {
+			return fh.failure()
+		}
+	}
+
 	failure := &failurepb.Failure{
 		Source:  "GoSDK",
 		Message: err.Error(),
@@ -689,46 +720,48 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		return nil
 	}
 
+	var err error
+
 	if failure.GetApplicationFailureInfo() != nil {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
 		case getErrorType(&ApplicationError{}):
-			return NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
+			err = NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
 		case getErrorType(&PanicError{}):
-			return newPanicError(failure.GetMessage(), failure.GetStackTrace())
+			err = newPanicError(failure.GetMessage(), failure.GetStackTrace())
+		default:
+			applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
+			applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
+			err = applicationErr
 		}
-		applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
-		applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
-		return applicationErr
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
-		return NewCanceledError(details)
+		err = NewCanceledError(details)
 	} else if failure.GetTimeoutFailureInfo() != nil {
 		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
 		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		return NewTimeoutError(
+		err = NewTimeoutError(
 			timeoutFailureInfo.GetTimeoutType(),
 			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
 			lastHeartbeatDetails)
 	} else if failure.GetTerminatedFailureInfo() != nil {
-		return newTerminatedError()
+		err = newTerminatedError()
 	} else if failure.GetServerFailureInfo() != nil {
-		return NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
+		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		return NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityTaskFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityTaskFailureInfo()
-		activityTaskError := NewActivityTaskError(
+		err = NewActivityTaskError(
 			activityTaskInfoFailure.GetScheduledEventId(),
 			activityTaskInfoFailure.GetStartedEventId(),
 			activityTaskInfoFailure.GetIdentity(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
-		return activityTaskError
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
 		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
-		childWorkflowExecutionError := NewChildWorkflowExecutionError(
+		err = NewChildWorkflowExecutionError(
 			childWorkflowExecutionFailureInfo.GetNamespace(),
 			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetWorkflowId(),
 			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetRunId(),
@@ -737,9 +770,16 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
-		return childWorkflowExecutionError
 	}
 
-	// All unknown types are considered to be retryable ApplicationError.
-	return NewApplicationError(failure.GetMessage(), false, nil)
+	if err == nil {
+		// All unknown types are considered to be retryable ApplicationError.
+		err = NewApplicationError(failure.GetMessage(), false, nil)
+	}
+
+	if fh, ok := err.(failureHolder); ok {
+		fh.setFailure(failure)
+	}
+
+	return err
 }

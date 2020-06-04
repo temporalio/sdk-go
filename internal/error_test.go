@@ -701,6 +701,26 @@ func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	require.Equal("coolError", coolErr.OriginalType())
 }
 
+func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
+	require := require.New(t)
+	err := NewApplicationError("message that will be ignored", false)
+	err.originalFailure = &failurepb.Failure{
+		Message:    "actual message",
+		StackTrace: "some stack trace",
+		Source:     "JavaSDK",
+		FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+			Type:         "SomeJavaException",
+			NonRetryable: true,
+		}}}
+	f := convertErrorToFailure(err, DefaultDataConverter)
+	require.Equal("actual message", f.GetMessage())
+	require.Equal("JavaSDK", f.GetSource())
+	require.Equal("some stack trace", f.GetStackTrace())
+	require.Equal("SomeJavaException", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Nil(f.GetCause())
+}
+
 func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require := require.New(t)
 	details, err := DefaultDataConverter.ToData("details", 22)
@@ -811,4 +831,58 @@ func Test_convertFailureToError_ServerFailure(t *testing.T) {
 	require.True(errors.As(err, &serverErr))
 	require.Equal("message", serverErr.Error())
 	require.Equal(true, serverErr.nonRetryable)
+}
+
+func Test_convertFailureToError_SaveFailure(t *testing.T) {
+	require := require.New(t)
+
+	f := &failurepb.Failure{
+		Message:    "message",
+		StackTrace: "long stack trace",
+		Source:     "JavaSDK",
+		Cause: &failurepb.Failure{
+			Message:    "application message",
+			StackTrace: "application long stack trace",
+			Source:     "JavaSDK",
+			FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+				Type:         "SomeJavaException",
+				NonRetryable: true,
+			}},
+		},
+		FailureInfo: &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: &failurepb.ActivityTaskFailureInfo{
+			StartedEventId:   1,
+			ScheduledEventId: 2,
+			Identity:         "alex",
+		}},
+	}
+
+	err := convertFailureToError(f, DefaultDataConverter)
+
+	var applicationErr *ApplicationError
+	require.True(errors.As(err, &applicationErr))
+	require.NotNil(applicationErr.originalFailure)
+	applicationErr.message = "errors are immutable, message can't be changed"
+	applicationErr.originalType = "ApplicationError (is ignored)"
+	applicationErr.nonRetryable = false
+
+	var activityErr *ActivityTaskError
+	require.True(errors.As(err, &activityErr))
+	require.NotNil(activityErr.originalFailure)
+	activityErr.startedEventID = 11
+	activityErr.scheduledEventID = 22
+	activityErr.identity = "bob"
+
+	f2 := convertErrorToFailure(err, DefaultDataConverter)
+	require.Equal("message", f2.GetMessage())
+	require.Equal("long stack trace", f2.GetStackTrace())
+	require.Equal("JavaSDK", f2.GetSource())
+	require.Equal(int64(1), f2.GetActivityTaskFailureInfo().GetStartedEventId())
+	require.Equal(int64(2), f2.GetActivityTaskFailureInfo().GetScheduledEventId())
+	require.Equal("alex", f2.GetActivityTaskFailureInfo().GetIdentity())
+
+	require.Equal("application message", f2.GetCause().GetMessage())
+	require.Equal("application long stack trace", f2.GetCause().GetStackTrace())
+	require.Equal("JavaSDK", f2.GetCause().GetSource())
+	require.Equal("SomeJavaException", f2.GetCause().GetApplicationFailureInfo().GetType())
+	require.Equal(true, f2.GetCause().GetApplicationFailureInfo().GetNonRetryable())
 }
