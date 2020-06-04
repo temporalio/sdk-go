@@ -101,7 +101,7 @@ type (
 		workflowInfo *WorkflowInfo
 
 		decisionsHelper   *decisionsHelper
-		sideEffectResult  map[string]*commonpb.Payloads
+		sideEffectResult  map[int64]*commonpb.Payloads
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
 		mutableSideEffect map[string]*commonpb.Payloads
@@ -160,12 +160,10 @@ type (
 var (
 	// ErrUnknownMarkerName is returned if there is unknown marker name in the history.
 	ErrUnknownMarkerName = errors.New("unknown marker name")
-	// ErrMissingLocalActivityMarkerDetails is returned when marker details for local activity is nil.
-	ErrMissingLocalActivityMarkerDetails = errors.New("local activity marker details is nil")
-	// ErrMissingLocalActivityMarkerData is returned when marker details doesn't have data key.
-	ErrMissingLocalActivityMarkerData = errors.New("local activity marker data is missing in details")
-	// ErrMissingLocalActivityMarkerResult is returned when marker details doesn't have result key.
-	ErrMissingLocalActivityMarkerResult = errors.New("local activity marker result is missing in details")
+	// ErrMissingMarkerDetails is returned when marker details are nil.
+	ErrMissingMarkerDetails = errors.New("marker details are nil")
+	// ErrMissingMarkerDataKey is returned when marker details doesn't have data key.
+	ErrMissingMarkerDataKey = errors.New("marker key is missing in details")
 )
 
 func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
@@ -200,7 +198,7 @@ func newWorkflowExecutionEventHandler(
 	context := &workflowEnvironmentImpl{
 		workflowInfo:          workflowInfo,
 		decisionsHelper:       newDecisionsHelper(),
-		sideEffectResult:      make(map[string]*commonpb.Payloads),
+		sideEffectResult:      make(map[int64]*commonpb.Payloads),
 		mutableSideEffect:     make(map[string]*commonpb.Payloads),
 		changeVersions:        make(map[string]Version),
 		pendingLaTasks:        make(map[string]*localActivityTask),
@@ -632,13 +630,13 @@ func getChangeVersion(changeID string, version Version) string {
 }
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
-	sideEffectID := wc.GenerateSequenceID()
+	sideEffectID := wc.GenerateSequence()
 	var result *commonpb.Payloads
 	if wc.isReplay {
 		var ok bool
 		result, ok = wc.sideEffectResult[sideEffectID]
 		if !ok {
-			keys := make([]string, 0, len(wc.sideEffectResult))
+			keys := make([]int64, 0, len(wc.sideEffectResult))
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
@@ -646,7 +644,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 				sideEffectID, keys))
 		}
 		wc.logger.Debug("SideEffect returning already calculated result.",
-			zap.String(tagSideEffectID, sideEffectID))
+			zap.Int64(tagSideEffectID, sideEffectID))
 	} else {
 		var err error
 		result, err = f()
@@ -656,10 +654,10 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, result)
+	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
 
 	callback(result, nil)
-	wc.logger.Debug("SideEffect Marker added", zap.String(tagSideEffectID, sideEffectID))
+	wc.logger.Debug("SideEffect Marker added", zap.Int64(tagSideEffectID, sideEffectID))
 }
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
@@ -723,7 +721,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *comm
 	if err != nil {
 		panic(err)
 	}
-	wc.decisionsHelper.recordMutableSideEffectMarker(id, details)
+	wc.decisionsHelper.recordMutableSideEffectMarker(id, details, wc.dataConverter)
 	wc.mutableSideEffect[id] = data
 	return newEncodedValue(data, wc.GetDataConverter())
 }
@@ -1077,45 +1075,69 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
 	attributes *eventpb.MarkerRecordedEventAttributes,
 ) error {
-	switch attributes.GetMarkerName() {
-	case sideEffectMarkerName:
-		for sideEffectID, result := range attributes.GetDetails() {
-			weh.sideEffectResult[sideEffectID] = result
+	var err error
+	if attributes.GetDetails() == nil {
+		err = ErrMissingMarkerDetails
+	} else {
+		switch attributes.GetMarkerName() {
+		case sideEffectMarkerName:
+			if sideEffectIDPayload, ok := attributes.GetDetails()[sideEffectMarkerIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", sideEffectMarkerIDName, ErrMissingMarkerDataKey)
+			} else {
+				if sideEffectData, ok := attributes.GetDetails()[sideEffectMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var sideEffectID int64
+					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					weh.sideEffectResult[sideEffectID] = sideEffectData
+				}
+			}
+		case versionMarkerName:
+			if changeIDPayload, ok := attributes.GetDetails()[versionMarkerChangeIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", versionMarkerChangeIDName, ErrMissingMarkerDataKey)
+			} else {
+				if versionPayload, ok := attributes.GetDetails()[versionMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", versionMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var changeID string
+					_ = weh.dataConverter.FromData(changeIDPayload, &changeID)
+					var version Version
+					_ = weh.dataConverter.FromData(versionPayload, &version)
+					weh.changeVersions[changeID] = version
+					weh.decisionsHelper.handleVersionMarker(eventID, changeID)
+				}
+			}
+		case localActivityMarkerName:
+			err = weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure())
+		case mutableSideEffectMarkerName:
+			if sideEffectIDPayload, ok := attributes.GetDetails()[sideEffectMarkerIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", sideEffectMarkerIDName, ErrMissingMarkerDataKey)
+			} else {
+				if sideEffectData, ok := attributes.GetDetails()[sideEffectMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var sideEffectID string
+					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					weh.mutableSideEffect[sideEffectID] = sideEffectData
+				}
+			}
+		default:
+			err = ErrUnknownMarkerName
 		}
-		return nil
-	case versionMarkerName:
-		for changeID, versionPayload := range attributes.GetDetails() {
-			var version Version
-			_ = weh.dataConverter.FromData(versionPayload, &version)
-			weh.changeVersions[changeID] = version
-			weh.decisionsHelper.handleVersionMarker(eventID, changeID)
-		}
-		return nil
-	case localActivityMarkerName:
-		err := weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure())
-		if err != nil {
-			return fmt.Errorf("marker name %q: %w", localActivityMarkerName, err)
-		}
-		return nil
-	case mutableSideEffectMarkerName:
-		for fixedID, result := range attributes.GetDetails() {
-			weh.mutableSideEffect[fixedID] = result
-		}
-		return nil
-	default:
-		return fmt.Errorf("marker name %q for eventId %d: %w", attributes.GetMarkerName(), eventID, ErrUnknownMarkerName)
 	}
+
+	if err != nil {
+		return fmt.Errorf("marker name %q for eventId %d: %w", attributes.GetMarkerName(), eventID, err)
+	}
+
+	return nil
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure) error {
-	if details == nil {
-		return ErrMissingLocalActivityMarkerDetails
-	}
-
 	var markerData *commonpb.Payloads
 	var ok bool
 	if markerData, ok = details[localActivityMarkerDataDetailsName]; !ok {
-		return fmt.Errorf("key %q: %w", localActivityMarkerDataDetailsName, ErrMissingLocalActivityMarkerData)
+		return fmt.Errorf("key %q: %w", localActivityMarkerDataDetailsName, ErrMissingMarkerDataKey)
 	}
 
 	lamd := localActivityMarkerData{}
@@ -1141,7 +1163,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			var result *commonpb.Payloads
 			var ok bool
 			if result, ok = details[localActivityMarkerResultDetailsName]; !ok {
-				return fmt.Errorf("key %q: %w", localActivityMarkerResultDetailsName, ErrMissingLocalActivityMarkerResult)
+				return fmt.Errorf("key %q: %w", localActivityMarkerResultDetailsName, ErrMissingMarkerDataKey)
 			}
 			lar.Result = result
 		}

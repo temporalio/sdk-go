@@ -518,7 +518,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker("1", &commonpb.Payloads{})
+	d := h.recordSideEffectMarker(1, &commonpb.Payloads{}, DefaultDataConverter)
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// send decisions
