@@ -1663,6 +1663,72 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
+
+	childWorkflowFn := func(ctx Context) error {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			s.Equal("test-data-for-child", val)
+		} else {
+			return fmt.Errorf("context did not propagate to child workflow")
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			s.Equal("test-data", val)
+		} else {
+			return fmt.Errorf("context did not propagate to workflow")
+		}
+
+		cwo := ChildWorkflowOptions{WorkflowExecutionTimeout: time.Hour /* this is currently ignored by test suite */}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		childCtx := WithValue(ctx, contextKey(testHeader), "test-data-for-child")
+		if err := ExecuteChildWorkflow(childCtx, childWorkflowFn).Get(childCtx, nil); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
+	testPayload, err := DefaultDataConverter.ToPayload("test-data")
+	s.NoError(err)
+
+	s.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: testPayload},
+	})
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
+	// TODO (madhu): Add this back once test workflow environment is able to handle panics gracefully
+	// Right now, the panic happens in a different goroutine and there is no way to catch it
+	s.T().Skip()
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var result string
+		fut := ExecuteActivity(ctx, getFunctionName(testActivityHello), "friendly_name")
+		err := fut.Get(ctx, &result)
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.False(env.IsWorkflowCompleted())
+	s.Contains(env.GetWorkflowError().Error(), "Unable to find activityType")
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowUnknownName() {
 	defer func() {
 		if r := recover(); r != nil {
