@@ -1883,3 +1883,31 @@ func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *c
 	}
 	return input
 }
+
+func TestIsNonRetriableError(t *testing.T) {
+	tests := []struct {
+		err      error
+		expected bool
+	}{
+		{
+			err:      nil,
+			expected: false,
+		},
+		{
+			err:      serviceerror.NewResourceExhausted(""),
+			expected: false,
+		},
+		{
+			err:      serviceerror.NewInvalidArgument(""),
+			expected: true,
+		},
+		{
+			err:      serviceerror.NewClientVersionNotSupported("", "", ""),
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		require.Equal(t, test.expected, isNonRetriableError(test.err))
+	}
+}

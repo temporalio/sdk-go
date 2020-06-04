@@ -75,7 +75,8 @@ func isServiceTransientError(err error) bool {
 		*serviceerror.NamespaceAlreadyExists,
 		*serviceerror.QueryFailed,
 		*serviceerror.NamespaceNotActive,
-		*serviceerror.CancellationAlreadyRequested:
+		*serviceerror.CancellationAlreadyRequested,
+		*serviceerror.ClientVersionNotSupported:
 		return false
 	}
 	return err != errStop
