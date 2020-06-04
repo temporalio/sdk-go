@@ -182,6 +182,8 @@ type (
 		scheduledEventID int64
 		startedEventID   int64
 		identity         string
+		activityType     *commonpb.ActivityType
+		activityID       string
 		cause            error
 	}
 
@@ -285,12 +287,16 @@ func NewActivityTaskError(
 	scheduledEventID int64,
 	startedEventID int64,
 	identity string,
+	activityType *commonpb.ActivityType,
+	activityID string,
 	cause error,
 ) *ActivityTaskError {
 	return &ActivityTaskError{
 		scheduledEventID: scheduledEventID,
 		startedEventID:   startedEventID,
 		identity:         identity,
+		activityType:     activityType,
+		activityID:       activityID,
 		cause:            cause,
 	}
 }
@@ -687,6 +693,8 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			ScheduledEventId: err.scheduledEventID,
 			StartedEventId:   err.startedEventID,
 			Identity:         err.identity,
+			ActivityType:     err.activityType,
+			ActivityId:       err.activityID,
 		}
 		failure.FailureInfo = &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: failureInfo}
 	case *ChildWorkflowExecutionError:
@@ -757,6 +765,8 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			activityTaskInfoFailure.GetScheduledEventId(),
 			activityTaskInfoFailure.GetStartedEventId(),
 			activityTaskInfoFailure.GetIdentity(),
+			activityTaskInfoFailure.GetActivityType(),
+			activityTaskInfoFailure.GetActivityId(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {

@@ -234,8 +234,7 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 }
 
 func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
-	dataConverter := getDefaultDataConverter()
-	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
+	versionPayload, err := DefaultDataConverter.ToData(version)
 	if err != nil {
 		panic(err)
 	}
@@ -245,8 +244,10 @@ func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, chan
 		EventType: eventpb.EventType_MarkerRecorded,
 		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{
 			MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
-				MarkerName:                   versionMarkerName,
-				Details:                      details,
+				MarkerName: versionMarkerName,
+				Details: map[string]*commonpb.Payloads{
+					changeID: versionPayload,
+				},
 				DecisionTaskCompletedEventId: decisionCompletedID,
 			},
 		},

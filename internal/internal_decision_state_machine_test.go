@@ -156,7 +156,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, attributes, decisions[0].GetStartTimerDecisionAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateInitiated, d.getState())
-	m := h.recordLocalActivityMarker(localActivityID, &commonpb.Payloads{})
+	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil)
 	require.Equal(t, decisionStateCreated, m.getState())
 	h.cancelTimer(timerID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
@@ -518,7 +518,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newDecisionsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker(1, &commonpb.Payloads{})
+	d := h.recordSideEffectMarker("1", &commonpb.Payloads{})
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// send decisions

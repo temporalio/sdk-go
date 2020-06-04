@@ -144,7 +144,7 @@ func (s *internalWorkerTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
-func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) *commonpb.Payloads {
+func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityID string) map[string]*commonpb.Payloads {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
 		ReplayTime: time.Now(),
@@ -153,7 +153,10 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	// encode marker data
 	markerData, err := s.dataConverter.ToData(lamd)
 	s.NoError(err)
-	return markerData
+
+	return map[string]*commonpb.Payloads{
+		localActivityMarkerDataDetailsName: markerData,
+	}
 }
 
 func getLogger() *zap.Logger {

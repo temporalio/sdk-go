@@ -31,6 +31,7 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common"
 	decisionpb "go.temporal.io/temporal-proto/decision"
 	eventpb "go.temporal.io/temporal-proto/event"
+	failurepb "go.temporal.io/temporal-proto/failure"
 
 	"go.temporal.io/temporal/internal/common/util"
 )
@@ -170,6 +171,9 @@ const (
 	versionMarkerName           = "Version"
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
+
+	localActivityMarkerDataDetailsName   = "data"
+	localActivityMarkerResultDetailsName = "result"
 )
 
 func (d decisionState) String() string {
@@ -821,14 +825,17 @@ func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 
 func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dataConverter DataConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
-	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
+
+	versionPayload, err := dataConverter.ToData(version)
 	if err != nil {
 		panic(err)
 	}
 
 	recordMarker := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: versionMarkerName,
-		Details:    details, // Keep
+		Details: map[string]*commonpb.Payloads{
+			changeID: versionPayload,
+		},
 	}
 
 	decision := h.newMarkerDecisionStateMachine(markerID, recordMarker)
@@ -849,22 +856,25 @@ func (h *decisionsHelper) handleVersionMarker(eventID int64, changeID string) {
 	h.versionMarkerLookup[eventID] = changeID
 }
 
-func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads) decisionStateMachine {
+func (h *decisionsHelper) recordSideEffectMarker(sideEffectID string, data *commonpb.Payloads) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: sideEffectMarkerName,
-		Details:    data,
+		Details: map[string]*commonpb.Payloads{
+			sideEffectID: data,
+		},
 	}
 	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
 	return decision
 }
 
-func (h *decisionsHelper) recordLocalActivityMarker(activityID string, result *commonpb.Payloads) decisionStateMachine {
+func (h *decisionsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: localActivityMarkerName,
-		Details:    result,
+		Failure:    failure,
+		Details:    details,
 	}
 	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
@@ -875,7 +885,9 @@ func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID stri
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 	attributes := &decisionpb.RecordMarkerDecisionAttributes{
 		MarkerName: mutableSideEffectMarkerName,
-		Details:    data,
+		Details: map[string]*commonpb.Payloads{
+			mutableSideEffectID: data,
+		},
 	}
 	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
 	h.addDecision(decision)
