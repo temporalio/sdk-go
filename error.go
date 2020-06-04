@@ -155,7 +155,7 @@ func NewNonRetryableApplicationError(reason string, details ...interface{}) *App
 
 // NewRetryableApplicationError creates new instance of retryable *ApplicationError with reason and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewRetryableApplicationError(reason string, details ...interface{}) *ApplicationError {
+func NewApplicationError(reason string, details ...interface{}) *ApplicationError {
 	return internal.NewApplicationError(reason, false, details...)
 }
 

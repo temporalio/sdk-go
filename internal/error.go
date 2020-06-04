@@ -121,6 +121,7 @@ type (
 		message      string
 		originalType string
 		nonRetryable bool
+		cause        error
 		details      Values
 	}
 
@@ -231,15 +232,24 @@ var ErrTooManyArg = errors.New("too many arguments")
 var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
 // NewApplicationError create new instance of *ApplicationError with message and optional details.
-func NewApplicationError(message string, nonRetryable bool, details ...interface{}) *ApplicationError {
+func NewApplicationError(message string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+	applicationErr := &ApplicationError{
+		message:      message,
+		originalType: getErrorType(&ApplicationError{}),
+		nonRetryable: nonRetryable,
+		cause:        cause}
+
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
-			return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: d}
+			applicationErr.details = d
+			return applicationErr
 		}
 	}
+
 	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	return &ApplicationError{message: message, originalType: getErrorType(&ApplicationError{}), nonRetryable: nonRetryable, details: ErrorDetailsValues(details)}
+	applicationErr.details = ErrorDetailsValues(details)
+	return applicationErr
 }
 
 // NewTimeoutError creates TimeoutError instance.
@@ -404,6 +414,10 @@ func (e *ApplicationError) Details(d ...interface{}) error {
 // NonRetryable indicated if error is not retryable.
 func (e *ApplicationError) NonRetryable() bool {
 	return e.nonRetryable
+}
+
+func (e *ApplicationError) Unwrap() error {
+	return e.cause
 }
 
 // Error from error interface
@@ -727,11 +741,11 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
 		case getErrorType(&ApplicationError{}):
-			err = NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), details)
+			err = NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), convertFailureToError(failure.GetCause(), dc), details)
 		case getErrorType(&PanicError{}):
 			err = newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		default:
-			applicationErr := NewApplicationError(failure.GetMessage(), false, nil)
+			applicationErr := NewApplicationError(failure.GetMessage(), false, convertFailureToError(failure.GetCause(), dc))
 			applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
 			err = applicationErr
 		}
@@ -750,7 +764,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	} else if failure.GetServerFailureInfo() != nil {
 		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(failure.GetMessage(), true, failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityTaskFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityTaskFailureInfo()
 		err = NewActivityTaskError(
@@ -774,7 +788,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), false, nil)
+		err = NewApplicationError(failure.GetMessage(), false, convertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {
