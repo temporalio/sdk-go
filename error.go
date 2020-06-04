@@ -149,14 +149,14 @@ var ErrNoData = internal.ErrNoData
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with reason and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(reason string, details ...interface{}) *ApplicationError {
-	return internal.NewApplicationError(reason, true, details...)
+func NewNonRetryableApplicationError(reason string, cause error, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(reason, true, cause, details...)
 }
 
 // NewRetryableApplicationError creates new instance of retryable *ApplicationError with reason and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewApplicationError(reason string, details ...interface{}) *ApplicationError {
-	return internal.NewApplicationError(reason, false, details...)
+func NewApplicationError(reason string, cause error, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(reason, false, cause, details...)
 }
 
 // NewCanceledError creates CanceledError instance.

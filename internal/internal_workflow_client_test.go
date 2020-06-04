@@ -713,7 +713,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := eventpb.EventType_WorkflowExecutionFailed
 	reason := "some reason"
 	details := "some details"
-	applicationError := NewApplicationError(reason, false, details)
+	applicationError := NewApplicationError(reason, false, nil, details)
 	failure := convertErrorToFailure(applicationError, getDefaultDataConverter())
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
