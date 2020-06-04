@@ -163,7 +163,7 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 
 func getKillSignal() <-chan os.Signal {
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 	return c
 }
 
