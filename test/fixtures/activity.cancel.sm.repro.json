@@ -193,7 +193,6 @@
       "eventType": "WorkflowExecutionTimedOut",
       "version": -24,
       "workflowExecutionTimedOutEventAttributes": {
-        "timeoutType": "StartToClose"
       }
     }
   ]
