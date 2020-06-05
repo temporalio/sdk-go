@@ -1746,12 +1746,12 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 		rootCtx = context.Background()
 	}
 	canCtx, cancel := context.WithCancel(rootCtx)
+	defer cancel()
 
 	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds(), ath.workerStopCh)
 	defer func() {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
-		cancel()
 	}()
 
 	workflowType := t.WorkflowType.GetName()
@@ -1793,12 +1793,12 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
+	defer dlCancelFunc()
 
 	ctx, span := createOpenTracingActivitySpan(ctx, ath.tracer, time.Now(), activityType, t.WorkflowExecution.GetWorkflowId(), t.WorkflowExecution.GetRunId())
 	defer span.Finish()
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
-	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		ath.logger.Info("Activity complete after timeout.",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
