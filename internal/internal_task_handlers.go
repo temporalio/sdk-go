@@ -1799,6 +1799,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	defer span.Finish()
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
+	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		ath.logger.Info("Activity complete after timeout.",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
