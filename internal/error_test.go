@@ -431,7 +431,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &eventpb.SignalExternalWorkflowExecutionFailedEventAttributes{
 		InitiatedEventId: initiatedEventID,
-		Cause:            eventpb.WorkflowExecutionFailedCause_UnknownExternalWorkflowExecution,
+		Cause:            eventpb.SignalExternalWorkflowExecutionFailedCause_ExternalWorkflowExecutionNotFound2,
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)

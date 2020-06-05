@@ -1433,7 +1433,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 
 	var err error
 	switch attributes.GetCause() {
-	case eventpb.WorkflowExecutionFailedCause_UnknownExternalWorkflowExecution:
+	case eventpb.SignalExternalWorkflowExecutionFailedCause_ExternalWorkflowExecutionNotFound2:
 		err = newUnknownExternalWorkflowExecutionError()
 	default:
 		err = fmt.Errorf("signal external workflow failed, %v", attributes.GetCause())
