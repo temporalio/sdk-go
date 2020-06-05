@@ -121,7 +121,7 @@ type (
 	CanceledError = internal.CanceledError
 
 	// ActivityError returned from workflow when activity returned an error.
-	ActivityTaskError = internal.ActivityError
+	ActivityError = internal.ActivityError
 
 	// ServerError can be returned from server.
 	ServerError = internal.ServerError
