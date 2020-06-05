@@ -462,10 +462,10 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type: %v", timeoutErr.TimeoutType())
 	}
 
-	cause := timeoutErr.Unwrap()
+	err = errors.Unwrap(err)
 	var previousTimeoutErr *temporal.TimeoutError
-	if !errors.As(cause, &previousTimeoutErr) {
-		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", cause)
+	if !errors.As(err, &previousTimeoutErr) {
+		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", err)
 	}
 
 	if previousTimeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
