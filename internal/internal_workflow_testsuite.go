@@ -2077,7 +2077,7 @@ func (env *testWorkflowEnvironmentImpl) RemoveSession(sessionID string) {
 }
 
 func (env *testWorkflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payloads {
-	blob, err := env.GetDataConverter().ToData(value)
+	blob, err := env.GetDataConverter().ToPayloads(value)
 	if err != nil {
 		panic(err)
 	}

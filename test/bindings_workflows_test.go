@@ -26,11 +26,12 @@ package test_test
 
 import (
 	"context"
+	"time"
+
 	commonpb "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal/encoded"
 	bindings "go.temporal.io/temporal/internalbindings"
 	"go.temporal.io/temporal/workflow"
-	"time"
 )
 
 type EmptyWorkflowDefinitionFactory struct {
@@ -44,7 +45,7 @@ type EmptyWorkflowDefinition struct {
 }
 
 func (wd *EmptyWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
-	payload, err := encoded.GetDefaultDataConverter().ToData("EmptyResult")
+	payload, err := encoded.GetDefaultDataConverter().ToPayloads("EmptyResult")
 	env.Complete(payload, err)
 }
 
@@ -74,11 +75,11 @@ type SingleActivityWorkflowDefinition struct {
 func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	var signalInput string
 	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads) {
-		_ = encoded.GetDefaultDataConverter().FromData(input, &signalInput)
+		_ = encoded.GetDefaultDataConverter().FromPayloads(input, &signalInput)
 	})
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
-			input, _ := encoded.GetDefaultDataConverter().ToData("World")
+			input, _ := encoded.GetDefaultDataConverter().ToPayloads("World")
 			parameters := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
 					TaskListName:               env.WorkflowInfo().TaskListName,
@@ -99,9 +100,9 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 				}
 				env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
 					var childResult string
-					_ = encoded.GetDefaultDataConverter().FromData(r, &childResult)
+					_ = encoded.GetDefaultDataConverter().FromPayloads(r, &childResult)
 					result := childResult + signalInput
-					encodedResult, _ := encoded.GetDefaultDataConverter().ToData(result)
+					encodedResult, _ := encoded.GetDefaultDataConverter().ToPayloads(result)
 					env.Complete(encodedResult, err)
 				}), func(r bindings.WorkflowExecution, e error) {})
 			}))

@@ -203,13 +203,13 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", errors.New("memo or search attributes are not carried over")
 	}
 	var memoVal string
-	err := encoded.GetDefaultPayloadConverter().FromData(info.Memo.Fields["memoKey"], &memoVal)
+	err := encoded.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
 	if err != nil {
 		return "", errors.New("error when get memo value")
 	}
 
 	var searchAttrVal string
-	err = encoded.GetDefaultPayloadConverter().FromData(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
+	err = encoded.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return "", errors.New("error when get search attribute value")
 	}
@@ -488,12 +488,12 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
 	info := workflow.GetInfo(ctx)
 	var memo string
-	err = encoded.GetDefaultPayloadConverter().FromData(info.Memo.Fields["memoKey"], &memo)
+	err = encoded.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memo)
 	if err != nil {
 		return
 	}
 	var searchAttrVal string
-	err = encoded.GetDefaultPayloadConverter().FromData(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
+	err = encoded.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return
 	}

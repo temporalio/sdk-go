@@ -494,7 +494,7 @@ func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID strin
 	}
 
 	// encode marker data
-	markerData, err := s.dataConverter.ToData(lamd)
+	markerData, err := s.dataConverter.ToPayloads(lamd)
 
 	s.NoError(err)
 	return map[string]*commonpb.Payloads{

@@ -938,7 +938,7 @@ func getMemoTest(ctx Context) (result string, err error) {
 	if !ok {
 		return "", errors.New("no memo found")
 	}
-	err = DefaultPayloadConverter.FromData(val, &result)
+	err = DefaultDataConverter.FromPayload(val, &result)
 	return result, err
 }
 

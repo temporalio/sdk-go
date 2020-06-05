@@ -42,7 +42,7 @@ var _ opentracing.TextMapReader = (*tracingReader)(nil)
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
 	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
 		var decodedValue string
-		err := DefaultPayloadConverter.FromData(v, &decodedValue)
+		err := DefaultDataConverter.FromPayload(v, &decodedValue)
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ type tracingWriter struct {
 var _ opentracing.TextMapWriter = (*tracingWriter)(nil)
 
 func (t tracingWriter) Set(key, val string) {
-	encodedValue, _ := DefaultPayloadConverter.ToData(val)
+	encodedValue, _ := DefaultDataConverter.ToPayload(val)
 	t.writer.Set(key, encodedValue)
 }
 

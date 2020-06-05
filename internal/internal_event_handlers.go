@@ -713,7 +713,7 @@ func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payl
 }
 
 func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payloads, error) {
-	return wc.GetDataConverter().ToData(arg)
+	return wc.GetDataConverter().ToPayloads(arg)
 }
 
 func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payloads) Value {
@@ -1087,7 +1087,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
 				} else {
 					var sideEffectID int64
-					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					_ = weh.dataConverter.FromPayloads(sideEffectIDPayload, &sideEffectID)
 					weh.sideEffectResult[sideEffectID] = sideEffectData
 				}
 			}
@@ -1099,9 +1099,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 					err = fmt.Errorf("key %q: %w", versionMarkerDataName, ErrMissingMarkerDataKey)
 				} else {
 					var changeID string
-					_ = weh.dataConverter.FromData(changeIDPayload, &changeID)
+					_ = weh.dataConverter.FromPayloads(changeIDPayload, &changeID)
 					var version Version
-					_ = weh.dataConverter.FromData(versionPayload, &version)
+					_ = weh.dataConverter.FromPayloads(versionPayload, &version)
 					weh.changeVersions[changeID] = version
 					weh.decisionsHelper.handleVersionMarker(eventID, changeID)
 				}
@@ -1116,7 +1116,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
 				} else {
 					var sideEffectID string
-					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					_ = weh.dataConverter.FromPayloads(sideEffectIDPayload, &sideEffectID)
 					weh.mutableSideEffect[sideEffectID] = sideEffectData
 				}
 			}
@@ -1140,7 +1140,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	}
 
 	lamd := localActivityMarkerData{}
-	if err := weh.dataConverter.FromData(markerData, &lamd); err != nil {
+	if err := weh.dataConverter.FromPayloads(markerData, &lamd); err != nil {
 		return err
 	}
 

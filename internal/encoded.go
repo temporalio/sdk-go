@@ -67,36 +67,25 @@ type (
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through cleint.Options.
 	DataConverter interface {
-		// ToData implements conversion of a list of values.
-		ToData(value ...interface{}) (*commonpb.Payloads, error)
-		// FromData implements conversion of an array of values of different types.
+		// ToPayload single value to payload.
+		ToPayload(value interface{}) (*commonpb.Payload, error)
+		// FromPayload single value from payload.
+		FromPayload(input *commonpb.Payload, valuePtr interface{}) error
+
+		// ToPayloads implements conversion of a list of values.
+		ToPayloads(value ...interface{}) (*commonpb.Payloads, error)
+		// FromPayloads implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
-		FromData(input *commonpb.Payloads, valuePtrs ...interface{}) error
+		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
 	}
-
-	// PayloadConverter converts single value to/from payload.
-	PayloadConverter interface {
-		// ToData single value to payload.
-		ToData(value interface{}) (*commonpb.Payload, error)
-		// FromData single value from payload.
-		FromData(input *commonpb.Payload, valuePtr interface{}) error
-	}
-
-	defaultPayloadConverter struct{}
 
 	defaultDataConverter struct {
-		payloadConverter PayloadConverter
 	}
 )
 
 var (
-	// DefaultPayloadConverter is default single value serializer.
-	DefaultPayloadConverter = &defaultPayloadConverter{}
-
 	// DefaultDataConverter is default data converter used by Temporal worker.
-	DefaultDataConverter = &defaultDataConverter{
-		payloadConverter: DefaultPayloadConverter,
-	}
+	DefaultDataConverter = &defaultDataConverter{}
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
 	ErrMetadataIsNotSet = errors.New("metadata is not set")
@@ -117,14 +106,14 @@ func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
 
 	result := &commonpb.Payloads{}
 	for i, value := range values {
-		payload, err := dc.payloadConverter.ToData(value)
+		payload, err := dc.ToPayload(value)
 		if err != nil {
 			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
@@ -135,7 +124,7 @@ func (dc *defaultDataConverter) ToData(values ...interface{}) (*commonpb.Payload
 	return result, nil
 }
 
-func (dc *defaultDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
 	if payloads == nil {
 		return nil
 	}
@@ -145,7 +134,7 @@ func (dc *defaultDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs 
 			break
 		}
 
-		err := dc.payloadConverter.FromData(payload, valuePtrs[i])
+		err := dc.FromPayload(payload, valuePtrs[i])
 		if err != nil {
 			return fmt.Errorf("payload item %d: %w", i, err)
 		}
@@ -154,7 +143,7 @@ func (dc *defaultDataConverter) FromData(payloads *commonpb.Payloads, valuePtrs 
 	return nil
 }
 
-func (vs *defaultPayloadConverter) ToData(value interface{}) (*commonpb.Payload, error) {
+func (vs *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	var payload *commonpb.Payload
 	if bytes, isByteSlice := value.([]byte); isByteSlice {
 		payload = &commonpb.Payload{
@@ -179,7 +168,7 @@ func (vs *defaultPayloadConverter) ToData(value interface{}) (*commonpb.Payload,
 	return payload, nil
 }
 
-func (vs *defaultPayloadConverter) FromData(payload *commonpb.Payload, valuePtr interface{}) error {
+func (vs *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}

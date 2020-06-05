@@ -137,7 +137,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 		},
 	})
 	context.decisionsHelper.addDecision(di)
-	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
+	encodedDetails1, _ := context.dataConverter.ToPayloads(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
 		Failure: &failurepb.Failure{
 			FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
@@ -447,7 +447,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
-	headerValue, err := DefaultPayloadConverter.ToData("test-data")
+	headerValue, err := DefaultDataConverter.ToPayload("test-data")
 	assert.NoError(t, err)
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{"test": headerValue},
@@ -738,7 +738,7 @@ func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
 
 func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require := require.New(t)
-	details, err := DefaultDataConverter.ToData("details", 22)
+	details, err := DefaultDataConverter.ToPayloads("details", 22)
 	assert.NoError(t, err)
 
 	f := &failurepb.Failure{
@@ -808,7 +808,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 	require := require.New(t)
 
-	details, err := DefaultDataConverter.ToData("details", 22)
+	details, err := DefaultDataConverter.ToPayloads("details", 22)
 	assert.NoError(t, err)
 
 	f := &failurepb.Failure{
