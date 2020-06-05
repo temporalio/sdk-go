@@ -29,6 +29,7 @@ import (
 
 	commonpb "go.temporal.io/temporal-proto/common"
 	"go.temporal.io/temporal-proto/serviceerror"
+
 	"go.temporal.io/temporal/internal"
 )
 
@@ -38,7 +39,7 @@ and actual error which caused activity failure. This internal error can be unwra
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
 	*ApplicationError can be returned in two cases:
-		- If activity implementation returns *ApplicationError by using NewRetryableApplicationError()/NewNonRetryableApplicationError() API.
+		- If activity implementation returns *ApplicationError by using NewApplicationError()/NewNonRetryableApplicationError() API.
 		  The error would contain a message and optional details. Workflow code could extract details to string typed variable, determine
 		  what kind of error it was, and take actions based on it. The details is encoded payload therefore, workflow code needs to know what
           the types of the encoded details are before extracting them.
@@ -147,16 +148,22 @@ type (
 // ErrNoData is returned when trying to extract strong typed data while there is no data available.
 var ErrNoData = internal.ErrNoData
 
-// NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with reason and optional details.
+// NewApplicationError creates new instance of retryable *ApplicationError with message and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(reason string, details ...interface{}) *ApplicationError {
-	return internal.NewApplicationError(reason, true, details...)
+func NewApplicationError(message string, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(message, false, nil, details...)
 }
 
-// NewRetryableApplicationError creates new instance of retryable *ApplicationError with reason and optional details.
+// NewApplicationErrorWithCause creates new instance of retryable *ApplicationError with message, cause, and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewRetryableApplicationError(reason string, details ...interface{}) *ApplicationError {
-	return internal.NewApplicationError(reason, false, details...)
+func NewApplicationErrorWithCause(message string, cause error, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(message, false, cause, details...)
+}
+
+// NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, and optional cause and details.
+// Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
+func NewNonRetryableApplicationError(message string, cause error, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(message, true, cause, details...)
 }
 
 // NewCanceledError creates CanceledError instance.

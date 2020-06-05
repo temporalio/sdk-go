@@ -85,12 +85,12 @@ func TestConvertFailureToError_ApplicationError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	applicationErr1 := NewApplicationError(applicationErrReasonA, false, val)
+	applicationErr1 := NewApplicationError(applicationErrReasonA, false, nil, val)
 	failure := convertErrorToFailure(applicationErr1, dc)
 	require.Equal(t, applicationErrReasonA, failure.GetMessage())
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
-	applicationErr2 := NewApplicationError(applicationErrReasonA, false, testErrorDetails1)
+	applicationErr2 := NewApplicationError(applicationErrReasonA, false, nil, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
 	failure = convertErrorToFailure(applicationErr2, dc)

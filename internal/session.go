@@ -496,7 +496,7 @@ func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int
 
 func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
 	if !env.sessionTokenBucket.getToken() {
-		return nil, NewApplicationError(errTooManySessionsMsg, true)
+		return nil, NewApplicationError(errTooManySessionsMsg, true, nil)
 	}
 
 	env.Lock()
