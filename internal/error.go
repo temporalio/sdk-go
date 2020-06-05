@@ -129,8 +129,8 @@ type (
 	TimeoutError struct {
 		temporalError
 		timeoutType          commonpb.TimeoutType
-		lastErr              error
 		lastHeartbeatDetails Values
+		cause                error
 	}
 
 	// CanceledError returned when operation was canceled.
@@ -185,6 +185,7 @@ type (
 		identity         string
 		activityType     *commonpb.ActivityType
 		activityID       string
+		retryStatus      commonpb.RetryStatus
 		cause            error
 	}
 
@@ -198,6 +199,7 @@ type (
 		workflowType     string
 		initiatedEventID int64
 		startedEventID   int64
+		retryStatus      commonpb.RetryStatus
 		cause            error
 	}
 
@@ -256,10 +258,10 @@ func NewApplicationError(message string, nonRetryable bool, cause error, details
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, lastHeatbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType commonpb.TimeoutType, cause error, lastHeatbeatDetails ...interface{}) *TimeoutError {
 	timeoutErr := &TimeoutError{
 		timeoutType: timeoutType,
-		lastErr:     lastErr,
+		cause:       cause,
 	}
 
 	if len(lastHeatbeatDetails) == 1 {
@@ -299,6 +301,7 @@ func NewActivityTaskError(
 	identity string,
 	activityType *commonpb.ActivityType,
 	activityID string,
+	retryStatus commonpb.RetryStatus,
 	cause error,
 ) *ActivityTaskError {
 	return &ActivityTaskError{
@@ -307,6 +310,7 @@ func NewActivityTaskError(
 		identity:         identity,
 		activityType:     activityType,
 		activityID:       activityID,
+		retryStatus:      retryStatus,
 		cause:            cause,
 	}
 }
@@ -319,6 +323,7 @@ func NewChildWorkflowExecutionError(
 	workflowType string,
 	initiatedEventID int64,
 	startedEventID int64,
+	retryStatus commonpb.RetryStatus,
 	cause error,
 ) *ChildWorkflowExecutionError {
 	return &ChildWorkflowExecutionError{
@@ -328,6 +333,7 @@ func NewChildWorkflowExecutionError(
 		workflowType:     workflowType,
 		initiatedEventID: initiatedEventID,
 		startedEventID:   startedEventID,
+		retryStatus:      retryStatus,
 		cause:            cause,
 	}
 }
@@ -428,11 +434,11 @@ func (e *ApplicationError) Unwrap() error {
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("TimeoutType: %v, LastErr: %v", e.timeoutType, e.lastErr)
+	return fmt.Sprintf("TimeoutType: %v, Cause: %v", e.timeoutType, e.cause)
 }
 
 func (e *TimeoutError) Unwrap() error {
-	return e.lastErr
+	return e.cause
 }
 
 // TimeoutType return timeout type of this error
@@ -588,6 +594,10 @@ func convertErrDetailsToPayloads(details Values, dc DataConverter) *commonpb.Pay
 
 // IsRetryable returns if error retryable or not.
 func IsRetryable(err error, nonRetryableTypes []string) bool {
+	if err == nil {
+		return false
+	}
+
 	var terminatedErr *TerminatedError
 	var canceledErr *CanceledError
 	var workflowPanicErr *workflowPanicError
@@ -690,7 +700,6 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 	case *TimeoutError:
 		failureInfo := &failurepb.TimeoutFailureInfo{
 			TimeoutType:          err.timeoutType,
-			LastFailure:          convertErrorToFailure(err.lastErr, dc),
 			LastHeartbeatDetails: convertErrDetailsToPayloads(err.lastHeartbeatDetails, dc),
 		}
 		failure.FailureInfo = &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: failureInfo}
@@ -709,6 +718,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			Identity:         err.identity,
 			ActivityType:     err.activityType,
 			ActivityId:       err.activityID,
+			RetryStatus:      err.retryStatus,
 		}
 		failure.FailureInfo = &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: failureInfo}
 	case *ChildWorkflowExecutionError:
@@ -721,6 +731,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			WorkflowType:     &commonpb.WorkflowType{Name: err.workflowType},
 			InitiatedEventId: err.initiatedEventID,
 			StartedEventId:   err.startedEventID,
+			RetryStatus:      err.retryStatus,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
@@ -765,7 +776,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
 		err = NewTimeoutError(
 			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(timeoutFailureInfo.GetLastFailure(), dc),
+			convertFailureToError(failure.GetCause(), dc),
 			lastHeartbeatDetails)
 	} else if failure.GetTerminatedFailureInfo() != nil {
 		err = newTerminatedError()
@@ -781,6 +792,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			activityTaskInfoFailure.GetIdentity(),
 			activityTaskInfoFailure.GetActivityType(),
 			activityTaskInfoFailure.GetActivityId(),
+			activityTaskInfoFailure.GetRetryStatus(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
@@ -792,6 +804,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			childWorkflowExecutionFailureInfo.GetWorkflowType().GetName(),
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
+			childWorkflowExecutionFailureInfo.GetRetryStatus(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
 	}

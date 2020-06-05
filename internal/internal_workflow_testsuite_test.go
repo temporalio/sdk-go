@@ -2946,7 +2946,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
 	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
-	s.Equal("context deadline exceeded", timeoutErr.lastErr.Error())
+	s.Equal("context deadline exceeded", timeoutErr.cause.Error())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
