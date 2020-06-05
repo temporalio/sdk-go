@@ -143,7 +143,7 @@ func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 	return nil
 }
 
-func (vs *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	var payload *commonpb.Payload
 	if bytes, isByteSlice := value.([]byte); isByteSlice {
 		payload = &commonpb.Payload{
@@ -168,7 +168,7 @@ func (vs *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	return payload, nil
 }
 
-func (vs *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}
