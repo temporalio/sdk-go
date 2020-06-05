@@ -152,7 +152,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 
 	elapsed := workflow.Now(ctx).Sub(startTime)
 	if elapsed < 5*time.Second {
-		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not")
+		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not. Elapsed time: %d", elapsed.Milliseconds())
 	}
 
 	var timeoutErr *temporal.TimeoutError
@@ -462,7 +462,7 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type: %v", timeoutErr.TimeoutType())
 	}
 
-	err = errors.Unwrap(err)
+	err = errors.Unwrap(timeoutErr)
 	var previousTimeoutErr *temporal.TimeoutError
 	if !errors.As(err, &previousTimeoutErr) {
 		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", err)
