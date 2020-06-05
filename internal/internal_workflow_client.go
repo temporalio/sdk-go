@@ -1120,8 +1120,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	case eventpb.EventType_WorkflowExecutionTerminated:
 		err = newTerminatedError()
 	case eventpb.EventType_WorkflowExecutionTimedOut:
-		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
-		err = NewTimeoutError(attributes.GetTimeoutType(), nil)
+		err = NewTimeoutError(commonpb.TimeoutType_StartToClose, nil)
 	case eventpb.EventType_WorkflowExecutionContinuedAsNew:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()

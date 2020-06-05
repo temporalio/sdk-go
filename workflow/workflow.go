@@ -79,12 +79,12 @@ type (
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
 // If the activity failed to complete then the future get error would indicate the failure.
-// The error will be of type *ActivityTaskError. It will have important activity information and actual error that caused
+// The error will be of type *ActivityError. It will have important activity information and actual error that caused
 // activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityTaskError.
+// *CanceledError set as cause for *ActivityError.
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
@@ -123,12 +123,12 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // the local activity again.
 //
 // If the activity failed to complete then the future get error would indicate the failure.
-// The error will be of type *ActivityTaskError. It will have important activity information and actual error that caused
+// The error will be of type *ActivityError. It will have important activity information and actual error that caused
 // activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityTaskError.
+// *CanceledError set as cause for *ActivityError.
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
