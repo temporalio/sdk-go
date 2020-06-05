@@ -139,10 +139,15 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	context.decisionsHelper.addDecision(di)
 	encodedDetails1, _ := context.dataConverter.ToData(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
-		LastHeartbeatDetails: encodedDetails1,
-		ScheduledEventId:     5,
-		StartedEventId:       6,
-		TimeoutType:          timeoutType,
+		Failure: &failurepb.Failure{
+			FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+				LastHeartbeatDetails: encodedDetails1,
+				TimeoutType:          timeoutType,
+			}},
+		},
+		RetryStatus:      commonpb.RetryStatus_Timeout,
+		ScheduledEventId: 5,
+		StartedEventId:   6,
 	})
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	_ = weh.handleActivityTaskTimedOut(event)
@@ -528,7 +533,7 @@ func Test_IsRetryable(t *testing.T) {
 	require.True(IsRetryable(coolErr, []string{}))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
 
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", coolErr))
+	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", nil, "", commonpb.RetryStatus_NonRetryableFailure, coolErr))
 	require.True(IsRetryable(workflowExecutionErr, []string{}))
 	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
 }
@@ -601,9 +606,9 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 
 	err := NewTimeoutError(commonpb.TimeoutType_Heartbeat, &coolError{})
 	f := convertErrorToFailure(err, DefaultDataConverter)
-	require.Equal("TimeoutType: Heartbeat, LastErr: cool error", f.GetMessage())
+	require.Equal("TimeoutType: Heartbeat, Cause: cool error", f.GetMessage())
 	require.Equal(commonpb.TimeoutType_Heartbeat, f.GetTimeoutFailureInfo().GetTimeoutType())
-	require.Equal(convertErrorToFailure(&coolError{}, DefaultDataConverter), f.GetTimeoutFailureInfo().GetLastFailure())
+	require.Equal(convertErrorToFailure(&coolError{}, DefaultDataConverter), f.GetCause())
 	require.Equal(f.GetCause(), convertErrorToFailure(&coolError{}, DefaultDataConverter))
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -646,12 +651,15 @@ func Test_convertErrorToFailure_ActivityTaskError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewActivityTaskError(8, 22, "alex", applicationErr)
+	err := NewActivityTaskError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RetryStatus_NonRetryableFailure, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityTaskFailureInfo().GetScheduledEventId())
 	require.Equal(int64(22), f.GetActivityTaskFailureInfo().GetStartedEventId())
 	require.Equal("alex", f.GetActivityTaskFailureInfo().GetIdentity())
+	require.Equal("activityType", f.GetActivityTaskFailureInfo().GetActivityType().GetName())
+	require.Equal("32283", f.GetActivityTaskFailureInfo().GetActivityId())
+	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetActivityTaskFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -670,12 +678,13 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true)
-	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, applicationErr)
+	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, commonpb.RetryStatus_NonRetryableFailure, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
+	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -699,6 +708,26 @@ func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	require.True(errors.As(err2, &coolErr))
 	require.Equal(err.Error(), coolErr.Error())
 	require.Equal("coolError", coolErr.OriginalType())
+}
+
+func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
+	require := require.New(t)
+	err := NewApplicationError("message that will be ignored", false)
+	err.originalFailure = &failurepb.Failure{
+		Message:    "actual message",
+		StackTrace: "some stack trace",
+		Source:     "JavaSDK",
+		FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+			Type:         "SomeJavaException",
+			NonRetryable: true,
+		}}}
+	f := convertErrorToFailure(err, DefaultDataConverter)
+	require.Equal("actual message", f.GetMessage())
+	require.Equal("JavaSDK", f.GetSource())
+	require.Equal("some stack trace", f.GetStackTrace())
+	require.Equal("SomeJavaException", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Nil(f.GetCause())
 }
 
 func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
@@ -786,14 +815,13 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
 			TimeoutType:          commonpb.TimeoutType_Heartbeat,
 			LastHeartbeatDetails: nil,
-			LastFailure:          nil,
 		}},
 	}
 
 	err := convertFailureToError(f, DefaultDataConverter)
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	require.Equal("TimeoutType: Heartbeat, LastErr: <nil>", timeoutErr.Error())
+	require.Equal("TimeoutType: Heartbeat, Cause: <nil>", timeoutErr.Error())
 	require.Equal(commonpb.TimeoutType_Heartbeat, timeoutErr.TimeoutType())
 }
 
@@ -811,4 +839,58 @@ func Test_convertFailureToError_ServerFailure(t *testing.T) {
 	require.True(errors.As(err, &serverErr))
 	require.Equal("message", serverErr.Error())
 	require.Equal(true, serverErr.nonRetryable)
+}
+
+func Test_convertFailureToError_SaveFailure(t *testing.T) {
+	require := require.New(t)
+
+	f := &failurepb.Failure{
+		Message:    "message",
+		StackTrace: "long stack trace",
+		Source:     "JavaSDK",
+		Cause: &failurepb.Failure{
+			Message:    "application message",
+			StackTrace: "application long stack trace",
+			Source:     "JavaSDK",
+			FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+				Type:         "SomeJavaException",
+				NonRetryable: true,
+			}},
+		},
+		FailureInfo: &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: &failurepb.ActivityTaskFailureInfo{
+			StartedEventId:   1,
+			ScheduledEventId: 2,
+			Identity:         "alex",
+		}},
+	}
+
+	err := convertFailureToError(f, DefaultDataConverter)
+
+	var applicationErr *ApplicationError
+	require.True(errors.As(err, &applicationErr))
+	require.NotNil(applicationErr.originalFailure)
+	applicationErr.message = "errors are immutable, message can't be changed"
+	applicationErr.originalType = "ApplicationError (is ignored)"
+	applicationErr.nonRetryable = false
+
+	var activityErr *ActivityTaskError
+	require.True(errors.As(err, &activityErr))
+	require.NotNil(activityErr.originalFailure)
+	activityErr.startedEventID = 11
+	activityErr.scheduledEventID = 22
+	activityErr.identity = "bob"
+
+	f2 := convertErrorToFailure(err, DefaultDataConverter)
+	require.Equal("message", f2.GetMessage())
+	require.Equal("long stack trace", f2.GetStackTrace())
+	require.Equal("JavaSDK", f2.GetSource())
+	require.Equal(int64(1), f2.GetActivityTaskFailureInfo().GetStartedEventId())
+	require.Equal(int64(2), f2.GetActivityTaskFailureInfo().GetScheduledEventId())
+	require.Equal("alex", f2.GetActivityTaskFailureInfo().GetIdentity())
+
+	require.Equal("application message", f2.GetCause().GetMessage())
+	require.Equal("application long stack trace", f2.GetCause().GetStackTrace())
+	require.Equal("JavaSDK", f2.GetCause().GetSource())
+	require.Equal("SomeJavaException", f2.GetCause().GetApplicationFailureInfo().GetType())
+	require.Equal(true, f2.GetCause().GetApplicationFailureInfo().GetNonRetryable())
 }

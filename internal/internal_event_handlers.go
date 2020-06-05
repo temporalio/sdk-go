@@ -76,6 +76,7 @@ type (
 		callback             ResultHandler
 		waitForCancelRequest bool
 		handled              bool
+		activityType         ActivityType
 	}
 
 	scheduledChildWorkflow struct {
@@ -143,8 +144,6 @@ type (
 	localActivityMarkerData struct {
 		ActivityID   string
 		ActivityType string
-		Failure      *failurepb.Failure
-		Result       *commonpb.Payloads
 		ReplayTime   time.Time
 		Attempt      int32         // record attempt, starting from 0.
 		Backoff      time.Duration // retry backoff duration.
@@ -156,6 +155,15 @@ type (
 		isReplay              *bool // pointer to bool that indicate if it is in replay mode
 		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
 	}
+)
+
+var (
+	// ErrUnknownMarkerName is returned if there is unknown marker name in the history.
+	ErrUnknownMarkerName = errors.New("unknown marker name")
+	// ErrMissingMarkerDetails is returned when marker details are nil.
+	ErrMissingMarkerDetails = errors.New("marker details are nil")
+	// ErrMissingMarkerDataKey is returned when marker details doesn't have data key.
+	ErrMissingMarkerDataKey = errors.New("marker key is missing in details")
 )
 
 func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
@@ -463,6 +471,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	decision.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
+		activityType:         parameters.ActivityType,
 	})
 
 	wc.logger.Debug("ExecuteActivity",
@@ -622,7 +631,6 @@ func getChangeVersion(changeID string, version Version) string {
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
 	sideEffectID := wc.GenerateSequence()
-	var details *commonpb.Payloads
 	var result *commonpb.Payloads
 	if wc.isReplay {
 		var ok bool
@@ -637,7 +645,6 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 		wc.logger.Debug("SideEffect returning already calculated result.",
 			zap.Int64(tagSideEffectID, sideEffectID))
-		details = result
 	} else {
 		var err error
 		result, err = f()
@@ -645,14 +652,9 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			callback(result, err)
 			return
 		}
-		details, err = encodeArgs(wc.GetDataConverter(), []interface{}{sideEffectID, result})
-		if err != nil {
-			callback(nil, fmt.Errorf("failure encoding sideEffectID: %v", err))
-			return
-		}
 	}
 
-	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, details)
+	wc.decisionsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
 
 	callback(result, nil)
 	wc.logger.Debug("SideEffect Marker added", zap.Int64(tagSideEffectID, sideEffectID))
@@ -719,7 +721,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *comm
 	if err != nil {
 		panic(err)
 	}
-	wc.decisionsHelper.recordMutableSideEffectMarker(id, details)
+	wc.decisionsHelper.recordMutableSideEffectMarker(id, details, wc.dataConverter)
 	wc.mutableSideEffect[id] = data
 	return newEncodedValue(data, wc.GetDataConverter())
 }
@@ -988,6 +990,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetIdentity(),
+		&commonpb.ActivityType{Name: activity.activityType.Name},
+		activityID,
+		attributes.GetRetryStatus(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 
@@ -1004,16 +1009,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	lastHeartbeatDetails := newEncodedValues(attributes.GetLastHeartbeatDetails(), weh.GetDataConverter())
-	timeoutError := NewTimeoutError(
-		attributes.GetTimeoutType(),
-		convertFailureToError(attributes.GetLastFailure(), weh.GetDataConverter()),
-		lastHeartbeatDetails)
+	timeoutError := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 
 	activityTaskErr := NewActivityTaskError(
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		"",
+		&commonpb.ActivityType{Name: activity.activityType.Name},
+		activityID,
+		attributes.GetRetryStatus(),
 		timeoutError,
 	)
 
@@ -1039,6 +1043,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 			attributes.GetScheduledEventId(),
 			attributes.GetStartedEventId(),
 			attributes.GetIdentity(),
+			&commonpb.ActivityType{Name: activity.activityType.Name},
+			activityID,
+			commonpb.RetryStatus_NonRetryableFailure,
 			NewCanceledError(details),
 		)
 
@@ -1067,38 +1074,72 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
 	attributes *eventpb.MarkerRecordedEventAttributes,
 ) error {
-	encodedValues := newEncodedValues(attributes.Details, weh.dataConverter)
-	switch attributes.GetMarkerName() {
-	case sideEffectMarkerName:
-		var sideEffectID int64
-		var result *commonpb.Payloads
-		_ = encodedValues.Get(&sideEffectID, result)
-		weh.sideEffectResult[sideEffectID] = result
-		return nil
-	case versionMarkerName:
-		var changeID string
-		var version Version
-		_ = encodedValues.Get(&changeID, &version)
-		weh.changeVersions[changeID] = version
-		weh.decisionsHelper.handleVersionMarker(eventID, changeID)
-		return nil
-	case localActivityMarkerName:
-		return weh.handleLocalActivityMarker(attributes.Details)
-	case mutableSideEffectMarkerName:
-		var fixedID string
-		var result *commonpb.Payloads
-		_ = encodedValues.Get(&fixedID, result)
-		weh.mutableSideEffect[fixedID] = result
-		return nil
-	default:
-		return fmt.Errorf("unknown marker name \"%v\" for eventId \"%v\"",
-			attributes.GetMarkerName(), eventID)
+	var err error
+	if attributes.GetDetails() == nil {
+		err = ErrMissingMarkerDetails
+	} else {
+		switch attributes.GetMarkerName() {
+		case sideEffectMarkerName:
+			if sideEffectIDPayload, ok := attributes.GetDetails()[sideEffectMarkerIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", sideEffectMarkerIDName, ErrMissingMarkerDataKey)
+			} else {
+				if sideEffectData, ok := attributes.GetDetails()[sideEffectMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var sideEffectID int64
+					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					weh.sideEffectResult[sideEffectID] = sideEffectData
+				}
+			}
+		case versionMarkerName:
+			if changeIDPayload, ok := attributes.GetDetails()[versionMarkerChangeIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", versionMarkerChangeIDName, ErrMissingMarkerDataKey)
+			} else {
+				if versionPayload, ok := attributes.GetDetails()[versionMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", versionMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var changeID string
+					_ = weh.dataConverter.FromData(changeIDPayload, &changeID)
+					var version Version
+					_ = weh.dataConverter.FromData(versionPayload, &version)
+					weh.changeVersions[changeID] = version
+					weh.decisionsHelper.handleVersionMarker(eventID, changeID)
+				}
+			}
+		case localActivityMarkerName:
+			err = weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure())
+		case mutableSideEffectMarkerName:
+			if sideEffectIDPayload, ok := attributes.GetDetails()[sideEffectMarkerIDName]; !ok {
+				err = fmt.Errorf("key %q: %w", sideEffectMarkerIDName, ErrMissingMarkerDataKey)
+			} else {
+				if sideEffectData, ok := attributes.GetDetails()[sideEffectMarkerDataName]; !ok {
+					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
+				} else {
+					var sideEffectID string
+					_ = weh.dataConverter.FromData(sideEffectIDPayload, &sideEffectID)
+					weh.mutableSideEffect[sideEffectID] = sideEffectData
+				}
+			}
+		default:
+			err = ErrUnknownMarkerName
+		}
 	}
+
+	if err != nil {
+		return fmt.Errorf("marker name %q for eventId %d: %w", attributes.GetMarkerName(), eventID, err)
+	}
+
+	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerData *commonpb.Payloads) error {
-	lamd := localActivityMarkerData{}
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure) error {
+	var markerData *commonpb.Payloads
+	var ok bool
+	if markerData, ok = details[localActivityMarkerDataDetailsName]; !ok {
+		return fmt.Errorf("key %q: %w", localActivityMarkerDataDetailsName, ErrMissingMarkerDataKey)
+	}
 
+	lamd := localActivityMarkerData{}
 	if err := weh.dataConverter.FromData(markerData, &lamd); err != nil {
 		return err
 	}
@@ -1109,16 +1150,21 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, markerData)
+		weh.decisionsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		lar := &LocalActivityResultWrapper{}
-		if lamd.Failure != nil {
+		if failure != nil {
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
-			lar.Err = convertFailureToError(lamd.Failure, weh.GetDataConverter())
+			lar.Err = convertFailureToError(failure, weh.GetDataConverter())
 		} else {
-			lar.Result = lamd.Result
+			var result *commonpb.Payloads
+			var ok bool
+			if result, ok = details[localActivityMarkerResultDetailsName]; !ok {
+				return fmt.Errorf("key %q: %w", localActivityMarkerResultDetailsName, ErrMissingMarkerDataKey)
+			}
+			lar.Result = result
 		}
 		la.callback(lar)
 
@@ -1133,6 +1179,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(markerDa
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *localActivityResult) error {
+	details := make(map[string]*commonpb.Payloads)
+
 	// convert local activity result and error to marker data
 	lamd := localActivityMarkerData{
 		ActivityID:   lar.task.activityID,
@@ -1141,10 +1189,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		Attempt:      lar.task.attempt,
 	}
 	if lar.err != nil {
-		lamd.Failure = convertErrorToFailure(lar.err, weh.GetDataConverter())
 		lamd.Backoff = lar.backoff
 	} else {
-		lamd.Result = lar.result
+		details[localActivityMarkerResultDetailsName] = lar.result
 	}
 
 	// encode marker data
@@ -1152,13 +1199,15 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	if err != nil {
 		return err
 	}
+	details[localActivityMarkerDataDetailsName] = markerData
 
 	// create marker event for local activity result
 	markerEvent := &eventpb.HistoryEvent{
 		EventType: eventpb.EventType_MarkerRecorded,
 		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
-			Details:    markerData,
+			Failure:    convertErrorToFailure(lar.err, weh.GetDataConverter()),
+			Details:    details,
 		}},
 	}
 
@@ -1234,6 +1283,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		attributes.GetRetryStatus(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1257,6 +1307,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		commonpb.RetryStatus_NonRetryableFailure,
 		NewCanceledError(details),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1279,6 +1330,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		attributes.GetRetryStatus(),
 		NewTimeoutError(attributes.GetTimeoutType(), nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1301,6 +1353,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
+		commonpb.RetryStatus_NonRetryableFailure,
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
