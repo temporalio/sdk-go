@@ -73,7 +73,10 @@
       "taskId": 22020324,
       "markerRecordedEventAttributes": {
         "markerName": "Version",
-        "details": null,
+        "details": {
+          "change-id": {"payloads": [{"metadata":{"encoding":"anNvbg=="},"data":"IjEi"}]},
+          "version": {"payloads": [{"metadata":{"encoding":"anNvbg=="},"data":"NQ=="}]}
+        },
         "decisionTaskCompletedEventId": 4
       }
     },

@@ -31,12 +31,13 @@ import (
 // All code in this file is private to the package.
 
 type (
-	timerInfo struct {
+	// TimerInfo contains id of the timer
+	TimerInfo struct {
 		timerID string
 	}
 
-	// workflowTimerClient wraps the async workflow timer functionality.
-	workflowTimerClient interface {
+	// WorkflowTimerClient wraps the async workflow timer functionality.
+	WorkflowTimerClient interface {
 
 		// Now - Current time when the decision task is started or replayed.
 		// the workflow need to use this for wall clock to make the flow logic deterministic.
@@ -44,10 +45,10 @@ type (
 
 		// NewTimer - Creates a new timer that will fire callback after d(resolution is in seconds).
 		// The callback indicates the error(TimerCanceledError) if the timer is cancelled.
-		NewTimer(d time.Duration, callback resultHandler) *timerInfo
+		NewTimer(d time.Duration, callback ResultHandler) *TimerInfo
 
 		// RequestCancelTimer - Requests cancel of a timer, this one doesn't wait for cancellation request
-		// to complete, instead invokes the resultHandler with TimerCanceledError
+		// to complete, instead invokes the ResultHandler with TimerCanceledError
 		// If the timer is not started then it is a no-operation.
 		RequestCancelTimer(timerID string)
 	}

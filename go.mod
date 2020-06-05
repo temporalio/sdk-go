@@ -18,11 +18,11 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/sirupsen/logrus v1.5.0
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.5.1
-	github.com/uber-go/tally v3.3.16+incompatible
+	github.com/stretchr/testify v1.6.0
+	github.com/uber-go/tally v3.3.17+incompatible
 	github.com/uber/jaeger-client-go v2.22.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.temporal.io/temporal-proto v0.23.2
+	go.temporal.io/temporal-proto v0.23.4
 	go.uber.org/atomic v1.6.0
 	go.uber.org/goleak v1.0.0
 	go.uber.org/zap v1.15.0
@@ -31,6 +31,6 @@ require (
 	golang.org/x/tools v0.0.0-20200327195553-82bb89366a1e // indirect
 	google.golang.org/grpc v1.29.1
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/yaml.v2 v2.3.0 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200603094226-e3079894b1e8 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 )

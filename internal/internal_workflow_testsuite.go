@@ -69,7 +69,7 @@ const (
 type (
 	testTimerHandle struct {
 		env            *testWorkflowEnvironmentImpl
-		callback       resultHandler
+		callback       ResultHandler
 		timer          *clock.Timer
 		wallTimer      *clock.Timer
 		duration       time.Duration
@@ -79,16 +79,16 @@ type (
 	}
 
 	testActivityHandle struct {
-		callback         resultHandler
+		callback         ResultHandler
 		activityType     string
 		heartbeatDetails *commonpb.Payloads
 	}
 
 	testWorkflowHandle struct {
 		env      *testWorkflowEnvironmentImpl
-		callback resultHandler
+		callback ResultHandler
 		handled  bool
-		params   *executeWorkflowParams
+		params   *ExecuteWorkflowParams
 		err      error
 	}
 
@@ -176,7 +176,7 @@ type (
 		registry  *registry
 
 		workflowInfo   *WorkflowInfo
-		workflowDef    workflowDefinition
+		workflowDef    WorkflowDefinition
 		changeVersions map[string]Version
 		openSessions   map[string]*SessionInfo
 
@@ -322,55 +322,55 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
+func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
 	childEnv.parentEnv = env
 	childEnv.startedHandler = startedHandler
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
-	childEnv.dataConverter = params.dataConverter
+	childEnv.dataConverter = params.DataConverter
 	childEnv.registry = env.registry
 
-	if params.taskListName == "" {
+	if params.TaskListName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task list name", "", "")
 	}
 
-	if params.workflowID == "" {
-		params.workflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
+	if params.WorkflowID == "" {
+		params.WorkflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
 	}
 	var cronSchedule string
-	if len(params.cronSchedule) > 0 {
-		cronSchedule = params.cronSchedule
+	if len(params.CronSchedule) > 0 {
+		cronSchedule = params.CronSchedule
 	}
 	// set workflow info data for child workflow
 	childEnv.workflowInfo.Attempt = params.attempt
-	childEnv.workflowInfo.WorkflowExecution.ID = params.workflowID
-	childEnv.workflowInfo.WorkflowExecution.RunID = params.workflowID + "_RunID"
-	childEnv.workflowInfo.Namespace = params.namespace
-	childEnv.workflowInfo.TaskListName = params.taskListName
-	childEnv.workflowInfo.WorkflowExecutionTimeoutSeconds = params.workflowExecutionTimeoutSeconds
-	childEnv.workflowInfo.WorkflowRunTimeoutSeconds = params.workflowRunTimeoutSeconds
-	childEnv.workflowInfo.WorkflowTaskTimeoutSeconds = params.workflowTaskTimeoutSeconds
+	childEnv.workflowInfo.WorkflowExecution.ID = params.WorkflowID
+	childEnv.workflowInfo.WorkflowExecution.RunID = params.WorkflowID + "_RunID"
+	childEnv.workflowInfo.Namespace = params.Namespace
+	childEnv.workflowInfo.TaskListName = params.TaskListName
+	childEnv.workflowInfo.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
+	childEnv.workflowInfo.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
+	childEnv.workflowInfo.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
 	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
-	childEnv.runTimeout = time.Duration(params.workflowRunTimeoutSeconds) * time.Second
-	if workflowHandler, ok := env.runningWorkflows[params.workflowID]; ok {
+	childEnv.runTimeout = time.Duration(params.WorkflowRunTimeoutSeconds) * time.Second
+	if workflowHandler, ok := env.runningWorkflows[params.WorkflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
-		if params.workflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
+		if params.WorkflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
-		if workflowHandler.err == nil && params.workflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
+		if workflowHandler.err == nil && params.WorkflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
 	}
 
-	env.runningWorkflows[params.workflowID] = &testWorkflowHandle{env: childEnv, callback: callback, params: params}
+	env.runningWorkflows[params.WorkflowID] = &testWorkflowHandle{env: childEnv, callback: callback, params: params}
 
 	return childEnv, nil
 }
@@ -490,7 +490,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	env.startMainLoop()
 }
 
-func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
 	wf, ok := env.registry.getWorkflowFn(wt.Name)
 	if !ok {
 		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
@@ -517,8 +517,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		panic(err)
 	}
 
-	parameters := executeActivityParams{
-		activityOptions: activityOptions{
+	parameters := ExecuteActivityParams{
+		ExecuteActivityOptions: ExecuteActivityOptions{
 			ScheduleToCloseTimeoutSeconds: 600,
 			StartToCloseTimeoutSeconds:    600,
 		},
@@ -588,8 +588,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (val Value, err error) {
-	params := executeLocalActivityParams{
-		localActivityOptions: localActivityOptions{
+	params := ExecuteLocalActivityParams{
+		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
 		},
 		ActivityFn:   activityFn,
@@ -599,7 +599,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	task := &localActivityTask{
 		activityID: "test-local-activity",
 		params:     &params,
-		callback: func(lar *localActivityResultWrapper) {
+		callback: func(lar *LocalActivityResultWrapper) {
 		},
 	}
 	taskHandler := localActivityTaskHandler{
@@ -872,27 +872,27 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	}
 	params.lastCompletionResult = result
 
-	if params.retryPolicy != nil && env.testError != nil {
+	if params.RetryPolicy != nil && env.testError != nil {
 		var expireTime time.Time
-		if params.workflowOptions.workflowExecutionTimeoutSeconds > 0 {
-			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.workflowOptions.workflowExecutionTimeoutSeconds))
+		if params.WorkflowOptions.WorkflowExecutionTimeoutSeconds > 0 {
+			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.WorkflowOptions.WorkflowExecutionTimeoutSeconds))
 		}
-		backoff := getRetryBackoffFromProtoRetryPolicy(params.retryPolicy, env.workflowInfo.Attempt, env.testError, env.Now(), expireTime)
+		backoff := getRetryBackoffFromProtoRetryPolicy(params.RetryPolicy, env.workflowInfo.Attempt, env.testError, env.Now(), expireTime)
 		if backoff > 0 {
 			// remove the current child workflow from the pending child workflow map because
 			// the childWorkflowID will be the same for retry run.
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt++
-			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 
 			return true
 		}
 	}
 
-	if len(params.cronSchedule) > 0 {
-		schedule, err := cron.ParseStandard(params.cronSchedule)
+	if len(params.CronSchedule) > 0 {
+		schedule, err := cron.ParseStandard(params.CronSchedule)
 		if err != nil {
-			panic(fmt.Errorf("invalid cron schedule %v, err: %v", params.cronSchedule, err))
+			panic(fmt.Errorf("invalid cron schedule %v, err: %v", params.CronSchedule, err))
 		}
 
 		workflowNow := env.Now().In(time.UTC)
@@ -901,7 +901,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
 			params.attempt = 0
 			params.scheduledTime = env.Now()
-			_ = env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
+			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
 		}
 	}
@@ -953,7 +953,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 	return env.contextPropagators
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivityParams, callback resultHandler) *activityInfo {
+func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
 	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
 
 	scheduleID := env.nextID()
@@ -973,7 +973,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters executeActivi
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
-	activityInfo := &activityInfo{
+	activityInfo := &ActivityID{
 		scheduleID: scheduleID,
 		activityID: activityID,
 	}
@@ -1198,7 +1198,7 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueID(id string) string {
 
 func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	taskHandler ActivityTaskHandler,
-	parameters executeActivityParams,
+	parameters ExecuteActivityParams,
 	task *workflowservice.PollForActivityTaskResponse,
 ) (result interface{}) {
 	var expireTime time.Time
@@ -1268,7 +1268,7 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocalActivityParams, callback laResultHandler) *localActivityInfo {
+func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
 	activityID := getStringID(env.nextID())
 	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
 	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
@@ -1303,7 +1303,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params executeLocal
 		}, false)
 	}()
 
-	return &localActivityInfo{activityID: activityID}
+	return &LocalActivityID{activityID: activityID}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
@@ -1399,10 +1399,10 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 			result.result = nil
 		}
 	}
-	lar := &localActivityResultWrapper{err: result.err, result: result.result, backoff: noRetryBackoff}
+	lar := &LocalActivityResultWrapper{Err: result.err, Result: result.result, Backoff: noRetryBackoff}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
-		lar.attempt = task.attempt
+		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
+		lar.Attempt = task.attempt
 	}
 	task.callback(lar)
 	var canceledErr *CanceledError
@@ -1791,9 +1791,9 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	return task
 }
 
-func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback resultHandler, notifyListener bool) *timerInfo {
+func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback ResultHandler, notifyListener bool) *TimerInfo {
 	nextID := env.nextID()
-	timerInfo := &timerInfo{timerID: getStringID(nextID)}
+	timerInfo := &TimerInfo{timerID: getStringID(nextID)}
 	timer := env.mockClock.AfterFunc(d, func() {
 		delete(env.timers, timerInfo.timerID)
 		env.postCallback(func() {
@@ -1818,7 +1818,7 @@ func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback resul
 	return timerInfo
 }
 
-func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback resultHandler) *timerInfo {
+func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerInfo {
 	return env.newTimer(d, callback, true)
 }
 
@@ -1868,7 +1868,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		// cancel current workflow
 		env.workflowCancelHandler()
@@ -1881,7 +1881,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		return
 	} else if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
-		if !childHandle.params.waitForCancellation {
+		if !childHandle.params.WaitForCancellation {
 			childHandle.env.Complete(nil, ErrCanceled)
 		}
 		childEnv := childHandle.env
@@ -1920,7 +1920,7 @@ func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	return false
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -1967,27 +1967,27 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 	}()
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
-	return env.executeChildWorkflowWithDelay(0, params, callback, startedHandler)
+func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
+	env.executeChildWorkflowWithDelay(0, params, callback, startedHandler)
 }
 
-func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params executeWorkflowParams, callback resultHandler, startedHandler func(r WorkflowExecution, e error)) error {
+func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
 		env.logger.Sugar().Infof("ExecuteChildWorkflow failed: %v", err)
-		return err
+		callback(nil, err)
+		startedHandler(WorkflowExecution{}, err)
+		return
 	}
 
-	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", params.workflowType.Name)
+	env.logger.Sugar().Infof("ExecuteChildWorkflow: %v", params.WorkflowType.Name)
 	env.runningCount++
 
 	// run child workflow in separate goroutinue
-	go childEnv.executeWorkflowInternal(delayStart, params.workflowType.Name, params.input)
-
-	return nil
+	go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
 }
 
-func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
 	callback(f())
 }
 
@@ -2099,7 +2099,7 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback resultHandler) {
+func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback ResultHandler) {
 	env.postCallback(func() {
 		// RequestCancelWorkflow needs to be run in main thread
 		env.RequestCancelExternalWorkflow(
@@ -2235,7 +2235,7 @@ func mockFnGetVersion(string, Version, Version) Version {
 }
 
 // make sure interface is implemented
-var _ workflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
+var _ WorkflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
 
 type testReporter struct {
 	logger *zap.Logger

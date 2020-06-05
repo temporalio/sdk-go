@@ -234,8 +234,12 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 }
 
 func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
-	dataConverter := getDefaultDataConverter()
-	details, err := encodeArgs(dataConverter, []interface{}{changeID, version})
+	changeIDPayload, err := DefaultDataConverter.ToData(changeID)
+	if err != nil {
+		panic(err)
+	}
+
+	versionPayload, err := DefaultDataConverter.ToData(version)
 	if err != nil {
 		panic(err)
 	}
@@ -245,8 +249,11 @@ func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, chan
 		EventType: eventpb.EventType_MarkerRecorded,
 		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{
 			MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
-				MarkerName:                   versionMarkerName,
-				Details:                      details,
+				MarkerName: versionMarkerName,
+				Details: map[string]*commonpb.Payloads{
+					versionMarkerChangeIDName: changeIDPayload,
+					versionMarkerDataName:     versionPayload,
+				},
 				DecisionTaskCompletedEventId: decisionCompletedID,
 			},
 		},
@@ -273,7 +280,7 @@ func createWorkflowTask(
 	previousStartEventID int64,
 	workflowName string,
 ) *workflowservice.PollForDecisionTaskResponse {
-	return createWorkflowTaskWithQueries(events, previousStartEventID, workflowName, nil)
+	return createWorkflowTaskWithQueries(events, previousStartEventID, workflowName, nil, true)
 }
 
 func createWorkflowTaskWithQueries(
@@ -281,9 +288,16 @@ func createWorkflowTaskWithQueries(
 	previousStartEventID int64,
 	workflowName string,
 	queries map[string]*querypb.WorkflowQuery,
+	addEvents bool,
 ) *workflowservice.PollForDecisionTaskResponse {
 	eventsCopy := make([]*eventpb.HistoryEvent, len(events))
 	copy(eventsCopy, events)
+	if addEvents {
+		nextEventID := eventsCopy[len(eventsCopy)-1].EventId + 1
+		eventsCopy = append(eventsCopy, createTestEventDecisionTaskScheduled(nextEventID,
+			&eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: "taskList"}}))
+		eventsCopy = append(eventsCopy, createTestEventDecisionTaskStarted(nextEventID+1))
+	}
 	return &workflowservice.PollForDecisionTaskResponse{
 		PreviousStartedEventId: previousStartEventID,
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowName},
@@ -302,7 +316,7 @@ func createQueryTask(
 	workflowName string,
 	queryType string,
 ) *workflowservice.PollForDecisionTaskResponse {
-	task := createWorkflowTask(events, previousStartEventID, workflowName)
+	task := createWorkflowTaskWithQueries(events, previousStartEventID, workflowName, nil, false)
 	task.Query = &querypb.WorkflowQuery{
 		QueryType: queryType,
 	}
@@ -689,6 +703,8 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	for i, tc := range testCases {
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
+		// Cut the decision task scheduled ans started events
+		task.History.Events = task.History.Events[:len(task.History.Events)-2]
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in getWorkflowCache().
@@ -875,8 +891,6 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	taskList := "taskList"
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
 	params := workerExecutionParameters{
@@ -932,8 +946,6 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	}
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 3, workflowType)
 	params := workerExecutionParameters{
@@ -979,7 +991,10 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	task := createWorkflowTask(nil, 3, "HelloWorld_Workflow")
+	testEvents := []*eventpb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	}
+	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
 	task.Queries = map[string]*querypb.WorkflowQuery{"query_id": {}}
 	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
@@ -1019,7 +1034,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		"id1": {QueryType: queryType},
 		"id2": {QueryType: errQueryType},
 	}
-	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries)
+	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries, false)
 
 	params := workerExecutionParameters{
 		Namespace: testNamespace,
@@ -1047,7 +1062,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	}
 	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
 
-	secondTask := createWorkflowTaskWithQueries(testEvents, 3, "QuerySignalWorkflow", queries)
+	secondTask := createWorkflowTaskWithQueries(testEvents, 3, "QuerySignalWorkflow", queries, false)
 	secondTask.WorkflowExecution.RunId = task.WorkflowExecution.RunId
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: secondTask}, nil)
 	response = request.(*workflowservice.RespondDecisionTaskCompletedRequest)

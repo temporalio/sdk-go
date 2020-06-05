@@ -1477,12 +1477,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeDecision = createNewDecision(decisionpb.DecisionType_ContinueAsNewWorkflowExecution)
 		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
-			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.workflowType.Name},
-			Input:                      contErr.params.input,
-			TaskList:                   &tasklistpb.TaskList{Name: contErr.params.taskListName},
-			WorkflowRunTimeoutSeconds:  contErr.params.workflowRunTimeoutSeconds,
-			WorkflowTaskTimeoutSeconds: contErr.params.workflowTaskTimeoutSeconds,
-			Header:                     contErr.params.header,
+			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
+			Input:                      contErr.params.Input,
+			TaskList:                   &tasklistpb.TaskList{Name: contErr.params.TaskListName},
+			WorkflowRunTimeoutSeconds:  contErr.params.WorkflowRunTimeoutSeconds,
+			WorkflowTaskTimeoutSeconds: contErr.params.WorkflowTaskTimeoutSeconds,
+			Header:                     contErr.params.Header,
 			Memo:                       workflowContext.workflowInfo.Memo,
 			SearchAttributes:           workflowContext.workflowInfo.SearchAttributes,
 		}}

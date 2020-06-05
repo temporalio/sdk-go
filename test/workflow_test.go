@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package test
+package test_test
 
 import (
 	"errors"
@@ -189,7 +189,7 @@ func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskList stri
 		return 999, nil
 	}
 	ctx = workflow.WithTaskList(ctx, taskList)
-	return -1, temporal.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
+	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
 }
 
 func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskList string) (string, error) {
@@ -219,7 +219,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	}
 	ctx = workflow.WithTaskList(ctx, taskList)
 
-	return "", temporal.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
+	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
 }
 
 func (w *Workflows) IDReusePolicy(

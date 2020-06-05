@@ -513,6 +513,15 @@ func (r *registry) RegisterWorkflowWithOptions(
 	af interface{},
 	options RegisterWorkflowOptions,
 ) {
+	// Support direct registration of WorkflowDefinition
+	factory, ok := af.(WorkflowDefinitionFactory)
+	if ok {
+		if len(options.Name) == 0 {
+			panic("WorkflowDefinitionFactory must be registered with a name")
+		}
+		r.addWorkflowFn(options.Name, factory)
+		return
+	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if err := validateFnFormat(fnType, true); err != nil {
@@ -543,6 +552,15 @@ func (r *registry) RegisterActivityWithOptions(
 	af interface{},
 	options RegisterActivityOptions,
 ) {
+	// Support direct registration of activity
+	a, ok := af.(activity)
+	if ok {
+		if options.Name == "" {
+			panic("registration of activity interface requires name")
+		}
+		r.addActivity(options.Name, a)
+		return
+	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
@@ -695,7 +713,7 @@ func (r *registry) getRegisteredActivityTypes() []string {
 	return result
 }
 
-func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, error) {
+func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, error) {
 	lookup := wt.Name
 	if alias, ok := r.getWorkflowAlias(lookup); ok {
 		lookup = alias
@@ -705,8 +723,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (workflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	wd := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.getInterceptors()}
-	return newSyncWorkflowDefinition(wd), nil
+	wdf, ok := wf.(WorkflowDefinitionFactory)
+	if ok {
+		return wdf.NewWorkflowDefinition(), nil
+	}
+	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.getInterceptors()}
+	return newSyncWorkflowDefinition(executor), nil
 }
 
 func (r *registry) getInterceptors() []WorkflowInterceptorFactory {
@@ -837,7 +859,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := getWorkflowEnvOptions(ctx).dataConverter
+	dataConverter := getWorkflowEnvOptions(ctx).DataConverter
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
