@@ -457,18 +457,19 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 	if !ok {
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
-	// TODO (shtin): This TimeoutType should be ScheduleToClose. Fix on server is needed.
-	if timeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
+
+	if timeoutErr.TimeoutType() != commonpb.TimeoutType_ScheduleToClose {
 		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type: %v", timeoutErr.TimeoutType())
 	}
 
-	lastTimeoutErr, ok := timeoutErr.LastErr().(*temporal.TimeoutError)
-	if !ok {
-		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", timeoutErr.LastErr())
+	cause := timeoutErr.Unwrap()
+	var previousTimeoutErr *temporal.TimeoutError
+	if !errors.As(cause, &previousTimeoutErr) {
+		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", cause)
 	}
 
-	if lastTimeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
-		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type of last timeout: %v", lastTimeoutErr.TimeoutType())
+	if previousTimeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
+		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type of last timeout: %v", previousTimeoutErr.TimeoutType())
 	}
 
 	return []string{}, nil
