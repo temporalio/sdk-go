@@ -34,7 +34,7 @@ import (
 )
 
 /*
-If activity fails then *ActivityTaskError is returned to the workflow code. The error has important information about activity
+If activity fails then *ActivityError is returned to the workflow code. The error has important information about activity
 and actual error which caused activity failure. This internal error can be unwrapped using errors.Unwrap() or checked using errors.As().
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
@@ -105,7 +105,7 @@ if err != nil {
 	}
 }
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
-workflow code. It might contain *ActivityTaskError in case if error comes from activity (which in turn will contain on of the errors above),
+workflow code. It might contain *ActivityError in case if error comes from activity (which in turn will contain on of the errors above),
 or *ApplicationError in case if error comes from child workflow itslef.
 
 When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
@@ -120,8 +120,8 @@ type (
 	// CanceledError returned when operation was canceled.
 	CanceledError = internal.CanceledError
 
-	// ActivityTaskError returned from workflow when activity returned an error.
-	ActivityTaskError = internal.ActivityTaskError
+	// ActivityError returned from workflow when activity returned an error.
+	ActivityTaskError = internal.ActivityError
 
 	// ServerError can be returned from server.
 	ServerError = internal.ServerError

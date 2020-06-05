@@ -809,7 +809,6 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 
 	filterType := filterpb.HistoryEventFilterType_CloseEvent
 	eventType := eventpb.EventType_WorkflowExecutionTimedOut
-	timeType := commonpb.TimeoutType_ScheduleToStart
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &eventpb.History{
@@ -817,7 +816,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 				{
 					EventType: eventType,
 					Attributes: &eventpb.HistoryEvent_WorkflowExecutionTimedOutEventAttributes{WorkflowExecutionTimedOutEventAttributes: &eventpb.WorkflowExecutionTimedOutEventAttributes{
-						TimeoutType: timeType,
+						RetryStatus: commonpb.RetryStatus_Timeout,
 					}},
 				},
 			},
@@ -847,7 +846,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 	s.True(ok)
 	var timeoutErr *TimeoutError
 	s.True(errors.As(err, &timeoutErr))
-	s.Equal(timeType, timeoutErr.TimeoutType())
+	s.Equal(commonpb.TimeoutType_StartToClose, timeoutErr.TimeoutType())
 	s.Equal(time.Minute, decodedResult)
 }
 

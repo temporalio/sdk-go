@@ -986,7 +986,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 	}
 
 	attributes := event.GetActivityTaskFailedEventAttributes()
-	activityTaskErr := NewActivityTaskError(
+	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetIdentity(),
@@ -1011,7 +1011,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
 	timeoutError := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 
-	activityTaskErr := NewActivityTaskError(
+	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
 		attributes.GetStartedEventId(),
 		"",
@@ -1039,7 +1039,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 		attributes := event.GetActivityTaskCanceledEventAttributes()
 		details := newEncodedValues(attributes.GetDetails(), weh.GetDataConverter())
 
-		activityTaskErr := NewActivityTaskError(
+		activityTaskErr := NewActivityError(
 			attributes.GetScheduledEventId(),
 			attributes.GetStartedEventId(),
 			attributes.GetIdentity(),
@@ -1331,7 +1331,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryStatus(),
-		NewTimeoutError(attributes.GetTimeoutType(), nil),
+		NewTimeoutError(commonpb.TimeoutType_StartToClose, nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

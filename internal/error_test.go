@@ -533,7 +533,7 @@ func Test_IsRetryable(t *testing.T) {
 	require.True(IsRetryable(coolErr, []string{}))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
 
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityTaskError(0, 0, "", nil, "", commonpb.RetryStatus_NonRetryableFailure, coolErr))
+	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityError(0, 0, "", nil, "", commonpb.RetryStatus_NonRetryableFailure, coolErr))
 	require.True(IsRetryable(workflowExecutionErr, []string{}))
 	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
 }
@@ -653,23 +653,23 @@ func Test_convertErrorToFailure_ServerError(t *testing.T) {
 	require.Equal(err.nonRetryable, serverErr.nonRetryable)
 }
 
-func Test_convertErrorToFailure_ActivityTaskError(t *testing.T) {
+func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true, nil)
-	err := NewActivityTaskError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RetryStatus_NonRetryableFailure, applicationErr)
+	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RetryStatus_NonRetryableFailure, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
-	require.Equal(int64(8), f.GetActivityTaskFailureInfo().GetScheduledEventId())
-	require.Equal(int64(22), f.GetActivityTaskFailureInfo().GetStartedEventId())
-	require.Equal("alex", f.GetActivityTaskFailureInfo().GetIdentity())
-	require.Equal("activityType", f.GetActivityTaskFailureInfo().GetActivityType().GetName())
-	require.Equal("32283", f.GetActivityTaskFailureInfo().GetActivityId())
-	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetActivityTaskFailureInfo().GetRetryStatus())
+	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
+	require.Equal(int64(22), f.GetActivityFailureInfo().GetStartedEventId())
+	require.Equal("alex", f.GetActivityFailureInfo().GetIdentity())
+	require.Equal("activityType", f.GetActivityFailureInfo().GetActivityType().GetName())
+	require.Equal("32283", f.GetActivityFailureInfo().GetActivityId())
+	require.Equal(commonpb.RetryStatus_NonRetryableFailure, f.GetActivityFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
-	var activityTaskErr *ActivityTaskError
+	var activityTaskErr *ActivityError
 	require.True(errors.As(err2, &activityTaskErr))
 	require.Equal(err.Error(), activityTaskErr.Error())
 	require.Equal(err.startedEventID, activityTaskErr.startedEventID)
@@ -875,7 +875,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 				NonRetryable: true,
 			}},
 		},
-		FailureInfo: &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: &failurepb.ActivityTaskFailureInfo{
+		FailureInfo: &failurepb.Failure_ActivityFailureInfo{ActivityFailureInfo: &failurepb.ActivityFailureInfo{
 			StartedEventId:   1,
 			ScheduledEventId: 2,
 			Identity:         "alex",
@@ -891,7 +891,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	applicationErr.originalType = "ApplicationError (is ignored)"
 	applicationErr.nonRetryable = false
 
-	var activityErr *ActivityTaskError
+	var activityErr *ActivityError
 	require.True(errors.As(err, &activityErr))
 	require.NotNil(activityErr.originalFailure)
 	activityErr.startedEventID = 11
@@ -902,9 +902,9 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require.Equal("message", f2.GetMessage())
 	require.Equal("long stack trace", f2.GetStackTrace())
 	require.Equal("JavaSDK", f2.GetSource())
-	require.Equal(int64(1), f2.GetActivityTaskFailureInfo().GetStartedEventId())
-	require.Equal(int64(2), f2.GetActivityTaskFailureInfo().GetScheduledEventId())
-	require.Equal("alex", f2.GetActivityTaskFailureInfo().GetIdentity())
+	require.Equal(int64(1), f2.GetActivityFailureInfo().GetStartedEventId())
+	require.Equal(int64(2), f2.GetActivityFailureInfo().GetScheduledEventId())
+	require.Equal("alex", f2.GetActivityFailureInfo().GetIdentity())
 
 	require.Equal("application message", f2.GetCause().GetMessage())
 	require.Equal("application long stack trace", f2.GetCause().GetStackTrace())

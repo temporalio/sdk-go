@@ -34,7 +34,7 @@ import (
 )
 
 /*
-If activity fails then *ActivityTaskError is returned to the workflow code. The error has important information about activity
+If activity fails then *ActivityError is returned to the workflow code. The error has important information about activity
 and actual error which caused activity failure. This internal error can be unwrapped using errors.Unwrap() or checked using errors.As().
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
@@ -107,7 +107,7 @@ if err != nil {
 }
 
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
-workflow code. It will contains *ActivityTaskError, which in turn will contains on of the errors above.
+workflow code. It will contains *ActivityError, which in turn will contains on of the errors above.
 When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
 That decision task will be retried at a later time (with exponential backoff retry intervals).
 
@@ -176,9 +176,9 @@ type (
 		cause        error
 	}
 
-	// ActivityTaskError is returned from workflow when activity returned an error.
+	// ActivityError is returned from workflow when activity returned an error.
 	// Unwrap this error to get actual cause.
-	ActivityTaskError struct {
+	ActivityError struct {
 		temporalError
 		scheduledEventID int64
 		startedEventID   int64
@@ -294,8 +294,8 @@ func NewServerError(message string, nonRetryable bool, cause error) *ServerError
 	return &ServerError{message: message, nonRetryable: nonRetryable, cause: cause}
 }
 
-// NewActivityTaskError creates ActivityTaskError instance.
-func NewActivityTaskError(
+// NewActivityError creates ActivityError instance.
+func NewActivityError(
 	scheduledEventID int64,
 	startedEventID int64,
 	identity string,
@@ -303,8 +303,8 @@ func NewActivityTaskError(
 	activityID string,
 	retryStatus commonpb.RetryStatus,
 	cause error,
-) *ActivityTaskError {
-	return &ActivityTaskError{
+) *ActivityError {
+	return &ActivityError{
 		scheduledEventID: scheduledEventID,
 		startedEventID:   startedEventID,
 		identity:         identity,
@@ -549,11 +549,11 @@ func (e *ServerError) Unwrap() error {
 	return e.cause
 }
 
-func (e *ActivityTaskError) Error() string {
+func (e *ActivityError) Error() string {
 	return fmt.Sprintf("activity task error (scheduledEventID: %d, startedEventID: %d, identity: %s): %v", e.scheduledEventID, e.startedEventID, e.identity, e.cause)
 }
 
-func (e *ActivityTaskError) Unwrap() error {
+func (e *ActivityError) Unwrap() error {
 	return e.cause
 }
 
@@ -711,8 +711,8 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			NonRetryable: err.nonRetryable,
 		}
 		failure.FailureInfo = &failurepb.Failure_ServerFailureInfo{ServerFailureInfo: failureInfo}
-	case *ActivityTaskError:
-		failureInfo := &failurepb.ActivityTaskFailureInfo{
+	case *ActivityError:
+		failureInfo := &failurepb.ActivityFailureInfo{
 			ScheduledEventId: err.scheduledEventID,
 			StartedEventId:   err.startedEventID,
 			Identity:         err.identity,
@@ -720,7 +720,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			ActivityId:       err.activityID,
 			RetryStatus:      err.retryStatus,
 		}
-		failure.FailureInfo = &failurepb.Failure_ActivityTaskFailureInfo{ActivityTaskFailureInfo: failureInfo}
+		failure.FailureInfo = &failurepb.Failure_ActivityFailureInfo{ActivityFailureInfo: failureInfo}
 	case *ChildWorkflowExecutionError:
 		failureInfo := &failurepb.ChildWorkflowExecutionFailureInfo{
 			Namespace: err.namespace,
@@ -784,9 +784,9 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
 		err = NewApplicationError(failure.GetMessage(), true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
-	} else if failure.GetActivityTaskFailureInfo() != nil {
-		activityTaskInfoFailure := failure.GetActivityTaskFailureInfo()
-		err = NewActivityTaskError(
+	} else if failure.GetActivityFailureInfo() != nil {
+		activityTaskInfoFailure := failure.GetActivityFailureInfo()
+		err = NewActivityError(
 			activityTaskInfoFailure.GetScheduledEventId(),
 			activityTaskInfoFailure.GetStartedEventId(),
 			activityTaskInfoFailure.GetIdentity(),
