@@ -541,19 +541,25 @@ func Test_IsRetryable(t *testing.T) {
 func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewApplicationError("message", true, nil, "details", 2208)
+	err := NewApplicationError("message", true, errors.New("cause error"), "details", 2208)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("message", f.GetMessage())
 	require.Equal("ApplicationError", f.GetApplicationFailureInfo().GetType())
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
-	require.Nil(f.GetCause())
+	require.Equal("cause error", f.GetCause().GetMessage())
+	require.Equal("errorString", f.GetCause().GetApplicationFailureInfo().GetType())
+	require.Nil(f.GetCause().GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal(err.Error(), applicationErr.Error())
+
+	err2 = errors.Unwrap(err2)
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("cause error", applicationErr.Error())
 }
 
 func Test_convertErrorToFailure_CanceledError(t *testing.T) {
@@ -742,12 +748,18 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 			NonRetryable: true,
 			Details:      details,
 		}},
+		Cause: &failurepb.Failure{
+			Message: "cause message",
+			FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+				Type:         "UnknownType",
+				NonRetryable: false,
+			}},
+		},
 	}
 
 	err = convertFailureToError(f, DefaultDataConverter)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
-
 	require.Equal("message", applicationErr.Error())
 	require.Equal("ApplicationError", applicationErr.OriginalType())
 	require.Equal(true, applicationErr.NonRetryable())
@@ -756,6 +768,12 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.NoError(applicationErr.Details(&str, &n))
 	require.Equal("details", str)
 	require.Equal(22, n)
+
+	err = errors.Unwrap(err)
+	require.True(errors.As(err, &applicationErr))
+	require.Equal("cause message", applicationErr.Error())
+	require.Equal("UnknownType", applicationErr.OriginalType())
+	require.Equal(false, applicationErr.NonRetryable())
 
 	f = &failurepb.Failure{
 		Message:    "message",
