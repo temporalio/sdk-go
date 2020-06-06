@@ -81,7 +81,7 @@ func TestNewValue(t *testing.T) {
 func TestConvertFailureToError_ApplicationError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
-	details, err := dc.ToData("error details")
+	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
@@ -101,7 +101,7 @@ func TestConvertFailureToError_ApplicationError(t *testing.T) {
 func TestConvertFailureToError_CancelError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
-	details, err := dc.ToData("error details")
+	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
@@ -121,7 +121,7 @@ func TestConvertFailureToError_CancelError(t *testing.T) {
 func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
-	details, err := dc.ToData("error details")
+	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
@@ -143,7 +143,7 @@ func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 func TestConvertFailureToError_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
-	details, err := dc.ToData(testErrorDetails1)
+	details, err := dc.ToPayloads(testErrorDetails1)
 	require.NoError(t, err)
 
 	failure := &failurepb.Failure{

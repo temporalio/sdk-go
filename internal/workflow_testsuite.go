@@ -92,7 +92,7 @@ func (b EncodedValues) Get(valuePtr ...interface{}) error {
 	if !b.HasValues() {
 		return ErrNoData
 	}
-	return b.dataConverter.FromData(b.values, valuePtr...)
+	return b.dataConverter.FromPayloads(b.values, valuePtr...)
 }
 
 // HasValues return whether there are values

@@ -830,12 +830,12 @@ func (h *decisionsHelper) getActivityID(event *eventpb.HistoryEvent) string {
 func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dc DataConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
-	changeIDPayload, err := dc.ToData(changeID)
+	changeIDPayload, err := dc.ToPayloads(changeID)
 	if err != nil {
 		panic(err)
 	}
 
-	versionPayload, err := dc.ToData(version)
+	versionPayload, err := dc.ToPayloads(version)
 	if err != nil {
 		panic(err)
 	}
@@ -868,7 +868,7 @@ func (h *decisionsHelper) handleVersionMarker(eventID int64, changeID string) {
 
 func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc DataConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
-	sideEffectIDPayload, err := dc.ToData(sideEffectID)
+	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
 		panic(err)
 	}
@@ -900,7 +900,7 @@ func (h *decisionsHelper) recordLocalActivityMarker(activityID string, details m
 func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc DataConverter) decisionStateMachine {
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 
-	mutableSideEffectIDPayload, err := dc.ToData(mutableSideEffectID)
+	mutableSideEffectIDPayload, err := dc.ToPayloads(mutableSideEffectID)
 	if err != nil {
 		panic(err)
 	}

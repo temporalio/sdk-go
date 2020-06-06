@@ -92,7 +92,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultPayloadConverter.ToData(value)
+		encodedValue, err := DefaultDataConverter.ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultPayloadConverter.ToData(value)
+		encodedValue, err := DefaultDataConverter.ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultPayloadConverter.FromData(value, &decodedValue)
+			err := DefaultDataConverter.FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -140,7 +140,7 @@ func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultPayloadConverter.FromData(value, &decodedValue)
+			err := DefaultDataConverter.FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -1100,10 +1100,10 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			dc := client.dataConverter
-			encodedArg, _ := dc.ToData(input)
+			encodedArg, _ := dc.ToPayloads(input)
 			s.Equal(req.Input, encodedArg)
 			var decodedArg []byte
-			_ = dc.FromData(req.Input, &decodedArg)
+			_ = dc.FromPayloads(req.Input, &decodedArg)
 			s.Equal(input, decodedArg)
 		})
 
@@ -1136,11 +1136,11 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1171,11 +1171,11 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultPayloadConverter.FromData(req.Memo.Fields["testMemo"], &resultMemo)
+			err := DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultPayloadConverter.FromData(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1201,7 +1201,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.Equal(1, len(result3.Fields))
 	var resultString string
 	// TODO (shtin): use s.DataConverter here???
-	_ = DefaultPayloadConverter.FromData(result3.Fields["t1"], &resultString)
+	_ = DefaultDataConverter.FromPayload(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
@@ -1228,7 +1228,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
 
-	_ = DefaultPayloadConverter.FromData(result3.IndexedFields["t1"], &resultString)
+	_ = DefaultDataConverter.FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

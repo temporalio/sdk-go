@@ -455,7 +455,7 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
-	datailsPayload, err := wc.dataConverter.ToData(details...)
+	datailsPayload, err := wc.dataConverter.ToPayloads(details...)
 	if err != nil {
 		return err
 	}
@@ -1109,7 +1109,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		if rf.Type().Kind() != reflect.Ptr {
 			return errors.New("value parameter is not a pointer")
 		}
-		return workflowRun.dataConverter.FromData(attributes.Result, valuePtr)
+		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case eventpb.EventType_WorkflowExecutionFailed:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
@@ -1146,7 +1146,7 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
 		// TODO (shtin): use dc here???
-		memoBytes, err := DefaultPayloadConverter.ToData(v)
+		memoBytes, err := DefaultDataConverter.ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1162,7 +1162,7 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 
 	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := DefaultPayloadConverter.ToData(v)
+		attrBytes, err := DefaultDataConverter.ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}

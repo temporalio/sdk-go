@@ -108,7 +108,7 @@ func panicWorkflowFunc(Context, []byte) error {
 func getWorkflowInfoWorkflowFunc(ctx Context, expectedLastCompletionResult string) (info *WorkflowInfo, err error) {
 	result := GetWorkflowInfo(ctx)
 	var lastCompletionResult string
-	err = getDefaultDataConverter().FromData(result.lastCompletionResult, &lastCompletionResult)
+	err = getDefaultDataConverter().FromPayloads(result.lastCompletionResult, &lastCompletionResult)
 	if err != nil {
 		return nil, err
 	}
@@ -234,12 +234,12 @@ func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *e
 }
 
 func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
-	changeIDPayload, err := DefaultDataConverter.ToData(changeID)
+	changeIDPayload, err := DefaultDataConverter.ToPayloads(changeID)
 	if err != nil {
 		panic(err)
 	}
 
-	versionPayload, err := DefaultDataConverter.ToData(version)
+	versionPayload, err := DefaultDataConverter.ToPayloads(version)
 	if err != nil {
 		panic(err)
 	}
@@ -420,7 +420,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(decisionpb.DecisionType_CompleteWorkflowExecution, response.Decisions[0].GetDecisionType())
 	checksumsPayload := response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 	var checksums []string
-	_ = DefaultDataConverter.FromData(checksumsPayload, &checksums)
+	_ = DefaultDataConverter.FromPayloads(checksumsPayload, &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
@@ -929,7 +929,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	var runTimeout int32 = 21098
 	var taskTimeout int32 = 21
 	workflowType := "GetWorkflowInfoWorkflow"
-	lastCompletionResult, err := getDefaultDataConverter().ToData("lastCompletionData")
+	lastCompletionResult, err := getDefaultDataConverter().ToPayloads("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &eventpb.WorkflowExecutionStartedEventAttributes{
 		Input:                           lastCompletionResult,
@@ -965,7 +965,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(decisionpb.DecisionType_CompleteWorkflowExecution, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes()
 	var result WorkflowInfo
-	t.NoError(getDefaultDataConverter().FromData(attr.Result, &result))
+	t.NoError(getDefaultDataConverter().FromPayloads(attr.Result, &result))
 	t.EqualValues(taskList, result.TaskListName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
@@ -1012,9 +1012,9 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	taskList := "tl1"
 	checksum1 := "chck1"
-	numberOfSignalsToComplete, err := getDefaultDataConverter().ToData(2)
+	numberOfSignalsToComplete, err := getDefaultDataConverter().ToPayloads(2)
 	t.NoError(err)
-	signal, err := getDefaultDataConverter().ToData("signal data")
+	signal, err := getDefaultDataConverter().ToPayloads("signal data")
 	t.NoError(err)
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
@@ -1049,7 +1049,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 0)
-	answer, _ := DefaultDataConverter.ToData(startingQueryValue)
+	answer, _ := DefaultDataConverter.ToPayloads(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
@@ -1069,7 +1069,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Decisions, 1)
-	answer, _ = DefaultDataConverter.ToData("signal data")
+	answer, _ = DefaultDataConverter.ToPayloads("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: querypb.QueryResultType_Answered,
@@ -1552,7 +1552,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultPayloadConverter.ToData(str)
+		payload, _ := DefaultDataConverter.ToPayload(str)
 		return payload
 	}
 

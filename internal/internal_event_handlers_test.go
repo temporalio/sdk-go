@@ -160,7 +160,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchAttr.IndexedFields))
 	var resp int
-	_ = DefaultPayloadConverter.FromData(searchAttr.IndexedFields["key"], &resp)
+	_ = DefaultDataConverter.FromPayload(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
 }
 
@@ -192,7 +192,7 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultPayloadConverter.ToData(str)
+		payload, _ := DefaultDataConverter.ToPayload(str)
 		return payload
 	}
 

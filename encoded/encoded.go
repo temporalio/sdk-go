@@ -46,17 +46,9 @@ type (
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter = internal.DataConverter
-
-	// PayloadConverter converts single value to/from payload.
-	PayloadConverter = internal.PayloadConverter
 )
 
 // GetDefaultDataConverter return default data converter used by Temporal worker
 func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
-}
-
-// GetDefaultPayloadConverter return default data converter used by Temporal worker
-func GetDefaultPayloadConverter() PayloadConverter {
-	return internal.DefaultPayloadConverter
 }

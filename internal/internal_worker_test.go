@@ -151,7 +151,7 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 
 	// encode marker data
-	markerData, err := s.dataConverter.ToData(lamd)
+	markerData, err := s.dataConverter.ToPayloads(lamd)
 	s.NoError(err)
 
 	return map[string]*commonpb.Payloads{
@@ -549,7 +549,7 @@ func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEven
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
-	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
+	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
@@ -591,7 +591,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
-	result, _ := DefaultDataConverter.ToData("some-incorrect-result")
+	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
 	testEvents := []*eventpb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
@@ -961,7 +961,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter()
 	detail1 := "testStack"
 	detail2 := testStruct{"abc", 123}
 	detail3 := 4
-	encodedDetail, err := dc.ToData(detail1, detail2, detail3)
+	encodedDetail, err := dc.ToPayloads(detail1, detail2, detail3)
 	require.Nil(t, err)
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
 		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
@@ -1294,7 +1294,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 		}}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var result string
-	err := dataConverter.FromData(encResult, &result)
+	err := dataConverter.FromPayloads(encResult, &result)
 	require.NoError(t, err)
 	require.Equal(t, "testResult", result)
 	require.Error(t, e)
@@ -1309,7 +1309,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 			return "testResult4", NewApplicationError("testReason", false, nil, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
-	err = dataConverter.FromData(encResult, &result)
+	err = dataConverter.FromPayloads(encResult, &result)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", result)
 	require.Error(t, e)
@@ -1359,7 +1359,7 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 		}}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var r string
-	err := dataConverter.FromData(encResult, &r)
+	err := dataConverter.FromPayloads(encResult, &r)
 	require.NoError(t, err)
 	require.Equal(t, "testResult", r)
 	require.Error(t, e)
@@ -1373,7 +1373,7 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 			return "testResult4", NewCanceledError("testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
-	err = dataConverter.FromData(encResult, &r)
+	err = dataConverter.FromPayloads(encResult, &r)
 	require.NoError(t, err)
 	require.Equal(t, "testResult4", r)
 	require.Error(t, e)
@@ -1398,7 +1398,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 	encResult, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, "test"))
 	require.NoError(t, e)
 	var r *testWorkflowResult
-	err := dataConverter.FromData(encResult, &r)
+	err := dataConverter.FromPayloads(encResult, &r)
 	require.NoError(t, err)
 	require.Equal(t, 1, r.V)
 
@@ -1408,7 +1408,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 		}}
 	encResult, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, r))
 	require.NoError(t, e)
-	err = dataConverter.FromData(encResult, &r)
+	err = dataConverter.FromPayloads(encResult, &r)
 	require.NoError(t, err)
 	require.Equal(t, 2, r.V)
 }
