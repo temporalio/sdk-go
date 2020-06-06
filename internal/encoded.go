@@ -37,8 +37,6 @@ const (
 	metadataEncoding     = "encoding"
 	metadataEncodingRaw  = "raw"
 	metadataEncodingJSON = "json"
-
-	metadataName = "name"
 )
 
 type (
