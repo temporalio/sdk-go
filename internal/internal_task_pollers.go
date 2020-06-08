@@ -522,6 +522,8 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	}
 
 	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
 	task.Lock()
 	if task.canceled {
 		task.Unlock()
