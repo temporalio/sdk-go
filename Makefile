@@ -100,6 +100,9 @@ lint: $(ALL_SRC)
 		exit 1; \
 	fi
 
+vet: $(ALL_SRC)
+	go vet ./...
+
 staticcheck: $(ALL_SRC)
 	GO111MODULE=off go get -u honnef.co/go/tools/cmd/staticcheck
 	staticcheck ./...
@@ -114,4 +117,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: lint errcheck staticcheck copyright bins
+check: lint vet errcheck staticcheck copyright bins
