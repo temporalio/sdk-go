@@ -106,9 +106,9 @@ func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, 
 func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType commonpb.TimeoutType) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
 	switch timeoutType {
-	case commonpb.TimeoutType_ScheduleToClose:
+	case commonpb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE:
 		opts.ScheduleToCloseTimeout = time.Second
-	case commonpb.TimeoutType_StartToClose:
+	case commonpb.TIMEOUT_TYPE_START_TO_CLOSE:
 		opts.StartToCloseTimeout = time.Second
 	}
 
@@ -161,7 +161,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		return nil, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if timeoutErr.TimeoutType() != commonpb.TimeoutType_Heartbeat {
+	if timeoutErr.TimeoutType() != commonpb.TIMEOUT_TYPE_HEARTBEAT {
 		return nil, fmt.Errorf("activity failed due to unexpected timeout %v", timeoutErr.TimeoutType())
 	}
 
@@ -458,7 +458,7 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		return []string{}, fmt.Errorf("activity failed with unexpected error: %v", err)
 	}
 
-	if timeoutErr.TimeoutType() != commonpb.TimeoutType_ScheduleToClose {
+	if timeoutErr.TimeoutType() != commonpb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE {
 		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type: %v", timeoutErr.TimeoutType())
 	}
 
@@ -468,7 +468,7 @@ func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]str
 		return []string{}, fmt.Errorf("activity timed out with unexpected last error %v", err)
 	}
 
-	if previousTimeoutErr.TimeoutType() != commonpb.TimeoutType_StartToClose {
+	if previousTimeoutErr.TimeoutType() != commonpb.TIMEOUT_TYPE_START_TO_CLOSE {
 		return []string{}, fmt.Errorf("activity timed out with unexpected timeout type of last timeout: %v", previousTimeoutErr.TimeoutType())
 	}
 

@@ -94,7 +94,7 @@ func Test_MockClient(t *testing.T) {
 	mockHistoryIter.On("Next").Return(&eventpb.HistoryEvent{}, nil).Once()
 	mockClient.On("GetWorkflowHistory", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(mockHistoryIter).Once()
-	historyIter := mockClient.GetWorkflowHistory(context.Background(), testWorkflowID, testRunID, true, filterpb.HistoryEventFilterType_CloseEvent)
+	historyIter := mockClient.GetWorkflowHistory(context.Background(), testWorkflowID, testRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	mockClient.AssertExpectations(t)
 	require.NotNil(t, historyIter)
 	require.Equal(t, true, historyIter.HasNext())

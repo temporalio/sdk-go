@@ -310,7 +310,7 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
 // This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
-var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", eventpb.StartChildWorkflowExecutionFailedCause_WorkflowAlreadyExists)
+var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", eventpb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS)
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to

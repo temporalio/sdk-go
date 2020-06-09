@@ -278,7 +278,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HistoryEventFilterType_CloseEvent)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
 	return &workflowRunImpl{
@@ -299,7 +299,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HistoryEventFilterType_CloseEvent)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
 	return &workflowRunImpl{
@@ -1100,7 +1100,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	}
 
 	switch closeEvent.GetEventType() {
-	case eventpb.EventType_WorkflowExecutionCompleted:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
@@ -1110,18 +1110,18 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 			return errors.New("value parameter is not a pointer")
 		}
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
-	case eventpb.EventType_WorkflowExecutionFailed:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
-	case eventpb.EventType_WorkflowExecutionCanceled:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
 		err = NewCanceledError(details)
-	case eventpb.EventType_WorkflowExecutionTerminated:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
-	case eventpb.EventType_WorkflowExecutionTimedOut:
-		err = NewTimeoutError(commonpb.TimeoutType_StartToClose, nil)
-	case eventpb.EventType_WorkflowExecutionContinuedAsNew:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		err = NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)

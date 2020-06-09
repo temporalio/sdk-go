@@ -85,67 +85,67 @@ func valueToString(v reflect.Value) string {
 func HistoryEventToString(e *eventpb.HistoryEvent) string {
 	var data interface{}
 	switch e.GetEventType() {
-	case eventpb.EventType_WorkflowExecutionStarted:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 		data = e.GetWorkflowExecutionStartedEventAttributes()
 
-	case eventpb.EventType_WorkflowExecutionCompleted:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		data = e.GetWorkflowExecutionCompletedEventAttributes()
 
-	case eventpb.EventType_WorkflowExecutionFailed:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		data = e.GetWorkflowExecutionFailedEventAttributes()
 
-	case eventpb.EventType_WorkflowExecutionTimedOut:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		data = e.GetWorkflowExecutionTimedOutEventAttributes()
 
-	case eventpb.EventType_DecisionTaskScheduled:
+	case eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
 		data = e.GetDecisionTaskScheduledEventAttributes()
 
-	case eventpb.EventType_DecisionTaskStarted:
+	case eventpb.EVENT_TYPE_DECISION_TASK_STARTED:
 		data = e.GetDecisionTaskStartedEventAttributes()
 
-	case eventpb.EventType_DecisionTaskCompleted:
+	case eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED:
 		data = e.GetDecisionTaskCompletedEventAttributes()
 
-	case eventpb.EventType_DecisionTaskTimedOut:
+	case eventpb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
 		data = e.GetDecisionTaskTimedOutEventAttributes()
 
-	case eventpb.EventType_ActivityTaskScheduled:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		data = e.GetActivityTaskScheduledEventAttributes()
 
-	case eventpb.EventType_ActivityTaskStarted:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 		data = e.GetActivityTaskStartedEventAttributes()
 
-	case eventpb.EventType_ActivityTaskCompleted:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
 		data = e.GetActivityTaskCompletedEventAttributes()
 
-	case eventpb.EventType_ActivityTaskFailed:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
 		data = e.GetActivityTaskFailedEventAttributes()
 
-	case eventpb.EventType_ActivityTaskTimedOut:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		data = e.GetActivityTaskTimedOutEventAttributes()
 
-	case eventpb.EventType_ActivityTaskCancelRequested:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
 		data = e.GetActivityTaskCancelRequestedEventAttributes()
 
-	case eventpb.EventType_ActivityTaskCanceled:
+	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
 		data = e.GetActivityTaskCanceledEventAttributes()
 
-	case eventpb.EventType_TimerStarted:
+	case eventpb.EVENT_TYPE_TIMER_STARTED:
 		data = e.GetTimerStartedEventAttributes()
 
-	case eventpb.EventType_TimerFired:
+	case eventpb.EVENT_TYPE_TIMER_FIRED:
 		data = e.GetTimerFiredEventAttributes()
 
-	case eventpb.EventType_CancelTimerFailed:
+	case eventpb.EVENT_TYPE_CANCEL_TIMER_FAILED:
 		data = e.GetCancelTimerFailedEventAttributes()
 
-	case eventpb.EventType_TimerCanceled:
+	case eventpb.EVENT_TYPE_TIMER_CANCELED:
 		data = e.GetTimerCanceledEventAttributes()
 
-	case eventpb.EventType_MarkerRecorded:
+	case eventpb.EVENT_TYPE_MARKER_RECORDED:
 		data = e.GetMarkerRecordedEventAttributes()
 
-	case eventpb.EventType_WorkflowExecutionTerminated:
+	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		data = e.GetWorkflowExecutionTerminatedEventAttributes()
 
 	default:
@@ -159,25 +159,25 @@ func HistoryEventToString(e *eventpb.HistoryEvent) string {
 func DecisionToString(d *decisionpb.Decision) string {
 	var data interface{}
 	switch d.GetDecisionType() {
-	case decisionpb.DecisionType_ScheduleActivityTask:
+	case decisionpb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
 		data = d.GetScheduleActivityTaskDecisionAttributes()
 
-	case decisionpb.DecisionType_RequestCancelActivityTask:
+	case decisionpb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
 		data = d.GetRequestCancelActivityTaskDecisionAttributes()
 
-	case decisionpb.DecisionType_StartTimer:
+	case decisionpb.DECISION_TYPE_START_TIMER:
 		data = d.GetStartTimerDecisionAttributes()
 
-	case decisionpb.DecisionType_CancelTimer:
+	case decisionpb.DECISION_TYPE_CANCEL_TIMER:
 		data = d.GetCancelTimerDecisionAttributes()
 
-	case decisionpb.DecisionType_CompleteWorkflowExecution:
+	case decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
 		data = d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-	case decisionpb.DecisionType_FailWorkflowExecution:
+	case decisionpb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
 		data = d.GetFailWorkflowExecutionDecisionAttributes()
 
-	case decisionpb.DecisionType_RecordMarker:
+	case decisionpb.DECISION_TYPE_RECORD_MARKER:
 		data = d.GetRecordMarkerDecisionAttributes()
 
 	default:
