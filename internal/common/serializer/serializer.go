@@ -86,10 +86,10 @@ func serializeProto(p proto.Marshaler, encodingType commonpb.EncodingType) (*com
 	var err error
 
 	switch encodingType {
-	case commonpb.EncodingType_Proto3:
+	case commonpb.ENCODING_TYPE_PROTO3:
 		data, err = p.Marshal()
-	case commonpb.EncodingType_JSON:
-		encodingType = commonpb.EncodingType_JSON
+	case commonpb.ENCODING_TYPE_JSON:
+		encodingType = commonpb.ENCODING_TYPE_JSON
 		pb, ok := p.(proto.Message)
 		if !ok {
 			return nil, NewSerializationError("could not cast protomarshal interface to proto.message")
@@ -123,9 +123,9 @@ func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*eventpb.HistoryEvent, e
 	events := &eventpb.History{}
 	var err error
 	switch data.EncodingType {
-	case commonpb.EncodingType_JSON:
+	case commonpb.ENCODING_TYPE_JSON:
 		err = NewJSONPBEncoder().Decode(data.Data, events)
-	case commonpb.EncodingType_Proto3:
+	case commonpb.ENCODING_TYPE_PROTO3:
 		err = proto.Unmarshal(data.Data, events)
 	default:
 		return nil, NewDeserializationError("DeserializeBatchEvents invalid encoding")
@@ -149,7 +149,7 @@ func serialize(input interface{}, encodingType commonpb.EncodingType) (*commonpb
 	var err error
 
 	switch encodingType {
-	case commonpb.EncodingType_JSON: // For backward-compatibility
+	case commonpb.ENCODING_TYPE_JSON: // For backward-compatibility
 		data, err = json.Marshal(input)
 	default:
 		return nil, NewUnknownEncodingTypeError(encodingType)
@@ -222,7 +222,7 @@ func DeserializeBlobDataToHistoryEvents(
 		historyEvents = append(historyEvents, events...)
 	}
 
-	if filterType == filterpb.HistoryEventFilterType_CloseEvent {
+	if filterType == filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT {
 		historyEvents = []*eventpb.HistoryEvent{historyEvents[len(historyEvents)-1]}
 	}
 	return &eventpb.History{Events: historyEvents}, nil

@@ -276,7 +276,7 @@ func NewTimeoutError(timeoutType commonpb.TimeoutType, cause error, lastHeatbeat
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(commonpb.TimeoutType_Heartbeat, nil, details...)
+	return NewTimeoutError(commonpb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -616,8 +616,8 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != commonpb.TimeoutType_StartToClose &&
-			timeoutErr.timeoutType != commonpb.TimeoutType_Heartbeat {
+		if timeoutErr.timeoutType != commonpb.TIMEOUT_TYPE_START_TO_CLOSE &&
+			timeoutErr.timeoutType != commonpb.TIMEOUT_TYPE_HEARTBEAT {
 			return false
 		}
 	}

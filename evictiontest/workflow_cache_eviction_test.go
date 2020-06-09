@@ -95,14 +95,14 @@ func TestWorkersTestSuite(t *testing.T) {
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *eventpb.WorkflowExecutionStartedEventAttributes) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EventType_WorkflowExecutionStarted,
+		EventType:  eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 		Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
 func createTestEventDecisionTaskScheduled(eventID int64, attr *eventpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
 	return &eventpb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EventType_DecisionTaskScheduled,
+		EventType:  eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
 		Attributes: &eventpb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
 }
 

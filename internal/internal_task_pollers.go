@@ -588,7 +588,7 @@ func (wtp *workflowTaskPoller) release(kind tasklistpb.TaskListKind) {
 	}
 
 	wtp.requestLock.Lock()
-	if kind == tasklistpb.TaskListKind_Sticky {
+	if kind == tasklistpb.TASK_LIST_KIND_STICKY {
 		wtp.pendingStickyPollCount--
 	} else {
 		wtp.pendingRegularPollCount--
@@ -597,7 +597,7 @@ func (wtp *workflowTaskPoller) release(kind tasklistpb.TaskListKind) {
 }
 
 func (wtp *workflowTaskPoller) updateBacklog(taskListKind tasklistpb.TaskListKind, backlogCountHint int64) {
-	if taskListKind == tasklistpb.TaskListKind_Normal || wtp.disableStickyExecution {
+	if taskListKind == tasklistpb.TASK_LIST_KIND_NORMAL || wtp.disableStickyExecution {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -615,13 +615,13 @@ func (wtp *workflowTaskPoller) updateBacklog(taskListKind tasklistpb.TaskListKin
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollForDecisionTaskRequest) {
 	taskListName := wtp.taskListName
-	taskListKind := tasklistpb.TaskListKind_Normal
+	taskListKind := tasklistpb.TASK_LIST_KIND_NORMAL
 	if !wtp.disableStickyExecution {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskListName = getWorkerTaskList(wtp.stickyUUID)
-			taskListKind = tasklistpb.TaskListKind_Sticky
+			taskListKind = tasklistpb.TASK_LIST_KIND_STICKY
 		} else {
 			wtp.pendingRegularPollCount++
 		}
@@ -772,7 +772,7 @@ func newGetHistoryPageFunc(
 
 		if resp.RawHistory != nil {
 			var err1 error
-			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, filterpb.HistoryEventFilterType_AllEvent)
+			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 			if err1 != nil {
 				return nil, nil, nil
 			}
@@ -785,7 +785,7 @@ func newGetHistoryPageFunc(
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
 			first := h.Events[0].GetEventId() // eventIds start from 1
 			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != eventpb.EventType_DecisionTaskCompleted {
+			if h.Events[len(h.Events)-1].GetEventType() != eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED {
 				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
 					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
 			}

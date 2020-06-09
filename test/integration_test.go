@@ -175,7 +175,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 		"test-activity-retry-on-start2close-timeout",
 		ts.workflows.ActivityRetryOnTimeout,
 		&expected,
-		commonpb.TimeoutType_StartToClose)
+		commonpb.TIMEOUT_TYPE_START_TO_CLOSE)
 
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -259,7 +259,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
-		QueryConsistencyLevel: querypb.QueryConsistencyLevel_Strong,
+		QueryConsistencyLevel: querypb.QUERY_CONSISTENCY_LEVEL_STRONG,
 	})
 	ts.Nil(err)
 	ts.NotNil(value)
@@ -368,7 +368,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(executionpb.WorkflowExecutionStatus_Terminated, info.GetStatus(), info)
+			ts.Equal(executionpb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -385,7 +385,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(executionpb.WorkflowExecutionStatus_Completed, info.GetStatus(), info)
+			ts.Equal(executionpb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -481,7 +481,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HistoryEventFilterType_AllEvent)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

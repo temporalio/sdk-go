@@ -188,7 +188,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Tracer:                       opentracing.NoopTracer{},
 	}
 
-	namespaceStatus := namespacepb.NamespaceStatus_Registered
+	namespaceStatus := namespacepb.NAMESPACE_STATUS_REGISTERED
 	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
 		NamespaceInfo: &namespacepb.NamespaceInfo{
 			Name:   namespace,

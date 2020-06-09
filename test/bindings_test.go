@@ -124,7 +124,7 @@ func (ts *AsyncBindingsTestSuite) executeWorkflowWithOption(
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HistoryEventFilterType_AllEvent)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

@@ -1205,7 +1205,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	}
 
 	if hResponse.RawHistory != nil {
-		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, filterpb.HistoryEventFilterType_AllEvent)
+		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		if err != nil {
 			return err
 		}
@@ -1226,7 +1226,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("at least 3 events expected in the history")
 	}
 	first := events[0]
-	if first.GetEventType() != eventpb.EventType_WorkflowExecutionStarted {
+	if first.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
 	last := events[len(events)-1]
@@ -1277,7 +1277,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return err
 	}
 
-	if last.GetEventType() != eventpb.EventType_WorkflowExecutionCompleted && last.GetEventType() != eventpb.EventType_WorkflowExecutionContinuedAsNew {
+	if last.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED && last.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 		return nil
 	}
 
@@ -1285,8 +1285,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == decisionpb.DecisionType_ContinueAsNewWorkflowExecution {
-					if last.GetEventType() == eventpb.EventType_WorkflowExecutionContinuedAsNew {
+				if d.GetDecisionType() == decisionpb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
+					if last.GetEventType() == eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().GetInput()
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
 						if proto.Equal(inputA, inputB) {
@@ -1294,8 +1294,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 						}
 					}
 				}
-				if d.GetDecisionType() == decisionpb.DecisionType_CompleteWorkflowExecution {
-					if last.GetEventType() == eventpb.EventType_WorkflowExecutionCompleted {
+				if d.GetDecisionType() == decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION {
+					if last.GetEventType() == eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 						if proto.Equal(resultA, resultB) {
