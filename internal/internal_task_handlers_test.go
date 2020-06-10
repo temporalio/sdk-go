@@ -1444,7 +1444,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {
-	decisionTypes := decisionpb.DecisionType_value
+	decisionTypes := decisionpb.DecisionType_name
+	delete(decisionTypes, 0) // Ignore "Unspecified".
+
 	require.Equal(t, 13, len(decisionTypes), "If you see this error, you are adding new decision type. "+
 		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
 		"to check the new decision type. Otherwise the replay will fail on the new decision event.")
