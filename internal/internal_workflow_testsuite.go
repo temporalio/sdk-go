@@ -39,12 +39,13 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -559,7 +560,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, err)
+			return nil, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err)
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -1356,7 +1357,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded)
+			err = NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded)
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))

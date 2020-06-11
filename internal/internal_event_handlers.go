@@ -36,12 +36,13 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
-	failurepb "go.temporal.io/temporal-proto/failure"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	failurepb "go.temporal.io/temporal-proto/failure/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -442,7 +443,7 @@ func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.decisionsHelper.getNextID()
 }
 
-func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType decisionpb.DecisionType) *decisionpb.Decision {
+func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType enumspb.DecisionType) *decisionpb.Decision {
 	return &decisionpb.Decision{
 		DecisionType: decisionType,
 	}
@@ -747,7 +748,7 @@ func (wc *workflowEnvironmentImpl) GetRegistry() *registry {
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
-	event *eventpb.HistoryEvent,
+	event *historypb.HistoryEvent,
 	isReplay bool,
 	isLast bool,
 ) (err error) {
@@ -775,125 +776,125 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	})
 
 	switch event.GetEventType() {
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 		err = weh.handleWorkflowExecutionStarted(event.GetWorkflowExecutionStartedEventAttributes())
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		// No Operation
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		// No Operation
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		// No Operation
-	case eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
 		// No Operation
-	case eventpb.EVENT_TYPE_DECISION_TASK_STARTED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
 		// Set replay clock.
 		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
 		// Reset the counter on decision helper used for generating ID for decisions
 		weh.decisionsHelper.setCurrentDecisionStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnDecisionTaskStarted()
 
-	case eventpb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
 		// No Operation
-	case eventpb.EVENT_TYPE_DECISION_TASK_FAILED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_FAILED:
 		// No Operation
-	case eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED:
 		// No Operation
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		weh.decisionsHelper.handleActivityTaskScheduled(
 			event.GetEventId(), event.GetActivityTaskScheduledEventAttributes().GetActivityId())
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 		// No Operation
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
 		err = weh.handleActivityTaskCompleted(event)
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
 		err = weh.handleActivityTaskFailed(event)
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		err = weh.handleActivityTaskTimedOut(event)
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
 		weh.decisionsHelper.handleActivityTaskCancelRequested(
 			event.GetActivityTaskCancelRequestedEventAttributes().GetScheduledEventId())
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
 		err = weh.handleActivityTaskCanceled(event)
 
-	case eventpb.EVENT_TYPE_TIMER_STARTED:
+	case enumspb.EVENT_TYPE_TIMER_STARTED:
 		weh.decisionsHelper.handleTimerStarted(event.GetTimerStartedEventAttributes().GetTimerId())
 
-	case eventpb.EVENT_TYPE_TIMER_FIRED:
+	case enumspb.EVENT_TYPE_TIMER_FIRED:
 		weh.handleTimerFired(event)
 
-	case eventpb.EVENT_TYPE_TIMER_CANCELED:
+	case enumspb.EVENT_TYPE_TIMER_CANCELED:
 		weh.decisionsHelper.handleTimerCanceled(event.GetTimerCanceledEventAttributes().GetTimerId())
 
-	case eventpb.EVENT_TYPE_CANCEL_TIMER_FAILED:
+	case enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED:
 		weh.decisionsHelper.handleCancelTimerFailed(event.GetCancelTimerFailedEventAttributes().GetTimerId())
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
 		weh.handleWorkflowExecutionCancelRequested()
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		// No Operation.
 
-	case eventpb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
+	case enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
 		_ = weh.handleRequestCancelExternalWorkflowExecutionInitiated(event)
 
-	case eventpb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
 		_ = weh.handleRequestCancelExternalWorkflowExecutionFailed(event)
 
-	case eventpb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
+	case enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
 		_ = weh.handleExternalWorkflowExecutionCancelRequested(event)
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		// No Operation.
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:
 		weh.handleWorkflowExecutionSignaled(event.GetWorkflowExecutionSignaledEventAttributes())
 
-	case eventpb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
+	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
 		signalID := string(event.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Control)
 		weh.decisionsHelper.handleSignalExternalWorkflowExecutionInitiated(event.GetEventId(), signalID)
 
-	case eventpb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
 		_ = weh.handleSignalExternalWorkflowExecutionFailed(event)
 
-	case eventpb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_SIGNALED:
+	case enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_SIGNALED:
 		_ = weh.handleSignalExternalWorkflowExecutionCompleted(event)
 
-	case eventpb.EVENT_TYPE_MARKER_RECORDED:
+	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		err = weh.handleMarkerRecorded(event.GetEventId(), event.GetMarkerRecordedEventAttributes())
 
-	case eventpb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
+	case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
 		weh.decisionsHelper.handleStartChildWorkflowExecutionInitiated(
 			event.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetWorkflowId())
 
-	case eventpb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_FAILED:
 		err = weh.handleStartChildWorkflowExecutionFailed(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED:
 		err = weh.handleChildWorkflowExecutionStarted(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED:
 		err = weh.handleChildWorkflowExecutionCompleted(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED:
 		err = weh.handleChildWorkflowExecutionFailed(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_CANCELED:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_CANCELED:
 		err = weh.handleChildWorkflowExecutionCanceled(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TIMED_OUT:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TIMED_OUT:
 		err = weh.handleChildWorkflowExecutionTimedOut(event)
 
-	case eventpb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TERMINATED:
+	case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TERMINATED:
 		err = weh.handleChildWorkflowExecutionTerminated(event)
 
-	case eventpb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
+	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
 	default:
@@ -910,7 +911,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	// When replaying histories to get stack trace or current state the last event might be not
 	// decision started. So always call OnDecisionTaskStarted on the last event.
 	// Don't call for EventType_DecisionTaskStarted as it was already called when handling it.
-	if isLast && event.GetEventType() != eventpb.EVENT_TYPE_DECISION_TASK_STARTED {
+	if isLast && event.GetEventType() != enumspb.EVENT_TYPE_DECISION_TASK_STARTED {
 		weh.workflowDefinition.OnDecisionTaskStarted()
 	}
 
@@ -952,7 +953,7 @@ func (weh *workflowExecutionEventHandlerImpl) Close() {
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
-	attributes *eventpb.WorkflowExecutionStartedEventAttributes) (err error) {
+	attributes *historypb.WorkflowExecutionStartedEventAttributes) (err error) {
 	weh.workflowDefinition, err = weh.registry.getWorkflowDefinition(
 		weh.workflowInfo.WorkflowType,
 	)
@@ -965,7 +966,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event *historypb.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
 	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
 	activity := decision.getData().(*scheduledActivity)
@@ -977,7 +978,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event 
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *historypb.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
 	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
 	activity := decision.getData().(*scheduledActivity)
@@ -1000,7 +1001,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *ev
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *historypb.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
 	decision := weh.decisionsHelper.handleActivityTaskClosed(activityID)
 	activity := decision.getData().(*scheduledActivity)
@@ -1025,7 +1026,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *historypb.HistoryEvent) error {
 	activityID := weh.decisionsHelper.getActivityID(event)
 	decision := weh.decisionsHelper.handleActivityTaskCanceled(activityID)
 	activity := decision.getData().(*scheduledActivity)
@@ -1045,7 +1046,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 			attributes.GetIdentity(),
 			&commonpb.ActivityType{Name: activity.activityType.Name},
 			activityID,
-			commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+			enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
 			NewCanceledError(details),
 		)
 
@@ -1055,7 +1056,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(event *eventpb.HistoryEvent) {
+func (weh *workflowExecutionEventHandlerImpl) handleTimerFired(event *historypb.HistoryEvent) {
 	timerID := event.GetTimerFiredEventAttributes().GetTimerId()
 	decision := weh.decisionsHelper.handleTimerClosed(timerID)
 	timer := decision.getData().(*scheduledTimer)
@@ -1072,7 +1073,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionCancelReque
 
 func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	eventID int64,
-	attributes *eventpb.MarkerRecordedEventAttributes,
+	attributes *historypb.MarkerRecordedEventAttributes,
 ) error {
 	var err error
 	if attributes.GetDetails() == nil {
@@ -1202,9 +1203,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	details[localActivityMarkerDataDetailsName] = markerData
 
 	// create marker event for local activity result
-	markerEvent := &eventpb.HistoryEvent{
-		EventType: eventpb.EVENT_TYPE_MARKER_RECORDED,
-		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
+	markerEvent := &historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
+		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
 			Failure:    convertErrorToFailure(lar.err, weh.GetDataConverter()),
 			Details:    details,
@@ -1216,11 +1217,11 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
-	attributes *eventpb.WorkflowExecutionSignaledEventAttributes) {
+	attributes *historypb.WorkflowExecutionSignaledEventAttributes) {
 	weh.signalHandler(attributes.GetSignalName(), attributes.Input)
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *historypb.HistoryEvent) error {
 	attributes := event.GetStartChildWorkflowExecutionFailedEventAttributes()
 	childWorkflowID := attributes.GetWorkflowId()
 	decision := weh.decisionsHelper.handleStartChildWorkflowExecutionFailed(childWorkflowID)
@@ -1235,7 +1236,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionStartedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	childRunID := attributes.WorkflowExecution.GetRunId()
@@ -1254,7 +1255,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarte
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCompleted(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCompleted(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionCompletedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
@@ -1267,7 +1268,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionComple
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionFailedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
@@ -1290,7 +1291,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCanceled(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCanceled(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionCanceledEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	decision := weh.decisionsHelper.handleChildWorkflowExecutionCanceled(childWorkflowID)
@@ -1307,14 +1308,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+		enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
 		NewCanceledError(details),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedOut(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedOut(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionTimedOutEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
@@ -1331,13 +1332,13 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryStatus(),
-		NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
+		NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTerminated(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTerminated(event *historypb.HistoryEvent) error {
 	attributes := event.GetChildWorkflowExecutionTerminatedEventAttributes()
 	childWorkflowID := attributes.WorkflowExecution.GetWorkflowId()
 	decision := weh.decisionsHelper.handleChildWorkflowExecutionClosed(childWorkflowID)
@@ -1353,18 +1354,18 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+		enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *eventpb.HistoryEvent) {
+func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {
 	weh.updateWorkflowInfoWithSearchAttributes(event.GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes)
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *historypb.HistoryEvent) error {
 	// For cancellation of child workflow only, we do not use cancellation ID
 	// for cancellation of external workflow, we have to use cancellation ID
 	attribute := event.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
@@ -1374,7 +1375,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflo
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleExternalWorkflowExecutionCancelRequested(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleExternalWorkflowExecutionCancelRequested(event *historypb.HistoryEvent) error {
 	// For cancellation of child workflow only, we do not use cancellation ID
 	// for cancellation of external workflow, we have to use cancellation ID
 	attributes := event.GetExternalWorkflowExecutionCancelRequestedEventAttributes()
@@ -1392,7 +1393,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleExternalWorkflowExecutionCan
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionFailed(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionFailed(event *historypb.HistoryEvent) error {
 	// For cancellation of child workflow only, we do not use cancellation ID
 	// for cancellation of external workflow, we have to use cancellation ID
 	attributes := event.GetRequestCancelExternalWorkflowExecutionFailedEventAttributes()
@@ -1411,7 +1412,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflo
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecutionCompleted(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecutionCompleted(event *historypb.HistoryEvent) error {
 	attributes := event.GetExternalWorkflowExecutionSignaledEventAttributes()
 	decision := weh.decisionsHelper.handleSignalExternalWorkflowExecutionCompleted(attributes.GetInitiatedEventId())
 	signal := decision.getData().(*scheduledSignal)
@@ -1423,7 +1424,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecutionFailed(event *eventpb.HistoryEvent) error {
+func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecutionFailed(event *historypb.HistoryEvent) error {
 	attributes := event.GetSignalExternalWorkflowExecutionFailedEventAttributes()
 	decision := weh.decisionsHelper.handleSignalExternalWorkflowExecutionFailed(attributes.GetInitiatedEventId())
 	signal := decision.getData().(*scheduledSignal)
@@ -1433,7 +1434,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 
 	var err error
 	switch attributes.GetCause() {
-	case eventpb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND:
+	case enumspb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND:
 		err = newUnknownExternalWorkflowExecutionError()
 	default:
 		err = fmt.Errorf("signal external workflow failed, %v", attributes.GetCause())

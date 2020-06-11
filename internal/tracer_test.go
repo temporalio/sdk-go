@@ -32,7 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaeger_config "github.com/uber/jaeger-client-go/config"
-	commonpb "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
 	"go.uber.org/zap"
 )
 

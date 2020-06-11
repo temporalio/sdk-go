@@ -37,16 +37,17 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
-	querypb "go.temporal.io/temporal-proto/query"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	querypb "go.temporal.io/temporal-proto/query/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 )
 
 const (
@@ -134,77 +135,77 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 	})
 }
 
-func createTestEventWorkflowExecutionCompleted(eventID int64, attr *eventpb.WorkflowExecutionCompletedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventWorkflowExecutionCompleted(eventID int64, attr *historypb.WorkflowExecutionCompletedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
-		Attributes: &eventpb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: attr}}
 }
 
-func createTestEventWorkflowExecutionStarted(eventID int64, attr *eventpb.WorkflowExecutionStartedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventWorkflowExecutionStarted(eventID int64, attr *historypb.WorkflowExecutionStartedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-		Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventLocalActivity(eventID int64, attr *eventpb.MarkerRecordedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventLocalActivity(eventID int64, attr *historypb.MarkerRecordedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_MARKER_RECORDED,
-		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_MARKER_RECORDED,
+		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: attr}}
 }
 
-func createTestEventActivityTaskScheduled(eventID int64, attr *eventpb.ActivityTaskScheduledEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventActivityTaskScheduled(eventID int64, attr *historypb.ActivityTaskScheduledEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
-		Attributes: &eventpb.HistoryEvent_ActivityTaskScheduledEventAttributes{ActivityTaskScheduledEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_ActivityTaskScheduledEventAttributes{ActivityTaskScheduledEventAttributes: attr}}
 }
 
-func createTestEventActivityTaskStarted(eventID int64, attr *eventpb.ActivityTaskStartedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventActivityTaskStarted(eventID int64, attr *historypb.ActivityTaskStartedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_ACTIVITY_TASK_STARTED,
-		Attributes: &eventpb.HistoryEvent_ActivityTaskStartedEventAttributes{ActivityTaskStartedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED,
+		Attributes: &historypb.HistoryEvent_ActivityTaskStartedEventAttributes{ActivityTaskStartedEventAttributes: attr}}
 }
 
-func createTestEventActivityTaskCompleted(eventID int64, attr *eventpb.ActivityTaskCompletedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventActivityTaskCompleted(eventID int64, attr *historypb.ActivityTaskCompletedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED,
-		Attributes: &eventpb.HistoryEvent_ActivityTaskCompletedEventAttributes{ActivityTaskCompletedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED,
+		Attributes: &historypb.HistoryEvent_ActivityTaskCompletedEventAttributes{ActivityTaskCompletedEventAttributes: attr}}
 }
 
-func createTestEventActivityTaskTimedOut(eventID int64, attr *eventpb.ActivityTaskTimedOutEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventActivityTaskTimedOut(eventID int64, attr *historypb.ActivityTaskTimedOutEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT,
-		Attributes: &eventpb.HistoryEvent_ActivityTaskTimedOutEventAttributes{ActivityTaskTimedOutEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT,
+		Attributes: &historypb.HistoryEvent_ActivityTaskTimedOutEventAttributes{ActivityTaskTimedOutEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskScheduled(eventID int64, attr *eventpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventDecisionTaskScheduled(eventID int64, attr *historypb.DecisionTaskScheduledEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
-		Attributes: &eventpb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskStarted(eventID int64) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventDecisionTaskStarted(eventID int64) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:   eventID,
-		EventType: eventpb.EVENT_TYPE_DECISION_TASK_STARTED}
+		EventType: enumspb.EVENT_TYPE_DECISION_TASK_STARTED}
 }
 
-func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *eventpb.HistoryEvent {
+func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *historypb.HistoryEvent {
 	return createTestEventWorkflowExecutionSignaledWithPayload(eventID, signalName, nil)
 }
 
-func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payloads *commonpb.Payloads) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalName string, payloads *commonpb.Payloads) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:   eventID,
-		EventType: eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
-		Attributes: &eventpb.HistoryEvent_WorkflowExecutionSignaledEventAttributes{WorkflowExecutionSignaledEventAttributes: &eventpb.WorkflowExecutionSignaledEventAttributes{
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionSignaledEventAttributes{WorkflowExecutionSignaledEventAttributes: &historypb.WorkflowExecutionSignaledEventAttributes{
 			SignalName: signalName,
 			Input:      payloads,
 			Identity:   "test-identity",
@@ -212,28 +213,28 @@ func createTestEventWorkflowExecutionSignaledWithPayload(eventID int64, signalNa
 	}
 }
 
-func createTestEventDecisionTaskCompleted(eventID int64, attr *eventpb.DecisionTaskCompletedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventDecisionTaskCompleted(eventID int64, attr *historypb.DecisionTaskCompletedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED,
-		Attributes: &eventpb.HistoryEvent_DecisionTaskCompletedEventAttributes{DecisionTaskCompletedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED,
+		Attributes: &historypb.HistoryEvent_DecisionTaskCompletedEventAttributes{DecisionTaskCompletedEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskFailed(eventID int64, attr *eventpb.DecisionTaskFailedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventDecisionTaskFailed(eventID int64, attr *historypb.DecisionTaskFailedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_DECISION_TASK_FAILED,
-		Attributes: &eventpb.HistoryEvent_DecisionTaskFailedEventAttributes{DecisionTaskFailedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_DECISION_TASK_FAILED,
+		Attributes: &historypb.HistoryEvent_DecisionTaskFailedEventAttributes{DecisionTaskFailedEventAttributes: attr}}
 }
 
-func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *eventpb.SignalExternalWorkflowExecutionFailedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *historypb.SignalExternalWorkflowExecutionFailedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED,
-		Attributes: &eventpb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED,
+		Attributes: &historypb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
 }
 
-func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
 	changeIDPayload, err := DefaultDataConverter.ToPayloads(changeID)
 	if err != nil {
 		panic(err)
@@ -244,11 +245,11 @@ func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, chan
 		panic(err)
 	}
 
-	return &eventpb.HistoryEvent{
+	return &historypb.HistoryEvent{
 		EventId:   eventID,
-		EventType: eventpb.EVENT_TYPE_MARKER_RECORDED,
-		Attributes: &eventpb.HistoryEvent_MarkerRecordedEventAttributes{
-			MarkerRecordedEventAttributes: &eventpb.MarkerRecordedEventAttributes{
+		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
+		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{
+			MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 				MarkerName: versionMarkerName,
 				Details: map[string]*commonpb.Payloads{
 					versionMarkerChangeIDName: changeIDPayload,
@@ -260,14 +261,14 @@ func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, chan
 	}
 }
 
-func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, decisionCompletedID int64, changeID string, version Version) *eventpb.HistoryEvent {
+func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, decisionCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
 	searchAttributes, _ := validateAndSerializeSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, nil))
 
-	return &eventpb.HistoryEvent{
+	return &historypb.HistoryEvent{
 		EventId:   eventID,
-		EventType: eventpb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
-		Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{
-			UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{
+		EventType: enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
+		Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{
+			UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{
 				SearchAttributes:             searchAttributes,
 				DecisionTaskCompletedEventId: decisionCompletedID,
 			},
@@ -276,7 +277,7 @@ func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, dec
 }
 
 func createWorkflowTask(
-	events []*eventpb.HistoryEvent,
+	events []*historypb.HistoryEvent,
 	previousStartEventID int64,
 	workflowName string,
 ) *workflowservice.PollForDecisionTaskResponse {
@@ -284,24 +285,24 @@ func createWorkflowTask(
 }
 
 func createWorkflowTaskWithQueries(
-	events []*eventpb.HistoryEvent,
+	events []*historypb.HistoryEvent,
 	previousStartEventID int64,
 	workflowName string,
 	queries map[string]*querypb.WorkflowQuery,
 	addEvents bool,
 ) *workflowservice.PollForDecisionTaskResponse {
-	eventsCopy := make([]*eventpb.HistoryEvent, len(events))
+	eventsCopy := make([]*historypb.HistoryEvent, len(events))
 	copy(eventsCopy, events)
 	if addEvents {
 		nextEventID := eventsCopy[len(eventsCopy)-1].EventId + 1
 		eventsCopy = append(eventsCopy, createTestEventDecisionTaskScheduled(nextEventID,
-			&eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: "taskList"}}))
+			&historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: "taskList"}}))
 		eventsCopy = append(eventsCopy, createTestEventDecisionTaskStarted(nextEventID+1))
 	}
 	return &workflowservice.PollForDecisionTaskResponse{
 		PreviousStartedEventId: previousStartEventID,
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowName},
-		History:                &eventpb.History{Events: eventsCopy},
+		History:                &historypb.History{Events: eventsCopy},
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
 			RunId:      uuid.New(),
@@ -311,7 +312,7 @@ func createWorkflowTaskWithQueries(
 }
 
 func createQueryTask(
-	events []*eventpb.HistoryEvent,
+	events []*historypb.HistoryEvent,
 	previousStartEventID int64,
 	workflowName string,
 	queryType string,
@@ -323,36 +324,36 @@ func createQueryTask(
 	return task
 }
 
-func createTestEventTimerStarted(eventID int64, id int) *eventpb.HistoryEvent {
+func createTestEventTimerStarted(eventID int64, id int) *historypb.HistoryEvent {
 	timerID := fmt.Sprintf("%v", id)
-	attr := &eventpb.TimerStartedEventAttributes{
+	attr := &historypb.TimerStartedEventAttributes{
 		TimerId:                      timerID,
 		StartToFireTimeoutSeconds:    0,
 		DecisionTaskCompletedEventId: 0,
 	}
-	return &eventpb.HistoryEvent{
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_TIMER_STARTED,
-		Attributes: &eventpb.HistoryEvent_TimerStartedEventAttributes{TimerStartedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_TIMER_STARTED,
+		Attributes: &historypb.HistoryEvent_TimerStartedEventAttributes{TimerStartedEventAttributes: attr}}
 }
 
-func createTestEventTimerFired(eventID int64, id int) *eventpb.HistoryEvent {
+func createTestEventTimerFired(eventID int64, id int) *historypb.HistoryEvent {
 	timerID := fmt.Sprintf("%v", id)
-	attr := &eventpb.TimerFiredEventAttributes{
+	attr := &historypb.TimerFiredEventAttributes{
 		TimerId: timerID,
 	}
 
-	return &eventpb.HistoryEvent{
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_TIMER_FIRED,
-		Attributes: &eventpb.HistoryEvent_TimerFiredEventAttributes{TimerFiredEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_TIMER_FIRED,
+		Attributes: &historypb.HistoryEvent_TimerFiredEventAttributes{TimerFiredEventAttributes: attr}}
 }
 
 var testWorkflowTaskTasklist = "tl1"
 
 func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(params workerExecutionParameters) {
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}}),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -361,7 +362,7 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
 	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
 }
 
@@ -388,19 +389,19 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	taskList := "tl1"
 	checksum1 := "chck1"
 	checksum2 := "chck2"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
 		createTestEventTimerStarted(5, 5),
 		createTestEventTimerFired(6, 5),
-		createTestEventDecisionTaskScheduled(7, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(7, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(8),
-		createTestEventDecisionTaskCompleted(9, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
+		createTestEventDecisionTaskCompleted(9, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
 		createTestEventTimerStarted(10, 10),
 		createTestEventTimerFired(11, 10),
-		createTestEventDecisionTaskScheduled(12, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(12, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(13),
 	}
 	task := createWorkflowTask(testEvents, 8, "BinaryChecksumWorkflow")
@@ -417,7 +418,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
 	checksumsPayload := response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 	var checksums []string
 	_ = DefaultDataConverter.FromPayloads(checksumsPayload, &checksums)
@@ -430,18 +431,18 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(6, &eventpb.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &eventpb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventDecisionTaskStarted(8),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
@@ -458,7 +459,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
 	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
@@ -468,7 +469,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
 	t.NotNil(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes())
 }
 
@@ -479,18 +480,18 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 		WorkflowId: "fake-workflow-id",
 		RunId:      uuid.New(),
 	}
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(6, &eventpb.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &eventpb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 	}
 	params := workerExecutionParameters{
 		Namespace: testNamespace,
@@ -509,11 +510,11 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
 	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
 
 	// then check the current state using query task
-	task = createQueryTask([]*eventpb.HistoryEvent{}, 6, "HelloWorld_Workflow", queryType)
+	task = createQueryTask([]*historypb.HistoryEvent{}, 6, "HelloWorld_Workflow", queryType)
 	task.WorkflowExecution = execution
 	queryResp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.NoError(err)
@@ -523,18 +524,18 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(6, &eventpb.ActivityTaskStartedEventAttributes{}),
-		createTestEventActivityTaskCompleted(7, &eventpb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventDecisionTaskStarted(8),
 		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
 	}
@@ -594,12 +595,12 @@ func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expected
 
 func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
@@ -632,12 +633,12 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 
 func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
 	params := workerExecutionParameters{
@@ -667,15 +668,15 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 
 func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskFailed(4, &eventpb.DecisionTaskFailedEventAttributes{ScheduledEventId: 2}),
-		createTestEventDecisionTaskScheduled(5, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskFailed(4, &historypb.DecisionTaskFailedEventAttributes{ScheduledEventId: 2}),
+		createTestEventDecisionTaskScheduled(5, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(6),
-		createTestEventDecisionTaskCompleted(7, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 5}),
-		createTestEventActivityTaskScheduled(8, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(7, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskScheduled(8, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
@@ -754,9 +755,9 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	)
 
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 	}
 
@@ -790,12 +791,12 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
@@ -847,7 +848,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// and contains proper justification.(i.e. nondeterminism).
 	t.True(len(response.Decisions) > 0)
 	closeDecision := response.Decisions[len(response.Decisions)-1]
-	t.Equal(closeDecision.DecisionType, decisionpb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION)
+	t.Equal(closeDecision.DecisionType, enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION)
 	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
 	// now with different package name to activity type
@@ -860,9 +861,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 3, "ReturnPanicWorkflow")
@@ -880,7 +881,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondDecisionTaskCompletedRequest)
 	t.True(ok)
-	t.EqualValues(decisionpb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
+	t.EqualValues(enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
 	t.EqualValues("panicError", attr.GetFailure().GetMessage())
 	t.NotNil(attr.GetFailure().GetApplicationFailureInfo())
@@ -889,8 +890,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	taskList := "taskList"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 	}
 	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
 	params := workerExecutionParameters{
@@ -907,7 +908,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondDecisionTaskFailedRequest)
 	t.True(ok)
-	t.EqualValues(eventpb.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, r.Cause)
+	t.EqualValues(enumspb.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, r.Cause)
 	t.NotNil(r.GetFailure().GetApplicationFailureInfo())
 	t.Equal("PanicError", r.GetFailure().GetApplicationFailureInfo().GetType())
 	t.Equal("panicError", r.GetFailure().GetMessage())
@@ -931,7 +932,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	workflowType := "GetWorkflowInfoWorkflow"
 	lastCompletionResult, err := getDefaultDataConverter().ToPayloads("lastCompletionData")
 	t.NoError(err)
-	startedEventAttributes := &eventpb.WorkflowExecutionStartedEventAttributes{
+	startedEventAttributes := &historypb.WorkflowExecutionStartedEventAttributes{
 		Input:                           lastCompletionResult,
 		TaskList:                        &tasklistpb.TaskList{Name: taskList},
 		ParentWorkflowExecution:         parentExecution,
@@ -944,7 +945,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		WorkflowTaskTimeoutSeconds:      taskTimeout,
 		LastCompletionResult:            lastCompletionResult,
 	}
-	testEvents := []*eventpb.HistoryEvent{
+	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
 	}
 	task := createWorkflowTask(testEvents, 3, workflowType)
@@ -962,7 +963,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondDecisionTaskCompletedRequest)
 	t.True(ok)
-	t.EqualValues(decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
+	t.EqualValues(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
 	attr := r.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes()
 	var result WorkflowInfo
 	t.NoError(getDefaultDataConverter().FromPayloads(attr.Result, &result))
@@ -991,8 +992,8 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 	}
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
@@ -1016,17 +1017,17 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	signal, err := getDefaultDataConverter().ToPayloads("signal data")
 	t.NoError(err)
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			TaskList: &tasklistpb.TaskList{Name: taskList},
 			Input:    numberOfSignalsToComplete,
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 2, BinaryChecksum: checksum1}),
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
-		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(7),
 	}
 
@@ -1052,11 +1053,11 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	answer, _ := DefaultDataConverter.ToPayloads(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
-			ResultType: querypb.QUERY_RESULT_TYPE_ANSWERED,
+			ResultType: enumspb.QUERY_RESULT_TYPE_ANSWERED,
 			Answer:     answer,
 		},
 		"id2": {
-			ResultType:   querypb.QUERY_RESULT_TYPE_FAILED,
+			ResultType:   enumspb.QUERY_RESULT_TYPE_FAILED,
 			ErrorMessage: queryErr,
 		},
 	}
@@ -1072,11 +1073,11 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	answer, _ = DefaultDataConverter.ToPayloads("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
-			ResultType: querypb.QUERY_RESULT_TYPE_ANSWERED,
+			ResultType: enumspb.QUERY_RESULT_TYPE_ANSWERED,
 			Answer:     answer,
 		},
 		"id2": {
-			ResultType:   querypb.QUERY_RESULT_TYPE_FAILED,
+			ResultType:   enumspb.QUERY_RESULT_TYPE_FAILED,
 			ErrorMessage: queryErr,
 		},
 	}
@@ -1097,9 +1098,9 @@ func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*que
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_WorkflowCancel")
@@ -1116,16 +1117,16 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Decisions))
-	t.Equal(decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
+	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
 	t.NotNil(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	// Schedule a decision activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
 	task.NextPageToken = []byte("token")
@@ -1137,13 +1138,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 		Logger:    t.logger,
 	}
 
-	nextEvents := []*eventpb.HistoryEvent{
+	nextEvents := []*historypb.HistoryEvent{
 		createTestEventDecisionTaskStarted(3),
 	}
 
 	historyIterator := &historyIteratorImpl{
-		iteratorFunc: func(nextToken []byte) (*eventpb.History, []byte, error) {
-			return &eventpb.History{Events: nextEvents}, nil, nil
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{Events: nextEvents}, nil, nil
 		},
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -1182,13 +1183,13 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
 
 	decisionTaskStartedEvent := createTestEventDecisionTaskStarted(3)
 	decisionTaskStartedEvent.Timestamp = time.Now().UnixNano()
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
 			WorkflowTaskTimeoutSeconds: backoffIntervalInSeconds,
 			TaskList:                   &tasklistpb.TaskList{Name: testWorkflowTaskTasklist}},
 		),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		decisionTaskStartedEvent,
 	}
 
@@ -1444,17 +1445,17 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {
-	decisionTypes := decisionpb.DecisionType_name
+	decisionTypes := enumspb.DecisionType_name
 	delete(decisionTypes, 0) // Ignore "Unspecified".
 
 	require.Equal(t, 13, len(decisionTypes), "If you see this error, you are adding new decision type. "+
 		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
 		"to check the new decision type. Otherwise the replay will fail on the new decision event.")
 
-	eventTypes := eventpb.EventType_value
+	eventTypes := enumspb.EventType_value
 	decisionEventTypeCount := 0
 	for _, et := range eventTypes {
-		if isDecisionEvent(eventpb.EventType(et)) {
+		if isDecisionEvent(enumspb.EventType(et)) {
 			decisionEventTypeCount++
 		}
 	}
@@ -1464,14 +1465,14 @@ func Test_NonDeterministicCheck(t *testing.T) {
 }
 
 func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
-	diType := decisionpb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
-	eType := eventpb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
+	diType := enumspb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
+	eType := enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	strictMode := false
 
 	testCases := []struct {
 		name     string
 		decision *decisionpb.Decision
-		event    *eventpb.HistoryEvent
+		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
@@ -1482,7 +1483,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
-			event:    &eventpb.HistoryEvent{},
+			event:    &historypb.HistoryEvent{},
 			expected: false,
 		},
 		{
@@ -1493,9 +1494,9 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
-			event: &eventpb.HistoryEvent{
+			event: &historypb.HistoryEvent{
 				EventType:  eType,
-				Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{}}},
+				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{}}},
 			expected: true,
 		},
 		{
@@ -1506,9 +1507,9 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
-			event: &eventpb.HistoryEvent{
+			event: &historypb.HistoryEvent{
 				EventType: eType,
-				Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{
+				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
@@ -1527,7 +1528,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 	testCases = []struct {
 		name     string
 		decision *decisionpb.Decision
-		event    *eventpb.HistoryEvent
+		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
@@ -1538,9 +1539,9 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
-			event: &eventpb.HistoryEvent{
+			event: &historypb.HistoryEvent{
 				EventType:  eType,
-				Attributes: &eventpb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &eventpb.UpsertWorkflowSearchAttributesEventAttributes{}}},
+				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{}}},
 			expected: false,
 		},
 	}

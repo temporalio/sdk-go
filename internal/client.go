@@ -32,10 +32,9 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -162,7 +161,7 @@ type (
 		//			}
 		//			events = append(events, event)
 		//		}
-		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType filterpb.HistoryEventFilterType) HistoryEventIterator
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return acitivity.activity.ErrResultPending to
@@ -179,7 +178,7 @@ type (
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
-		// CompleteActivityById reports activity completed.
+		// CompleteActivityByID reports activity completed.
 		// Similar to CompleteActivity, but may save user from keeping taskToken info.
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
@@ -310,7 +309,7 @@ type (
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeTaskList(ctx context.Context, tasklist string, tasklistType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enumspb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
 
 		// Close client and clean up underlying resources.
 		Close()
@@ -640,27 +639,27 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 	}
 }
 
-func (p WorkflowIDReusePolicy) toProto() commonpb.WorkflowIdReusePolicy {
+func (p WorkflowIDReusePolicy) toProto() enumspb.WorkflowIdReusePolicy {
 	switch p {
 	case WorkflowIDReusePolicyAllowDuplicate:
-		return commonpb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
+		return enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
 	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		return commonpb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+		return enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	case WorkflowIDReusePolicyRejectDuplicate:
-		return commonpb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
+		return enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
 	default:
 		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
 	}
 }
 
-func (p ParentClosePolicy) toProto() commonpb.ParentClosePolicy {
+func (p ParentClosePolicy) toProto() enumspb.ParentClosePolicy {
 	switch p {
 	case ParentClosePolicyAbandon:
-		return commonpb.PARENT_CLOSE_POLICY_ABANDON
+		return enumspb.PARENT_CLOSE_POLICY_ABANDON
 	case ParentClosePolicyRequestCancel:
-		return commonpb.PARENT_CLOSE_POLICY_REQUEST_CANCEL
+		return enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL
 	case ParentClosePolicyTerminate:
-		return commonpb.PARENT_CLOSE_POLICY_TERMINATE
+		return enumspb.PARENT_CLOSE_POLICY_TERMINATE
 	default:
 		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}

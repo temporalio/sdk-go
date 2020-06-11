@@ -32,7 +32,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal-proto/workflowservice"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 )
 
 // ** This is for internal stress testing framework **

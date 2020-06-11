@@ -48,14 +48,13 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
-	filterpb "go.temporal.io/temporal-proto/filter"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -1148,7 +1147,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // ReplayWorkflowHistory executes a single decision task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *eventpb.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -1205,7 +1204,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	}
 
 	if hResponse.RawHistory != nil {
-		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		if err != nil {
 			return err
 		}
@@ -1216,7 +1215,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *eventpb.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskList := "ReplayTaskList"
 	events := history.Events
 	if events == nil {
@@ -1226,7 +1225,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return errors.New("at least 3 events expected in the history")
 	}
 	first := events[0]
-	if first.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+	if first.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
 		return errors.New("first event is not WorkflowExecutionStarted")
 	}
 	last := events[len(events)-1]
@@ -1277,7 +1276,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return err
 	}
 
-	if last.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED && last.GetEventType() != eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
+	if last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED && last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 		return nil
 	}
 
@@ -1285,8 +1284,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == decisionpb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
-					if last.GetEventType() == eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
+				if d.GetDecisionType() == enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
+					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().GetInput()
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
 						if proto.Equal(inputA, inputB) {
@@ -1294,8 +1293,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 						}
 					}
 				}
-				if d.GetDecisionType() == decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION {
-					if last.GetEventType() == eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+				if d.GetDecisionType() == enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION {
+					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
 						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
 						if proto.Equal(resultA, resultB) {
@@ -1309,13 +1308,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
 }
 
-func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.History, error) {
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {
 	reader, err := os.Open(jsonfileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var deserializedHistory eventpb.History
+	var deserializedHistory historypb.History
 	err = jsonpb.Unmarshal(reader, &deserializedHistory)
 
 	if err != nil {
@@ -1327,7 +1326,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.Hi
 	}
 
 	// Caller is potentially asking for subset of history instead of all history events
-	var events []*eventpb.HistoryEvent
+	var events []*historypb.HistoryEvent
 	for _, event := range deserializedHistory.Events {
 		events = append(events, event)
 		if event.GetEventId() == lastEventID {
@@ -1335,7 +1334,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*eventpb.Hi
 			break
 		}
 	}
-	history := &eventpb.History{Events: events}
+	history := &historypb.History{Events: events}
 
 	return history, nil
 }

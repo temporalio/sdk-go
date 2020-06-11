@@ -40,14 +40,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 
-	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
-	namespacepb "go.temporal.io/temporal-proto/namespace"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	namespacepb "go.temporal.io/temporal-proto/namespace/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -241,39 +242,39 @@ func testActivity(context.Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	taskList := "taskList1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
-		createTestEventActivityTaskScheduled(5, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "5",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(6, &eventpb.ActivityTaskStartedEventAttributes{
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 5,
 		}),
-		createTestEventActivityTaskCompleted(7, &eventpb.ActivityTaskCompletedEventAttributes{
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 5,
 			StartedEventId:   6,
 		}),
-		createTestEventDecisionTaskScheduled(8, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(8, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &eventpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(10, &historypb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 8,
 			StartedEventId:   9,
 		}),
-		createTestEventWorkflowExecutionCompleted(11, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 10,
 		}),
 	}
 
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflow)
@@ -283,33 +284,33 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskList := "taskList1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("5"),
 			DecisionTaskCompletedEventId: 4,
 		}),
-		createTestEventLocalActivity(6, &eventpb.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("6"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(7, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(7, &historypb.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
@@ -348,7 +349,7 @@ func testReplayWorkflowGetVersion(ctx Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion() {
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersion")
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersion)
@@ -387,7 +388,7 @@ func testReplayWorkflowGetVersionReplacedChangeID(ctx Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_ReplacedChangeID() {
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionReplacedChangeID")
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionReplacedChangeID)
@@ -421,7 +422,7 @@ func testReplayWorkflowGetVersionRemoved(ctx Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionRemoved() {
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionRemoved")
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionRemoved)
@@ -465,7 +466,7 @@ func testReplayWorkflowGetVersionAddNewBefore(ctx Context) error {
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_AddNewBefore() {
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionAddNewBefore")
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionAddNewBefore)
@@ -473,75 +474,75 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_AddNewBef
 	require.NoError(s.T(), err)
 }
 
-func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEvent {
+func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEvent {
 	taskList := "taskList1"
-	return []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	return []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
 		createTestEventVersionMarker(5, 4, "change_id_A", Version(3)),
 		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "change_id_A", Version(3)),
-		createTestEventActivityTaskScheduled(7, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventActivityTaskScheduled(7, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "7",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(8, &eventpb.ActivityTaskStartedEventAttributes{
+		createTestEventActivityTaskStarted(8, &historypb.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 7,
 		}),
-		createTestEventActivityTaskCompleted(9, &eventpb.ActivityTaskCompletedEventAttributes{
+		createTestEventActivityTaskCompleted(9, &historypb.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 7,
 			StartedEventId:   8,
 		}),
-		createTestEventDecisionTaskScheduled(10, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(11),
-		createTestEventDecisionTaskCompleted(12, &eventpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(12, &historypb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 10,
 			StartedEventId:   11,
 		}),
-		createTestEventActivityTaskScheduled(13, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "13",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(14, &eventpb.ActivityTaskStartedEventAttributes{
+		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 13,
 		}),
-		createTestEventActivityTaskCompleted(15, &eventpb.ActivityTaskCompletedEventAttributes{
+		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 13,
 			StartedEventId:   14,
 		}),
-		createTestEventDecisionTaskScheduled(16, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(16, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(17),
-		createTestEventDecisionTaskCompleted(18, &eventpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(18, &historypb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 16,
 			StartedEventId:   17,
 		}),
-		createTestEventActivityTaskScheduled(19, &eventpb.ActivityTaskScheduledEventAttributes{
+		createTestEventActivityTaskScheduled(19, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "19",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 		}),
-		createTestEventActivityTaskStarted(20, &eventpb.ActivityTaskStartedEventAttributes{
+		createTestEventActivityTaskStarted(20, &historypb.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 19,
 		}),
-		createTestEventActivityTaskCompleted(21, &eventpb.ActivityTaskCompletedEventAttributes{
+		createTestEventActivityTaskCompleted(21, &historypb.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 19,
 			StartedEventId:   20,
 		}),
 
-		createTestEventDecisionTaskScheduled(22, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(22, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(23),
-		createTestEventDecisionTaskCompleted(24, &eventpb.DecisionTaskCompletedEventAttributes{
+		createTestEventDecisionTaskCompleted(24, &historypb.DecisionTaskCompletedEventAttributes{
 			ScheduledEventId: 22,
 			StartedEventId:   23,
 		}),
-		createTestEventWorkflowExecutionCompleted(25, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(25, &historypb.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 24,
 		}),
 	}
@@ -550,34 +551,34 @@ func createHistoryForGetVersionTests(workflowType string) []*eventpb.HistoryEven
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskList := "taskList1"
 	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("5"),
 			DecisionTaskCompletedEventId: 4,
 		}),
-		createTestEventLocalActivity(6, &eventpb.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("6"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(7, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(7, &historypb.WorkflowExecutionCompletedEventAttributes{
 			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
@@ -592,29 +593,29 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskList := "taskList1"
 	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/temporal/internal.testReplayWorkflow"},
 			TaskList:     &tasklistpb.TaskList{Name: taskList},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &eventpb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &eventpb.MarkerRecordedEventAttributes{
+		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
 			DecisionTaskCompletedEventId: 4,
 		}),
 
-		createTestEventWorkflowExecutionCompleted(6, &eventpb.WorkflowExecutionCompletedEventAttributes{
+		createTestEventWorkflowExecutionCompleted(6, &historypb.WorkflowExecutionCompletedEventAttributes{
 			Result:                       result,
 			DecisionTaskCompletedEventId: 4,
 		}),
 	}
 
-	history := &eventpb.History{Events: testEvents}
+	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
 	replayer := NewWorkflowReplayer()
 	replayer.RegisterWorkflow(testReplayWorkflow)
@@ -640,12 +641,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 
 func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExecutionParameters) {
 	taskList := "taskList1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			TaskList: &tasklistpb.TaskList{Name: taskList},
 			Input:    testEncodeFunctionArgs(params.DataConverter),
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 		createTestEventDecisionTaskStarted(3),
 	}
 
@@ -656,7 +657,7 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	task := &workflowservice.PollForDecisionTaskResponse{
 		WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowType},
-		History:                &eventpb.History{Events: testEvents},
+		History:                &historypb.History{Events: testEvents},
 		PreviousStartedEventId: 0,
 	}
 
@@ -819,7 +820,7 @@ func createWorkerWithThrottle(
 	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc DataConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
-	namespaceStatus := namespacepb.NAMESPACE_STATUS_REGISTERED
+	namespaceStatus := enumspb.NAMESPACE_STATUS_REGISTERED
 	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
 		NamespaceInfo: &namespacepb.NamespaceInfo{
 			Name:   namespace,

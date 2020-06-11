@@ -29,8 +29,9 @@ import (
 	"fmt"
 	"reflect"
 
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
+	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 )
 
 func anyToString(d interface{}) string {
@@ -82,70 +83,70 @@ func valueToString(v reflect.Value) string {
 }
 
 // HistoryEventToString convert HistoryEvent to string
-func HistoryEventToString(e *eventpb.HistoryEvent) string {
+func HistoryEventToString(e *historypb.HistoryEvent) string {
 	var data interface{}
 	switch e.GetEventType() {
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 		data = e.GetWorkflowExecutionStartedEventAttributes()
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		data = e.GetWorkflowExecutionCompletedEventAttributes()
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		data = e.GetWorkflowExecutionFailedEventAttributes()
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		data = e.GetWorkflowExecutionTimedOutEventAttributes()
 
-	case eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
 		data = e.GetDecisionTaskScheduledEventAttributes()
 
-	case eventpb.EVENT_TYPE_DECISION_TASK_STARTED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
 		data = e.GetDecisionTaskStartedEventAttributes()
 
-	case eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED:
+	case enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED:
 		data = e.GetDecisionTaskCompletedEventAttributes()
 
-	case eventpb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
 		data = e.GetDecisionTaskTimedOutEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		data = e.GetActivityTaskScheduledEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 		data = e.GetActivityTaskStartedEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
 		data = e.GetActivityTaskCompletedEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
 		data = e.GetActivityTaskFailedEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		data = e.GetActivityTaskTimedOutEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
 		data = e.GetActivityTaskCancelRequestedEventAttributes()
 
-	case eventpb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
+	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
 		data = e.GetActivityTaskCanceledEventAttributes()
 
-	case eventpb.EVENT_TYPE_TIMER_STARTED:
+	case enumspb.EVENT_TYPE_TIMER_STARTED:
 		data = e.GetTimerStartedEventAttributes()
 
-	case eventpb.EVENT_TYPE_TIMER_FIRED:
+	case enumspb.EVENT_TYPE_TIMER_FIRED:
 		data = e.GetTimerFiredEventAttributes()
 
-	case eventpb.EVENT_TYPE_CANCEL_TIMER_FAILED:
+	case enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED:
 		data = e.GetCancelTimerFailedEventAttributes()
 
-	case eventpb.EVENT_TYPE_TIMER_CANCELED:
+	case enumspb.EVENT_TYPE_TIMER_CANCELED:
 		data = e.GetTimerCanceledEventAttributes()
 
-	case eventpb.EVENT_TYPE_MARKER_RECORDED:
+	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		data = e.GetMarkerRecordedEventAttributes()
 
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		data = e.GetWorkflowExecutionTerminatedEventAttributes()
 
 	default:
@@ -159,25 +160,25 @@ func HistoryEventToString(e *eventpb.HistoryEvent) string {
 func DecisionToString(d *decisionpb.Decision) string {
 	var data interface{}
 	switch d.GetDecisionType() {
-	case decisionpb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
+	case enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
 		data = d.GetScheduleActivityTaskDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
+	case enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
 		data = d.GetRequestCancelActivityTaskDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_START_TIMER:
+	case enumspb.DECISION_TYPE_START_TIMER:
 		data = d.GetStartTimerDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_CANCEL_TIMER:
+	case enumspb.DECISION_TYPE_CANCEL_TIMER:
 		data = d.GetCancelTimerDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
+	case enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
 		data = d.GetCompleteWorkflowExecutionDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
+	case enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
 		data = d.GetFailWorkflowExecutionDecisionAttributes()
 
-	case decisionpb.DECISION_TYPE_RECORD_MARKER:
+	case enumspb.DECISION_TYPE_RECORD_MARKER:
 		data = d.GetRecordMarkerDecisionAttributes()
 
 	default:

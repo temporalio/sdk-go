@@ -29,8 +29,9 @@ import (
 	"fmt"
 	"reflect"
 
-	commonpb "go.temporal.io/temporal-proto/common"
-	failurepb "go.temporal.io/temporal-proto/failure"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	failurepb "go.temporal.io/temporal-proto/failure/v1"
 )
 
 /*
@@ -128,7 +129,7 @@ type (
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		temporalError
-		timeoutType          commonpb.TimeoutType
+		timeoutType          enumspb.TimeoutType
 		lastHeartbeatDetails Values
 		cause                error
 	}
@@ -185,7 +186,7 @@ type (
 		identity         string
 		activityType     *commonpb.ActivityType
 		activityID       string
-		retryStatus      commonpb.RetryStatus
+		retryStatus      enumspb.RetryStatus
 		cause            error
 	}
 
@@ -199,7 +200,7 @@ type (
 		workflowType     string
 		initiatedEventID int64
 		startedEventID   int64
-		retryStatus      commonpb.RetryStatus
+		retryStatus      enumspb.RetryStatus
 		cause            error
 	}
 
@@ -258,7 +259,7 @@ func NewApplicationError(message string, nonRetryable bool, cause error, details
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(timeoutType commonpb.TimeoutType, cause error, lastHeatbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enumspb.TimeoutType, cause error, lastHeatbeatDetails ...interface{}) *TimeoutError {
 	timeoutErr := &TimeoutError{
 		timeoutType: timeoutType,
 		cause:       cause,
@@ -276,7 +277,7 @@ func NewTimeoutError(timeoutType commonpb.TimeoutType, cause error, lastHeatbeat
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(commonpb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
+	return NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -301,7 +302,7 @@ func NewActivityError(
 	identity string,
 	activityType *commonpb.ActivityType,
 	activityID string,
-	retryStatus commonpb.RetryStatus,
+	retryStatus enumspb.RetryStatus,
 	cause error,
 ) *ActivityError {
 	return &ActivityError{
@@ -323,7 +324,7 @@ func NewChildWorkflowExecutionError(
 	workflowType string,
 	initiatedEventID int64,
 	startedEventID int64,
-	retryStatus commonpb.RetryStatus,
+	retryStatus enumspb.RetryStatus,
 	cause error,
 ) *ChildWorkflowExecutionError {
 	return &ChildWorkflowExecutionError{
@@ -442,7 +443,7 @@ func (e *TimeoutError) Unwrap() error {
 }
 
 // TimeoutType return timeout type of this error
-func (e *TimeoutError) TimeoutType() commonpb.TimeoutType {
+func (e *TimeoutError) TimeoutType() enumspb.TimeoutType {
 	return e.timeoutType
 }
 
@@ -616,8 +617,8 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != commonpb.TIMEOUT_TYPE_START_TO_CLOSE &&
-			timeoutErr.timeoutType != commonpb.TIMEOUT_TYPE_HEARTBEAT {
+		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
+			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
 			return false
 		}
 	}

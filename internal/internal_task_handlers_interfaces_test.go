@@ -30,11 +30,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 
-	eventpb "go.temporal.io/temporal-proto/event"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 )
 
 type (
@@ -149,26 +150,26 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	// Schedule an activity and see if we complete workflow.
 	taskList := "tl1"
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: eventpb.EVENT_TYPE_DECISION_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_DECISION_TASK_FAILED,
 		},
 		{
 			EventId:   5,
-			EventType: eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
 		},
-		createTestEventDecisionTaskScheduled(6, &eventpb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
 		createTestEventDecisionTaskStarted(7),
 	}
 	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "HelloWorld_Workflow", nil, false)
 
 	historyIterator := &historyIteratorImpl{
-		iteratorFunc: func(nextToken []byte) (*eventpb.History, []byte, error) {
-			return &eventpb.History{
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{
 				Events: testEvents[3:],
 			}, nil, nil
 		},
@@ -183,7 +184,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	s.NoError(err)
 	s.Equal(3, len(events))
-	s.Equal(eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, events[1].GetEventType())
-	s.Equal(eventpb.EVENT_TYPE_DECISION_TASK_STARTED, events[2].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_DECISION_TASK_STARTED, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

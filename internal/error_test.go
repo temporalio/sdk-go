@@ -31,11 +31,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	failurepb "go.temporal.io/temporal-proto/failure"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	failurepb "go.temporal.io/temporal-proto/failure/v1"
 
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.uber.org/zap"
 )
 
@@ -101,7 +102,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(commonpb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
+	timeoutErr := NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
 	require.False(t, timeoutErr.HasLastHeartbeatDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.LastHeartbeatDetails(&data))
@@ -113,12 +114,12 @@ func Test_TimeoutError(t *testing.T) {
 }
 
 func Test_TimeoutError_WithDetails(t *testing.T) {
-	testTimeoutErrorDetails(t, commonpb.TIMEOUT_TYPE_HEARTBEAT)
-	testTimeoutErrorDetails(t, commonpb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE)
-	testTimeoutErrorDetails(t, commonpb.TIMEOUT_TYPE_START_TO_CLOSE)
+	testTimeoutErrorDetails(t, enumspb.TIMEOUT_TYPE_HEARTBEAT)
+	testTimeoutErrorDetails(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE)
+	testTimeoutErrorDetails(t, enumspb.TIMEOUT_TYPE_START_TO_CLOSE)
 }
 
-func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
+func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
 		decisionsHelper: newDecisionsHelper(),
 		dataConverter:   getDefaultDataConverter(),
@@ -138,14 +139,14 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType commonpb.TimeoutType) {
 	})
 	context.decisionsHelper.addDecision(di)
 	encodedDetails1, _ := context.dataConverter.ToPayloads(testErrorDetails1)
-	event := createTestEventActivityTaskTimedOut(7, &eventpb.ActivityTaskTimedOutEventAttributes{
+	event := createTestEventActivityTaskTimedOut(7, &historypb.ActivityTaskTimedOutEventAttributes{
 		Failure: &failurepb.Failure{
 			FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
 				LastHeartbeatDetails: encodedDetails1,
 				TimeoutType:          timeoutType,
 			}},
 		},
-		RetryStatus:      commonpb.RETRY_STATUS_TIMEOUT,
+		RetryStatus:      enumspb.RETRY_STATUS_TIMEOUT,
 		ScheduledEventId: 5,
 		StartedEventId:   6,
 	})
@@ -429,9 +430,9 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	})
 	context.decisionsHelper.addDecision(di)
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
-	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &eventpb.SignalExternalWorkflowExecutionFailedEventAttributes{
+	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &historypb.SignalExternalWorkflowExecutionFailedEventAttributes{
 		InitiatedEventId: initiatedEventID,
-		Cause:            eventpb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND,
+		Cause:            enumspb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND,
 	})
 	require.NoError(t, weh.handleSignalExternalWorkflowExecutionFailed(event))
 	_, ok := actualErr.(*UnknownExternalWorkflowExecutionError)
@@ -517,10 +518,10 @@ func Test_IsRetryable(t *testing.T) {
 	require.False(IsRetryable(NewApplicationError("", true, nil), []string{}))
 	require.True(IsRetryable(NewApplicationError("", false, nil), []string{}))
 
-	require.True(IsRetryable(NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(commonpb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(commonpb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), []string{}))
-	require.True(IsRetryable(NewTimeoutError(commonpb.TIMEOUT_TYPE_HEARTBEAT, nil), []string{}))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), []string{}))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), []string{}))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), []string{}))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), []string{}))
 
 	require.False(IsRetryable(NewServerError("", true, nil), []string{}))
 	require.True(IsRetryable(NewServerError("", false, nil), []string{}))
@@ -533,7 +534,7 @@ func Test_IsRetryable(t *testing.T) {
 	require.True(IsRetryable(coolErr, []string{}))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
 
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityError(0, 0, "", nil, "", commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE, coolErr))
+	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityError(0, 0, "", nil, "", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, coolErr))
 	require.True(IsRetryable(workflowExecutionErr, []string{}))
 	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
 }
@@ -610,10 +611,10 @@ func Test_convertErrorToFailure_PanicError(t *testing.T) {
 func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewTimeoutError(commonpb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
+	err := NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("TimeoutType: Heartbeat, Cause: cool error", f.GetMessage())
-	require.Equal(commonpb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
+	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(convertErrorToFailure(&coolError{}, DefaultDataConverter), f.GetCause())
 	require.Equal(f.GetCause(), convertErrorToFailure(&coolError{}, DefaultDataConverter))
 
@@ -657,7 +658,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true, nil)
-	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
+	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
@@ -665,7 +666,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require.Equal("alex", f.GetActivityFailureInfo().GetIdentity())
 	require.Equal("activityType", f.GetActivityFailureInfo().GetActivityType().GetName())
 	require.Equal("32283", f.GetActivityFailureInfo().GetActivityId())
-	require.Equal(commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetActivityFailureInfo().GetRetryStatus())
+	require.Equal(enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetActivityFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -684,13 +685,13 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", true, nil)
-	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
+	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
-	require.Equal(commonpb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
+	require.Equal(enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -831,7 +832,7 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	require := require.New(t)
 	f := &failurepb.Failure{
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
-			TimeoutType:          commonpb.TIMEOUT_TYPE_HEARTBEAT,
+			TimeoutType:          enumspb.TIMEOUT_TYPE_HEARTBEAT,
 			LastHeartbeatDetails: nil,
 		}},
 	}
@@ -840,7 +841,7 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
 	require.Equal("TimeoutType: Heartbeat, Cause: <nil>", timeoutErr.Error())
-	require.Equal(commonpb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
 }
 
 func Test_convertFailureToError_ServerFailure(t *testing.T) {
