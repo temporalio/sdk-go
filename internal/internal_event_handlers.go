@@ -38,11 +38,11 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/temporal-proto/common/v1"
 	decisionpb "go.temporal.io/temporal-proto/decision/v1"
-	historypb "go.temporal.io/temporal-proto/history/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	failurepb "go.temporal.io/temporal-proto/failure/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
 	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 

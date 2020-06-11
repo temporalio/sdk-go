@@ -29,6 +29,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/temporal-proto/common/v1"
+
 	"go.temporal.io/temporal/encoded"
 	bindings "go.temporal.io/temporal/internalbindings"
 	"go.temporal.io/temporal/workflow"
