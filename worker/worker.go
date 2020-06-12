@@ -28,8 +28,8 @@ package worker
 import (
 	"context"
 
-	eventpb "go.temporal.io/temporal-proto/event"
-	"go.temporal.io/temporal-proto/workflowservice"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/activity"
@@ -139,7 +139,7 @@ type (
 		// ReplayWorkflowHistory executes a single decision task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayWorkflowHistory(logger *zap.Logger, history *eventpb.History) error
+		ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>

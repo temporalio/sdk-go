@@ -37,12 +37,11 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common"
-	decisionpb "go.temporal.io/temporal-proto/decision"
-	eventpb "go.temporal.io/temporal-proto/event"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common"
@@ -109,7 +108,7 @@ type (
 	}
 
 	historyIteratorImpl struct {
-		iteratorFunc  func(nextPageToken []byte) (*eventpb.History, []byte, error)
+		iteratorFunc  func(nextPageToken []byte) (*historypb.History, []byte, error)
 		execution     *commonpb.WorkflowExecution
 		nextPageToken []byte
 		namespace     string
@@ -384,7 +383,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				}
 			case *workflowservice.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
-					request.StickyAttributes = &decisionpb.StickyExecutionAttributes{
+					request.StickyAttributes = &tasklistpb.StickyExecutionAttributes{
 						WorkerTaskList:                &tasklistpb.TaskList{Name: getWorkerTaskList(wtp.stickyUUID)},
 						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
@@ -582,13 +581,13 @@ WaitResult:
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 
-func (wtp *workflowTaskPoller) release(kind tasklistpb.TaskListKind) {
+func (wtp *workflowTaskPoller) release(kind enumspb.TaskListKind) {
 	if wtp.disableStickyExecution {
 		return
 	}
 
 	wtp.requestLock.Lock()
-	if kind == tasklistpb.TASK_LIST_KIND_STICKY {
+	if kind == enumspb.TASK_LIST_KIND_STICKY {
 		wtp.pendingStickyPollCount--
 	} else {
 		wtp.pendingRegularPollCount--
@@ -596,8 +595,8 @@ func (wtp *workflowTaskPoller) release(kind tasklistpb.TaskListKind) {
 	wtp.requestLock.Unlock()
 }
 
-func (wtp *workflowTaskPoller) updateBacklog(taskListKind tasklistpb.TaskListKind, backlogCountHint int64) {
-	if taskListKind == tasklistpb.TASK_LIST_KIND_NORMAL || wtp.disableStickyExecution {
+func (wtp *workflowTaskPoller) updateBacklog(taskListKind enumspb.TaskListKind, backlogCountHint int64) {
+	if taskListKind == enumspb.TASK_LIST_KIND_NORMAL || wtp.disableStickyExecution {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -615,13 +614,13 @@ func (wtp *workflowTaskPoller) updateBacklog(taskListKind tasklistpb.TaskListKin
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollForDecisionTaskRequest) {
 	taskListName := wtp.taskListName
-	taskListKind := tasklistpb.TASK_LIST_KIND_NORMAL
+	taskListKind := enumspb.TASK_LIST_KIND_NORMAL
 	if !wtp.disableStickyExecution {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskListName = getWorkerTaskList(wtp.stickyUUID)
-			taskListKind = tasklistpb.TASK_LIST_KIND_STICKY
+			taskListKind = enumspb.TASK_LIST_KIND_STICKY
 		} else {
 			wtp.pendingRegularPollCount++
 		}
@@ -708,7 +707,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollForD
 	return task
 }
 
-func (h *historyIteratorImpl) GetNextPage() (*eventpb.History, error) {
+func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 	if h.iteratorFunc == nil {
 		h.iteratorFunc = newGetHistoryPageFunc(
 			context.Background(),
@@ -742,8 +741,8 @@ func newGetHistoryPageFunc(
 	execution *commonpb.WorkflowExecution,
 	atDecisionTaskCompletedEventID int64,
 	metricsScope tally.Scope,
-) func(nextPageToken []byte) (*eventpb.History, []byte, error) {
-	return func(nextPageToken []byte) (*eventpb.History, []byte, error) {
+) func(nextPageToken []byte) (*historypb.History, []byte, error) {
+	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
 		metricsScope.Counter(metrics.WorkflowGetHistoryCounter).Inc(1)
 		startTime := time.Now()
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
@@ -768,11 +767,11 @@ func newGetHistoryPageFunc(
 		metricsScope.Counter(metrics.WorkflowGetHistorySucceedCounter).Inc(1)
 		metricsScope.Timer(metrics.WorkflowGetHistoryLatency).Record(time.Since(startTime))
 
-		var h *eventpb.History
+		var h *historypb.History
 
 		if resp.RawHistory != nil {
 			var err1 error
-			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 			if err1 != nil {
 				return nil, nil, nil
 			}
@@ -785,7 +784,7 @@ func newGetHistoryPageFunc(
 			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
 			first := h.Events[0].GetEventId() // eventIds start from 1
 			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != eventpb.EVENT_TYPE_DECISION_TASK_COMPLETED {
+			if h.Events[len(h.Events)-1].GetEventType() != enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED {
 				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
 					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
 			}

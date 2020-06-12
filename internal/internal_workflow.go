@@ -39,7 +39,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
-	commonpb "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )

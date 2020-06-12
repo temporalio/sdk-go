@@ -30,9 +30,9 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 
-	eventpb "go.temporal.io/temporal-proto/event"
-	filterpb "go.temporal.io/temporal-proto/filter"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/workflow"
@@ -91,10 +91,10 @@ func Test_MockClient(t *testing.T) {
 
 	mockHistoryIter := &HistoryEventIterator{}
 	mockHistoryIter.On("HasNext").Return(true).Once()
-	mockHistoryIter.On("Next").Return(&eventpb.HistoryEvent{}, nil).Once()
+	mockHistoryIter.On("Next").Return(&historypb.HistoryEvent{}, nil).Once()
 	mockClient.On("GetWorkflowHistory", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(mockHistoryIter).Once()
-	historyIter := mockClient.GetWorkflowHistory(context.Background(), testWorkflowID, testRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+	historyIter := mockClient.GetWorkflowHistory(context.Background(), testWorkflowID, testRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	mockClient.AssertExpectations(t)
 	require.NotNil(t, historyIter)
 	require.Equal(t, true, historyIter.HasNext())

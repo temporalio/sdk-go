@@ -36,12 +36,9 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
-	executionpb "go.temporal.io/temporal-proto/execution"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	querypb "go.temporal.io/temporal-proto/query"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	"go.temporal.io/temporal-proto/workflowservice"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 
@@ -175,7 +172,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
 		"test-activity-retry-on-start2close-timeout",
 		ts.workflows.ActivityRetryOnTimeout,
 		&expected,
-		commonpb.TIMEOUT_TYPE_START_TO_CLOSE)
+		enumspb.TIMEOUT_TYPE_START_TO_CLOSE)
 
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -259,7 +256,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 		WorkflowID:            "test-consistent-query",
 		RunID:                 run.GetRunID(),
 		QueryType:             "consistent_query",
-		QueryConsistencyLevel: querypb.QUERY_CONSISTENCY_LEVEL_STRONG,
+		QueryConsistencyLevel: enumspb.QUERY_CONSISTENCY_LEVEL_STRONG,
 	})
 	ts.Nil(err)
 	ts.NotNil(value)
@@ -368,7 +365,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(executionpb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -385,7 +382,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
 		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(executionpb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -481,7 +478,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	}
 	err = run.Get(ctx, retValPtr)
 	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, filterpb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err1 := iter.Next()
 			if err1 != nil {

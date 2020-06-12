@@ -29,9 +29,9 @@ import (
 	"fmt"
 
 	"github.com/gogo/protobuf/proto"
-	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
-	filterpb "go.temporal.io/temporal-proto/filter"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
 )
 
@@ -68,16 +68,16 @@ type (
 
 	// UnknownEncodingTypeError is an error type for unknown or unsupported encoding type
 	UnknownEncodingTypeError struct {
-		encodingType commonpb.EncodingType
+		encodingType enumspb.EncodingType
 	}
 )
 
 // SerializeBatchEvents serializes batch events into a datablob proto
-func SerializeBatchEvents(events []*eventpb.HistoryEvent, encodingType commonpb.EncodingType) (*commonpb.DataBlob, error) {
-	return serialize(&eventpb.History{Events: events}, encodingType)
+func SerializeBatchEvents(events []*historypb.HistoryEvent, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
+	return serialize(&historypb.History{Events: events}, encodingType)
 }
 
-func serializeProto(p proto.Marshaler, encodingType commonpb.EncodingType) (*commonpb.DataBlob, error) {
+func serializeProto(p proto.Marshaler, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -86,10 +86,10 @@ func serializeProto(p proto.Marshaler, encodingType commonpb.EncodingType) (*com
 	var err error
 
 	switch encodingType {
-	case commonpb.ENCODING_TYPE_PROTO3:
+	case enumspb.ENCODING_TYPE_PROTO3:
 		data, err = p.Marshal()
-	case commonpb.ENCODING_TYPE_JSON:
-		encodingType = commonpb.ENCODING_TYPE_JSON
+	case enumspb.ENCODING_TYPE_JSON:
+		encodingType = enumspb.ENCODING_TYPE_JSON
 		pb, ok := p.(proto.Message)
 		if !ok {
 			return nil, NewSerializationError("could not cast protomarshal interface to proto.message")
@@ -112,7 +112,7 @@ func serializeProto(p proto.Marshaler, encodingType commonpb.EncodingType) (*com
 }
 
 // DeserializeBatchEvents deserializes batch events from a datablob proto
-func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*eventpb.HistoryEvent, error) {
+func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*historypb.HistoryEvent, error) {
 	if data == nil {
 		return nil, nil
 	}
@@ -120,12 +120,12 @@ func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*eventpb.HistoryEvent, e
 		return nil, nil
 	}
 
-	events := &eventpb.History{}
+	events := &historypb.History{}
 	var err error
 	switch data.EncodingType {
-	case commonpb.ENCODING_TYPE_JSON:
+	case enumspb.ENCODING_TYPE_JSON:
 		err = NewJSONPBEncoder().Decode(data.Data, events)
-	case commonpb.ENCODING_TYPE_PROTO3:
+	case enumspb.ENCODING_TYPE_PROTO3:
 		err = proto.Unmarshal(data.Data, events)
 	default:
 		return nil, NewDeserializationError("DeserializeBatchEvents invalid encoding")
@@ -136,7 +136,7 @@ func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*eventpb.HistoryEvent, e
 	return events.Events, nil
 }
 
-func serialize(input interface{}, encodingType commonpb.EncodingType) (*commonpb.DataBlob, error) {
+func serialize(input interface{}, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -149,7 +149,7 @@ func serialize(input interface{}, encodingType commonpb.EncodingType) (*commonpb
 	var err error
 
 	switch encodingType {
-	case commonpb.ENCODING_TYPE_JSON: // For backward-compatibility
+	case enumspb.ENCODING_TYPE_JSON: // For backward-compatibility
 		data, err = json.Marshal(input)
 	default:
 		return nil, NewUnknownEncodingTypeError(encodingType)
@@ -163,7 +163,7 @@ func serialize(input interface{}, encodingType commonpb.EncodingType) (*commonpb
 }
 
 // NewUnknownEncodingTypeError returns a new instance of encoding type error
-func NewUnknownEncodingTypeError(encodingType commonpb.EncodingType) error {
+func NewUnknownEncodingTypeError(encodingType enumspb.EncodingType) error {
 	return &UnknownEncodingTypeError{encodingType: encodingType}
 }
 
@@ -190,7 +190,7 @@ func (e *DeserializationError) Error() string {
 }
 
 // NewDataBlob creates new blob data
-func NewDataBlob(data []byte, encodingType commonpb.EncodingType) *commonpb.DataBlob {
+func NewDataBlob(data []byte, encodingType enumspb.EncodingType) *commonpb.DataBlob {
 	if len(data) == 0 {
 		return nil
 	}
@@ -203,10 +203,10 @@ func NewDataBlob(data []byte, encodingType commonpb.EncodingType) *commonpb.Data
 
 // DeserializeBlobDataToHistoryEvents deserialize the blob data to history event data
 func DeserializeBlobDataToHistoryEvents(
-	dataBlobs []*commonpb.DataBlob, filterType filterpb.HistoryEventFilterType,
-) (*eventpb.History, error) {
+	dataBlobs []*commonpb.DataBlob, filterType enumspb.HistoryEventFilterType,
+) (*historypb.History, error) {
 
-	var historyEvents []*eventpb.HistoryEvent
+	var historyEvents []*historypb.HistoryEvent
 
 	for _, batch := range dataBlobs {
 		events, err := DeserializeBatchEvents(batch)
@@ -222,8 +222,8 @@ func DeserializeBlobDataToHistoryEvents(
 		historyEvents = append(historyEvents, events...)
 	}
 
-	if filterType == filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT {
-		historyEvents = []*eventpb.HistoryEvent{historyEvents[len(historyEvents)-1]}
+	if filterType == enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT {
+		historyEvents = []*historypb.HistoryEvent{historyEvents[len(historyEvents)-1]}
 	}
-	return &eventpb.History{Events: historyEvents}, nil
+	return &historypb.History{Events: historyEvents}, nil
 }

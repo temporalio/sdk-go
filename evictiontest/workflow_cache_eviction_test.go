@@ -41,11 +41,12 @@ import (
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -92,26 +93,26 @@ func TestWorkersTestSuite(t *testing.T) {
 	suite.Run(t, new(CacheEvictionSuite))
 }
 
-func createTestEventWorkflowExecutionStarted(eventID int64, attr *eventpb.WorkflowExecutionStartedEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventWorkflowExecutionStarted(eventID int64, attr *historypb.WorkflowExecutionStartedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-		Attributes: &eventpb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskScheduled(eventID int64, attr *eventpb.DecisionTaskScheduledEventAttributes) *eventpb.HistoryEvent {
-	return &eventpb.HistoryEvent{
+func createTestEventDecisionTaskScheduled(eventID int64, attr *historypb.DecisionTaskScheduledEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  eventpb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
-		Attributes: &eventpb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
 }
 
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
-	testEvents := []*eventpb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &eventpb.WorkflowExecutionStartedEventAttributes{
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			TaskList: &tasklistpb.TaskList{Name: "tasklist"},
 		}),
-		createTestEventDecisionTaskScheduled(2, &eventpb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 	}
 
 	var taskCounter atomic.Int32 // lambda variable to keep count
@@ -129,7 +130,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 			TaskToken:              make([]byte, 5),
 			WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 			WorkflowType:           &commonpb.WorkflowType{Name: "testReplayWorkflow"},
-			History:                &eventpb.History{Events: testEvents},
+			History:                &historypb.History{Events: testEvents},
 			PreviousStartedEventId: 5}
 		return ret, nil
 	}

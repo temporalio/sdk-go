@@ -35,15 +35,15 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/zap"
 
-	commonpb "go.temporal.io/temporal-proto/common"
-	eventpb "go.temporal.io/temporal-proto/event"
-	filterpb "go.temporal.io/temporal-proto/filter"
-	querypb "go.temporal.io/temporal-proto/query"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	historypb "go.temporal.io/temporal-proto/history/v1"
+	querypb "go.temporal.io/temporal-proto/query/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist"
-	"go.temporal.io/temporal-proto/workflowservice"
+	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
 
 	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/backoff"
@@ -130,7 +130,7 @@ type (
 		//	- EntityNotExistsError
 		//	- BadRequestError
 		//	- InternalServiceError
-		Next() (*eventpb.HistoryEvent, error)
+		Next() (*historypb.HistoryEvent, error)
 	}
 
 	// historyEventIteratorImpl is the implementation of HistoryEventIterator
@@ -139,7 +139,7 @@ type (
 		initialized bool
 		// local cached history events and corresponding consuming index
 		nextEventIndex int
-		events         []*eventpb.HistoryEvent
+		events         []*historypb.HistoryEvent
 		// token to get next page of history events
 		nexttoken []byte
 		// err when getting next page of history events
@@ -278,7 +278,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
 	return &workflowRunImpl{
@@ -299,7 +299,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, filterpb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
 	return &workflowRunImpl{
@@ -484,7 +484,7 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 // GetWorkflowHistory return a channel which contains the history events of a given workflow
 func (wc *WorkflowClient) GetWorkflowHistory(ctx context.Context, workflowID string, runID string,
-	isLongPoll bool, filterType filterpb.HistoryEventFilterType) HistoryEventIterator {
+	isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator {
 
 	namespace := wc.namespace
 	paginate := func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
@@ -840,12 +840,12 @@ type QueryWorkflowWithOptionsRequest struct {
 	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
 	// QueryRejectConditionNotOpen will reject queries to workflows which are not open
 	// QueryRejectConditionNotCompletedCleanly will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...)
-	QueryRejectCondition querypb.QueryRejectCondition
+	QueryRejectCondition enumspb.QueryRejectCondition
 
 	// QueryConsistencyLevel is an optional field used to control the consistency level.
 	// QueryConsistencyLevelEventual means that query will eventually reflect up to date state of a workflow.
 	// QueryConsistencyLevelStrong means that query will reflect a workflow state of having applied all events which came before the query.
-	QueryConsistencyLevel querypb.QueryConsistencyLevel
+	QueryConsistencyLevel enumspb.QueryConsistencyLevel
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -920,7 +920,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType tasklistpb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
+func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enumspb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
 	request := &workflowservice.DescribeTaskListRequest{
 		Namespace:    wc.namespace,
 		TaskList:     &tasklistpb.TaskList{Name: taskList},
@@ -1059,7 +1059,7 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 	return false
 }
 
-func (iter *historyEventIteratorImpl) Next() (*eventpb.HistoryEvent, error) {
+func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
 	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
 		panic("HistoryEventIterator Next() called without checking HasNext()")
@@ -1100,7 +1100,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	}
 
 	switch closeEvent.GetEventType() {
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
@@ -1110,18 +1110,18 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 			return errors.New("value parameter is not a pointer")
 		}
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
 		err = NewCanceledError(details)
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
-		err = NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
-	case eventpb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		err = NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
 		return workflowRun.Get(ctx, valuePtr)

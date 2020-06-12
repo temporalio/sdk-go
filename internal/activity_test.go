@@ -35,8 +35,8 @@ import (
 	"go.temporal.io/temporal-proto/serviceerror"
 	"google.golang.org/grpc"
 
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 )
 
 type activityTestSuite struct {

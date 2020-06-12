@@ -27,7 +27,7 @@ package temporal
 import (
 	"errors"
 
-	commonpb "go.temporal.io/temporal-proto/common"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
 
 	"go.temporal.io/temporal/internal"
@@ -212,7 +212,7 @@ func IsPanicError(err error) bool {
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType commonpb.TimeoutType, lastErr error, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...interface{}) *TimeoutError {
 	return internal.NewTimeoutError(timeoutType, lastErr, details...)
 }
 

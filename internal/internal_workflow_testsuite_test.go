@@ -35,7 +35,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -2872,7 +2873,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
+		return NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {
@@ -2899,7 +2900,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasLastHeartbeatDetails())
 	var details string
 	err = timeoutErr.LastHeartbeatDetails(&details)
@@ -2914,7 +2915,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	s.Error(err)
 	timeoutErr, ok = err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasLastHeartbeatDetails())
 	err = timeoutErr.LastHeartbeatDetails(&details)
 	s.NoError(err)
@@ -2945,7 +2946,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Error(err)
 	timeoutErr, ok := err.(*TimeoutError)
 	s.True(ok)
-	s.Equal(commonpb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.Equal("context deadline exceeded", timeoutErr.cause.Error())
 }
 

@@ -33,12 +33,13 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common"
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/zap"
 
-	namespacepb "go.temporal.io/temporal-proto/namespace"
-	"go.temporal.io/temporal-proto/workflowservice"
-	"go.temporal.io/temporal-proto/workflowservicemock"
+	namespacepb "go.temporal.io/temporal-proto/namespace/v1"
+	"go.temporal.io/temporal-proto/workflowservice/v1"
+	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 )
 
 const (
@@ -188,7 +189,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		Tracer:                       opentracing.NoopTracer{},
 	}
 
-	namespaceStatus := namespacepb.NAMESPACE_STATUS_REGISTERED
+	namespaceStatus := enumspb.NAMESPACE_STATUS_REGISTERED
 	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
 		NamespaceInfo: &namespacepb.NamespaceInfo{
 			Name:   namespace,
