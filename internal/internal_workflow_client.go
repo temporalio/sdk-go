@@ -837,15 +837,10 @@ type QueryWorkflowWithOptionsRequest struct {
 	// Args is an optional field used to identify the arguments passed to the query.
 	Args []interface{}
 
-	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
-	// QueryRejectConditionNotOpen will reject queries to workflows which are not open
-	// QueryRejectConditionNotCompletedCleanly will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...)
+	// QUERY_REJECT_CONDITION_UNSPECIFIED is an optional field used to reject queries based on workflow state.
+	// QUERY_REJECT_CONDITION_NOT_OPEN will reject queries to workflows which are not open.
+	// QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...).
 	QueryRejectCondition enumspb.QueryRejectCondition
-
-	// QueryConsistencyLevel is an optional field used to control the consistency level.
-	// QueryConsistencyLevelEventual means that query will eventually reflect up to date state of a workflow.
-	// QueryConsistencyLevelStrong means that query will reflect a workflow state of having applied all events which came before the query.
-	QueryConsistencyLevel enumspb.QueryConsistencyLevel
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -883,8 +878,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 			QueryType: request.QueryType,
 			QueryArgs: input,
 		},
-		QueryRejectCondition:  request.QueryRejectCondition,
-		QueryConsistencyLevel: request.QueryConsistencyLevel,
+		QueryRejectCondition: request.QueryRejectCondition,
 	}
 
 	var resp *workflowservice.QueryWorkflowResponse

@@ -253,10 +253,9 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	ts.NoError(err)
 
 	value, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
-		WorkflowID:            "test-consistent-query",
-		RunID:                 run.GetRunID(),
-		QueryType:             "consistent_query",
-		QueryConsistencyLevel: enumspb.QUERY_CONSISTENCY_LEVEL_STRONG,
+		WorkflowID: "test-consistent-query",
+		RunID:      run.GetRunID(),
+		QueryType:  "consistent_query",
 	})
 	ts.Nil(err)
 	ts.NotNil(value)
