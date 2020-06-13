@@ -878,7 +878,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 			QueryType: request.QueryType,
 			QueryArgs: input,
 		},
-		QueryRejectCondition:  request.QueryRejectCondition,
+		QueryRejectCondition: request.QueryRejectCondition,
 	}
 
 	var resp *workflowservice.QueryWorkflowResponse
