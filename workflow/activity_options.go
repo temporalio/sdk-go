@@ -37,47 +37,79 @@ type ActivityOptions = internal.ActivityOptions
 // LocalActivityOptions doc
 type LocalActivityOptions = internal.LocalActivityOptions
 
-// WithActivityOptions adds all options to the copy of the context.
+// WithActivityOptions makes a copy of the context and adds the
+// passed in options to the context. If an activity options exists,
+// it will be overwritten by the passed in value as a whole.
+// So specify all the values in the options as necessary, as values
+// in the existing context options will not be carried over.
 func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	return internal.WithActivityOptions(ctx, options)
 }
 
-// WithLocalActivityOptions adds options for local activity to context
+// WithLocalActivityOptions makes a copy of the context and adds the
+// passed in options to the context. If a local activity options exists,
+// it will be overwritten by the passed in value.
 func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context {
 	return internal.WithLocalActivityOptions(ctx, options)
 }
 
-// WithTaskQueue adds a task queue to the copy of the context.
+// WithTaskQueue makes a copy of the current context and update the taskQueue
+// field in its activity options. An empty activity options will be created
+// if it does not exist in the original context.
 func WithTaskQueue(ctx Context, name string) Context {
 	return internal.WithTaskQueue(ctx, name)
 }
 
-// WithRetryPolicy adds retry policy to the copy of the context.
-func WithRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
-	return internal.WithRetryPolicy(ctx, retryPolicy)
-}
-
-// WithScheduleToCloseTimeout adds a timeout to the copy of the context.
+// WithScheduleToCloseTimeout makes a copy of the current context and update
+// the ScheduleToCloseTimeout field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
+//
+// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// to calculate the final value. This is subject to change in the future.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithScheduleToCloseTimeout(ctx, d)
 }
 
-// WithScheduleToStartTimeout adds a timeout to the copy of the context.
+// WithScheduleToStartTimeout makes a copy of the current context and update
+// the ScheduleToStartTimeout field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
+//
+// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// to calculate the final value. This is subject to change in the future.
 func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithScheduleToStartTimeout(ctx, d)
 }
 
-// WithStartToCloseTimeout adds a timeout to the copy of the context.
+// WithStartToCloseTimeout makes a copy of the current context and update
+// the StartToCloseTimeout field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
+//
+// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// to calculate the final value. This is subject to change in the future.
 func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithStartToCloseTimeout(ctx, d)
 }
 
-// WithHeartbeatTimeout adds a timeout to the copy of the context.
+// WithHeartbeatTimeout makes a copy of the current context and update
+// the HeartbeatTimeout field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
+//
+// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// to calculate the final value. This is subject to change in the future.
 func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithHeartbeatTimeout(ctx, d)
 }
 
-// WithWaitForCancellation adds wait for the cancellation to the copy of the context.
+// WithWaitForCancellation makes a copy of the current context and update
+// the WaitForCancellation field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
 func WithWaitForCancellation(ctx Context, wait bool) Context {
 	return internal.WithWaitForCancellation(ctx, wait)
+}
+
+// WithRetryPolicy makes a copy of the current context and update
+// the RetryPolicy field in its activity options. An empty activity
+// options will be created if it does not exist in the original context.
+func WithRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
+	return internal.WithRetryPolicy(ctx, retryPolicy)
 }
