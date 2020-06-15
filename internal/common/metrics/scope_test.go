@@ -150,6 +150,7 @@ func Test_TaggedScope_WithMultiTags(t *testing.T) {
 	require.Equal(t, 1, len(reporter.counts))
 	require.Equal(t, int64(3), reporter.counts[0].value)
 
+	//lint:ignore SA5012 as we test exact for this
 	require.Panics(t, func() { taggedScope.GetTaggedScope("tag") })
 }
 
