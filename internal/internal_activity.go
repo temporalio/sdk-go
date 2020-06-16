@@ -97,6 +97,7 @@ type (
 		DataConverter DataConverter
 		Attempt       int32
 		ScheduledTime time.Time
+		Header        *commonpb.Header
 	}
 
 	// AsyncActivityClient for requesting activity execution

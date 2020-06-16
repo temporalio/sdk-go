@@ -526,13 +526,13 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+	header := getHeadersFromContext(ctx)
 	activityFn := ctx.Value(localActivityFnContextKey)
 	if activityFn == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
 
 	future, settable := newDecodeFuture(ctx, activityFn)
-
 	if err := validateFunctionArgs(activityFn, args, false); err != nil {
 		settable.Set(nil, err)
 		return future
@@ -550,6 +550,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 		WorkflowInfo:                GetWorkflowInfo(ctx),
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
+		Header:                      header,
 	}
 
 	Go(ctx, func(ctx Context) {

@@ -32,15 +32,23 @@ import (
 	"strings"
 	"time"
 
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+
 	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/encoded"
+	"go.temporal.io/temporal/workflow"
 )
 
-// Config contains the integration test configuration
-type Config struct {
-	ServiceAddr string
-	IsStickyOff bool
-	Debug       bool
-}
+type (
+	// Config contains the integration test configuration
+	Config struct {
+		ServiceAddr string
+		IsStickyOff bool
+		Debug       bool
+	}
+	// context.WithValue need this type instead of basic type string to avoid lint error
+	contextKey string
+)
 
 // NewConfig creates new Config instance
 func NewConfig() Config {
@@ -91,4 +99,89 @@ func WaitForTCP(timeout time.Duration, addr string) error {
 			return nil
 		}
 	}
+}
+
+// stringMapPropagator propagates the list of keys across a workflow,
+// interpreting the payloads as strings.
+// BORROWED FROM 'internal' PACKAGE TESTS.
+type stringMapPropagator struct {
+	keys map[string]struct{}
+}
+
+// NewStringMapPropagator returns a context propagator that propagates a set of
+// string key-value pairs across a workflow
+func NewStringMapPropagator(keys []string) workflow.ContextPropagator {
+	keyMap := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		keyMap[key] = struct{}{}
+	}
+	return &stringMapPropagator{keyMap}
+}
+
+// Inject injects values from context into headers for propagation
+func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.HeaderWriter) error {
+	for key := range s.keys {
+		value, ok := ctx.Value(contextKey(key)).(string)
+		if !ok {
+			return fmt.Errorf("unable to extract key from context %v", key)
+		}
+		encodedValue, err := encoded.GetDefaultDataConverter().ToPayload(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
+	}
+	return nil
+}
+
+// InjectFromWorkflow injects values from context into headers for propagation
+func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflow.HeaderWriter) error {
+	for key := range s.keys {
+		value, ok := ctx.Value(contextKey(key)).(string)
+		if !ok {
+			return fmt.Errorf("unable to extract key from context %v", key)
+		}
+		encodedValue, err := encoded.GetDefaultDataConverter().ToPayload(value)
+		if err != nil {
+			return err
+		}
+		writer.Set(key, encodedValue)
+	}
+	return nil
+}
+
+// Extract extracts values from headers and puts them into context
+func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
+		if _, ok := s.keys[key]; ok {
+			var decodedValue string
+			err := encoded.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
+
+// ExtractToWorkflow extracts values from headers and puts them into context
+func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
+	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
+		if _, ok := s.keys[key]; ok {
+			var decodedValue string
+			err := encoded.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+			if err != nil {
+				return err
+			}
+			ctx = workflow.WithValue(ctx, contextKey(key), decodedValue)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return ctx, nil
 }
