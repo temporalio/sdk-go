@@ -140,6 +140,7 @@ type (
 		attempt      int32 // attempt starting from 0
 		retryPolicy  *RetryPolicy
 		expireTime   time.Time
+		header       *commonpb.Header
 	}
 
 	localActivityMarkerData struct {
@@ -515,6 +516,7 @@ func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActiv
 		callback:    callback,
 		retryPolicy: params.RetryPolicy,
 		attempt:     params.Attempt,
+		header:      params.Header,
 	}
 
 	if params.ScheduleToCloseTimeoutSeconds > 0 {

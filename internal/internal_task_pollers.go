@@ -485,6 +485,19 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		attempt:           task.attempt,
 	})
 
+	// propagate context information into the local activity activity context from the headers
+	for _, ctxProp := range lath.contextPropagators {
+		var err error
+		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(task.header)); err != nil {
+			result = &localActivityResult{
+				task:   task,
+				result: nil,
+				err:    fmt.Errorf("unable to propagate context %v", err),
+			}
+			return result
+		}
+	}
+
 	// panic handler
 	defer func() {
 		if p := recover(); p != nil {

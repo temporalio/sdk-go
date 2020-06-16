@@ -66,6 +66,7 @@ const (
 	ctxTimeout                    = 15 * time.Second
 	namespace                     = "integration-test-namespace"
 	namespaceCacheRefreshInterval = 20 * time.Second
+	testContextKey                = "test-context-key"
 )
 
 func TestIntegrationSuite(t *testing.T) {
@@ -81,9 +82,10 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	logger, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.client, err = client.NewClient(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: namespace,
-		Logger:    logger,
+		HostPort:           ts.config.ServiceAddr,
+		Namespace:          namespace,
+		Logger:             logger,
+		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
 	})
 	ts.NoError(err)
 	ts.registerNamespace()
@@ -436,6 +438,13 @@ func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
+	var expected string
+	err := ts.executeWorkflow("test-wf-local-activity-ctx-prop", ts.workflows.WorkflowWithLocalActivityCtxPropagation, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, "test-data-in-contexttest-data-in-context")
 }
 
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {

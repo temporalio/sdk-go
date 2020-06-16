@@ -105,6 +105,14 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	return nil
 }
 
+func (a *Activities) DuplicateStringInContext(ctx context.Context) (string, error) {
+	originalString := ctx.Value(contextKey(testContextKey))
+	if originalString == nil {
+		return "", fmt.Errorf("context did not propagate to activity")
+	}
+	return strings.Repeat(originalString.(string), 2), nil
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
