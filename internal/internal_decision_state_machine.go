@@ -782,7 +782,7 @@ func (h *decisionsHelper) handleActivityTaskClosed(activityID string) decisionSt
 
 func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, activityID string) {
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
-		panicMsg := fmt.Sprintf("lookup failed for scheduledID to activityID: scheduleID: %v, activity: %v",
+		panicMsg := fmt.Sprintf("lookup failed for scheduledEventID to activityID: scheduleEvenyID: %d, activityID: %s",
 			scheduledEventID, activityID)
 		panicIllegalState(panicMsg)
 	}
