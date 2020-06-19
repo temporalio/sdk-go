@@ -1015,12 +1015,12 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow() {

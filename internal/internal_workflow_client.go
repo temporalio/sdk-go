@@ -342,7 +342,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 // SignalWithStartWorkflow sends a signal to a running workflow.
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (*WorkflowExecution, error) {
+	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
 
 	signalInput, err := encodeArg(wc.dataConverter, signalArg)
 	if err != nil {
@@ -423,10 +423,19 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		scope.Counter(metrics.WorkflowSignalWithStartCounter).Inc(1)
 	}
 
-	executionInfo := &WorkflowExecution{
-		ID:    options.ID,
-		RunID: response.GetRunId()}
-	return executionInfo, nil
+	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+	}
+
+	return &workflowRunImpl{
+		workflowFn:    workflowFunc,
+		workflowID:    workflowID,
+		firstRunID:    response.GetRunId(),
+		currentRunID:  response.GetRunId(),
+		iterFn:        iterFn,
+		dataConverter: wc.dataConverter,
+		registry:      wc.registry,
+	}, nil
 }
 
 // CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
