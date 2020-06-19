@@ -26,8 +26,14 @@ package mocks
 
 import (
 	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/encoded"
 )
 
 // make sure mocks are in sync with interfaces
-var _ client.Client = (*Client)(nil)
-var _ client.NamespaceClient = (*NamespaceClient)(nil)
+var (
+	_ client.Client               = (*Client)(nil)
+	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
+	_ client.NamespaceClient      = (*NamespaceClient)(nil)
+	_ encoded.Value               = (*Value)(nil)
+	_ client.WorkflowRun          = (*WorkflowRun)(nil)
+)

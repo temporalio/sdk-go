@@ -34,15 +34,6 @@ import (
 	historypb "go.temporal.io/temporal-proto/history/v1"
 
 	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/encoded"
-)
-
-var (
-	_ client.Client               = (*Client)(nil)
-	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
-	_ client.NamespaceClient      = (*NamespaceClient)(nil)
-	_ encoded.Value               = (*Value)(nil)
-	_ client.WorkflowRun          = (*WorkflowRun)(nil)
 )
 
 func Test_MockClient(t *testing.T) {
