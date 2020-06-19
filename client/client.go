@@ -37,7 +37,6 @@ import (
 
 	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"
-	"go.temporal.io/temporal/workflow"
 )
 
 const (
@@ -151,7 +150,7 @@ type (
 		//  - BadRequestError
 		//	- InternalServiceError
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (*workflow.Execution, error)
+			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
 		// returned by the workflow.Context.Done() of the workflow that is target of the request.
