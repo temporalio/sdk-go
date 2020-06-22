@@ -428,6 +428,28 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	ts.Nil(err)
 }
 
+func (ts *IntegrationTestSuite) TestBasicSession() {
+	// var expected []string
+	// err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
+	// ts.NoError(err)
+	// ts.EqualValues(expected, ts.activities.invoked())
+	// ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteWorkflow end"},
+	// 	ts.tracer.GetTrace("BasicSession"))
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	options := ts.startWorkflowOptions("test-basic-session")
+
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.BasicSession)
+	ts.NoError(err)
+
+	var retVal []string
+	err = run.Get(ctx, &retVal)
+
+	ts.NoError(err)
+	ts.Equal("toUpper", retVal[0])
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)

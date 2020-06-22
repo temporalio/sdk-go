@@ -531,6 +531,35 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 		ctx, activites.InspectActivityInfo, namespace, taskList, wfType).Get(ctx, nil)
 }
 
+func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout:    time.Minute,
+		ScheduleToCloseTimeout: time.Minute,
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	// so := &workflow.SessionOptions{
+	// 	CreationTimeout:  time.Minute,
+	// 	ExecutionTimeout: time.Minute,
+	// }
+	// ctx, err := workflow.CreateSession(ctx, so)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// defer workflow.CompleteSession(ctx)
+
+	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
+	var ans1 string
+	if err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "hello").Get(ctx, &ans1); err != nil {
+		return nil, err
+	}
+	if ans1 != "HELLO" {
+		return nil, fmt.Errorf("incorrect return value from activity: expected=%s,got=%s", "HELLO", ans1)
+	}
+	return []string{"toUpper"}, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
@@ -555,6 +584,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
+	worker.RegisterWorkflow(w.BasicSession)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

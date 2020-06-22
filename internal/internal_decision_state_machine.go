@@ -794,7 +794,7 @@ func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, ac
 func (h *decisionsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activity ID for the scheduledEventID %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID %v", scheduledEventID))
 	}
 	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
 	decision.handleCancelInitiatedEvent()
@@ -823,7 +823,7 @@ func (h *decisionsHelper) getActivityID(event *historypb.HistoryEvent) string {
 
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activity ID for the event %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("unable to find activityID for the event %v", util.HistoryEventToString(event)))
 	}
 	return activityID
 }
