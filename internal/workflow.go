@@ -743,6 +743,14 @@ type WorkflowInfo struct {
 	BinaryChecksum                  string
 }
 
+// GetBinaryChecksum return binary checksum.
+func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
+	if wInfo.BinaryChecksum == "" {
+		return getBinaryChecksum()
+	}
+	return wInfo.BinaryChecksum
+}
+
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
