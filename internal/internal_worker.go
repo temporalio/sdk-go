@@ -493,14 +493,14 @@ type registry struct {
 	workflowAliasMap     map[string]string
 	activityFuncMap      map[string]activity
 	activityAliasMap     map[string]string
-	workflowInterceptors []WorkflowInterceptorFactory
+	workflowInterceptors []WorkflowInterceptor
 }
 
-func (r *registry) WorkflowInterceptors() []WorkflowInterceptorFactory {
+func (r *registry) WorkflowInterceptors() []WorkflowInterceptor {
 	return r.workflowInterceptors
 }
 
-func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptorFactory) {
+func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptor) {
 	r.workflowInterceptors = workflowInterceptors
 }
 
@@ -730,7 +730,7 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	return newSyncWorkflowDefinition(executor), nil
 }
 
-func (r *registry) getInterceptors() []WorkflowInterceptorFactory {
+func (r *registry) getInterceptors() []WorkflowInterceptor {
 	return r.workflowInterceptors
 }
 
@@ -853,7 +853,7 @@ func newRegistry() *registry {
 type workflowExecutor struct {
 	workflowType string
 	fn           interface{}
-	interceptors []WorkflowInterceptorFactory
+	interceptors []WorkflowInterceptor
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {

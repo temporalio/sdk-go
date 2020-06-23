@@ -181,7 +181,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 		}
 	}).Twice()
 	tracer := tracingInterceptorFactory{}
-	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptorFactory{&tracer}})
+	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptor{&tracer}})
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
@@ -1189,13 +1189,13 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.Equal(n, total)
 }
 
-var _ WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
+var _ WorkflowInterceptor = (*tracingInterceptorFactory)(nil)
 
 type tracingInterceptorFactory struct {
 	instances []*tracingInterceptor
 }
 
-func (t *tracingInterceptorFactory) NewInterceptor(info *WorkflowInfo, next WorkflowInterceptor) WorkflowInterceptor {
+func (t *tracingInterceptorFactory) InterceptExecuteWorkflow(info *WorkflowInfo, next WorkflowCallsInterceptor) WorkflowCallsInterceptor {
 	result := &tracingInterceptor{
 		WorkflowInterceptorBase: WorkflowInterceptorBase{Next: next},
 	}
@@ -1203,7 +1203,7 @@ func (t *tracingInterceptorFactory) NewInterceptor(info *WorkflowInfo, next Work
 	return result
 }
 
-var _ WorkflowInterceptor = (*tracingInterceptor)(nil)
+var _ WorkflowCallsInterceptor = (*tracingInterceptor)(nil)
 
 type tracingInterceptor struct {
 	WorkflowInterceptorBase

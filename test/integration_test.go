@@ -124,7 +124,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.tracer = newtracingInterceptorFactory()
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
-		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
+		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
 	}
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
@@ -504,7 +504,7 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
-var _ interceptors.WorkflowInterceptorFactory = (*tracingInterceptorFactory)(nil)
+var _ interceptors.WorkflowInterceptor = (*tracingInterceptorFactory)(nil)
 
 type tracingInterceptorFactory struct {
 	sync.Mutex
@@ -524,7 +524,7 @@ func (t *tracingInterceptorFactory) GetTrace(workflowType string) []string {
 	}
 	panic(fmt.Sprintf("Unknown workflowType %v, known types: %v", workflowType, t.instances))
 }
-func (t *tracingInterceptorFactory) NewInterceptor(info *workflow.Info, next interceptors.WorkflowInterceptor) interceptors.WorkflowInterceptor {
+func (t *tracingInterceptorFactory) InterceptExecuteWorkflow(info *workflow.Info, next interceptors.WorkflowCallsInterceptor) interceptors.WorkflowCallsInterceptor {
 	t.Mutex.Lock()
 	defer t.Mutex.Unlock()
 	result := &tracingInterceptor{
@@ -534,7 +534,7 @@ func (t *tracingInterceptorFactory) NewInterceptor(info *workflow.Info, next int
 	return result
 }
 
-var _ interceptors.WorkflowInterceptor = (*tracingInterceptor)(nil)
+var _ interceptors.WorkflowCallsInterceptor = (*tracingInterceptor)(nil)
 
 type tracingInterceptor struct {
 	interceptors.WorkflowInterceptorBase

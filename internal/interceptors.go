@@ -31,21 +31,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// WorkflowInterceptorFactory is used to create a single link in the interceptor chain
-type WorkflowInterceptorFactory interface {
-	// NewInterceptor creates an interceptor instance. The created instance must delegate every call to
+// WorkflowInterceptor is used to create a single link in the interceptor chain
+type WorkflowInterceptor interface {
+	// InterceptExecuteWorkflow creates an interceptor instance. The created instance must delegate every call to
 	// the next parameter for workflow code function correctly.
-	NewInterceptor(info *WorkflowInfo, next WorkflowInterceptor) WorkflowInterceptor
+	InterceptExecuteWorkflow(info *WorkflowInfo, next WorkflowCallsInterceptor) WorkflowCallsInterceptor
 }
 
-// WorkflowInterceptor is an interface that can be implemented to intercept calls to the workflow function
+// WorkflowCallsInterceptor is an interface that can be implemented to intercept calls to the workflow function
 // as well calls done by the workflow code.
 // Use worker.WorkflowInterceptorBase as a base struct for implementations that do not want to implement every method.
 // Interceptor implementation must forward calls to the next in the interceptor chain.
 // All code in the interceptor is executed in the context of a workflow. So all the rules and restrictions
 // that apply to the workflow code should be obeyed by the interceptor implementation.
 // Use workflow.IsReplaying(ctx) to filter out duplicated calls.
-type WorkflowInterceptor interface {
+type WorkflowCallsInterceptor interface {
 	// ExecuteWorkflow intercepts workflow function invocation. As calls to other intercepted functions are done from
 	// a workflow function this function is the first to be called and completes workflow as soon as it returns.
 	// WorkflowType argument is for information purposes only and should not be mutated.
@@ -73,11 +73,11 @@ type WorkflowInterceptor interface {
 	GetLastCompletionResult(ctx Context, d ...interface{}) error
 }
 
-var _ WorkflowInterceptor = (*WorkflowInterceptorBase)(nil)
+var _ WorkflowCallsInterceptor = (*WorkflowInterceptorBase)(nil)
 
 // WorkflowInterceptorBase is a helper type that can simplify creation of WorkflowInterceptors
 type WorkflowInterceptorBase struct {
-	Next WorkflowInterceptor
+	Next WorkflowCallsInterceptor
 }
 
 // ExecuteWorkflow forwards to t.Next

@@ -282,16 +282,16 @@ func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
 
 type workflowEnvironmentInterceptor struct {
 	env                  WorkflowEnvironment
-	interceptorChainHead WorkflowInterceptor
+	interceptorChainHead WorkflowCallsInterceptor
 	fn                   interface{}
 }
 
-func getWorkflowInterceptor(ctx Context) WorkflowInterceptor {
+func getWorkflowInterceptor(ctx Context) WorkflowCallsInterceptor {
 	wc := ctx.Value(workflowInterceptorsContextKey)
 	if wc == nil {
 		panic("getWorkflowInterceptor: Not a workflow context")
 	}
-	return wc.(WorkflowInterceptor)
+	return wc.(WorkflowCallsInterceptor)
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
@@ -421,7 +421,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
+func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowCallsInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
 	rootCtx = WithValue(rootCtx, workflowEnvInterceptorContextKey, envInterceptor)
 	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, interceptors)
@@ -444,11 +444,11 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowIntercepto
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptorFactory) (WorkflowInterceptor, *workflowEnvironmentInterceptor) {
+func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptor) (WorkflowCallsInterceptor, *workflowEnvironmentInterceptor) {
 	envInterceptor := &workflowEnvironmentInterceptor{env: env}
-	var interceptor WorkflowInterceptor = envInterceptor
+	var interceptor WorkflowCallsInterceptor = envInterceptor
 	for i := len(factories) - 1; i >= 0; i-- {
-		interceptor = factories[i].NewInterceptor(env.WorkflowInfo(), interceptor)
+		interceptor = factories[i].InterceptExecuteWorkflow(env.WorkflowInfo(), interceptor)
 	}
 	envInterceptor.interceptorChainHead = interceptor
 	return interceptor, envInterceptor
