@@ -355,7 +355,7 @@ func panicIllegalState(message string) {
 
 func (d *decisionStateMachineBase) failStateTransition(event string) {
 	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic decider code
-	panicIllegalState(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
+	panicIllegalState(fmt.Sprintf("invalid state transition: attempt to %s, %v", event, d))
 }
 
 func (d *decisionStateMachineBase) handleDecisionSent() {
@@ -771,7 +771,7 @@ func (h *decisionsHelper) requestCancelActivityTask(activityID string) decisionS
 	id := makeDecisionID(decisionTypeActivity, activityID)
 	decision := h.getDecision(id)
 	decision.cancel()
-	h.nextDecisionEventID++
+	//h.nextDecisionEventID++
 	return decision
 }
 
@@ -795,7 +795,7 @@ func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, ac
 func (h *decisionsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID: %d", scheduledEventID))
 	}
 	decision := h.getDecision(makeDecisionID(decisionTypeActivity, activityID))
 	decision.handleCancelInitiatedEvent()
@@ -819,12 +819,12 @@ func (h *decisionsHelper) getActivityID(event *historypb.HistoryEvent) string {
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
-		panicIllegalState(fmt.Sprintf("unexpected event type %v", event.GetEventType()))
+		panicIllegalState(fmt.Sprintf("unexpected event type: %s", event.GetEventType()))
 	}
 
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activityID for the event %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("unable to find activityID for the event: %s", util.HistoryEventToString(event)))
 	}
 	return activityID
 }
@@ -857,7 +857,7 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 
 func (h *decisionsHelper) handleVersionMarker(eventID int64, changeID string) {
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
-		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
+		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %d, changeID: %s",
 			eventID, changeID)
 		panicIllegalState(panicMsg)
 	}
@@ -1070,7 +1070,7 @@ func (h *decisionsHelper) handleSignalExternalWorkflowExecutionFailed(initiatedE
 func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
 	signalID, ok := h.scheduledEventIDToSignalID[initiatedEventID]
 	if !ok {
-		panic(fmt.Sprintf("unable to find signal ID: %v", initiatedEventID))
+		panic(fmt.Sprintf("unable to find signalID for initiatedEventID: %d", initiatedEventID))
 	}
 	return signalID
 }
