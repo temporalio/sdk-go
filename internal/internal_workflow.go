@@ -272,7 +272,7 @@ func getWorkflowEnvironment(ctx Context) WorkflowEnvironment {
 	return wc.(WorkflowEnvironment)
 }
 
-func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
+func getWorkflowEnvironmentInterceptor(ctx Context) *workflowEnvironmentInterceptor {
 	wc := ctx.Value(workflowEnvInterceptorContextKey)
 	if wc == nil {
 		panic("getWorkflowContext: Not a workflow context")
@@ -281,17 +281,18 @@ func getEnvInterceptor(ctx Context) *workflowEnvironmentInterceptor {
 }
 
 type workflowEnvironmentInterceptor struct {
-	env                  WorkflowEnvironment
-	interceptorChainHead WorkflowCallsInterceptor
-	fn                   interface{}
+	env                 WorkflowEnvironment
+	inboundInterceptor  WorkflowInboundCallsInterceptor
+	fn                  interface{}
+	outboundInterceptor WorkflowOutboundCallsInterceptor
 }
 
-func getWorkflowInterceptor(ctx Context) WorkflowCallsInterceptor {
+func getWorkflowOutboundCallsInterceptor(ctx Context) WorkflowOutboundCallsInterceptor {
 	wc := ctx.Value(workflowInterceptorsContextKey)
 	if wc == nil {
-		panic("getWorkflowInterceptor: Not a workflow context")
+		panic("getWorkflowOutboundCallsInterceptor: Not a workflow context")
 	}
-	return wc.(WorkflowCallsInterceptor)
+	return wc.(WorkflowOutboundCallsInterceptor)
 }
 
 func (f *futureImpl) Get(ctx Context, value interface{}) error {
@@ -421,7 +422,7 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
 }
 
-func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowCallsInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
+func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowOutboundCallsInterceptor, envInterceptor *workflowEnvironmentInterceptor) Context {
 	rootCtx := WithValue(background, workflowEnvironmentContextKey, env)
 	rootCtx = WithValue(rootCtx, workflowEnvInterceptorContextKey, envInterceptor)
 	rootCtx = WithValue(rootCtx, workflowInterceptorsContextKey, interceptors)
@@ -444,19 +445,26 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowCallsInter
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptor) (WorkflowCallsInterceptor, *workflowEnvironmentInterceptor) {
+func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptor) (*workflowEnvironmentInterceptor, error) {
 	envInterceptor := &workflowEnvironmentInterceptor{env: env}
-	var interceptor WorkflowCallsInterceptor = envInterceptor
+	var interceptor WorkflowInboundCallsInterceptor = envInterceptor
 	for i := len(factories) - 1; i >= 0; i-- {
-		interceptor = factories[i].InterceptExecuteWorkflow(env.WorkflowInfo(), interceptor)
+		interceptor = factories[i].InterceptWorkflow(env.WorkflowInfo(), interceptor)
 	}
-	envInterceptor.interceptorChainHead = interceptor
-	return interceptor, envInterceptor
+	envInterceptor.inboundInterceptor = interceptor
+	err := interceptor.Init(envInterceptor)
+	if err != nil {
+		return nil, err
+	}
+	return envInterceptor, nil
 }
 
 func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
-	interceptors, envInterceptor := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
-	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, interceptors, envInterceptor), func(ctx Context) {
+	envInterceptor, err := newWorkflowInterceptors(env, env.GetRegistry().getInterceptors())
+	if err != nil {
+		panic(err)
+	}
+	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, envInterceptor.outboundInterceptor, envInterceptor), func(ctx Context) {
 		r := &workflowResult{}
 
 		// We want to execute the user workflow definition from the first decision task started,

@@ -38,8 +38,11 @@ import (
 
 func createRootTestContext() (ctx Context) {
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
-	interceptors, envInterceptor := newWorkflowInterceptors(env.impl, env.impl.GetRegistry().getInterceptors())
-	return newWorkflowContext(env.impl, interceptors, envInterceptor)
+	envInterceptor, err := newWorkflowInterceptors(env.impl, env.impl.GetRegistry().getInterceptors())
+	if err != nil {
+		panic(err)
+	}
+	return newWorkflowContext(env.impl, envInterceptor.outboundInterceptor, envInterceptor)
 }
 
 func requireNoExecuteErr(t *testing.T, err error) {

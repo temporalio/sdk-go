@@ -869,9 +869,9 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	}
 	args = append(args, decoded...)
 
-	envInterceptor := getEnvInterceptor(ctx)
+	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 	envInterceptor.fn = we.fn
-	results := envInterceptor.interceptorChainHead.ExecuteWorkflow(ctx, we.workflowType, args...)
+	results := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, we.workflowType, args...)
 	return serializeResults(we.fn, results, dataConverter)
 }
 

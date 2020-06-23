@@ -180,7 +180,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 			panic(fmt.Sprintf("Unexpected activityID: %v", activityID))
 		}
 	}).Twice()
-	tracer := tracingInterceptorFactory{}
+	tracer := tracingWorkflowInterceptor{}
 	env.SetWorkerOptions(WorkerOptions{WorkflowInterceptorChainFactories: []WorkflowInterceptor{&tracer}})
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, false)
 	s.True(env.IsWorkflowCompleted())
@@ -1189,35 +1189,48 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.Equal(n, total)
 }
 
-var _ WorkflowInterceptor = (*tracingInterceptorFactory)(nil)
+var _ WorkflowInterceptor = (*tracingWorkflowInterceptor)(nil)
+var _ WorkflowOutboundCallsInterceptor = (*tracingOutboundCallsInterceptor)(nil)
 
-type tracingInterceptorFactory struct {
-	instances []*tracingInterceptor
-}
+type (
+	tracingWorkflowInterceptor struct {
+		instances []*tracingInboundCallsInterceptor
+	}
 
-func (t *tracingInterceptorFactory) InterceptExecuteWorkflow(info *WorkflowInfo, next WorkflowCallsInterceptor) WorkflowCallsInterceptor {
-	result := &tracingInterceptor{
-		WorkflowInterceptorBase: WorkflowInterceptorBase{Next: next},
+	tracingInboundCallsInterceptor struct {
+		WorkflowInboundCallsInterceptorBase
+		trace []string
+	}
+
+	tracingOutboundCallsInterceptor struct {
+		WorkflowOutboundCallsInterceptorBase
+		inbound *tracingInboundCallsInterceptor
+	}
+)
+
+func (t *tracingWorkflowInterceptor) InterceptWorkflow(info *WorkflowInfo, next WorkflowInboundCallsInterceptor) WorkflowInboundCallsInterceptor {
+	result := &tracingInboundCallsInterceptor{
+		WorkflowInboundCallsInterceptorBase{
+			Next: next,
+		}, nil,
 	}
 	t.instances = append(t.instances, result)
 	return result
 }
 
-var _ WorkflowCallsInterceptor = (*tracingInterceptor)(nil)
-
-type tracingInterceptor struct {
-	WorkflowInterceptorBase
-	trace []string
+func (t *tracingInboundCallsInterceptor) Init(outbound WorkflowOutboundCallsInterceptor) error {
+	return t.Next.Init(&tracingOutboundCallsInterceptor{
+		WorkflowOutboundCallsInterceptorBase{Next: outbound}, t})
 }
 
-func (t *tracingInterceptor) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
-	t.trace = append(t.trace, "ExecuteActivity "+activityType)
-	return t.Next.ExecuteActivity(ctx, activityType, args...)
-}
-
-func (t *tracingInterceptor) ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{} {
+func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{} {
 	t.trace = append(t.trace, "ExecuteWorkflow "+workflowType+" begin")
 	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
 	t.trace = append(t.trace, "ExecuteWorkflow "+workflowType+" end")
 	return result
+}
+
+func (t *tracingOutboundCallsInterceptor) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
+	t.inbound.trace = append(t.inbound.trace, "ExecuteActivity "+activityType)
+	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }

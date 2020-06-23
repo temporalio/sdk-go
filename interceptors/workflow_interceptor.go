@@ -29,19 +29,31 @@ import (
 )
 
 type (
-	// WorkflowInterceptor is used to create a single link in the interceptor chain
+	// WorkflowInterceptor is used to create a single link in the interceptor chain. Called once per workflow execution replay.
 	WorkflowInterceptor = internal.WorkflowInterceptor
 
-	// WorkflowCallsInterceptor is an interface that can be implemented to intercept calls to the workflow function
-	// as well calls done by the workflow code.
-	// Use worker.WorkflowInterceptorBase as a base struct for implementations that do not want to implement every method.
+	// WorkflowInboundCallsInterceptor is an interface that can be implemented to intercept calls to the workflow.
+	// Use WorkflowInboundCallsInterceptorBase as a base struct for implementations that do not want to implement every method.
 	// Interceptor implementation must forward calls to the next in the interceptor chain.
 	// All code in the interceptor is executed in the workflow.Context of a workflow. So all the rules and restrictions
 	// that apply to the workflow code should be obeyed by the interceptor implementation.
 	// Use workflow.IsReplaying(ctx) to filter out duplicated calls.
-	WorkflowCallsInterceptor = internal.WorkflowCallsInterceptor
+	WorkflowInboundCallsInterceptor = internal.WorkflowInboundCallsInterceptor
 
-	// WorkflowInterceptorBase is a noop implementation of WorkflowCallsInterceptor that just forwards requests
+	// WorkflowOutboundCallsInterceptor is an interface that can be implemented to intercept calls to the SDK APIs done
+	// by the workflow code.
+	// Use worker.WorkflowOutboundCallsInterceptorBase as a base struct for implementations that do not want to implement every method.
+	// Interceptor implementation must forward calls to the next in the interceptor chain.
+	// All code in the interceptor is executed in the workflow.Context of a workflow. So all the rules and restrictions
+	// that apply to the workflow code should be obeyed by the interceptor implementation.
+	// Use workflow.IsReplaying(ctx) to filter out duplicated calls.
+	WorkflowOutboundCallsInterceptor = internal.WorkflowOutboundCallsInterceptor
+
+	// WorkflowInboundCallsInterceptorBase is a noop implementation of WorkflowInboundCallsInterceptor that just forwards requests
 	// to the next link in an interceptor chain. To be used as base implementation of interceptors.
-	WorkflowInterceptorBase = internal.WorkflowInterceptorBase
+	WorkflowInboundCallsInterceptorBase = internal.WorkflowInboundCallsInterceptorBase
+
+	// WorkflowOutboundCallsInterceptorBase is a noop implementation of WorkflowOutboundCallsInterceptor that just forwards requests
+	// to the next link in an interceptor chain. To be used as base implementation of interceptors.
+	WorkflowOutboundCallsInterceptorBase = internal.WorkflowOutboundCallsInterceptorBase
 )
