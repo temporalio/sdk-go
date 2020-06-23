@@ -126,10 +126,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
-	if strings.Contains(ts.T().Name(), "Session") {
-		options.EnableSessionWorker = true
-	}
-
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -432,15 +428,6 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	ts.Nil(err)
 }
 
-func (ts *IntegrationTestSuite) TestBasicSession() {
-	var expected []string
-	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
-	ts.NoError(err)
-	ts.EqualValues(expected, ts.activities.invoked())
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteWorkflow end"},
-		ts.tracer.GetTrace("BasicSession"))
-}
-
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -507,7 +494,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		ID:                       wfID,
 		TaskList:                 ts.taskListName,
 		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      1000 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,
 	}
 }
