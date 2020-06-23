@@ -539,21 +539,23 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	// so := &workflow.SessionOptions{
-	// 	CreationTimeout:  time.Minute,
-	// 	ExecutionTimeout: time.Minute,
-	// }
-	// ctx, err := workflow.CreateSession(ctx, so)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// defer workflow.CompleteSession(ctx)
+	so := &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	}
+	ctx, err := workflow.CreateSession(ctx, so)
+	if err != nil {
+		return nil, err
+	}
+	defer workflow.CompleteSession(ctx)
 
 	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
 	var ans1 string
 	if err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "hello").Get(ctx, &ans1); err != nil {
 		return nil, err
 	}
+
+	workflow.GetLogger(ctx).Info(fmt.Sprintf("Got %s", ans1))
 	if ans1 != "HELLO" {
 		return nil, fmt.Errorf("incorrect return value from activity: expected=%s,got=%s", "HELLO", ans1)
 	}

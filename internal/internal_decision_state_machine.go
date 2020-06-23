@@ -771,6 +771,7 @@ func (h *decisionsHelper) requestCancelActivityTask(activityID string) decisionS
 	id := makeDecisionID(decisionTypeActivity, activityID)
 	decision := h.getDecision(id)
 	decision.cancel()
+	//h.nextDecisionEventID++
 	return decision
 }
 

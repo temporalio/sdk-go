@@ -126,6 +126,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
+	if strings.Contains(ts.T().Name(), "Session") {
+		options.EnableSessionWorker = true
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -429,25 +433,12 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 }
 
 func (ts *IntegrationTestSuite) TestBasicSession() {
-	// var expected []string
-	// err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
-	// ts.NoError(err)
-	// ts.EqualValues(expected, ts.activities.invoked())
-	// ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteWorkflow end"},
-	// 	ts.tracer.GetTrace("BasicSession"))
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-
-	options := ts.startWorkflowOptions("test-basic-session")
-
-	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.BasicSession)
+	var expected []string
+	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
 	ts.NoError(err)
-
-	var retVal []string
-	err = run.Get(ctx, &retVal)
-
-	ts.NoError(err)
-	ts.Equal("toUpper", retVal[0])
+	ts.EqualValues(expected, ts.activities.invoked())
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("BasicSession"))
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
@@ -516,7 +507,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		ID:                       wfID,
 		TaskList:                 ts.taskListName,
 		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      time.Second,
+		WorkflowTaskTimeout:      1000 * time.Second,
 		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,
 	}
 }
