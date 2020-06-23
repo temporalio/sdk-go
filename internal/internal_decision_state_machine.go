@@ -956,6 +956,7 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, work
 		// targeting child workflow
 		decision := h.getDecision(makeDecisionID(decisionTypeChildWorkflow, workflowID))
 		decision.cancel()
+		// TODO: add h.nextDecisionEventID++ ???
 		return decision
 	}
 
@@ -1084,6 +1085,7 @@ func (h *decisionsHelper) startTimer(attributes *decisionpb.StartTimerDecisionAt
 func (h *decisionsHelper) cancelTimer(timerID string) decisionStateMachine {
 	decision := h.getDecision(makeDecisionID(decisionTypeTimer, timerID))
 	decision.cancel()
+	// TODO: h.nextDecisionEventID++ ???
 	return decision
 }
 
