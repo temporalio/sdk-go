@@ -126,6 +126,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptorFactory{ts.tracer},
 	}
+
+	if strings.Contains(ts.T().Name(), "Session") {
+		options.EnableSessionWorker = true
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -426,6 +431,16 @@ func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
 	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestBasicSession() {
+	var expected []string
+	err := ts.executeWorkflow("test-basic", ts.workflows.BasicSession, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	// createSession activity, actual activity, completeSession activity.
+	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("BasicSession"))
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

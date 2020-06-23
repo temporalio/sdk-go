@@ -1710,7 +1710,7 @@ func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 	}
 }
 
-func (i *temporalInvoker) GetClient(namespace string, options ClientOptions) Client {
+func (i *temporalInvoker) GetClient(options ClientOptions) Client {
 	return NewServiceClient(i.service, nil, options)
 }
 
