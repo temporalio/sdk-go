@@ -743,7 +743,7 @@ func (h *decisionsHelper) getNextID() int64 {
 func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
 	decision, ok := h.decisions[id]
 	if !ok {
-		panicMsg := fmt.Sprintf("unknown decision %#v, possible causes are nondeterministic workflow definition code"+
+		panicMsg := fmt.Sprintf("unknown decision %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}

@@ -40,9 +40,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-
 	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	historypb "go.temporal.io/temporal-proto/history/v1"
 	namespacepb "go.temporal.io/temporal-proto/namespace/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
@@ -544,6 +543,88 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 		}),
 		createTestEventWorkflowExecutionCompleted(25, &historypb.WorkflowExecutionCompletedEventAttributes{
 			DecisionTaskCompletedEventId: 24,
+		}),
+	}
+}
+
+func testReplayWorkflowCancelActivity(ctx Context) error {
+	ctx1, cancelFunc1 := WithCancel(ctx)
+
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	ctx1 = WithActivityOptions(ctx1, ao)
+	_ = ExecuteActivity(ctx1, "testActivity1")
+	_ = Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	err := ExecuteActivity(ctx, "testActivity2").Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", zap.Error(err))
+		panic("Failed workflow")
+	}
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity() {
+	testEvents := createHistoryForCancelActivityTests("testReplayWorkflowCancelActivity")
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowCancelActivity)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func createHistoryForCancelActivityTests(workflowType string) []*historypb.HistoryEvent {
+	taskList := "taskList1"
+	return []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+		}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(3),
+		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "5",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity1"},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+		}),
+		createTestEventTimerStarted(6, 6),
+		createTestEventActivityTaskStarted(7, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 5,
+		}),
+		createTestEventTimerFired(8, 6),
+		createTestEventDecisionTaskScheduled(9, &historypb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(10),
+		createTestEventDecisionTaskCompleted(11, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskCancelRequested(12, &historypb.ActivityTaskCancelRequestedEventAttributes{
+			ScheduledEventId:             5,
+			DecisionTaskCompletedEventId: 11,
+		}),
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
+			TaskList:     &tasklistpb.TaskList{Name: taskList},
+		}),
+		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 13,
+		}),
+		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   14,
+		}),
+		createTestEventDecisionTaskScheduled(16, &historypb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventDecisionTaskStarted(17),
+		createTestEventDecisionTaskCompleted(18, &historypb.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: 16,
+			StartedEventId:   17,
+		}),
+		createTestEventWorkflowExecutionCompleted(19, &historypb.WorkflowExecutionCompletedEventAttributes{
+			DecisionTaskCompletedEventId: 18,
 		}),
 	}
 }

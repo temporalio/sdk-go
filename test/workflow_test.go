@@ -398,12 +398,10 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 }
 
 func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
-	ctx1, cancelFunc1 := workflow.WithCancel(ctx)
-
-	activityCtx1 := workflow.WithActivityOptions(ctx1, workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
+	activityCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+	activityCtx1 = workflow.WithActivityOptions(activityCtx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
 	})
 
 	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpperWithDelay", "hello", 3*time.Second)
@@ -412,14 +410,11 @@ func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
 	cancelFunc1()
 
 	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
 	})
-	activityF2 := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
-
 	var ans string
-	err := activityF2.Get(activityCtx2, &ans)
+	err := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, &ans)
 	if err != nil {
 		workflow.GetLogger(activityCtx2).Sugar().Infof("Activity Failed: Err: %v", err)
 		return nil, err
@@ -428,27 +423,44 @@ func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
-func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, error) {
-	ctx1, cancelFunc1 := workflow.WithCancel(ctx)
+func (w *Workflows) CancelTimer(ctx workflow.Context) ([]string, error) {
+	timerCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 
-	activityCtx1 := workflow.WithActivityOptions(ctx1, workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
+	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
+	// Sleep to send decissions to the server.
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	})
+	var ans string
+	err := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, &ans)
+	if err != nil {
+		workflow.GetLogger(activityCtx2).Sugar().Infof("Activity Failed: Err: %v", err)
+		return nil, err
+	}
+
+	return []string{"toUpper"}, nil
+}
+
+func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, error) {
+	activityCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+	activityCtx1 = workflow.WithActivityOptions(activityCtx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
 	})
 
 	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpper", "hello")
 	cancelFunc1()
 
 	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
 	})
-	activityF2 := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
-
 	var ans string
-	err := activityF2.Get(activityCtx2, &ans)
+	err := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, &ans)
 	if err != nil {
 		workflow.GetLogger(activityCtx2).Sugar().Infof("Activity Failed: Err: %v", err)
 		return nil, err
@@ -636,6 +648,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.CancelActivity)
+	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
