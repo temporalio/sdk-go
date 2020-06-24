@@ -86,8 +86,13 @@ type (
 		ExecuteUntilAllBlocked() (err error)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
+		IsExecuting() bool
 		Close()             // Destroys all coroutines without waiting for their completion
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+
+		// Create coroutine. To be called from within other coroutine.
+		// Used by the interceptors
+		NewCoroutine(ctx Context, name string, f func(ctx Context)) Context
 	}
 
 	// Workflow is an interface that any workflow should implement.
@@ -163,6 +168,7 @@ type (
 		executing        bool       // currently running ExecuteUntilAllBlocked. Used to avoid recursive calls to it.
 		mutex            sync.Mutex // used to synchronize executing
 		closed           bool
+		interceptor      WorkflowOutboundCallsInterceptor
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -282,9 +288,14 @@ func getWorkflowEnvironmentInterceptor(ctx Context) *workflowEnvironmentIntercep
 
 type workflowEnvironmentInterceptor struct {
 	env                 WorkflowEnvironment
+	dispatcher          dispatcher
 	inboundInterceptor  WorkflowInboundCallsInterceptor
 	fn                  interface{}
 	outboundInterceptor WorkflowOutboundCallsInterceptor
+}
+
+func (wc *workflowEnvironmentInterceptor) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+	return wc.dispatcher.NewCoroutine(ctx, name, f)
 }
 
 func getWorkflowOutboundCallsInterceptor(ctx Context) WorkflowOutboundCallsInterceptor {
@@ -445,11 +456,11 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowOutboundCa
 	return rootCtx
 }
 
-func newWorkflowInterceptors(env WorkflowEnvironment, factories []WorkflowInterceptor) (*workflowEnvironmentInterceptor, error) {
+func newWorkflowInterceptors(env WorkflowEnvironment, interceptors []WorkflowInterceptor) (*workflowEnvironmentInterceptor, error) {
 	envInterceptor := &workflowEnvironmentInterceptor{env: env}
 	var interceptor WorkflowInboundCallsInterceptor = envInterceptor
-	for i := len(factories) - 1; i >= 0; i-- {
-		interceptor = factories[i].InterceptWorkflow(env.WorkflowInfo(), interceptor)
+	for i := len(interceptors) - 1; i >= 0; i-- {
+		interceptor = interceptors[i].InterceptWorkflow(env.WorkflowInfo(), interceptor)
 	}
 	envInterceptor.inboundInterceptor = interceptor
 	err := interceptor.Init(envInterceptor)
@@ -464,20 +475,23 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	if err != nil {
 		panic(err)
 	}
-	dispatcher, rootCtx := newDispatcher(newWorkflowContext(env, envInterceptor.outboundInterceptor, envInterceptor), func(ctx Context) {
-		r := &workflowResult{}
+	dispatcher, rootCtx := newDispatcher(
+		newWorkflowContext(env, envInterceptor.outboundInterceptor, envInterceptor),
+		envInterceptor,
+		func(ctx Context) {
+			r := &workflowResult{}
 
-		// We want to execute the user workflow definition from the first decision task started,
-		// so they can see everything before that. Here we would have all initialization done, hence
-		// we are yielding.
-		state := getState(d.rootCtx)
-		state.yield("yield before executing to setup state")
+			// We want to execute the user workflow definition from the first decision task started,
+			// so they can see everything before that. Here we would have all initialization done, hence
+			// we are yielding.
+			state := getState(d.rootCtx)
+			state.yield("yield before executing to setup state")
 
-		// TODO: @shreyassrivatsan - add workflow trace span here
-		r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
-		rpp := getWorkflowResultPointerPointer(ctx)
-		*rpp = r
-	})
+			// TODO: @shreyassrivatsan - add workflow trace span here
+			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
+			rpp := getWorkflowResultPointerPointer(ctx)
+			*rpp = r
+		})
 
 	// set the information from the headers that is to be propagated in the workflow context
 	for _, ctxProp := range env.GetContextPropagators() {
@@ -489,6 +503,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	d.rootCtx, d.cancel = WithCancel(rootCtx)
 	d.dispatcher = dispatcher
+	envInterceptor.dispatcher = dispatcher
 
 	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
@@ -537,9 +552,10 @@ func (d *syncWorkflowDefinition) Close() {
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
-func newDispatcher(rootCtx Context, root func(ctx Context)) (*dispatcherImpl, Context) {
-	result := &dispatcherImpl{}
-	ctxWithState := result.newCoroutine(rootCtx, root)
+func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context)) (*dispatcherImpl, Context) {
+	result := &dispatcherImpl{interceptor: interceptor.outboundInterceptor}
+	interceptor.dispatcher = result
+	ctxWithState := result.interceptor.NewCoroutine(rootCtx, "root", root)
 	return result, ctxWithState
 }
 
@@ -578,7 +594,7 @@ func getState(ctx Context) *coroutineState {
 		panic("getState: not workflow context")
 	}
 	state := s.(*coroutineState)
-	if !state.dispatcher.executing {
+	if !state.dispatcher.IsExecuting() {
 		panic(panicIllegalAccessCoroutinueState)
 	}
 	return state
@@ -869,11 +885,10 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
-func (d *dispatcherImpl) newCoroutine(ctx Context, f func(ctx Context)) Context {
-	return d.newNamedCoroutine(ctx, fmt.Sprintf("%v", d.sequence+1), f)
-}
-
-func (d *dispatcherImpl) newNamedCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+	if name == "" {
+		name = fmt.Sprintf("%v", d.sequence+1)
+	}
 	state := d.newState(name)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
 	go func(crt *coroutineState) {
@@ -952,6 +967,10 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err error) {
 
 func (d *dispatcherImpl) IsDone() bool {
 	return len(d.coroutines) == 0
+}
+
+func (d *dispatcherImpl) IsExecuting() bool {
+	return d.executing
 }
 
 func (d *dispatcherImpl) Close() {

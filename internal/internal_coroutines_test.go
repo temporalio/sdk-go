@@ -36,13 +36,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createRootTestContext() (ctx Context) {
+func createRootTestContext() (interceptor *workflowEnvironmentInterceptor, ctx Context) {
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
 	envInterceptor, err := newWorkflowInterceptors(env.impl, env.impl.GetRegistry().getInterceptors())
 	if err != nil {
 		panic(err)
 	}
-	return newWorkflowContext(env.impl, envInterceptor.outboundInterceptor, envInterceptor)
+	return envInterceptor, newWorkflowContext(env.impl, envInterceptor.outboundInterceptor, envInterceptor)
+}
+
+func createNewDispatcher(f func(ctx Context)) dispatcher {
+	interceptor, ctx := createRootTestContext()
+	result, _ := newDispatcher(ctx, interceptor, f)
+	result.interceptor = interceptor
+	return result
 }
 
 func requireNoExecuteErr(t *testing.T, err error) {
@@ -54,7 +61,7 @@ func requireNoExecuteErr(t *testing.T, err error) {
 
 func TestDispatcher(t *testing.T) {
 	value := "foo"
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) { value = "bar" })
+	d := createNewDispatcher(func(ctx Context) { value = "bar" })
 	defer d.Close()
 	require.Equal(t, "foo", value)
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked())
@@ -64,7 +71,7 @@ func TestDispatcher(t *testing.T) {
 
 func TestNonBlockingChildren(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		for i := 0; i < 10; i++ {
 			ii := i
 			Go(ctx, func(ctx Context) {
@@ -83,7 +90,7 @@ func TestNonBlockingChildren(t *testing.T) {
 
 func TestNonbufferedChannel(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -115,7 +122,7 @@ func TestNonbufferedChannel(t *testing.T) {
 func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 	var history []string
 	var c2 Channel
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 = NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -158,7 +165,7 @@ func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 
 func TestBufferedChannelPut(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -194,7 +201,7 @@ func TestBufferedChannelPut(t *testing.T) {
 
 func TestBufferedChannelGet(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewBufferedChannel(ctx, 2)
 
@@ -250,7 +257,7 @@ func TestBufferedChannelGet(t *testing.T) {
 
 func TestNotBlockingSelect(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 1)
 		c2 := NewBufferedChannel(ctx, 1)
 		s := NewSelector(ctx)
@@ -288,7 +295,7 @@ func TestNotBlockingSelect(t *testing.T) {
 
 func TestBlockingSelect(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -342,7 +349,7 @@ func TestBlockingSelect(t *testing.T) {
 
 func TestBlockingSelectAsyncSend(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 
 		c1 := NewChannel(ctx)
 		s := NewSelector(ctx)
@@ -385,7 +392,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 
 func TestSelectOnClosedChannel(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c := NewBufferedChannel(ctx, 1)
 		c.Send(ctx, 5)
 		c.Close()
@@ -428,7 +435,7 @@ func TestSelectOnClosedChannel(t *testing.T) {
 
 func TestBlockingSelectAsyncSend2(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewBufferedChannel(ctx, 100)
 		c2 := NewBufferedChannel(ctx, 100)
 		s := NewSelector(ctx)
@@ -474,7 +481,7 @@ func TestBlockingSelectAsyncSend2(t *testing.T) {
 
 func TestSendSelect(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -516,7 +523,7 @@ func TestSendSelect(t *testing.T) {
 
 func TestSendSelectWithAsyncReceive(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
 		c2 := NewChannel(ctx)
 		Go(ctx, func(ctx Context) {
@@ -559,7 +566,7 @@ func TestSendSelectWithAsyncReceive(t *testing.T) {
 
 func TestChannelClose(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		jobs := NewBufferedChannel(ctx, 5)
 		done := NewNamedChannel(ctx, "done")
 
@@ -606,7 +613,7 @@ func TestChannelClose(t *testing.T) {
 }
 
 func TestSendClosedChannel(t *testing.T) {
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		defer func() {
 			require.NotNil(t, recover(), "panic expected")
 		}()
@@ -622,7 +629,7 @@ func TestSendClosedChannel(t *testing.T) {
 }
 
 func TestBlockedSendClosedChannel(t *testing.T) {
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		defer func() {
 			require.NotNil(t, recover(), "panic expected")
 		}()
@@ -637,7 +644,7 @@ func TestBlockedSendClosedChannel(t *testing.T) {
 }
 
 func TestAsyncSendClosedChannel(t *testing.T) {
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		defer func() {
 			require.NotNil(t, recover(), "panic expected")
 		}()
@@ -653,7 +660,7 @@ func TestAsyncSendClosedChannel(t *testing.T) {
 
 func TestDispatchClose(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
@@ -671,7 +678,7 @@ func TestDispatchClose(t *testing.T) {
 	stack := d.StackTrace()
 	// 11 coroutines (3 lines each) + 10 nl
 	require.EqualValues(t, 11*3+10, len(strings.Split(stack, "\n")), stack)
-	require.Contains(t, stack, "coroutine 1 [blocked on forever_blocked.Receive]:")
+	require.Contains(t, stack, "coroutine root [blocked on forever_blocked.Receive]:")
 	for i := 0; i < 10; i++ {
 		require.Contains(t, stack, fmt.Sprintf("coroutine c-%v [blocked on forever_blocked.Receive]:", i))
 	}
@@ -688,7 +695,7 @@ func TestDispatchClose(t *testing.T) {
 
 func TestPanic(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
 		for i := 0; i < 10; i++ {
 			ii := i
@@ -717,7 +724,7 @@ func TestPanic(t *testing.T) {
 
 func TestAwait(t *testing.T) {
 	flag := false
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		_ = Await(ctx, func() bool { return flag })
 	})
 	defer d.Close()
@@ -735,9 +742,9 @@ func TestAwait(t *testing.T) {
 
 func TestAwaitCancellation(t *testing.T) {
 	var awaitError error
-	ctx := createRootTestContext()
+	interceptor, ctx := createRootTestContext()
 	ctx, cancelHandler := WithCancel(ctx)
-	d, _ := newDispatcher(ctx, func(ctx Context) {
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitError = Await(ctx, func() bool { return false })
 	})
 	defer d.Close()
@@ -757,7 +764,7 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	var awaitWithTimeoutError error
 	flag := false
 	var awaitOk bool
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return flag })
 	})
 	defer d.Close()
@@ -779,9 +786,9 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	var awaitWithTimeoutError error
 	var awaitOk bool
-	ctx := createRootTestContext()
+	interceptor, ctx := createRootTestContext()
 	ctx, cancelHandler := WithCancel(ctx)
-	d, _ := newDispatcher(ctx, func(ctx Context) {
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return false })
 	})
 	defer d.Close()
@@ -803,7 +810,7 @@ func TestFutureSetValue(t *testing.T) {
 	var history []string
 	var f Future
 	var s Settable
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		f, s = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -848,7 +855,7 @@ func TestFutureFail(t *testing.T) {
 	var history []string
 	var f Future
 	var s Settable
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		f, s = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
 			history = append(history, "child-start")
@@ -892,7 +899,7 @@ func TestFutureSet(t *testing.T) {
 	var history []string
 	var f1, f2 Future
 	var s1, s2 Settable
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		f1, s1 = NewFuture(ctx)
 		f2, s2 = NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
@@ -963,7 +970,7 @@ func TestFutureChain(t *testing.T) {
 	var f1, cf1, f2, cf2 Future
 	var s1, cs1, s2, cs2 Settable
 
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		f1, s1 = NewFuture(ctx)
 		cf1, cs1 = NewFuture(ctx)
 		s1.Chain(cf1)
@@ -1033,7 +1040,7 @@ func TestFutureChain(t *testing.T) {
 
 func TestSelectFuture(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		future1, settable1 := NewFuture(ctx)
 		future2, settable2 := NewFuture(ctx)
 		Go(ctx, func(ctx Context) {
@@ -1083,7 +1090,7 @@ func TestSelectFuture(t *testing.T) {
 
 func TestSelectDecodeFuture(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		future1, settable1 := newDecodeFuture(ctx, "testFn1")
 		future2, settable2 := newDecodeFuture(ctx, "testFn2")
 		Go(ctx, func(ctx Context) {
@@ -1140,7 +1147,7 @@ func TestDecodeFutureChain(t *testing.T) {
 	var f1, cf1, f2, cf2 Future
 	var s1, cs1, s2, cs2 Settable
 
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		f1, s1 = newDecodeFuture(ctx, "testFn")
 		cf1, cs1 = newDecodeFuture(ctx, "testFun")
 		f2, s2 = newDecodeFuture(ctx, "testFn")
@@ -1216,7 +1223,7 @@ func TestDecodeFutureChain(t *testing.T) {
 
 func TestSelectFuture_WithBatchSets(t *testing.T) {
 	var history []string
-	d, _ := newDispatcher(createRootTestContext(), func(ctx Context) {
+	d := createNewDispatcher(func(ctx Context) {
 		future1, settable1 := NewFuture(ctx)
 		future2, settable2 := NewFuture(ctx)
 		future3, settable3 := NewFuture(ctx)

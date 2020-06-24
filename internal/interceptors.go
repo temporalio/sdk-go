@@ -63,6 +63,7 @@ type WorkflowInboundCallsInterceptor interface {
 // that apply to the workflow code should be obeyed by the interceptor implementation.
 // Use workflow.IsReplaying(ctx) to filter out duplicated calls.
 type WorkflowOutboundCallsInterceptor interface {
+	NewCoroutine(ctx Context, name string, f func(ctx Context)) Context
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture
@@ -108,6 +109,11 @@ func (w WorkflowInboundCallsInterceptorBase) ExecuteWorkflow(ctx Context, workfl
 // to the next link in an interceptor chain. To be used as base implementation of interceptors.
 type WorkflowOutboundCallsInterceptorBase struct {
 	Next WorkflowOutboundCallsInterceptor
+}
+
+// NewCoroutine forwards to t.Next
+func (t *WorkflowOutboundCallsInterceptorBase) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+	return t.Next.NewCoroutine(ctx, name, f)
 }
 
 // ExecuteActivity forwards to t.Next
