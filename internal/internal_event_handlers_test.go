@@ -167,9 +167,10 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 func Test_UpsertSearchAttributes(t *testing.T) {
 	t.Parallel()
 	helper := newDecisionsHelper()
+	_, ctx := createRootTestContext()
 	env := &workflowEnvironmentImpl{
 		decisionsHelper: helper,
-		workflowInfo:    GetWorkflowInfo(createRootTestContext()),
+		workflowInfo:    GetWorkflowInfo(ctx),
 	}
 	helper.setCurrentDecisionStartedEventID(4)
 	err := env.UpsertSearchAttributes(nil)
