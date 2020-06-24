@@ -409,6 +409,21 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCancelActivity() {
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-activity", ts.workflows.CancelActivity, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
+	ts.T().Skip(`Currently fails with "PanicError": "unknown decision internal.decisionID{decisionType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-activity", ts.workflows.CancelActivityImmediately, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -435,7 +450,7 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
-	err := ts.executeWorkflow("test-basic", ts.workflows.BasicSession, &expected)
+	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.

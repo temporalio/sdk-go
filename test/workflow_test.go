@@ -397,6 +397,66 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 	return []string{"toUpperWithDelay"}, nil
 }
 
+func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
+	ctx1, cancelFunc1 := workflow.WithCancel(ctx)
+
+	activityCtx1 := workflow.WithActivityOptions(ctx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	})
+
+	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpperWithDelay", "hello", 3*time.Second)
+	// Sleep to send decissions to the server.
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	})
+	activityF2 := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
+
+	var ans string
+	err := activityF2.Get(activityCtx2, &ans)
+	if err != nil {
+		workflow.GetLogger(activityCtx2).Sugar().Infof("Activity Failed: Err: %v", err)
+		return nil, err
+	}
+
+	return []string{"toUpperWithDelay", "toUpper"}, nil
+}
+
+func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, error) {
+	ctx1, cancelFunc1 := workflow.WithCancel(ctx)
+
+	activityCtx1 := workflow.WithActivityOptions(ctx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	})
+
+	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpper", "hello")
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	})
+	activityF2 := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
+
+	var ans string
+	err := activityF2.Get(activityCtx2, &ans)
+	if err != nil {
+		workflow.GetLogger(activityCtx2).Sugar().Infof("Activity Failed: Err: %v", err)
+		return nil, err
+	}
+
+	return []string{"toUpper", "toUpper"}, nil
+}
+
 func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
@@ -575,6 +635,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
+	worker.RegisterWorkflow(w.CancelActivity)
+	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
