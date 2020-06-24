@@ -294,7 +294,7 @@ type workflowEnvironmentInterceptor struct {
 	outboundInterceptor WorkflowOutboundCallsInterceptor
 }
 
-func (wc *workflowEnvironmentInterceptor) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+func (wc *workflowEnvironmentInterceptor) Go(ctx Context, name string, f func(ctx Context)) Context {
 	return wc.dispatcher.NewCoroutine(ctx, name, f)
 }
 
@@ -555,7 +555,7 @@ func (d *syncWorkflowDefinition) Close() {
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context)) (*dispatcherImpl, Context) {
 	result := &dispatcherImpl{interceptor: interceptor.outboundInterceptor}
 	interceptor.dispatcher = result
-	ctxWithState := result.interceptor.NewCoroutine(rootCtx, "root", root)
+	ctxWithState := result.interceptor.Go(rootCtx, "root", root)
 	return result, ctxWithState
 }
 

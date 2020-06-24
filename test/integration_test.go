@@ -142,7 +142,7 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.EqualValues(expected, ts.activities.invoked())
 	// See https://grokbase.com/p/gg/golang-nuts/153jjj8dgg/go-nuts-fm-suffix-in-function-name-what-does-it-mean
 	// for explanation of -fm postfix.
-	ts.Equal([]string{"NewCoroutine", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("Basic"))
 }
 
@@ -352,7 +352,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
 	ts.NoError(err)
 	ts.EqualValues([]string{"getMemoAndSearchAttr"}, ts.activities.invoked())
 	ts.Equal("memoVal, searchAttrVal", result)
-	ts.Equal([]string{"NewCoroutine", "ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess"))
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteChildWorkflow", "ExecuteWorkflow end"}, ts.tracer.GetTrace("ChildWorkflowSuccess"))
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
@@ -524,9 +524,9 @@ type tracingOutboundCallsInterceptor struct {
 	inbound *tracingInboundCallsInterceptor
 }
 
-func (t *tracingOutboundCallsInterceptor) NewCoroutine(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
-	t.inbound.trace = append(t.inbound.trace, "NewCoroutine")
-	return t.Next.NewCoroutine(ctx, name, f)
+func (t *tracingOutboundCallsInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
+	t.inbound.trace = append(t.inbound.trace, "Go")
+	return t.Next.Go(ctx, name, f)
 }
 
 func newTracingInterceptor() *tracingInterceptor {

@@ -337,7 +337,7 @@ func NewWaitGroup(ctx Context) WaitGroup {
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
 func Go(ctx Context, f func(ctx Context)) {
 	state := getState(ctx)
-	state.dispatcher.interceptor.NewCoroutine(ctx, "", f)
+	state.dispatcher.interceptor.Go(ctx, "", f)
 }
 
 // GoNamed creates a new coroutine with a given human readable name.
@@ -345,7 +345,7 @@ func Go(ctx Context, f func(ctx Context)) {
 // Name appears in stack traces that are blocked on this Channel.
 func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	state := getState(ctx)
-	state.dispatcher.interceptor.NewCoroutine(ctx, name, f)
+	state.dispatcher.interceptor.Go(ctx, name, f)
 }
 
 // NewFuture creates a new future as well as associated Settable that is used to set its value.
