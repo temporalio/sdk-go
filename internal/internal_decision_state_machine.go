@@ -580,6 +580,7 @@ func (d *childWorkflowDecisionStateMachine) cancel() {
 	switch d.state {
 	case decisionStateStarted:
 		d.moveState(decisionStateCanceledAfterStarted, eventCancel)
+		d.helper.incrementNextDecisionEventID()
 	default:
 		d.decisionStateMachineBase.cancel()
 	}
