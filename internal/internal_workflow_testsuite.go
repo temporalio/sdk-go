@@ -115,7 +115,7 @@ type (
 		fn            interface{}
 		isWorkflow    bool
 		dataConverter DataConverter
-		interceptors  []WorkflowInterceptorFactory
+		interceptors  []WorkflowInterceptor
 	}
 
 	taskListSpecificActivity struct {

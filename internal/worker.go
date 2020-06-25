@@ -156,7 +156,7 @@ type (
 
 		// Optional: Specifies factories used to instantiate workflow interceptor chain
 		// The chain is instantiated per each replay of a workflow execution
-		WorkflowInterceptorChainFactories []WorkflowInterceptorFactory
+		WorkflowInterceptorChainFactories []WorkflowInterceptor
 	}
 )
 
