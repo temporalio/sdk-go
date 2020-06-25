@@ -468,7 +468,7 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.
-	ts.Equal([]string{"ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
 }
 
