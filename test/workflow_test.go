@@ -397,6 +397,84 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 	return []string{"toUpperWithDelay"}, nil
 }
 
+func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
+	activityCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+	activityCtx1 = workflow.WithActivityOptions(activityCtx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    3 * time.Second,
+	})
+
+	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpperWithDelay", "hello", 2*time.Second)
+	// Sleep to send decissions to the server.
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    1 * time.Second,
+	})
+	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
+
+	return []string{"toUpperWithDelay", "toUpper"}, nil
+}
+
+func (w *Workflows) CancelTimer(ctx workflow.Context) ([]string, error) {
+	timerCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+
+	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
+	// Sleep to send decissions to the server.
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	})
+	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
+
+	return []string{"toUpper"}, nil
+}
+
+func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
+	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+	}
+	childCtx1 = workflow.WithChildOptions(childCtx1, opts)
+	_ = workflow.ExecuteChildWorkflow(childCtx1, w.sleep, 3*time.Second)
+	// Sleep to send decissions to the server.
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	})
+	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
+
+	return []string{"sleep", "toUpper"}, nil
+}
+
+func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, error) {
+	activityCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+	activityCtx1 = workflow.WithActivityOptions(activityCtx1, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    3 * time.Second,
+	})
+
+	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpperWithDelay", "hello", 2*time.Second)
+	cancelFunc1()
+
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    1 * time.Second,
+	})
+	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
+
+	return []string{"toUpperWithDelay", "toUpper"}, nil
+}
+
 func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
@@ -531,6 +609,30 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 		ctx, activites.InspectActivityInfo, namespace, taskList, wfType).Get(ctx, nil)
 }
 
+func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+
+	so := &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	}
+	ctx, err := workflow.CreateSession(ctx, so)
+	if err != nil {
+		return nil, err
+	}
+	defer workflow.CompleteSession(ctx)
+
+	var ans1 string
+	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
+	if err = workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "hello").Get(ctx, &ans1); err != nil {
+		return nil, err
+	}
+	if ans1 != "HELLO" {
+		return nil, fmt.Errorf("incorrect return value from activity: expected=%v,got=%v", "HELLO", ans1)
+	}
+	return []string{"toUpper"}, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
@@ -551,10 +653,15 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
+	worker.RegisterWorkflow(w.CancelActivity)
+	worker.RegisterWorkflow(w.CancelTimer)
+	worker.RegisterWorkflow(w.CancelChildWorkflow)
+	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
+	worker.RegisterWorkflow(w.BasicSession)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

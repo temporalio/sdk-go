@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
 	"go.uber.org/zap"
 )
 
@@ -353,7 +352,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 			return
 		}
 		var canceledErr *CanceledError
-		if errors.As(err, &canceledErr) {
+		if !errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
 			GetLogger(creationCtx).Debug("Session failed", zap.String("sessionID", sessionID), zap.Error(err))
 			sessionInfo.sessionState = sessionStateFailed
@@ -413,7 +412,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			sessionEnv.CompleteSession(sessionID)
 			return ctx.Err()
 		case <-ticker.C:
-			err := activityEnv.serviceInvoker.Heartbeat(&commonpb.Payloads{})
+			err := activityEnv.serviceInvoker.Heartbeat(nil)
 			if err != nil {
 				sessionEnv.CompleteSession(sessionID)
 				return err
@@ -512,7 +511,7 @@ func (env *sessionEnvironmentImpl) AddSessionToken() {
 
 func (env *sessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
 	activityEnv := getActivityEnv(ctx)
-	client := activityEnv.serviceInvoker.GetClient(activityEnv.workflowNamespace, ClientOptions{})
+	client := activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.workflowNamespace})
 	return client.SignalWorkflow(ctx, activityEnv.workflowExecution.ID, activityEnv.workflowExecution.RunID,
 		sessionID, env.getCreationResponse())
 }

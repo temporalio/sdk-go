@@ -228,7 +228,7 @@ type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is cancelled
 	Heartbeat(details *commonpb.Payloads) error
 	Close(flushBufferedHeartbeat bool)
-	GetClient(namespace string, options ClientOptions) Client
+	GetClient(options ClientOptions) Client
 }
 
 // WithActivityTask adds activity specific information into context.

@@ -614,10 +614,9 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 			StartToCloseTimeout:    time.Minute,
 			HeartbeatTimeout:       time.Second * 20,
 			RetryPolicy: &RetryPolicy{
-				InitialInterval:        time.Second,
-				BackoffCoefficient:     2.0,
-				MaximumInterval:        time.Minute,
-				NonRetryableErrorTypes: []string{"bad-error"},
+				InitialInterval:    time.Second,
+				BackoffCoefficient: 2.0,
+				MaximumInterval:    time.Minute,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)

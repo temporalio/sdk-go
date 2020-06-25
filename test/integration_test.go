@@ -126,6 +126,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
 	}
+
+	if strings.Contains(ts.T().Name(), "Session") {
+		options.EnableSessionWorker = true
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskListName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -404,6 +409,35 @@ func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCancelActivity() {
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-activity", ts.workflows.CancelActivity, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCancelTimer() {
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-timer", ts.workflows.CancelTimer, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
+	ts.T().Skip(`Currently fails with "PanicError": "unknown decision internal.decisionID{decisionType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
+	var expected []string
+	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -426,6 +460,16 @@ func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
 	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestBasicSession() {
+	var expected []string
+	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	// createSession activity, actual activity, completeSession activity.
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("BasicSession"))
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
