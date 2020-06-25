@@ -371,13 +371,13 @@ func (d *decisionStateMachineBase) cancel() {
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case decisionStateCreated:
 		d.moveState(decisionStateCompleted, eventCancel)
+	case decisionStateDecisionSent:
+		d.moveState(decisionStateCanceledBeforeInitiated, eventCancel)
 	case decisionStateInitiated:
 		d.moveState(decisionStateCanceledAfterInitiated, eventCancel)
 		// cancel doesn't add new decision, therefore addDecision is not called.
 		// But *CancelRequested event is still being added to the history, therefore counter needs to be incremented.
 		d.helper.incrementNextDecisionEventID()
-	case decisionStateDecisionSent:
-		fallthrough
 	default:
 		d.failStateTransition(eventCancel)
 	}
