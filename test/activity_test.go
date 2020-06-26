@@ -90,7 +90,7 @@ func (a *Activities) fail(_ context.Context) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskList, wfType string) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string) error {
 	a.append("inspectActivityInfo")
 	info := activity.GetInfo(ctx)
 	if info.WorkflowNamespace != namespace {
@@ -99,8 +99,8 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskLis
 	if info.WorkflowType == nil || info.WorkflowType.Name != wfType {
 		return fmt.Errorf("expected workflowType %v but got %v", wfType, info.WorkflowType)
 	}
-	if info.TaskList != taskList {
-		return fmt.Errorf("expected taskList %v but got %v", taskList, info.TaskList)
+	if info.TaskQueue != taskQueue {
+		return fmt.Errorf("expected taskQueue %v but got %v", taskQueue, info.TaskQueue)
 	}
 	return nil
 }

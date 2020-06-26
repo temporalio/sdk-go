@@ -10,7 +10,7 @@
         "workflowType": {
           "name": "Workflow2"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -33,7 +33,7 @@
       "version": -24,
       "taskId": 22020315,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -106,7 +106,7 @@
         "activityType": {
           "name": "main.helloworldActivity"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,

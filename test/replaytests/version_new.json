@@ -10,7 +10,7 @@
         "workflowType": {
           "name": "Workflow2"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -33,7 +33,7 @@
       "version": -24,
       "taskId": 23069222,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -121,7 +121,7 @@
         "activityType": {
           "name": "main.helloworldActivity"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -167,7 +167,7 @@
       "version": -24,
       "taskId": 23069245,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "boweixu-C02V61JZHTDG:15e4eba9-8680-4ee8-a4c3-a936ef67bb60"
         },
         "startToCloseTimeoutSeconds": 60,

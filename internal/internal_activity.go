@@ -61,13 +61,13 @@ type (
 	// ExecuteActivityOptions option for executing an activity
 	ExecuteActivityOptions struct {
 		ActivityID                    string // Users can choose IDs but our framework makes it optional to decrease the crust.
-		TaskListName                  string
+		TaskQueueName                 string
 		ScheduleToCloseTimeoutSeconds int32
 		ScheduleToStartTimeoutSeconds int32
 		StartToCloseTimeoutSeconds    int32
 		HeartbeatTimeoutSeconds       int32
 		WaitForCancellation           bool
-		OriginalTaskListName          string
+		OriginalTaskQueueName         string
 		RetryPolicy                   *commonpb.RetryPolicy
 	}
 
@@ -132,7 +132,7 @@ type (
 		deadline           time.Time
 		scheduledTimestamp time.Time
 		startedTimestamp   time.Time
-		taskList           string
+		taskQueue          string
 		dataConverter      DataConverter
 		attempt            int32 // starts from 0.
 		heartbeatDetails   *commonpb.Payloads

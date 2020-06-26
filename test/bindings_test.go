@@ -45,11 +45,11 @@ import (
 type AsyncBindingsTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config       Config
-	client       client.Client
-	worker       worker.Worker
-	taskListName string
-	seq          int64
+	config        Config
+	client        client.Client
+	worker        worker.Worker
+	taskQueueName string
+	seq           int64
 }
 
 func SimplestWorkflow(ctx workflow.Context) error {
@@ -139,7 +139,7 @@ func (ts *AsyncBindingsTestSuite) executeWorkflowWithOption(
 func (ts *AsyncBindingsTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
 	return client.StartWorkflowOptions{
 		ID:                       wfID,
-		TaskList:                 ts.taskListName,
+		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,
@@ -153,11 +153,11 @@ func (ts *AsyncBindingsTestSuite) TearDownSuite() {
 
 func (ts *AsyncBindingsTestSuite) SetupTest() {
 	ts.seq++
-	ts.taskListName = fmt.Sprintf("tl-%v-%s", ts.seq, ts.T().Name())
+	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	options := worker.Options{
 		DisableStickyExecution: ts.config.IsStickyOff,
 	}
-	ts.worker = worker.New(ts.client, ts.taskListName, options)
+	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.worker.RegisterWorkflow(SimplestWorkflow)
 }
 
@@ -172,7 +172,7 @@ func (ts *AsyncBindingsTestSuite) TestEmptyWorkflowDefinition() {
 		workflow.RegisterOptions{Name: name},
 	)
 	ts.NoError(ts.worker.Start())
-	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskList: ts.taskListName}, name)
+	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskQueue: ts.taskQueueName}, name)
 	ts.NoError(err)
 	var result string
 	ts.NoError(wr.Get(context.Background(), &result))
@@ -188,7 +188,7 @@ func (ts *AsyncBindingsTestSuite) TestSingleActivityWorkflowDefinition() {
 	ts.worker.RegisterWorkflow(ChildWorkflow)
 	ts.worker.RegisterActivity(SingleActivity)
 	ts.NoError(ts.worker.Start())
-	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskList: ts.taskListName}, name)
+	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskQueue: ts.taskQueueName}, name)
 	ts.NoError(err)
 	err = ts.client.SignalWorkflow(context.Background(), wr.GetID(), wr.GetRunID(), "signalFoo", "!!")
 	ts.NoError(err)

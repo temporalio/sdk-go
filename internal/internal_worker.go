@@ -74,7 +74,7 @@ const (
 	defaultMaxConcurrentLocalActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
 	defaultWorkerLocalActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
 
-	defaultTaskListActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
+	defaultTaskQueueActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)
 
 	defaultMaxConcurrentTaskExecutionSize = 1000   // hardcoded max task execution size.
 	defaultWorkerTaskExecutionRate        = 100000 // Large task execution rate (unlimited)
@@ -88,8 +88,8 @@ const (
 
 type (
 	// WorkflowWorker wraps the code for hosting workflow types.
-	// And worker is mapped 1:1 with task list. If the user want's to poll multiple
-	// task list names they might have to manage 'n' workers for 'n' task lists.
+	// And worker is mapped 1:1 with task queue. If the user want's to poll multiple
+	// task queue names they might have to manage 'n' workers for 'n' task queues.
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
@@ -112,8 +112,8 @@ type (
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
-	// activities within a session. The creationWorker polls from a global tasklist,
-	// while the activityWorker polls from a resource specific tasklist.
+	// activities within a session. The creationWorker polls from a global taskqueue,
+	// while the activityWorker polls from a resource specific taskqueue.
 	sessionWorker struct {
 		creationWorker *activityWorker
 		activityWorker *activityWorker
@@ -130,8 +130,8 @@ type (
 		// Namespace name.
 		Namespace string
 
-		// Task list name to poll.
-		TaskList string
+		// Task queue name to poll.
+		TaskQueue string
 
 		// Defines how many concurrent activity executions by this worker.
 		ConcurrentActivityExecutionSize int
@@ -139,7 +139,7 @@ type (
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
 
-		// MaxConcurrentActivityPollers is the max number of pollers for activity task list
+		// MaxConcurrentActivityPollers is the max number of pollers for activity task queue
 		MaxConcurrentActivityPollers int
 
 		// Defines how many concurrent decision task executions by this worker.
@@ -148,7 +148,7 @@ type (
 		// Defines rate limiting on number of decision tasks that can be executed per second per worker.
 		WorkerDecisionTasksPerSecond float64
 
-		// MaxConcurrentDecisionPollers is the max number of pollers for decision task list
+		// MaxConcurrentDecisionPollers is the max number of pollers for decision task queue
 		MaxConcurrentDecisionPollers int
 
 		// Defines how many concurrent local activity executions by this worker.
@@ -157,8 +157,8 @@ type (
 		// Defines rate limiting on number of local activities that can be executed per second per worker.
 		WorkerLocalActivitiesPerSecond float64
 
-		// TaskListActivitiesPerSecond is the throttling limit for activity tasks controlled by the server
-		TaskListActivitiesPerSecond float64
+		// TaskQueueActivitiesPerSecond is the throttling limit for activity tasks controlled by the server
+		TaskQueueActivitiesPerSecond float64
 
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
@@ -212,7 +212,7 @@ func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params wor
 
 func ensureRequiredParams(params *workerExecutionParameters) {
 	if params.Identity == "" {
-		params.Identity = getWorkerIdentity(params.TaskList)
+		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
 	if params.Logger == nil {
 		// create default logger if user does not supply one.
@@ -365,7 +365,7 @@ func (ww *workflowWorker) Stop() {
 
 func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
-		params.Identity = getWorkerIdentity(params.TaskList)
+		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
 	// For now resourceID is hidden from user so we will always create a unique one for each worker.
 	if params.SessionResourceID == "" {
@@ -373,13 +373,13 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	}
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
-	creationTasklist := getCreationTasklist(params.TaskList)
+	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
-	params.TaskList = sessionEnvironment.GetResourceSpecificTasklist()
+	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
 	activityWorker := newActivityWorker(service, params, overrides, env, nil)
 
 	params.MaxConcurrentActivityPollers = 1
-	params.TaskList = creationTasklist
+	params.TaskQueue = creationTaskqueue
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
@@ -1216,7 +1216,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 }
 
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
-	taskList := "ReplayTaskList"
+	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {
 		return errors.New("empty events")
@@ -1266,7 +1266,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	}
 	params := workerExecutionParameters{
 		Namespace: namespace,
-		TaskList:  taskList,
+		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    logger,
 	}
@@ -1340,7 +1340,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 }
 
 // NewAggregatedWorker returns an instance to manage both activity and decision workers
-func NewAggregatedWorker(client *WorkflowClient, taskList string, options WorkerOptions) *AggregatedWorker {
+func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
@@ -1351,7 +1351,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 
 	workerParams := workerExecutionParameters{
 		Namespace:                            client.namespace,
-		TaskList:                             taskList,
+		TaskQueue:                            taskQueue,
 		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
 		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
 		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
@@ -1368,7 +1368,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 		UserContextCancel:                    backgroundActivityContextCancel,
 		DisableStickyExecution:               options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
-		TaskListActivitiesPerSecond:          options.TaskListActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:         options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                  options.NonDeterministicWorkflowPolicy,
 		DataConverter:                        client.dataConverter,
 		WorkerStopTimeout:                    options.WorkerStopTimeout,
@@ -1379,7 +1379,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskList string, options Worker
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = workerParams.Logger.With(
 		zapcore.Field{Key: tagNamespace, Type: zapcore.StringType, String: client.namespace},
-		zapcore.Field{Key: tagTaskList, Type: zapcore.StringType, String: taskList},
+		zapcore.Field{Key: tagTaskQueue, Type: zapcore.StringType, String: taskQueue},
 		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
 	)
 	logger := workerParams.Logger
@@ -1549,8 +1549,8 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.WorkerLocalActivitiesPerSecond == 0 {
 		options.WorkerLocalActivitiesPerSecond = defaultWorkerLocalActivitiesPerSecond
 	}
-	if options.TaskListActivitiesPerSecond == 0 {
-		options.TaskListActivitiesPerSecond = defaultTaskListActivitiesPerSecond
+	if options.TaskQueueActivitiesPerSecond == 0 {
+		options.TaskQueueActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second

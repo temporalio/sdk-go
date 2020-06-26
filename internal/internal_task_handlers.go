@@ -45,7 +45,7 @@ import (
 	historypb "go.temporal.io/temporal-proto/history/v1"
 	querypb "go.temporal.io/temporal-proto/query/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/zap"
 
@@ -90,9 +90,9 @@ type (
 		pollStartTime time.Time
 	}
 
-	// resetStickinessTask wraps a ResetStickyTaskListRequest.
+	// resetStickinessTask wraps a ResetStickyTaskQueueRequest.
 	resetStickinessTask struct {
-		task *workflowservice.ResetStickyTaskListRequest
+		task *workflowservice.ResetStickyTaskQueueRequest
 	}
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
@@ -140,7 +140,7 @@ type (
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
-		taskListName       string
+		taskQueueName      string
 		identity           string
 		service            workflowservice.WorkflowServiceClient
 		metricsScope       *metrics.TaggedScope
@@ -533,7 +533,7 @@ func (w *workflowExecutionContextImpl) IsDestroyed() bool {
 
 func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
 	var task resetStickinessTask
-	task.task = &workflowservice.ResetStickyTaskListRequest{
+	task.task = &workflowservice.ResetStickyTaskQueueRequest{
 		Namespace: w.workflowInfo.Namespace,
 		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
@@ -596,9 +596,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	if attributes == nil {
 		return nil, errors.New("first history event is not WorkflowExecutionStarted")
 	}
-	taskList := attributes.TaskList
-	if taskList == nil || taskList.Name == "" {
-		return nil, errors.New("nil or empty TaskList in WorkflowExecutionStarted event")
+	taskQueue := attributes.TaskQueue
+	if taskQueue == nil || taskQueue.Name == "" {
+		return nil, errors.New("nil or empty TaskQueue in WorkflowExecutionStarted event")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -618,7 +618,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			RunID: runID,
 		},
 		WorkflowType:                    WorkflowType{Name: task.WorkflowType.GetName()},
-		TaskListName:                    taskList.GetName(),
+		TaskQueueName:                   taskQueue.GetName(),
 		WorkflowExecutionTimeoutSeconds: attributes.GetWorkflowExecutionTimeoutSeconds(),
 		WorkflowRunTimeoutSeconds:       attributes.GetWorkflowRunTimeoutSeconds(),
 		WorkflowTaskTimeoutSeconds:      attributes.GetWorkflowTaskTimeoutSeconds(),
@@ -1230,7 +1230,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *historypb.HistoryEvent, str
 
 		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
 			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
-			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) ||
+			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) ||
 			(strictMode && !proto.Equal(eventAttributes.GetInput(), decisionAttributes.GetInput())) {
 			return false
 		}
@@ -1379,7 +1379,7 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *historypb.HistoryEvent, str
 		decisionAttributes := d.GetStartChildWorkflowExecutionDecisionAttributes()
 		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
 			(strictMode && checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace())) ||
-			(strictMode && eventAttributes.TaskList.GetName() != decisionAttributes.TaskList.GetName()) {
+			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) {
 			return false
 		}
 
@@ -1480,7 +1480,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
 			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
 			Input:                      contErr.params.Input,
-			TaskList:                   &tasklistpb.TaskList{Name: contErr.params.TaskListName},
+			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName},
 			WorkflowRunTimeoutSeconds:  contErr.params.WorkflowRunTimeoutSeconds,
 			WorkflowTaskTimeoutSeconds: contErr.params.WorkflowTaskTimeoutSeconds,
 			Header:                     contErr.params.Header,
@@ -1582,7 +1582,7 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	return &activityTaskHandlerImpl{
-		taskListName:       params.TaskList,
+		taskQueueName:      params.TaskQueue,
 		identity:           params.Identity,
 		service:            service,
 		logger:             params.Logger,
@@ -1734,7 +1734,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.PollForActivityTaskResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollForActivityTaskResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
@@ -1758,7 +1758,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
-	ctx := WithActivityTask(canCtx, t, taskList, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
@@ -1770,7 +1770,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskList string, t *workflowservice.
 	// panic handler
 	defer func() {
 		if p := recover(); p != nil {
-			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskListName)
+			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			ath.logger.Error("Activity panic.",
 				zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),

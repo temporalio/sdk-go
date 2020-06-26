@@ -43,7 +43,7 @@ import (
 	decisionpb "go.temporal.io/temporal-proto/decision/v1"
 	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/zap"
@@ -55,16 +55,16 @@ import (
 
 const (
 	defaultTestNamespace        = "default-test-namespace"
-	defaultTestTaskList         = "default-test-tasklist"
+	defaultTestTaskQueue        = "default-test-taskqueue"
 	defaultTestWorkflowID       = "default-test-workflow-id"
 	defaultTestRunID            = "default-test-run-id"
 	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
 
 	// These are copied from service implementation
-	reservedTaskListPrefix = "/__temporal_sys/"
-	maxIDLengthLimit       = 1000
-	maxWorkflowTimeout     = 24 * time.Hour * 365 * 10
+	reservedTaskQueuePrefix = "/__temporal_sys/"
+	maxIDLengthLimit        = 1000
+	maxWorkflowTimeout      = 24 * time.Hour * 365 * 10
 )
 
 type (
@@ -118,9 +118,9 @@ type (
 		interceptors  []WorkflowInterceptor
 	}
 
-	taskListSpecificActivity struct {
-		fn        interface{}
-		taskLists map[string]struct{}
+	taskQueueSpecificActivity struct {
+		fn         interface{}
+		taskQueues map[string]struct{}
 	}
 
 	// testWorkflowEnvironmentShared is the shared data between parent workflow and child workflow test environments
@@ -128,7 +128,7 @@ type (
 		locker    sync.Mutex
 		testSuite *WorkflowTestSuite
 
-		taskListSpecificActivities map[string]*taskListSpecificActivity
+		taskQueueSpecificActivities map[string]*taskQueueSpecificActivity
 
 		mock               *mock.Mock
 		service            workflowservice.WorkflowServiceClient
@@ -216,8 +216,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 	env := &testWorkflowEnvironmentImpl{
 		testWorkflowEnvironmentShared: &testWorkflowEnvironmentShared{
-			testSuite:                  s,
-			taskListSpecificActivities: make(map[string]*taskListSpecificActivity),
+			testSuite:                   s,
+			taskQueueSpecificActivities: make(map[string]*taskQueueSpecificActivity),
 
 			logger:            s.logger,
 			metricsScope:      metrics.NewTaggedScope(s.scope),
@@ -239,8 +239,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 				ID:    defaultTestWorkflowID,
 				RunID: defaultTestRunID,
 			},
-			WorkflowType: WorkflowType{Name: workflowTypeNotSpecified},
-			TaskListName: defaultTestTaskList,
+			WorkflowType:  WorkflowType{Name: workflowTypeNotSpecified},
+			TaskQueueName: defaultTestTaskQueue,
 
 			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
 			WorkflowTaskTimeoutSeconds:      1,
@@ -333,8 +333,8 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.dataConverter = params.DataConverter
 	childEnv.registry = env.registry
 
-	if params.TaskListName == "" {
-		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task list name", "", "")
+	if params.TaskQueueName == "" {
+		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
 	}
 
 	if params.WorkflowID == "" {
@@ -349,7 +349,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.WorkflowExecution.ID = params.WorkflowID
 	childEnv.workflowInfo.WorkflowExecution.RunID = params.WorkflowID + "_RunID"
 	childEnv.workflowInfo.Namespace = params.Namespace
-	childEnv.workflowInfo.TaskListName = params.TaskListName
+	childEnv.workflowInfo.TaskQueueName = params.TaskQueueName
 	childEnv.workflowInfo.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
 	childEnv.workflowInfo.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
 	childEnv.workflowInfo.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
@@ -411,15 +411,15 @@ func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
 	env.workerStopChannel = c
 }
 
-func (env *testWorkflowEnvironmentImpl) setActivityTaskList(tasklist string, activityFns ...interface{}) {
+func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, activityFns ...interface{}) {
 	for _, activityFn := range activityFns {
 		fnName := getActivityFunctionName(env.registry, activityFn)
-		taskListActivity, ok := env.taskListSpecificActivities[fnName]
+		taskQueueActivity, ok := env.taskQueueSpecificActivities[fnName]
 		if !ok {
-			taskListActivity = &taskListSpecificActivity{fn: activityFn, taskLists: make(map[string]struct{})}
-			env.taskListSpecificActivities[fnName] = taskListActivity
+			taskQueueActivity = &taskQueueSpecificActivity{fn: activityFn, taskQueues: make(map[string]struct{})}
+			env.taskQueueSpecificActivities[fnName] = taskQueueActivity
 		}
-		taskListActivity.taskLists[tasklist] = struct{}{}
+		taskQueueActivity.taskQueues[taskqueue] = struct{}{}
 	}
 }
 
@@ -535,7 +535,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
-	scheduleTaskAttr.TaskList = &tasklistpb.TaskList{Name: parameters.TaskListName}
+	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName}
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
@@ -554,15 +554,15 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	task.HeartbeatDetails = env.heartbeatDetails
 
-	// ensure activityFn is registered to defaultTestTaskList
-	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskList, env.GetDataConverter())
-	result, err := taskHandler.Execute(defaultTestTaskList, task)
+	// ensure activityFn is registered to defaultTestTaskQueue
+	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskQueue, env.GetDataConverter())
+	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
 			return nil, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err)
 		}
-		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskList)
+		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskQueue)
 		st := getStackTraceRaw(topLine, 7, 0)
 		return nil, newPanicError(err.Error(), st)
 	}
@@ -965,7 +965,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	}
 	activityID := scheduleTaskAttr.GetActivityId()
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
-	scheduleTaskAttr.TaskList = &tasklistpb.TaskList{Name: parameters.TaskListName}
+	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName}
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
@@ -990,7 +990,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 		scheduleTaskAttr,
 	)
 
-	taskHandler := env.newTestActivityTaskHandler(parameters.TaskListName, parameters.DataConverter)
+	taskHandler := env.newTestActivityTaskHandler(parameters.TaskQueueName, parameters.DataConverter)
 	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
 
 	env.setActivityHandle(activityID, activityHandle)
@@ -1041,8 +1041,8 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		return serviceerror.NewInvalidArgument("ScheduleActivityTaskDecisionAttributes is not set on decision.")
 	}
 
-	defaultTaskListName := ""
-	if _, err := env.validatedTaskList(attributes.TaskList, defaultTaskListName); err != nil {
+	defaultTaskQueueName := ""
+	if _, err := env.validatedTaskQueue(attributes.TaskQueue, defaultTaskQueueName); err != nil {
 		return err
 	}
 
@@ -1124,34 +1124,34 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	return nil
 }
 
-// Copy of the service func (v *decisionAttrValidator) validatedTaskList
-func (env *testWorkflowEnvironmentImpl) validatedTaskList(
-	taskList *tasklistpb.TaskList,
+// Copy of the service func (v *decisionAttrValidator) validatedTaskQueue
+func (env *testWorkflowEnvironmentImpl) validatedTaskQueue(
+	taskQueue *taskqueuepb.TaskQueue,
 	defaultVal string,
-) (*tasklistpb.TaskList, error) {
+) (*taskqueuepb.TaskQueue, error) {
 
-	if taskList == nil {
-		taskList = &tasklistpb.TaskList{}
+	if taskQueue == nil {
+		taskQueue = &taskqueuepb.TaskQueue{}
 	}
 
-	if taskList.GetName() == "" {
+	if taskQueue.GetName() == "" {
 		if defaultVal == "" {
-			return taskList, serviceerror.NewInvalidArgument("missing task list name")
+			return taskQueue, serviceerror.NewInvalidArgument("missing task queue name")
 		}
-		taskList.Name = defaultVal
-		return taskList, nil
+		taskQueue.Name = defaultVal
+		return taskQueue, nil
 	}
 
-	name := taskList.GetName()
+	name := taskQueue.GetName()
 	if len(name) > maxIDLengthLimit {
-		return taskList, serviceerror.NewInvalidArgument(fmt.Sprintf("task list name exceeds length limit of %v", maxIDLengthLimit))
+		return taskQueue, serviceerror.NewInvalidArgument(fmt.Sprintf("task queue name exceeds length limit of %v", maxIDLengthLimit))
 	}
 
-	if strings.HasPrefix(name, reservedTaskListPrefix) {
-		return taskList, serviceerror.NewInvalidArgument(fmt.Sprintf("task list name cannot start with reserved prefix %v", reservedTaskListPrefix))
+	if strings.HasPrefix(name, reservedTaskQueuePrefix) {
+		return taskQueue, serviceerror.NewInvalidArgument(fmt.Sprintf("task queue name cannot start with reserved prefix %v", reservedTaskQueuePrefix))
 	}
 
-	return taskList, nil
+	return taskQueue, nil
 }
 
 // copy of the service func ValidateRetryPolicy(policy *commonpb.RetryPolicy)
@@ -1209,7 +1209,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 	for {
 		var err error
-		result, err = taskHandler.Execute(parameters.TaskListName, task)
+		result, err = taskHandler.Execute(parameters.TaskQueueName, task)
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return err
@@ -1707,10 +1707,10 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 	return m.getMockValue(mockRet)
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList string, dataConverter DataConverter) ActivityTaskHandler {
+func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter DataConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
-		TaskList:           taskList,
+		TaskQueue:          taskQueue,
 		Identity:           env.identity,
 		MetricsScope:       env.metricsScope,
 		Logger:             env.logger,
@@ -1730,15 +1730,15 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskList stri
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, env.sessionEnvironment)
 	registry := env.registry
 	if len(registry.getRegisteredActivities()) == 0 {
-		panic(fmt.Sprintf("no activity is registered for tasklist '%v'", taskList))
+		panic(fmt.Sprintf("no activity is registered for taskqueue '%v'", taskQueue))
 	}
 
 	getActivity := func(name string) activity {
-		tlsa, ok := env.taskListSpecificActivities[name]
+		tlsa, ok := env.taskQueueSpecificActivities[name]
 		if ok {
-			_, ok := tlsa.taskLists[taskList]
+			_, ok := tlsa.taskQueues[taskQueue]
 			if !ok {
-				// activity are bind to specific task list but not to current task list
+				// activity are bind to specific task queue but not to current task queue
 				return nil
 			}
 		}
@@ -2194,8 +2194,8 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 	if options.WorkflowTaskTimeout > 0 {
 		wf.WorkflowTaskTimeoutSeconds = common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())
 	}
-	if len(options.TaskList) > 0 {
-		wf.TaskListName = options.TaskList
+	if len(options.TaskQueue) > 0 {
+		wf.TaskQueueName = options.TaskQueue
 	}
 }
 

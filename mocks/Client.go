@@ -109,22 +109,22 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 	return r0, r1
 }
 
-// DescribeTaskList provides a mock function with given fields: ctx, tasklist, tasklistType
-func (_m *Client) DescribeTaskList(ctx context.Context, tasklist string, tasklistType enumspb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
-	ret := _m.Called(ctx, tasklist, tasklistType)
+// DescribeTaskQueue provides a mock function with given fields: ctx, taskqueue, taskqueueType
+func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
+	ret := _m.Called(ctx, taskqueue, taskqueueType)
 
-	var r0 *workflowservice.DescribeTaskListResponse
-	if rf, ok := ret.Get(0).(func(context.Context, string, enumspb.TaskListType) *workflowservice.DescribeTaskListResponse); ok {
-		r0 = rf(ctx, tasklist, tasklistType)
+	var r0 *workflowservice.DescribeTaskQueueResponse
+	if rf, ok := ret.Get(0).(func(context.Context, string, enumspb.TaskQueueType) *workflowservice.DescribeTaskQueueResponse); ok {
+		r0 = rf(ctx, taskqueue, taskqueueType)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*workflowservice.DescribeTaskListResponse)
+			r0 = ret.Get(0).(*workflowservice.DescribeTaskQueueResponse)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, enumspb.TaskListType) error); ok {
-		r1 = rf(ctx, tasklist, tasklistType)
+	if rf, ok := ret.Get(1).(func(context.Context, string, enumspb.TaskQueueType) error); ok {
+		r1 = rf(ctx, taskqueue, taskqueueType)
 	} else {
 		r1 = ret.Error(1)
 	}

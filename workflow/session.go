@@ -58,7 +58,7 @@ var ErrSessionFailed = internal.ErrSessionFailed
 //         support. By default, 1000 is used.
 
 // CreateSession creates a session and returns a new context which contains information
-// of the created session. The session will be created on the tasklist user specified in
+// of the created session. The session will be created on the taskqueue user specified in
 // ActivityOptions. If none is specified, the default one will be used.
 //
 // CreationSession will fail in the following situations:
@@ -120,7 +120,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // session has already completed or failed.
 //
 // After a session has completed, user can continue to use the context, but the activities will be scheduled
-// on the normal taskList (as user specified in ActivityOptions) and may be picked up by another worker since
+// on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
 func CompleteSession(ctx Context) {
 	internal.CompleteSession(ctx)

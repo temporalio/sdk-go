@@ -72,7 +72,7 @@ func (s *WorkflowUnitTest) Test_WorldWorkflow() {
 func helloWorldAct(ctx context.Context) (string, error) {
 	s := ctx.Value(unitTestKey).(*WorkflowUnitTest)
 	info := GetActivityInfo(ctx)
-	s.Equal(tasklist, info.TaskList)
+	s.Equal(taskqueue, info.TaskQueue)
 	s.Equal(2*time.Second, info.HeartbeatTimeout)
 	return "test", nil
 }
@@ -83,7 +83,7 @@ func helloWorldActivityWorkflow(ctx Context, _ string) (result string, err error
 		StartToCloseTimeout:    5 * time.Second,
 		HeartbeatTimeout:       2 * time.Second,
 		ActivityID:             "id1",
-		TaskList:               tasklist,
+		TaskQueue:              taskqueue,
 	}
 	ctx1 := WithActivityOptions(ctx, ao)
 	f := ExecuteActivity(ctx1, helloWorldAct)
@@ -429,7 +429,7 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	s.EqualValues(100, resultErr.params.WorkflowExecutionTimeoutSeconds)
 	s.EqualValues(50, resultErr.params.WorkflowRunTimeoutSeconds)
 	s.EqualValues(5, resultErr.params.WorkflowTaskTimeoutSeconds)
-	s.EqualValues("default-test-tasklist", resultErr.params.TaskListName)
+	s.EqualValues("default-test-taskqueue", resultErr.params.TaskQueueName)
 }
 
 func cancelWorkflowTest(ctx Context) (string, error) {

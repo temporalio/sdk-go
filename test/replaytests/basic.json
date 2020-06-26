@@ -10,7 +10,7 @@
         "workflowType": {
           "name": "Workflow"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -33,7 +33,7 @@
       "version": -24,
       "taskId": 22037766,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -91,7 +91,7 @@
         "activityType": {
           "name": "main.helloworldActivity"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -137,7 +137,7 @@
       "version": -24,
       "taskId": 22037785,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "boweixu-C02V61JZHTDG:54a0ace3-bd7b-4521-b9c2-24ba52bef845"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -180,7 +180,7 @@
         "activityType": {
           "name": "main.helloworldActivity"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -226,7 +226,7 @@
       "version": -24,
       "taskId": 22037802,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "boweixu-C02V61JZHTDG:54a0ace3-bd7b-4521-b9c2-24ba52bef845"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -269,7 +269,7 @@
         "activityType": {
           "name": "main.helloworldActivity"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "helloWorldGroup"
         },
         "input": null,
@@ -315,7 +315,7 @@
       "version": -24,
       "taskId": 22037819,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "boweixu-C02V61JZHTDG:54a0ace3-bd7b-4521-b9c2-24ba52bef845"
         },
         "startToCloseTimeoutSeconds": 60,

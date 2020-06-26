@@ -46,7 +46,7 @@ type (
 		SessionID         string
 		HostName          string
 		resourceID        string // hide from user for now
-		tasklist          string // resource specific tasklist
+		taskqueue         string // resource specific taskqueue
 		sessionState      sessionState
 		sessionCancelFunc CancelFunc // cancel func for the session context, used by both creation activity and user activities
 		completionCtx     Context    // context for executing the completion activity
@@ -67,7 +67,7 @@ type (
 	}
 
 	recreateSessionParams struct {
-		Tasklist string
+		Taskqueue string
 	}
 
 	sessionState int
@@ -82,20 +82,20 @@ type (
 		CompleteSession(sessionID string)
 		AddSessionToken()
 		SignalCreationResponse(ctx context.Context, sessionID string) error
-		GetResourceSpecificTasklist() string
+		GetResourceSpecificTaskqueue() string
 		GetTokenBucket() *sessionTokenBucket
 	}
 
 	sessionEnvironmentImpl struct {
 		*sync.Mutex
-		doneChanMap              map[string]chan struct{}
-		resourceID               string
-		resourceSpecificTasklist string
-		sessionTokenBucket       *sessionTokenBucket
+		doneChanMap               map[string]chan struct{}
+		resourceID                string
+		resourceSpecificTaskqueue string
+		sessionTokenBucket        *sessionTokenBucket
 	}
 
 	sessionCreationResponse struct {
-		Tasklist   string
+		Taskqueue  string
 		HostName   string
 		ResourceID string
 	}
@@ -138,7 +138,7 @@ var (
 //         support. By default, 1000 is used.
 
 // CreateSession creates a session and returns a new context which contains information
-// of the created session. The session will be created on the tasklist user specified in
+// of the created session. The session will be created on the taskqueue user specified in
 // ActivityOptions. If none is specified, the default one will be used.
 //
 // CreationSession will fail in the following situations:
@@ -181,11 +181,11 @@ var (
 //    ... // execute more activities using sessionCtx
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	options := getActivityOptions(ctx)
-	baseTasklist := options.TaskListName
-	if baseTasklist == "" {
-		baseTasklist = options.OriginalTaskListName
+	baseTaskqueue := options.TaskQueueName
+	if baseTaskqueue == "" {
+		baseTaskqueue = options.OriginalTaskQueueName
 	}
-	return createSession(ctx, getCreationTasklist(baseTasklist), sessionOptions, true)
+	return createSession(ctx, getCreationTaskqueue(baseTaskqueue), sessionOptions, true)
 }
 
 // RecreateSession recreate a session based on the sessionInfo passed in. Activities executed within
@@ -201,7 +201,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserilalize recreate token: %v", err)
 	}
-	return createSession(ctx, recreateParams.Tasklist, sessionOptions, true)
+	return createSession(ctx, recreateParams.Taskqueue, sessionOptions, true)
 }
 
 // CompleteSession completes a session. It releases worker resources, so other sessions can be created.
@@ -209,7 +209,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // session has already completed or failed.
 //
 // After a session has completed, user can continue to use the context, but the activities will be scheduled
-// on the normal taskList (as user specified in ActivityOptions) and may be picked up by another worker since
+// on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
 func CompleteSession(ctx Context) {
 	sessionInfo := getSessionInfo(ctx)
@@ -230,7 +230,7 @@ func CompleteSession(ctx Context) {
 	// even though the creation activity has been cancelled, the session worker doesn't know. The worker will wait until
 	// next heartbeat to figure out that the workflow is completed and then release the resource. We need to make sure the
 	// completion activity is executed before the workflow exits.
-	// the tasklist will be overrided to use the one stored in sessionInfo.
+	// the taskqueue will be overrided to use the one stored in sessionInfo.
 	err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
 	if err != nil {
 		GetLogger(completionCtx).Warn("Complete session activity failed", zap.Error(err))
@@ -258,7 +258,7 @@ func GetSessionInfo(ctx Context) *SessionInfo {
 // RecreateSession() API.
 func (s *SessionInfo) GetRecreateToken() []byte {
 	params := recreateSessionParams{
-		Tasklist: s.tasklist,
+		Taskqueue: s.taskqueue,
 	}
 	return mustSerializeRecreateToken(&params)
 }
@@ -275,7 +275,7 @@ func setSessionInfo(ctx Context, sessionInfo *SessionInfo) Context {
 	return WithValue(ctx, sessionInfoContextKey, sessionInfo)
 }
 
-func createSession(ctx Context, creationTasklist string, options *SessionOptions, retryable bool) (Context, error) {
+func createSession(ctx Context, creationTaskqueue string, options *SessionOptions, retryable bool) (Context, error) {
 	logger := GetLogger(ctx)
 	logger.Debug("Start creating session")
 	if prevSessionInfo := getSessionInfo(ctx); prevSessionInfo != nil && prevSessionInfo.sessionState == sessionStateOpen {
@@ -286,7 +286,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		return nil, err
 	}
 
-	tasklistChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
+	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
 	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
 	retryPolicy := &RetryPolicy{
 		InitialInterval:    time.Second,
@@ -299,7 +299,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		heartbeatTimeout = options.HeartbeatTimeout
 	}
 	ao := ActivityOptions{
-		TaskList:               creationTasklist,
+		TaskQueue:              creationTaskqueue,
 		ScheduleToStartTimeout: options.CreationTimeout,
 		StartToCloseTimeout:    options.ExecutionTimeout,
 		HeartbeatTimeout:       heartbeatTimeout,
@@ -326,7 +326,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 	var creationErr error
 	var creationResponse sessionCreationResponse
 	s := NewSelector(creationCtx)
-	s.AddReceive(tasklistChan, func(c ReceiveChannel, more bool) {
+	s.AddReceive(taskqueueChan, func(c ReceiveChannel, more bool) {
 		c.Receive(creationCtx, &creationResponse)
 	})
 	s.AddFuture(creationFuture, func(f Future) {
@@ -341,7 +341,7 @@ func createSession(ctx Context, creationTasklist string, options *SessionOptions
 		return nil, creationErr
 	}
 
-	sessionInfo.tasklist = creationResponse.Tasklist
+	sessionInfo.taskqueue = creationResponse.Taskqueue
 	sessionInfo.resourceID = creationResponse.ResourceID
 	sessionInfo.HostName = creationResponse.HostName
 	sessionInfo.sessionCancelFunc = sessionCancelFunc
@@ -373,11 +373,11 @@ func generateSessionID(ctx Context) (string, error) {
 	return sessionID, err
 }
 
-func getCreationTasklist(base string) string {
+func getCreationTaskqueue(base string) string {
 	return base + "__internal_session_creation"
 }
 
-func getResourceSpecificTasklist(resourceID string) string {
+func getResourceSpecificTaskqueue(resourceID string) string {
 	return resourceID + "@" + getHostName()
 }
 
@@ -485,11 +485,11 @@ func (t *sessionTokenBucket) getToken() bool {
 
 func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int) sessionEnvironment {
 	return &sessionEnvironmentImpl{
-		Mutex:                    &sync.Mutex{},
-		doneChanMap:              make(map[string]chan struct{}),
-		resourceID:               resourceID,
-		resourceSpecificTasklist: getResourceSpecificTasklist(resourceID),
-		sessionTokenBucket:       newSessionTokenBucket(concurrentSessionExecutionSize),
+		Mutex:                     &sync.Mutex{},
+		doneChanMap:               make(map[string]chan struct{}),
+		resourceID:                resourceID,
+		resourceSpecificTaskqueue: getResourceSpecificTaskqueue(resourceID),
+		sessionTokenBucket:        newSessionTokenBucket(concurrentSessionExecutionSize),
 	}
 }
 
@@ -518,7 +518,7 @@ func (env *sessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, s
 
 func (env *sessionEnvironmentImpl) getCreationResponse() *sessionCreationResponse {
 	return &sessionCreationResponse{
-		Tasklist:   env.resourceSpecificTasklist,
+		Taskqueue:  env.resourceSpecificTaskqueue,
 		ResourceID: env.resourceID,
 		HostName:   getHostName(),
 	}
@@ -534,8 +534,8 @@ func (env *sessionEnvironmentImpl) CompleteSession(sessionID string) {
 	}
 }
 
-func (env *sessionEnvironmentImpl) GetResourceSpecificTasklist() string {
-	return env.resourceSpecificTasklist
+func (env *sessionEnvironmentImpl) GetResourceSpecificTaskqueue() string {
+	return env.resourceSpecificTaskqueue
 }
 
 func (env *sessionEnvironmentImpl) GetTokenBucket() *sessionTokenBucket {

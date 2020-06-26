@@ -38,7 +38,7 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common/v1"
 	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/zap"
@@ -105,7 +105,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
 		Namespace:                    DefaultNamespace,
-		TaskList:                     "testTaskList",
+		TaskQueue:                    "testTaskQueue",
 		MaxConcurrentDecisionPollers: 5,
 		Logger:                       logger,
 		UserContext:                  ctx,
@@ -128,7 +128,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 
 	executionParameters := workerExecutionParameters{
 		Namespace:                    DefaultNamespace,
-		TaskList:                     "testTaskList",
+		TaskQueue:                    "testTaskQueue",
 		MaxConcurrentActivityPollers: 5,
 		Logger:                       logger,
 	}
@@ -169,7 +169,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
 		Namespace:                       DefaultNamespace,
-		TaskList:                        "testTaskList",
+		TaskQueue:                       "testTaskQueue",
 		MaxConcurrentActivityPollers:    5,
 		ConcurrentActivityExecutionSize: 2,
 		Logger:                          logger,
@@ -203,7 +203,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 
 	executionParameters := workerExecutionParameters{
 		Namespace:                    DefaultNamespace,
-		TaskList:                     "testDecisionTaskList",
+		TaskQueue:                    "testDecisionTaskQueue",
 		MaxConcurrentDecisionPollers: 5,
 		Logger:                       zap.NewNop(),
 	}
@@ -240,20 +240,20 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		return err
 	}
 
-	taskList := "long-running-decision-tl"
+	taskQueue := "long-running-decision-tq"
 	testEvents := []*historypb.HistoryEvent{
 		{
 			EventId:   1,
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
-				TaskList:                        &tasklistpb.TaskList{Name: taskList},
+				TaskQueue:                       &taskqueuepb.TaskQueue{Name: taskQueue},
 				WorkflowExecutionTimeoutSeconds: 10,
 				WorkflowRunTimeoutSeconds:       10,
 				WorkflowTaskTimeoutSeconds:      2,
 				WorkflowType:                    &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
@@ -265,7 +265,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(7),
 		createTestEventDecisionTaskCompleted(8, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
@@ -277,7 +277,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
@@ -334,7 +334,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	}
 
 	client := NewServiceClient(s.service, nil, clientOptions)
-	worker := NewAggregatedWorker(client, taskList, options)
+	worker := NewAggregatedWorker(client, taskQueue, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "long-running-decision-workflow-type"},
@@ -381,20 +381,20 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		return err
 	}
 
-	taskList := "multiple-local-activities-tl"
+	taskQueue := "multiple-local-activities-tq"
 	testEvents := []*historypb.HistoryEvent{
 		{
 			EventId:   1,
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
-				TaskList:                        &tasklistpb.TaskList{Name: taskList},
+				TaskQueue:                       &taskqueuepb.TaskQueue{Name: taskQueue},
 				WorkflowExecutionTimeoutSeconds: 10,
 				WorkflowRunTimeoutSeconds:       10,
 				WorkflowTaskTimeoutSeconds:      3,
 				WorkflowType:                    &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(3),
 		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
@@ -406,7 +406,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				DecisionTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(7),
 		createTestEventDecisionTaskCompleted(8, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
@@ -418,7 +418,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				DecisionTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskList: &tasklistpb.TaskList{Name: taskList}}),
+		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventDecisionTaskStarted(11),
 	}
 
@@ -467,7 +467,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	}
 
 	client := NewServiceClient(s.service, nil, clientOptions)
-	worker := NewAggregatedWorker(client, taskList, options)
+	worker := NewAggregatedWorker(client, taskQueue, options)
 	worker.RegisterWorkflowWithOptions(
 		longDecisionWorkflowFn,
 		RegisterWorkflowOptions{Name: "multiple-local-activities-workflow-type"},

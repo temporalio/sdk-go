@@ -186,16 +186,16 @@ const (
 
 // New creates an instance of worker for managing workflow and activity executions.
 //    namespace   - the name of the temporal namespace
-//    taskList - is the task list name you use to identify your client worker, also
+//    taskQueue - is the task queue name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process
 //    options  - configure any worker specific options like logger, metrics, identity
 func New(
 	client client.Client,
-	taskList string,
+	taskQueue string,
 	options Options,
 ) Worker {
-	return internal.NewWorker(client, taskList, options)
+	return internal.NewWorker(client, taskQueue, options)
 }
 
 // NewWorkflowReplayer creates a WorkflowReplayer instance.

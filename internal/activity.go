@@ -51,7 +51,7 @@ type (
 		WorkflowExecution  WorkflowExecution
 		ActivityID         string
 		ActivityType       ActivityType
-		TaskList           string
+		TaskQueue          string
 		HeartbeatTimeout   time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
 		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
 		StartedTimestamp   time.Time     // Time of activity start
@@ -72,9 +72,9 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	ActivityOptions struct {
-		// TaskList that the activity needs to be scheduled on.
-		// optional: The default task list with the same name as the workflow task list.
-		TaskList string
+		// TaskQueue that the activity needs to be scheduled on.
+		// optional: The default task queue with the same name as the workflow task queue.
+		TaskQueue string
 
 		// ScheduleToCloseTimeout - The end to end timeout for the activity needed.
 		// The zero value of this uses default value.
@@ -143,7 +143,7 @@ func GetActivityInfo(ctx context.Context) ActivityInfo {
 		Deadline:           env.deadline,
 		ScheduledTimestamp: env.scheduledTimestamp,
 		StartedTimestamp:   env.startedTimestamp,
-		TaskList:           env.taskList,
+		TaskQueue:          env.taskQueue,
 		Attempt:            env.attempt,
 		WorkflowType:       env.workflowType,
 		WorkflowNamespace:  env.workflowNamespace,
@@ -236,7 +236,7 @@ type ServiceInvoker interface {
 func WithActivityTask(
 	ctx context.Context,
 	task *workflowservice.PollForActivityTaskResponse,
-	taskList string,
+	taskQueue string,
 	invoker ServiceInvoker,
 	logger *zap.Logger,
 	scope tally.Scope,
@@ -282,7 +282,7 @@ func WithActivityTask(
 		heartbeatTimeout:   heartbeatTimeout,
 		scheduledTimestamp: scheduled,
 		startedTimestamp:   started,
-		taskList:           taskList,
+		taskQueue:          taskQueue,
 		dataConverter:      dataConverter,
 		attempt:            task.GetAttempt(),
 		heartbeatDetails:   task.HeartbeatDetails,

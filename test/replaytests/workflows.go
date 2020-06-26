@@ -34,7 +34,7 @@ import (
 	"go.temporal.io/temporal/workflow"
 )
 
-// ApplicationName is the task list for this sample
+// ApplicationName is the task queue for this sample
 const ApplicationName = "helloWorldGroup"
 
 // Workflow workflow decider

@@ -44,7 +44,7 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common/v1"
 	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	historypb "go.temporal.io/temporal-proto/history/v1"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 	"go.uber.org/atomic"
@@ -110,7 +110,7 @@ func createTestEventDecisionTaskScheduled(eventID int64, attr *historypb.Decisio
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			TaskList: &tasklistpb.TaskList{Name: "tasklist"},
+			TaskQueue: &taskqueuepb.TaskQueue{Name: "taskqueue"},
 		}),
 		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
 	}
@@ -136,10 +136,10 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	}
 
 	resetStickyAPICalled := make(chan struct{})
-	mockResetStickyTaskList := func(ctx context.Context, _ResetRequest *workflowservice.ResetStickyTaskListRequest, opts ...grpc.CallOption,
-	) (success *workflowservice.ResetStickyTaskListResponse, err error) {
+	mockResetStickyTaskQueue := func(ctx context.Context, _ResetRequest *workflowservice.ResetStickyTaskQueueRequest, opts ...grpc.CallOption,
+	) (success *workflowservice.ResetStickyTaskQueueResponse, err error) {
 		resetStickyAPICalled <- struct{}{}
-		return &workflowservice.ResetStickyTaskListResponse{}, nil
+		return &workflowservice.ResetStickyTaskQueueResponse{}, nil
 	}
 	// pick 5 as cache size because it's not too big and not too small.
 	cacheSize := 5
@@ -161,11 +161,11 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	// this is the critical point of the test.
 	// ResetSticky should be called exactly once because our workflow cache evicts when full
 	// so if our worker puts *cacheSize* entries in the cache, it should evict exactly one
-	s.service.EXPECT().ResetStickyTaskList(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskList).Times(1)
+	s.service.EXPECT().ResetStickyTaskQueue(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskQueue).Times(1)
 
 	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
 
-	workflowWorker := internal.NewAggregatedWorker(client, "tasklist", worker.Options{DisableActivityWorker: true})
+	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{DisableActivityWorker: true})
 	// this is an arbitrary workflow we use for this test
 	// NOTE: a simple helloworld that doesn't execute an activity
 	// won't work because the workflow will simply just complete

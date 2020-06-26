@@ -303,13 +303,13 @@ type (
 		//  - EntityNotExistError
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
-		// DescribeTaskList returns information about the target tasklist, right now this API returns the
-		// pollers which polled this tasklist in last few minutes.
+		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
+		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
 		//  - EntityNotExistError
-		DescribeTaskList(ctx context.Context, tasklist string, tasklistType enumspb.TaskListType) (*workflowservice.DescribeTaskListResponse, error)
+		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
 		// Close client and clean up underlying resources.
 		Close()
@@ -393,11 +393,11 @@ type (
 		// Optional: defaulted to a uuid.
 		ID string
 
-		// TaskList - The decisions of the workflow are scheduled on this queue.
-		// This is also the default task list on which activities are scheduled. The workflow author can choose
+		// TaskQueue - The decisions of the workflow are scheduled on this queue.
+		// This is also the default task queue on which activities are scheduled. The workflow author can choose
 		// to override this using activity options.
 		// Mandatory: No default.
-		TaskList string
+		TaskQueue string
 
 		// WorkflowExecutionTimeout - The timeout for duration of workflow execution.
 		// It includes retries and continue as new. Use WorkflowRunTimeout to limit execution time

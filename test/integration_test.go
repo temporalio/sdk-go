@@ -52,14 +52,14 @@ import (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config       Config
-	client       client.Client
-	activities   *Activities
-	workflows    *Workflows
-	worker       worker.Worker
-	seq          int64
-	taskListName string
-	tracer       *tracingInterceptor
+	config        Config
+	client        client.Client
+	activities    *Activities
+	workflows     *Workflows
+	worker        worker.Worker
+	seq           int64
+	taskQueueName string
+	tracer        *tracingInterceptor
 }
 
 const (
@@ -120,7 +120,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 func (ts *IntegrationTestSuite) SetupTest() {
 	ts.seq++
 	ts.activities.clearInvoked()
-	ts.taskListName = fmt.Sprintf("tl-%v-%s", ts.seq, ts.T().Name())
+	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
@@ -131,7 +131,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.EnableSessionWorker = true
 	}
 
-	ts.worker = worker.New(ts.client, ts.taskListName, options)
+	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -192,7 +192,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnHBTimeout() {
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	var result int
-	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskListName)
+	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskQueueName)
 	ts.NoError(err)
 	ts.Equal(999, result)
 }
@@ -206,7 +206,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	startOptions.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "searchAttr",
 	}
-	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithOptions, &result, 4, ts.taskListName)
+	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithOptions, &result, 4, ts.taskQueueName)
 	ts.NoError(err)
 	ts.Equal("memoVal,searchAttr", result)
 }
@@ -536,7 +536,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
 	return client.StartWorkflowOptions{
 		ID:                       wfID,
-		TaskList:                 ts.taskListName,
+		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,

@@ -63,10 +63,10 @@ type (
 
 // ExecuteActivity requests activity execution in the context of a workflow.
 // Context can be used to pass the settings for this activity.
-// For example: task list that this need to be routed, timeouts that need to be configured.
+// For example: task queue that this need to be routed, timeouts that need to be configured.
 // Use ActivityOptions to pass down the options.
 //  ao := ActivityOptions{
-// 	    TaskList: "exampleTaskList",
+// 	    TaskQueue: "exampleTaskQueue",
 // 	    ScheduleToStartTimeout: 10 * time.Second,
 // 	    StartToCloseTimeout: 5 * time.Second,
 // 	    ScheduleToCloseTimeout: 10 * time.Second,
@@ -74,7 +74,7 @@ type (
 // 	}
 //	ctx := WithActivityOptions(ctx, ao)
 // Or to override a single option
-//  ctx := WithTaskList(ctx, "exampleTaskList")
+//  ctx := WithTaskQueue(ctx, "exampleTaskQueue")
 // Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
@@ -137,7 +137,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 
 // ExecuteChildWorkflow requests child workflow execution in the context of a workflow.
 // Context can be used to pass the settings for the child workflow.
-// For example: task list that this child workflow should be routed, timeouts that need to be configured.
+// For example: task queue that this child workflow should be routed, timeouts that need to be configured.
 // Use ChildWorkflowOptions to pass down the options.
 //  cwo := ChildWorkflowOptions{
 // 	    WorkflowExecutionTimeout: 10 * time.Minute,
@@ -439,11 +439,11 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options
 // provided to this function.
-//  ctx - use context to override any options for the new workflow like execution timeout, decision task timeout, task list.
+//  ctx - use context to override any options for the new workflow like execution timeout, decision task timeout, task queue.
 //	  if not mentioned it would use the defaults that the current workflow is using.
 //        ctx := WithWorkflowExecutionTimeout(ctx, 30 * time.Minute)
 //        ctx := WithWorkflowTaskTimeout(ctx, time.Minute)
-//	  ctx := WithWorkflowTaskList(ctx, "example-group")
+//	  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //

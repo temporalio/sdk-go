@@ -175,7 +175,7 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	WorkflowOptions struct {
-		TaskListName                    string
+		TaskQueueName                   string
 		WorkflowExecutionTimeoutSeconds int32
 		WorkflowRunTimeoutSeconds       int32
 		WorkflowTaskTimeoutSeconds      int32
@@ -444,14 +444,14 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowOutboundCa
 	// Set default values for the workflow execution.
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
-	rootCtx = WithWorkflowTaskList(rootCtx, wInfo.TaskListName)
+	rootCtx = WithWorkflowTaskQueue(rootCtx, wInfo.TaskQueueName)
 	getWorkflowEnvOptions(rootCtx).WorkflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
 	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
 	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
-	rootCtx = WithTaskList(rootCtx, wInfo.TaskListName)
+	rootCtx = WithTaskQueue(rootCtx, wInfo.TaskQueueName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
 	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())
-	getActivityOptions(rootCtx).OriginalTaskListName = wInfo.TaskListName
+	getActivityOptions(rootCtx).OriginalTaskQueueName = wInfo.TaskQueueName
 
 	return rootCtx
 }

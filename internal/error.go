@@ -372,11 +372,11 @@ func IsCanceledError(err error) bool {
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options
 // provided to this function.
-//  ctx - use context to override any options for the new workflow like run timeout, task timeout, task list.
+//  ctx - use context to override any options for the new workflow like run timeout, task timeout, task queue.
 //	  if not mentioned it would use the defaults that the current workflow is using.
 //        ctx := WithWorkflowRunTimeout(ctx, 30 * time.Minute)
 //        ctx := WithWorkflowTaskTimeout(ctx, 5 * time.Second)
-//	  ctx := WithWorkflowTaskList(ctx, "example-group")
+//	  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //

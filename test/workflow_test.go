@@ -180,23 +180,23 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
-func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskList string) (int, error) {
-	tl := workflow.GetInfo(ctx).TaskListName
-	if tl != taskList {
-		return -1, fmt.Errorf("invalid taskListName name, expected=%v, got=%v", taskList, tl)
+func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue string) (int, error) {
+	tq := workflow.GetInfo(ctx).TaskQueueName
+	if tq != taskQueue {
+		return -1, fmt.Errorf("invalid taskQueueName name, expected=%v, got=%v", taskQueue, tq)
 	}
 	if count == 0 {
 		return 999, nil
 	}
-	ctx = workflow.WithTaskList(ctx, taskList)
-	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskList)
+	ctx = workflow.WithTaskQueue(ctx, taskQueue)
+	return -1, workflow.NewContinueAsNewError(ctx, w.ContinueAsNew, count-1, taskQueue)
 }
 
-func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskList string) (string, error) {
+func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, taskQueue string) (string, error) {
 	info := workflow.GetInfo(ctx)
-	tl := info.TaskListName
-	if tl != taskList {
-		return "", fmt.Errorf("invalid taskListName name, expected=%v, got=%v", taskList, tl)
+	tq := info.TaskQueueName
+	if tq != taskQueue {
+		return "", fmt.Errorf("invalid taskQueueName name, expected=%v, got=%v", taskQueue, tq)
 	}
 
 	if info.Memo == nil || info.SearchAttributes == nil {
@@ -217,9 +217,9 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	if count == 0 {
 		return memoVal + "," + searchAttrVal, nil
 	}
-	ctx = workflow.WithTaskList(ctx, taskList)
+	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
-	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskList)
+	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
 }
 
 func (w *Workflows) IDReusePolicy(
@@ -363,7 +363,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			ScheduleToStartTimeout: 10 * time.Second,
 			ScheduleToCloseTimeout: 10 * time.Second,
 			StartToCloseTimeout:    1 * time.Second,
-			TaskList:               "bad_tl",
+			TaskQueue:              "bad_tq",
 		})
 
 		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
@@ -380,7 +380,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 			ScheduleToStartTimeout: 10 * time.Second,
 			ScheduleToCloseTimeout: 10 * time.Second,
 			StartToCloseTimeout:    1 * time.Second,
-			TaskList:               "bad_tl",
+			TaskQueue:              "bad_tq",
 		})
 
 		activityF := workflow.ExecuteActivity(activityCtx, "Prefix_ToUpper", "hello")
@@ -593,20 +593,20 @@ func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	info := workflow.GetInfo(ctx)
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
-	taskList := info.TaskListName
+	taskQueue := info.TaskQueueName
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskList, wfType).Get(ctx, nil)
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType).Get(ctx, nil)
 }
 
 func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	info := workflow.GetInfo(ctx)
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
-	taskList := info.TaskListName
+	taskQueue := info.TaskQueueName
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
 	activites := Activities{}
 	return workflow.ExecuteLocalActivity(
-		ctx, activites.InspectActivityInfo, namespace, taskList, wfType).Get(ctx, nil)
+		ctx, activites.InspectActivityInfo, namespace, taskQueue, wfType).Get(ctx, nil)
 }
 
 func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
