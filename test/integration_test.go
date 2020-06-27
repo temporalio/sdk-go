@@ -402,6 +402,16 @@ func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestReplayBadHistory() {
+	logger, err := zap.NewDevelopment()
+	ts.NoError(err)
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err = replayer.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/bad-history.json", 12)
+	ts.Error(err)
+	ts.True(strings.HasPrefix(err.Error(), "replay workflow failed with failure"))
+}
+
 func (ts *IntegrationTestSuite) TestActivityCancelRepro() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-cancel-sm", ts.workflows.ActivityCancelRepro, &expected)

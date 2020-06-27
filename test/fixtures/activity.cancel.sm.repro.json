@@ -58,7 +58,7 @@
       "eventType": "TimerStarted",
       "version": -24,
       "timerStartedEventAttributes": {
-        "timerId": "0",
+        "timerId": "5",
         "startToFireTimeoutSeconds": 10,
         "decisionTaskCompletedEventId": 4
       }
@@ -69,7 +69,7 @@
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
-        "activityId": "1",
+        "activityId": "6",
         "activityType": {
           "name": "toUpperWithDelay"
         },
@@ -90,7 +90,7 @@
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
-        "activityId": "2",
+        "activityId": "7",
         "activityType": {
           "name": "toUpper"
         },
@@ -111,7 +111,7 @@
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
-        "activityId": "3",
+        "activityId": "8",
         "activityType": {
           "name": "toUpper"
         },
