@@ -25,17 +25,18 @@
 package replaytests
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-
 	"go.temporal.io/temporal-proto/workflowservicemock/v1"
-
-	"go.temporal.io/temporal/worker"
-
 	"go.uber.org/zap"
+
+	"go.temporal.io/temporal/client"
+	"go.temporal.io/temporal/worker"
 )
 
 type replayTestSuite struct {
@@ -58,17 +59,66 @@ func (s *replayTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
+func (s *replayTestSuite) TestGenerateWorkflowHistory() {
+	s.T().Skip("Remove this Skip to regenerate the history.")
+	logger, _ := zap.NewDevelopment()
+	c, _ := client.NewClient(client.Options{
+		Logger: logger,
+	})
+	defer c.Close()
+
+	w := worker.New(c, "replay-test", worker.Options{})
+
+	w.RegisterWorkflow(Workflow1)
+	w.RegisterWorkflow(Workflow2)
+	w.RegisterActivity(helloworldActivity)
+
+	_ = w.Start()
+	defer w.Stop()
+
+	workflowOptions1 := client.StartWorkflowOptions{
+		ID:        "replay-tests-workflow1",
+		TaskQueue: "replay-test",
+	}
+	we1, _ := c.ExecuteWorkflow(context.Background(), workflowOptions1, Workflow1, "Workflow1")
+	var res1 string
+	_ = we1.Get(context.Background(), &res1)
+
+	workflowOptions2 := client.StartWorkflowOptions{
+		ID:        "replay-tests-workflow2",
+		TaskQueue: "replay-test",
+	}
+	we2, _ := c.ExecuteWorkflow(context.Background(), workflowOptions2, Workflow2, "Workflow2")
+	var res2 string
+	_ = we2.Get(context.Background(), &res2)
+
+	// Now run:
+	// tctl workflow show --workflow_id replay-tests-workflow1 --of workflow1.json
+	// tctl workflow show --workflow_id replay-tests-workflow2 --of workflow2.json
+}
+
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 	logger, _ := zap.NewDevelopment()
-	testFiles := []string{"basic.json", "basic_new.json", "version.json", "version_new.json"}
+	testFiles := []string{"workflow1.json", "workflow2.json"}
 	var err error
 
 	for _, testFile := range testFiles {
 		replayer := worker.NewWorkflowReplayer()
-		replayer.RegisterWorkflow(Workflow)
+		replayer.RegisterWorkflow(Workflow1)
 		replayer.RegisterWorkflow(Workflow2)
 
 		err = replayer.ReplayWorkflowHistoryFromJSONFile(logger, testFile)
 		require.NoError(s.T(), err, "file: %s", testFile)
 	}
+}
+
+func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
+	logger, _ := zap.NewDevelopment()
+
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(logger, "bad-history.json")
+	require.Error(s.T(), err)
+	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow failed with failure"))
 }

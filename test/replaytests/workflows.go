@@ -34,11 +34,7 @@ import (
 	"go.temporal.io/temporal/workflow"
 )
 
-// ApplicationName is the task queue for this sample
-const ApplicationName = "helloWorldGroup"
-
-// Workflow workflow decider
-func Workflow(ctx workflow.Context, name string) error {
+func Workflow1(ctx workflow.Context, name string) error {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -81,7 +77,6 @@ func Workflow(ctx workflow.Context, name string) error {
 	return nil
 }
 
-// Workflow2 workflow decider
 func Workflow2(ctx workflow.Context, name string) error {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
