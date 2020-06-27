@@ -71,17 +71,11 @@ type (
 	// WorkflowRun represents a started non child workflow.
 	WorkflowRun = internal.WorkflowRun
 
-	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
-	WorkflowIDReusePolicy = internal.WorkflowIDReusePolicy
-
 	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
 
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
-
-	// ParentClosePolicy defines the behavior performed on a child workflow when its parent is closed.
-	ParentClosePolicy = internal.ParentClosePolicy
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -384,29 +378,6 @@ type (
 		// Close client and clean up underlying resources.
 		Close()
 	}
-)
-
-const (
-	// WorkflowIDReusePolicyAllowDuplicateFailedOnly allow start a workflow execution
-	// when workflow not running, and the last execution close state is in
-	// [terminated, cancelled, timeout, failed].
-	WorkflowIDReusePolicyAllowDuplicateFailedOnly WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyAllowDuplicateFailedOnly
-
-	// WorkflowIDReusePolicyAllowDuplicate allow start a workflow execution using
-	// the same workflow ID,when workflow not running.
-	WorkflowIDReusePolicyAllowDuplicate WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyAllowDuplicate
-
-	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all
-	WorkflowIDReusePolicyRejectDuplicate WorkflowIDReusePolicy = internal.WorkflowIDReusePolicyRejectDuplicate
-)
-
-const (
-	// ParentClosePolicyTerminate means terminating the child workflow
-	ParentClosePolicyTerminate = internal.ParentClosePolicyTerminate
-	// ParentClosePolicyRequestCancel means requesting cancellation on the child workflow
-	ParentClosePolicyRequestCancel = internal.ParentClosePolicyRequestCancel
-	// ParentClosePolicyAbandon means not doing anything on the child workflow
-	ParentClosePolicyAbandon = internal.ParentClosePolicyAbandon
 )
 
 // NewClient creates an instance of a workflow client

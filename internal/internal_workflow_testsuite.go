@@ -363,10 +363,10 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 		if !workflowHandler.handled {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
-		if params.WorkflowIDReusePolicy == WorkflowIDReusePolicyRejectDuplicate {
+		if params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
-		if workflowHandler.err == nil && params.WorkflowIDReusePolicy == WorkflowIDReusePolicyAllowDuplicateFailedOnly {
+		if workflowHandler.err == nil && params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY {
 			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
 		}
 	}

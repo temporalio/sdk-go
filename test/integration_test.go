@@ -278,7 +278,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 		ts.workflows.IDReusePolicy,
 		&result,
 		uuid.New(),
-		client.WorkflowIDReusePolicyRejectDuplicate,
+		enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		false,
 		false,
 	)
@@ -297,7 +297,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 		ts.workflows.IDReusePolicy,
 		&result,
 		uuid.New(),
-		client.WorkflowIDReusePolicyAllowDuplicateFailedOnly,
+		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		false,
 	)
@@ -316,7 +316,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
 		ts.workflows.IDReusePolicy,
 		&result,
 		uuid.New(),
-		client.WorkflowIDReusePolicyAllowDuplicateFailedOnly,
+		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		true,
 	)
@@ -331,7 +331,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 		ts.workflows.IDReusePolicy,
 		&result,
 		uuid.New(),
-		client.WorkflowIDReusePolicyAllowDuplicate,
+		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 		false,
 		false,
 	)
@@ -539,7 +539,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
 }
 

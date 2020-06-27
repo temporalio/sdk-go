@@ -33,7 +33,6 @@ import (
 	enumspb "go.temporal.io/temporal-proto/enums/v1"
 
 	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/encoded"
 	"go.temporal.io/temporal/internal"
 	"go.temporal.io/temporal/worker"
@@ -225,7 +224,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 func (w *Workflows) IDReusePolicy(
 	ctx workflow.Context,
 	childWFID string,
-	policy client.WorkflowIDReusePolicy,
+	policy enumspb.WorkflowIdReusePolicy,
 	parallel bool,
 	failFirstChild bool) (string, error) {
 
@@ -325,7 +324,7 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	opts := workflow.ChildWorkflowOptions{
 		WorkflowTaskTimeout:      5 * time.Second,
 		WorkflowExecutionTimeout: 10 * time.Second,
-		ParentClosePolicy:        client.ParentClosePolicyAbandon,
+		ParentClosePolicy:        enumspb.PARENT_CLOSE_POLICY_ABANDON,
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 5*time.Second)

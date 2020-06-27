@@ -36,10 +36,10 @@ import (
 	"time"
 	"unicode"
 
+	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
-
-	commonpb "go.temporal.io/temporal-proto/common/v1"
 
 	"go.temporal.io/temporal/internal/common/metrics"
 )
@@ -182,14 +182,14 @@ type (
 		Namespace                       string
 		WorkflowID                      string
 		WaitForCancellation             bool
-		WorkflowIDReusePolicy           WorkflowIDReusePolicy
+		WorkflowIDReusePolicy           enumspb.WorkflowIdReusePolicy
 		DataConverter                   DataConverter
 		RetryPolicy                     *commonpb.RetryPolicy
 		CronSchedule                    string
 		ContextPropagators              []ContextPropagator
 		Memo                            map[string]interface{}
 		SearchAttributes                map[string]interface{}
-		ParentClosePolicy               ParentClosePolicy
+		ParentClosePolicy               enumspb.ParentClosePolicy
 		signalChannels                  map[string]Channel
 		queryHandlers                   map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
 	}

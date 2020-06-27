@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
@@ -420,7 +419,7 @@ type (
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
 		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate.
 		// Optional: defaulted to WorkflowIDReusePolicyAllowDuplicateFailedOnly.
-		WorkflowIDReusePolicy WorkflowIDReusePolicy
+		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy - Optional retry policy for workflow. If a retry policy is specified, in case of workflow failure
 		// server will start new workflow execution if needed based on the retry policy.
@@ -513,35 +512,6 @@ type (
 		// Close client and clean up underlying resources.
 		Close()
 	}
-
-	// WorkflowIDReusePolicy defines workflow ID reuse behavior.
-	WorkflowIDReusePolicy int
-
-	// ParentClosePolicy defines the action on children when parent is closed
-	ParentClosePolicy int
-)
-
-const (
-	// ParentClosePolicyTerminate means terminating the child workflow
-	ParentClosePolicyTerminate ParentClosePolicy = iota
-	// ParentClosePolicyRequestCancel means requesting cancellation on the child workflow
-	ParentClosePolicyRequestCancel
-	// ParentClosePolicyAbandon means not doing anything on the child workflow
-	ParentClosePolicyAbandon
-)
-
-const (
-	// WorkflowIDReusePolicyAllowDuplicate allow start a workflow execution using
-	// the same workflow ID, when workflow not running.
-	WorkflowIDReusePolicyAllowDuplicate WorkflowIDReusePolicy = iota
-
-	// WorkflowIDReusePolicyAllowDuplicateFailedOnly allow start a workflow execution
-	// when workflow not running, and the last execution close state is in
-	// [terminated, cancelled, timed out, failed].
-	WorkflowIDReusePolicyAllowDuplicateFailedOnly
-
-	// WorkflowIDReusePolicyRejectDuplicate do not allow start a workflow execution using the same workflow ID at all.
-	WorkflowIDReusePolicyRejectDuplicate
 )
 
 // NewClient creates an instance of a workflow client
@@ -636,32 +606,6 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 		metricsScope:     options.MetricsScope,
 		logger:           options.Logger,
 		identity:         options.Identity,
-	}
-}
-
-func (p WorkflowIDReusePolicy) toProto() enumspb.WorkflowIdReusePolicy {
-	switch p {
-	case WorkflowIDReusePolicyAllowDuplicate:
-		return enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
-	case WorkflowIDReusePolicyAllowDuplicateFailedOnly:
-		return enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
-	case WorkflowIDReusePolicyRejectDuplicate:
-		return enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
-	default:
-		panic(fmt.Sprintf("unknown workflow reuse policy %v", p))
-	}
-}
-
-func (p ParentClosePolicy) toProto() enumspb.ParentClosePolicy {
-	switch p {
-	case ParentClosePolicyAbandon:
-		return enumspb.PARENT_CLOSE_POLICY_ABANDON
-	case ParentClosePolicyRequestCancel:
-		return enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL
-	case ParentClosePolicyTerminate:
-		return enumspb.PARENT_CLOSE_POLICY_TERMINATE
-	default:
-		panic(fmt.Sprintf("unknown workflow parent close policy %v", p))
 	}
 }
 
