@@ -40,7 +40,7 @@ import (
 	commonpb "go.temporal.io/temporal-proto/common/v1"
 	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	historypb "go.temporal.io/temporal-proto/history/v1"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.uber.org/zap"
 
@@ -76,7 +76,7 @@ type (
 	workflowTaskPoller struct {
 		basePoller
 		namespace     string
-		taskListName  string
+		taskQueueName string
 		identity      string
 		service       workflowservice.WorkflowServiceClient
 		taskHandler   WorkflowTaskHandler
@@ -98,7 +98,7 @@ type (
 	activityTaskPoller struct {
 		basePoller
 		namespace           string
-		taskListName        string
+		taskQueueName       string
 		identity            string
 		service             workflowservice.WorkflowServiceClient
 		taskHandler         ActivityTaskHandler
@@ -223,7 +223,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		basePoller:                   basePoller{stopC: params.WorkerStopChannel},
 		service:                      service,
 		namespace:                    params.Namespace,
-		taskListName:                 params.TaskList,
+		taskQueueName:                params.TaskQueue,
 		identity:                     params.Identity,
 		taskHandler:                  taskHandler,
 		metricsScope:                 params.MetricsScope,
@@ -323,8 +323,8 @@ func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTa
 	tchCtx, cancel := newChannelContext(context.Background())
 	defer cancel()
 	wtp.metricsScope.Counter(metrics.StickyCacheEvict).Inc(1)
-	if _, err := wtp.service.ResetStickyTaskList(tchCtx, rst.task); err != nil {
-		wtp.logger.Warn("ResetStickyTaskList failed",
+	if _, err := wtp.service.ResetStickyTaskQueue(tchCtx, rst.task); err != nil {
+		wtp.logger.Warn("ResetStickyTaskQueue failed",
 			zap.String(tagWorkflowID, rst.task.Execution.GetWorkflowId()),
 			zap.String(tagRunID, rst.task.Execution.GetRunId()),
 			zap.Error(err))
@@ -383,8 +383,8 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				}
 			case *workflowservice.RespondDecisionTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
-					request.StickyAttributes = &tasklistpb.StickyExecutionAttributes{
-						WorkerTaskList:                &tasklistpb.TaskList{Name: getWorkerTaskList(wtp.stickyUUID)},
+					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
+						WorkerTaskQueue:               &taskqueuepb.TaskQueue{Name: getWorkerTaskQueue(wtp.stickyUUID)},
 						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
 				} else {
@@ -474,7 +474,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	ctx := context.WithValue(rootCtx, activityEnvContextKey, &activityEnvironment{
 		workflowType:      &workflowTypeLocal,
 		workflowNamespace: task.params.WorkflowInfo.Namespace,
-		taskList:          task.params.WorkflowInfo.TaskListName,
+		taskQueue:         task.params.WorkflowInfo.TaskQueueName,
 		activityType:      ActivityType{Name: activityType},
 		activityID:        fmt.Sprintf("%v", task.activityID),
 		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
@@ -581,13 +581,13 @@ WaitResult:
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 
-func (wtp *workflowTaskPoller) release(kind enumspb.TaskListKind) {
+func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 	if wtp.disableStickyExecution {
 		return
 	}
 
 	wtp.requestLock.Lock()
-	if kind == enumspb.TASK_LIST_KIND_STICKY {
+	if kind == enumspb.TASK_QUEUE_KIND_STICKY {
 		wtp.pendingStickyPollCount--
 	} else {
 		wtp.pendingRegularPollCount--
@@ -595,8 +595,8 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskListKind) {
 	wtp.requestLock.Unlock()
 }
 
-func (wtp *workflowTaskPoller) updateBacklog(taskListKind enumspb.TaskListKind, backlogCountHint int64) {
-	if taskListKind == enumspb.TASK_LIST_KIND_NORMAL || wtp.disableStickyExecution {
+func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind, backlogCountHint int64) {
+	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.disableStickyExecution {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -607,33 +607,33 @@ func (wtp *workflowTaskPoller) updateBacklog(taskListKind enumspb.TaskListKind, 
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration.
 // Simple rules:
-// 1) if sticky execution is disabled, always poll for regular task list
+// 1) if sticky execution is disabled, always poll for regular task queue
 // 2) otherwise:
-//   2.1) if sticky task list has backlog, always prefer to process sticky task first
-//   2.2) poll from the task list that has less pending requests (prefer sticky when they are the same).
+//   2.1) if sticky task queue has backlog, always prefer to process sticky task first
+//   2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollForDecisionTaskRequest) {
-	taskListName := wtp.taskListName
-	taskListKind := enumspb.TASK_LIST_KIND_NORMAL
+	taskQueueName := wtp.taskQueueName
+	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
 	if !wtp.disableStickyExecution {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskListName = getWorkerTaskList(wtp.stickyUUID)
-			taskListKind = enumspb.TASK_LIST_KIND_STICKY
+			taskQueueName = getWorkerTaskQueue(wtp.stickyUUID)
+			taskQueueKind = enumspb.TASK_QUEUE_KIND_STICKY
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	}
 
-	taskList := &tasklistpb.TaskList{
-		Name: taskListName,
-		Kind: taskListKind,
+	taskQueue := &taskqueuepb.TaskQueue{
+		Name: taskQueueName,
+		Kind: taskQueueKind,
 	}
 	return &workflowservice.PollForDecisionTaskRequest{
 		Namespace:      wtp.namespace,
-		TaskList:       taskList,
+		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
 		BinaryChecksum: getBinaryChecksum(),
 	}
@@ -649,7 +649,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	})
 
 	request := wtp.getNextPollRequest()
-	defer wtp.release(request.TaskList.GetKind())
+	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.service.PollForDecisionTask(ctx, request)
 	if err != nil {
@@ -658,17 +658,17 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		} else {
 			wtp.metricsScope.Counter(metrics.DecisionPollFailedCounter).Inc(1)
 		}
-		wtp.updateBacklog(request.TaskList.GetKind(), 0)
+		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
 	}
 
 	if response == nil || len(response.TaskToken) == 0 {
 		wtp.metricsScope.Counter(metrics.DecisionPollNoTaskCounter).Inc(1)
-		wtp.updateBacklog(request.TaskList.GetKind(), 0)
+		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return &workflowTask{}, nil
 	}
 
-	wtp.updateBacklog(request.TaskList.GetKind(), response.GetBacklogCountHint())
+	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
 	traceLog(func() {
@@ -800,11 +800,11 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		taskHandler:         taskHandler,
 		service:             service,
 		namespace:           params.Namespace,
-		taskListName:        params.TaskList,
+		taskQueueName:       params.TaskQueue,
 		identity:            params.Identity,
 		logger:              params.Logger,
 		metricsScope:        metrics.NewTaggedScope(params.MetricsScope),
-		activitiesPerSecond: params.TaskListActivitiesPerSecond,
+		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
 	}
 }
 
@@ -818,10 +818,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
 	request := &workflowservice.PollForActivityTaskRequest{
-		Namespace:        atp.namespace,
-		TaskList:         &tasklistpb.TaskList{Name: atp.taskListName},
-		Identity:         atp.identity,
-		TaskListMetadata: &tasklistpb.TaskListMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
+		Namespace:         atp.namespace,
+		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName},
+		Identity:          atp.identity,
+		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
 	response, err := atp.service.PollForActivityTask(ctx, request)
@@ -878,7 +878,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	executionStartTime := time.Now()
 	// Process the activity task.
-	request, err := atp.taskHandler.Execute(atp.taskListName, activityTask.task)
+	request, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
 	if err != nil {
 		metricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err

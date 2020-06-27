@@ -72,7 +72,7 @@ func helloWorldWorkflowFunc(ctx Context, _ []byte) error {
 
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{
-		TaskList:               "taskList",
+		TaskQueue:              "taskQueue",
 		ActivityID:             "0",
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -108,7 +108,7 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 
 		// schedule activity to verify decisions are produced
 		ao := ActivityOptions{
-			TaskList:               "taskList",
+			TaskQueue:              "taskQueue",
 			ActivityID:             "0",
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
@@ -132,7 +132,7 @@ func binaryChecksumWorkflowFunc(ctx Context) ([]string, error) {
 func helloWorldWorkflowCancelFunc(ctx Context, _ []byte) error {
 	activityName := "Greeter_Activity"
 	ao := ActivityOptions{
-		TaskList:               "taskList",
+		TaskQueue:              "taskQueue",
 		ActivityID:             "0",
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -182,7 +182,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskList:                     "testTaskList",
+		TaskQueue:                    "testTaskQueue",
 		MaxConcurrentActivityPollers: 4,
 		MaxConcurrentDecisionPollers: 4,
 		Logger:                       logger,
@@ -213,7 +213,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskList:                     "testTaskList",
+		TaskQueue:                    "testTaskQueue",
 		MaxConcurrentActivityPollers: 10,
 		MaxConcurrentDecisionPollers: 10,
 		Logger:                       logger,
@@ -228,7 +228,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{
 		ID:                       "HelloWorld_Workflow",
-		TaskList:                 "testTaskList",
+		TaskQueue:                "testTaskQueue",
 		WorkflowExecutionTimeout: 10 * time.Second,
 		WorkflowTaskTimeout:      10 * time.Second,
 	}

@@ -10,7 +10,7 @@
         "workflowType": {
           "name": "testReplayWorkflowFromFileParent"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "childWorkflowGroup"
         },
         "workflowRunTimeoutSeconds": 60,
@@ -30,7 +30,7 @@
       "version": -24,
       "taskId": 50331649,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "childWorkflowGroup"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -74,7 +74,7 @@
         "workflowType": {
           "name": "testReplayWorkflowFromFile"
         },
-        "taskList": {
+        "taskQueue": {
           "name": "childWorkflowGroup"
         },
         "input": null,
@@ -111,7 +111,7 @@
       "version": -24,
       "taskId": 50331663,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -185,7 +185,7 @@
       "version": -24,
       "taskId": 50331676,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,
@@ -244,7 +244,7 @@
       "version": -24,
       "taskId": 50331687,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
+        "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,

@@ -125,8 +125,8 @@ func newChannelContext(ctx context.Context, options ...func(builder *contextBuil
 }
 
 // GetWorkerIdentity gets a default identity for the worker.
-func getWorkerIdentity(tasklistName string) string {
-	return fmt.Sprintf("%d@%s@%s", os.Getpid(), getHostName(), tasklistName)
+func getWorkerIdentity(taskqueueName string) string {
+	return fmt.Sprintf("%d@%s@%s", os.Getpid(), getHostName(), taskqueueName)
 }
 
 func getHostName() string {
@@ -137,7 +137,7 @@ func getHostName() string {
 	return hostName
 }
 
-func getWorkerTaskList(stickyUUID string) string {
+func getWorkerTaskQueue(stickyUUID string) string {
 	// includes hostname for debuggability, stickyUUID guarantees the uniqueness
 	return fmt.Sprintf("%s:%s", getHostName(), stickyUUID)
 }

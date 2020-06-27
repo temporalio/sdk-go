@@ -490,7 +490,7 @@ func (e *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestW
 	return e
 }
 
-// SetStartWorkflowOptions sets StartWorkflowOptions used to specify workflow execution timeout and task list.
+// SetStartWorkflowOptions sets StartWorkflowOptions used to specify workflow execution timeout and task queue.
 // Note that StartWorkflowOptions is defined in an internal package, use client.StartWorkflowOptions instead.
 func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowOptions) *TestWorkflowEnvironment {
 	e.impl.setStartWorkflowOptions(options)
@@ -701,11 +701,11 @@ func (e *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 	e.impl.registerDelayedCallback(callback, delayDuration)
 }
 
-// SetActivityTaskList set the affinity between activity and tasklist. By default, activity can be invoked by any tasklist
-// in this test environment. Use this SetActivityTaskList() to set affinity between activity and a tasklist. Once
-// activity is set to a particular tasklist, that activity will only be available to that tasklist.
-func (e *TestWorkflowEnvironment) SetActivityTaskList(tasklist string, activityFn ...interface{}) {
-	e.impl.setActivityTaskList(tasklist, activityFn...)
+// SetActivityTaskQueue set the affinity between activity and taskqueue. By default, activity can be invoked by any taskqueue
+// in this test environment. Use this SetActivityTaskQueue() to set affinity between activity and a taskqueue. Once
+// activity is set to a particular taskqueue, that activity will only be available to that taskqueue.
+func (e *TestWorkflowEnvironment) SetActivityTaskQueue(taskqueue string, activityFn ...interface{}) {
+	e.impl.setActivityTaskQueue(taskqueue, activityFn...)
 }
 
 // SetLastCompletionResult sets the result to be returned from workflow.GetLastCompletionResult().

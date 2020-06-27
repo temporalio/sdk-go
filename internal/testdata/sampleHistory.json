@@ -8,8 +8,8 @@
         "workflowType": {
           "name": "testReplayWorkflowFromFile"
         },
-        "taskList": {
-          "name": "taskList1"
+        "taskQueue": {
+          "name": "taskQueue1"
         },
         "workflowRunTimeoutSeconds": 60,
         "workflowTaskTimeoutSeconds": 60,
@@ -21,8 +21,8 @@
       "timestamp": 1528336257159349200,
       "eventType": "DecisionTaskScheduled",
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
-          "name": "taskList1"
+        "taskQueue": {
+          "name": "taskQueue1"
         },
         "startToCloseTimeoutSeconds": 60,
         "attempt": 0
@@ -34,7 +34,7 @@
       "eventType": "DecisionTaskStarted",
       "decisionTaskStartedEventAttributes": {
         "scheduledEventId": 2,
-        "identity": "50114@user-C02WC08UHTDG@taskList1",
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId": "b7403b35-b4b1-432f-84ff-01d66d060a87"
       }
     },
@@ -45,7 +45,7 @@
       "decisionTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
         "startedEventId": 3,
-        "identity": "50114@user-C02WC08UHTDG@taskList1"
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1"
       }
     },
     {
@@ -57,8 +57,8 @@
         "activityType": {
           "name": "testActivityMultipleArgs"
         },
-        "taskList": {
-          "name": "taskList1"
+        "taskQueue": {
+          "name": "taskQueue1"
         },
         "input": null,
         "scheduleToCloseTimeoutSeconds": 120,
@@ -76,7 +76,7 @@
       "taskId":33554446,
       "activityTaskStartedEventAttributes":{
         "scheduledEventId":5,
-        "identity": "50114@user-C02WC08UHTDG@taskList1",
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId":"45c4006a-ae7c-4392-baa6-c090857f884b",
         "attempt":0
       }
@@ -91,7 +91,7 @@
         "result":null,
         "scheduledEventId":5,
         "startedEventId":6,
-        "identity": "50114@user-C02WC08UHTDG@taskList1"
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1"
       }
     },
     {
@@ -101,7 +101,7 @@
       "version":-24,
       "taskId":33554450,
       "decisionTaskScheduledEventAttributes":{
-        "taskList":{
+        "taskQueue":{
           "name":"longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
         },
         "startToCloseTimeoutSeconds":10,
@@ -116,7 +116,7 @@
       "taskId":33554454,
       "decisionTaskStartedEventAttributes":{
         "scheduledEventId":8,
-        "identity": "50114@user-C02WC08UHTDG@taskList1",
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId":"cb1fdadf-f46b-4840-9b97-863f4b3b6b11"
       }
     },
@@ -129,7 +129,7 @@
       "decisionTaskCompletedEventAttributes":{
         "scheduledEventId":8,
         "startedEventId":9,
-        "identity": "50114@user-C02WC08UHTDG@taskList1",
+        "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "binaryChecksum":"b2e32759177ccbb3e67ad7694aec233c"
       }
     },

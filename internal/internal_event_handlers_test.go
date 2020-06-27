@@ -69,14 +69,14 @@ func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 	equals := func(a, b interface{}) bool {
 		ao := a.(ActivityOptions)
 		bo := b.(ActivityOptions)
-		return ao.TaskList == bo.TaskList
+		return ao.TaskQueue == bo.TaskQueue
 	}
-	value := ActivityOptions{TaskList: "test-tasklist"}
+	value := ActivityOptions{TaskQueue: "test-taskqueue"}
 	blob := env.encodeValue(value)
 	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
 
-	value.TaskList = "value-changed"
+	value.TaskQueue = "value-changed"
 	isEqual = env.isEqualValue(value, blob, equals)
 	require.False(t, isEqual)
 }
@@ -105,14 +105,14 @@ func Test_DecodedValuePtr(t *testing.T) {
 	equals := func(a, b interface{}) bool {
 		ao := a.(*ActivityOptions)
 		bo := b.(*ActivityOptions)
-		return ao.TaskList == bo.TaskList
+		return ao.TaskQueue == bo.TaskQueue
 	}
-	value := &ActivityOptions{TaskList: "test-tasklist"}
+	value := &ActivityOptions{TaskQueue: "test-taskqueue"}
 	blob := env.encodeValue(value)
 	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
 
-	value.TaskList = "value-changed"
+	value.TaskQueue = "value-changed"
 	isEqual = env.isEqualValue(value, blob, equals)
 	require.False(t, isEqual)
 }

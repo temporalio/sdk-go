@@ -41,9 +41,9 @@ func WithWorkflowNamespace(ctx Context, name string) Context {
 	return internal.WithWorkflowNamespace(ctx, name)
 }
 
-// WithWorkflowTaskList adds a task list to the context.
-func WithWorkflowTaskList(ctx Context, name string) Context {
-	return internal.WithWorkflowTaskList(ctx, name)
+// WithWorkflowTaskQueue adds a task queue to the context.
+func WithWorkflowTaskQueue(ctx Context, name string) Context {
+	return internal.WithWorkflowTaskQueue(ctx, name)
 }
 
 // WithWorkflowID adds a workflowID to the context.

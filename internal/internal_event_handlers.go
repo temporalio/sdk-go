@@ -42,7 +42,7 @@ import (
 	failurepb "go.temporal.io/temporal-proto/failure/v1"
 	historypb "go.temporal.io/temporal-proto/history/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -378,7 +378,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{}
 
 	attributes.Namespace = params.Namespace
-	attributes.TaskList = &tasklistpb.TaskList{Name: params.TaskListName}
+	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName}
 	attributes.WorkflowId = params.WorkflowID
 	attributes.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
 	attributes.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
@@ -459,7 +459,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	}
 	activityID := scheduleTaskAttr.GetActivityId()
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
-	scheduleTaskAttr.TaskList = &tasklistpb.TaskList{Name: parameters.TaskListName}
+	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName}
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
@@ -758,7 +758,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	defer func() {
 		if p := recover(); p != nil {
 			weh.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
-			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskListName)
+			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.logger.Error("ProcessEvent panic.",
 				zap.String("PanicError", fmt.Sprintf("%v", p)),

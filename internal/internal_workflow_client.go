@@ -42,7 +42,7 @@ import (
 	historypb "go.temporal.io/temporal-proto/history/v1"
 	querypb "go.temporal.io/temporal-proto/query/v1"
 	"go.temporal.io/temporal-proto/serviceerror"
-	tasklistpb "go.temporal.io/temporal-proto/tasklist/v1"
+	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 
 	"go.temporal.io/temporal/internal/common"
@@ -207,7 +207,7 @@ func (wc *WorkflowClient) StartWorkflow(
 		RequestId:                       uuid.New(),
 		WorkflowId:                      workflowID,
 		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskList:                        &tasklistpb.TaskList{Name: options.TaskList},
+		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue},
 		Input:                           input,
 		WorkflowExecutionTimeoutSeconds: executionTimeout,
 		WorkflowRunTimeoutSeconds:       runTimeout,
@@ -239,7 +239,7 @@ func (wc *WorkflowClient) StartWorkflow(
 	}
 
 	if wc.metricsScope != nil {
-		scope := wc.metricsScope.GetTaggedScope(tagTaskList, options.TaskList, tagWorkflowType, workflowType.Name)
+		scope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
 		scope.Counter(metrics.WorkflowStartCounter).Inc(1)
 	}
 
@@ -385,7 +385,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		RequestId:                       uuid.New(),
 		WorkflowId:                      workflowID,
 		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskList:                        &tasklistpb.TaskList{Name: options.TaskList},
+		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue},
 		Input:                           input,
 		WorkflowExecutionTimeoutSeconds: executionTimeout,
 		WorkflowRunTimeoutSeconds:       runTimeout,
@@ -419,7 +419,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	if wc.metricsScope != nil {
-		scope := wc.metricsScope.GetTaggedScope(tagTaskList, options.TaskList, tagWorkflowType, workflowType.Name)
+		scope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
 		scope.Counter(metrics.WorkflowSignalWithStartCounter).Inc(1)
 	}
 
@@ -806,7 +806,7 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 // workflowID and queryType are required, other parameters are optional.
 // - workflow ID of the workflow.
 // - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
-// - taskList can be default(empty string). If empty string then it will pick the taskList of the running execution of that workflow ID.
+// - taskQueue can be default(empty string). If empty string then it will pick the taskQueue of the running execution of that workflow ID.
 // - queryType is the type of the query.
 // - args... are the optional query parameters.
 // The errors it can return:
@@ -915,28 +915,28 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}, nil
 }
 
-// DescribeTaskList returns information about the target tasklist, right now this API returns the
-// pollers which polled this tasklist in last few minutes.
-// - tasklist name of tasklist
-// - tasklistType type of tasklist, can be decision or activity
+// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
+// pollers which polled this taskqueue in last few minutes.
+// - taskqueue name of taskqueue
+// - taskqueueType type of taskqueue, can be decision or activity
 // The errors it can return:
 //  - BadRequestError
 //  - InternalServiceError
 //  - EntityNotExistError
-func (wc *WorkflowClient) DescribeTaskList(ctx context.Context, taskList string, taskListType enumspb.TaskListType) (*workflowservice.DescribeTaskListResponse, error) {
-	request := &workflowservice.DescribeTaskListRequest{
-		Namespace:    wc.namespace,
-		TaskList:     &tasklistpb.TaskList{Name: taskList},
-		TaskListType: taskListType,
+func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue string, taskQueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
+	request := &workflowservice.DescribeTaskQueueRequest{
+		Namespace:     wc.namespace,
+		TaskQueue:     &taskqueuepb.TaskQueue{Name: taskQueue},
+		TaskQueueType: taskQueueType,
 	}
 
-	var resp *workflowservice.DescribeTaskListResponse
+	var resp *workflowservice.DescribeTaskQueueResponse
 	err := backoff.Retry(ctx,
 		func() error {
 			tchCtx, cancel := newChannelContext(ctx)
 			defer cancel()
 			var err error
-			resp, err = wc.workflowService.DescribeTaskList(tchCtx, request)
+			resp, err = wc.workflowService.DescribeTaskQueue(tchCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	if err != nil {

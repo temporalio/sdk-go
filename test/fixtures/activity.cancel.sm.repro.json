@@ -9,8 +9,8 @@
         "workflowType": {
           "name": "ActivityCancelRepro"
         },
-        "taskList": {
-          "name": "tl-1"
+        "taskQueue": {
+          "name": "tq-1"
         },
         "workflowRunTimeoutSeconds": 10,
         "workflowTaskTimeoutSeconds": 1,
@@ -23,8 +23,8 @@
       "eventType": "DecisionTaskScheduled",
       "version": -24,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
-          "name": "tl-1"
+        "taskQueue": {
+          "name": "tq-1"
         },
         "startToCloseTimeoutSeconds": 1,
         "attempt": 0
@@ -73,8 +73,8 @@
         "activityType": {
           "name": "toUpperWithDelay"
         },
-        "taskList": {
-          "name": "tl-1"
+        "taskQueue": {
+          "name": "tq-1"
         },
         "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
@@ -94,8 +94,8 @@
         "activityType": {
           "name": "toUpper"
         },
-        "taskList": {
-          "name": "bad_tl"
+        "taskQueue": {
+          "name": "bad_tq"
         },
         "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
@@ -115,8 +115,8 @@
         "activityType": {
           "name": "toUpper"
         },
-        "taskList": {
-          "name": "bad_tl"
+        "taskQueue": {
+          "name": "bad_tq"
         },
         "input": null,
         "scheduleToCloseTimeoutSeconds": 10,
@@ -156,8 +156,8 @@
       "eventType": "DecisionTaskScheduled",
       "version": -24,
       "decisionTaskScheduledEventAttributes": {
-        "taskList": {
-          "name": "tl-1"
+        "taskQueue": {
+          "name": "tq-1"
         },
         "startToCloseTimeoutSeconds": 1,
         "attempt": 0

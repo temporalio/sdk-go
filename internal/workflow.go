@@ -178,9 +178,9 @@ type (
 		// Optional: an auto generated workflowID will be used if this is not provided.
 		WorkflowID string
 
-		// TaskList that the child workflow needs to be scheduled on.
-		// Optional: the parent workflow task list will be used if this is not provided.
-		TaskList string
+		// TaskQueue that the child workflow needs to be scheduled on.
+		// Optional: the parent workflow task queue will be used if this is not provided.
+		TaskQueue string
 
 		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
 		// and continue as new.
@@ -380,10 +380,10 @@ func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundCallsInt
 
 // ExecuteActivity requests activity execution in the context of a workflow.
 // Context can be used to pass the settings for this activity.
-// For example: task list that this need to be routed, timeouts that need to be configured.
+// For example: task queue that this need to be routed, timeouts that need to be configured.
 // Use ActivityOptions to pass down the options.
 //  ao := ActivityOptions{
-// 	    TaskList: "exampleTaskList",
+// 	    TaskQueue: "exampleTaskQueue",
 // 	    ScheduleToStartTimeout: 10 * time.Second,
 // 	    StartToCloseTimeout: 5 * time.Second,
 // 	    ScheduleToCloseTimeout: 10 * time.Second,
@@ -391,7 +391,7 @@ func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundCallsInt
 // 	}
 //	ctx := WithActivityOptions(ctx, ao)
 // Or to override a single option
-//  ctx := WithTaskList(ctx, "exampleTaskList")
+//  ctx := WithTaskQueue(ctx, "exampleTaskQueue")
 // Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
@@ -432,11 +432,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 			return future
 		}
 		if sessionInfo.sessionState == sessionStateOpen && !isCreationActivity {
-			// Use session tasklist
-			oldTaskListName := options.TaskListName
-			options.TaskListName = sessionInfo.tasklist
+			// Use session taskqueue
+			oldTaskQueueName := options.TaskQueueName
+			options.TaskQueueName = sessionInfo.taskqueue
 			defer func() {
-				options.TaskListName = oldTaskListName
+				options.TaskQueueName = oldTaskQueueName
 			}()
 		}
 	}
@@ -619,7 +619,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 
 // ExecuteChildWorkflow requests child workflow execution in the context of a workflow.
 // Context can be used to pass the settings for the child workflow.
-// For example: task list that this child workflow should be routed, timeouts that need to be configured.
+// For example: task queue that this child workflow should be routed, timeouts that need to be configured.
 // Use ChildWorkflowOptions to pass down the options.
 //  cwo := ChildWorkflowOptions{
 // 	    WorkflowExecutionTimeout: 10 * time.Minute,
@@ -725,7 +725,7 @@ func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Head
 type WorkflowInfo struct {
 	WorkflowExecution               WorkflowExecution
 	WorkflowType                    WorkflowType
-	TaskListName                    string
+	TaskQueueName                   string
 	WorkflowExecutionTimeoutSeconds int32
 	WorkflowRunTimeoutSeconds       int32
 	WorkflowTaskTimeoutSeconds      int32
@@ -980,8 +980,8 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	if len(cwo.Namespace) > 0 {
 		wfOptions.Namespace = cwo.Namespace
 	}
-	if len(cwo.TaskList) > 0 {
-		wfOptions.TaskListName = cwo.TaskList
+	if len(cwo.TaskQueue) > 0 {
+		wfOptions.TaskQueueName = cwo.TaskQueue
 	}
 	wfOptions.WorkflowID = cwo.WorkflowID
 	wfOptions.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(cwo.WorkflowExecutionTimeout.Seconds())
@@ -1005,13 +1005,13 @@ func WithWorkflowNamespace(ctx Context, name string) Context {
 	return ctx1
 }
 
-// WithWorkflowTaskList adds a task list to the context.
-func WithWorkflowTaskList(ctx Context, name string) Context {
+// WithWorkflowTaskQueue adds a task queue to the context.
+func WithWorkflowTaskQueue(ctx Context, name string) Context {
 	if name == "" {
-		panic("empty task list name")
+		panic("empty task queue name")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).TaskListName = name
+	getWorkflowEnvOptions(ctx1).TaskQueueName = name
 	return ctx1
 }
 
@@ -1359,8 +1359,8 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	eap := getActivityOptions(ctx1)
 
-	if len(options.TaskList) > 0 {
-		eap.TaskListName = options.TaskList
+	if len(options.TaskQueue) > 0 {
+		eap.TaskQueueName = options.TaskQueue
 	}
 	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
 	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
@@ -1385,10 +1385,10 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	return ctx1
 }
 
-// WithTaskList adds a task list to the copy of the context.
-func WithTaskList(ctx Context, name string) Context {
+// WithTaskQueue adds a task queue to the copy of the context.
+func WithTaskQueue(ctx Context, name string) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).TaskListName = name
+	getActivityOptions(ctx1).TaskQueueName = name
 	return ctx1
 }
 

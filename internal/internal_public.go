@@ -94,7 +94,7 @@ type (
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCanceledRequest
-		Execute(taskList string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error)
+		Execute(taskQueue string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error)
 	}
 )
 

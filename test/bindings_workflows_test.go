@@ -83,7 +83,7 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 			input, _ := encoded.GetDefaultDataConverter().ToPayloads("World")
 			parameters := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
-					TaskListName:               env.WorkflowInfo().TaskListName,
+					TaskQueueName:              env.WorkflowInfo().TaskQueueName,
 					StartToCloseTimeoutSeconds: 10,
 					ActivityID:                 "id1",
 				},
@@ -93,8 +93,8 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 			_ = env.ExecuteActivity(parameters, d.addCallback(func(result *commonpb.Payloads, err error) {
 				childParams := bindings.ExecuteWorkflowParams{
 					WorkflowOptions: bindings.WorkflowOptions{
-						TaskListName: env.WorkflowInfo().TaskListName,
-						WorkflowID:   "ID1",
+						TaskQueueName: env.WorkflowInfo().TaskQueueName,
+						WorkflowID:    "ID1",
 					},
 					WorkflowType: &bindings.WorkflowType{Name: "ChildWorkflow"},
 					Input:        result,

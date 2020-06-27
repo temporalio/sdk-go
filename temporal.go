@@ -79,7 +79,7 @@ code.
 
 Task routing - Efficiently process large amounts of data using a Temporal workflow, by caching the data locally on a
 worker and executing all activities meant to process that data on that same worker. Temporal enables you to choose the
-worker you want to execute a certain activity by scheduling that activity execution in the worker's specific task-list.
+worker you want to execute a certain activity by scheduling that activity execution in the worker's specific task queue.
 
 Unique workflow ID enforcement - Use business entity IDs for your workflows and let Temporal ensure that only one
 workflow is running for a particular entity at a time. Temporal implements an atomic "uniqueness check" and ensures that

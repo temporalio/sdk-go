@@ -31,7 +31,7 @@ const (
 	tagEventID           = "EventID"
 	tagEventType         = "EventType"
 	tagRunID             = "RunID"
-	tagTaskList          = "TaskList"
+	tagTaskQueue         = "TaskQueue"
 	tagTimerID           = "TimerID"
 	tagWorkflowID        = "WorkflowID"
 	tagWorkflowType      = "WorkflowType"

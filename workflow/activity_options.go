@@ -47,9 +47,9 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	return internal.WithLocalActivityOptions(ctx, options)
 }
 
-// WithTaskList adds a task list to the copy of the context.
-func WithTaskList(ctx Context, name string) Context {
-	return internal.WithTaskList(ctx, name)
+// WithTaskQueue adds a task queue to the copy of the context.
+func WithTaskQueue(ctx Context, name string) Context {
+	return internal.WithTaskQueue(ctx, name)
 }
 
 // WithRetryPolicy adds retry policy to the copy of the context.

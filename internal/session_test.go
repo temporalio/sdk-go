@@ -99,7 +99,7 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 	workflowFn := func(ctx Context) error {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateOpen,
 		})
 		_, err := CreateSession(sessionCtx, s.sessionOptions)
@@ -124,7 +124,7 @@ func (s *SessionTestSuite) TestCreationWithClosedSessionContext() {
 		ctx = WithActivityOptions(ctx, ao)
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateClosed,
 		})
 
@@ -158,7 +158,7 @@ func (s *SessionTestSuite) TestCreationWithFailedSessionContext() {
 		ctx = WithActivityOptions(ctx, ao)
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateFailed,
 		})
 
@@ -186,7 +186,7 @@ func (s *SessionTestSuite) TestCompletionWithClosedSessionContext() {
 	workflowFn := func(ctx Context) error {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateClosed,
 		})
 		CompleteSession(sessionCtx)
@@ -206,7 +206,7 @@ func (s *SessionTestSuite) TestCompletionWithFailedSessionContext() {
 	workflowFn := func(ctx Context) error {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateFailed,
 		})
 		CompleteSession(sessionCtx)
@@ -231,7 +231,7 @@ func (s *SessionTestSuite) TestGetSessionInfo() {
 
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateFailed,
 		})
 		info = GetSessionInfo(sessionCtx)
@@ -241,7 +241,7 @@ func (s *SessionTestSuite) TestGetSessionInfo() {
 
 		newSessionInfo := &SessionInfo{
 			SessionID:    "another sessionID",
-			tasklist:     "another tasklist",
+			taskqueue:    "another taskqueue",
 			sessionState: sessionStateClosed,
 		}
 		sessionCtx = setSessionInfo(ctx, newSessionInfo)
@@ -273,7 +273,7 @@ func (s *SessionTestSuite) TestRecreation() {
 		ctx = WithActivityOptions(ctx, ao)
 		sessionInfo := &SessionInfo{
 			SessionID:    "some random sessionID",
-			tasklist:     "some random tasklist",
+			taskqueue:    "some random taskqueue",
 			sessionState: sessionStateFailed,
 		}
 
@@ -371,7 +371,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 	env.AssertExpectations(s.T())
 }
 
-func (s *SessionTestSuite) TestSessionTaskList() {
+func (s *SessionTestSuite) TestSessionTaskQueue() {
 	numActivities := 3
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
@@ -399,9 +399,9 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterActivity(testSessionActivity)
 
-	var taskListUsed []string
+	var taskQueueUsed []string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
-		taskListUsed = append(taskListUsed, activityInfo.TaskList)
+		taskQueueUsed = append(taskQueueUsed, activityInfo.TaskQueue)
 	})
 	resourceID := "testResourceID"
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
@@ -410,18 +410,18 @@ func (s *SessionTestSuite) TestSessionTaskList() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
-	s.Equal(getCreationTasklist(defaultTestTaskList), taskListUsed[0])
-	expectedTaskList := getResourceSpecificTasklist(resourceID)
-	for _, taskList := range taskListUsed[1:] {
-		s.Equal(expectedTaskList, taskList)
+	s.Equal(getCreationTaskqueue(defaultTestTaskQueue), taskQueueUsed[0])
+	expectedTaskQueue := getResourceSpecificTaskqueue(resourceID)
+	for _, taskQueue := range taskQueueUsed[1:] {
+		s.Equal(expectedTaskQueue, taskQueue)
 	}
 	env.AssertExpectations(s.T())
 }
 
-func (s *SessionTestSuite) TestSessionRecreationTaskList() {
+func (s *SessionTestSuite) TestSessionRecreationTaskQueue() {
 	numActivities := 3
 	resourceID := "testResourceID"
-	resourceSpecificTaskList := getResourceSpecificTasklist(resourceID)
+	resourceSpecificTaskQueue := getResourceSpecificTaskqueue(resourceID)
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
 			ScheduleToStartTimeout: time.Minute,
@@ -432,7 +432,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 
 		sessionInfo := &SessionInfo{
 			SessionID:    "testSessionID",
-			tasklist:     resourceSpecificTaskList,
+			taskqueue:    resourceSpecificTaskQueue,
 			sessionState: sessionStateClosed,
 		}
 		sessionCtx, err := RecreateSession(ctx, sessionInfo.GetRecreateToken(), s.sessionOptions)
@@ -454,9 +454,9 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterActivity(testSessionActivity)
 
-	var taskListUsed []string
+	var taskQueueUsed []string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
-		taskListUsed = append(taskListUsed, activityInfo.TaskList)
+		taskQueueUsed = append(taskQueueUsed, activityInfo.TaskQueue)
 	})
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
 	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(sessionCompletionActivity).Once()
@@ -464,8 +464,8 @@ func (s *SessionTestSuite) TestSessionRecreationTaskList() {
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
-	for _, taskList := range taskListUsed {
-		s.Equal(resourceSpecificTaskList, taskList)
+	for _, taskQueue := range taskQueueUsed {
+		s.Equal(resourceSpecificTaskQueue, taskQueue)
 	}
 	env.AssertExpectations(s.T())
 }
@@ -480,7 +480,7 @@ func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
 		ctx = WithActivityOptions(ctx, ao)
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "random sessionID",
-			tasklist:     "random tasklist",
+			taskqueue:    "random taskqueue",
 			sessionState: sessionStateFailed,
 		})
 
@@ -505,7 +505,7 @@ func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
 		ctx = WithActivityOptions(ctx, ao)
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "random sessionID",
-			tasklist:     "random tasklist",
+			taskqueue:    "random taskqueue",
 			sessionState: sessionStateClosed,
 		})
 
@@ -515,29 +515,29 @@ func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testSessionActivity)
-	var taskListUsed string
+	var taskQueueUsed string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
-		taskListUsed = activityInfo.TaskList
+		taskQueueUsed = activityInfo.TaskQueue
 	})
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
-	s.Equal(defaultTestTaskList, taskListUsed)
+	s.Equal(defaultTestTaskQueue, taskQueueUsed)
 }
 
 func (s *SessionTestSuite) TestSessionRecreateToken() {
-	testTasklist := "some random tasklist"
+	testTaskqueue := "some random taskqueue"
 
 	sessionInfo := &SessionInfo{
 		SessionID:    "testSessionID",
-		tasklist:     tasklist,
+		taskqueue:    taskqueue,
 		sessionState: sessionStateClosed,
 	}
 	token := sessionInfo.GetRecreateToken()
 	params, err := deserializeRecreateToken(token)
 	s.NoError(err)
-	s.Equal(testTasklist, params.Tasklist)
+	s.Equal(testTaskqueue, params.Taskqueue)
 }
 
 func (s *SessionTestSuite) TestInvalidRecreateToken() {
@@ -646,11 +646,11 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 
 func (s *SessionTestSuite) createSessionWithoutRetry(ctx Context) (Context, error) {
 	options := getActivityOptions(ctx)
-	baseTasklist := options.TaskListName
-	if baseTasklist == "" {
-		baseTasklist = options.OriginalTaskListName
+	baseTaskqueue := options.TaskQueueName
+	if baseTaskqueue == "" {
+		baseTaskqueue = options.OriginalTaskQueueName
 	}
-	return createSession(ctx, getCreationTasklist(baseTasklist), s.sessionOptions, false)
+	return createSession(ctx, getCreationTaskqueue(baseTaskqueue), s.sessionOptions, false)
 }
 
 func testSessionActivity(_ context.Context, name string) (string, error) {
