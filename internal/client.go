@@ -417,8 +417,8 @@ type (
 		WorkflowTaskTimeout time.Duration
 
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate.
-		// Optional: defaulted to WorkflowIDReusePolicyAllowDuplicateFailedOnly.
+		// for dedup logic if set to RejectDuplicate.
+		// Optional: defaulted to AllowDuplicateFailedOnly.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy - Optional retry policy for workflow. If a retry policy is specified, in case of workflow failure
