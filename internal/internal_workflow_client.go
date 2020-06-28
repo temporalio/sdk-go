@@ -213,7 +213,7 @@ func (wc *WorkflowClient) StartWorkflow(
 		WorkflowRunTimeoutSeconds:       runTimeout,
 		WorkflowTaskTimeoutSeconds:      workflowTaskTimeout,
 		Identity:                        wc.identity,
-		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy.toProto(),
+		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy,
 		RetryPolicy:                     convertRetryPolicy(options.RetryPolicy),
 		CronSchedule:                    options.CronSchedule,
 		Memo:                            memo,
@@ -397,7 +397,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		CronSchedule:                    options.CronSchedule,
 		Memo:                            memo,
 		SearchAttributes:                searchAttr,
-		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy.toProto(),
+		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy,
 		Header:                          header,
 	}
 

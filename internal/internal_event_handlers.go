@@ -385,8 +385,8 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
 	attributes.Input = params.Input
 	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.WorkflowType.Name}
-	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy.toProto()
-	attributes.ParentClosePolicy = params.ParentClosePolicy.toProto()
+	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy
+	attributes.ParentClosePolicy = params.ParentClosePolicy
 	attributes.RetryPolicy = params.RetryPolicy
 	attributes.Header = params.Header
 	attributes.Memo = memo

@@ -33,6 +33,7 @@ import (
 
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/temporal-proto/common/v1"
+	enumspb "go.temporal.io/temporal-proto/enums/v1"
 	"go.uber.org/zap"
 
 	"go.temporal.io/temporal/internal/common"
@@ -204,7 +205,7 @@ type (
 
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
 		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate
-		WorkflowIDReusePolicy WorkflowIDReusePolicy
+		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy specify how to retry child workflow if error happens.
 		// Optional: default is no retry
@@ -237,7 +238,7 @@ type (
 
 		// ParentClosePolicy - Optional policy to decide what to do for the child.
 		// Default is Terminate (if onboarded to this feature)
-		ParentClosePolicy ParentClosePolicy
+		ParentClosePolicy enumspb.ParentClosePolicy
 	}
 )
 

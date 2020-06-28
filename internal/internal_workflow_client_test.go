@@ -54,7 +54,7 @@ const (
 	taskqueue             = "some random taskqueue"
 	identity              = "some random identity"
 	timeoutInSeconds      = 20
-	workflowIDReusePolicy = WorkflowIDReusePolicyAllowDuplicateFailedOnly
+	workflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	testHeader            = "test-header"
 )
 

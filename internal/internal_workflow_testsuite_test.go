@@ -2076,7 +2076,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowIDReusePolicy() {
 		cwo := ChildWorkflowOptions{
 			WorkflowRunTimeout:    time.Minute,
 			WorkflowID:            "test-child-workflow-id",
-			WorkflowIDReusePolicy: WorkflowIDReusePolicyRejectDuplicate,
+			WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
@@ -2094,7 +2094,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowIDReusePolicy() {
 		s.Error(err)
 
 		// now with policy allow duplicate
-		cwo.WorkflowIDReusePolicy = WorkflowIDReusePolicyAllowDuplicate
+		cwo.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		f = ExecuteChildWorkflow(ctx, testWorkflowHello)
 		err = f.GetChildWorkflowExecution().Get(ctx, nil)
@@ -2693,7 +2693,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowAlreadyRunning() {
 		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
 			WorkflowID:            "Test_ChildWorkflowAlreadyRunning",
 			WorkflowRunTimeout:    time.Minute,
-			WorkflowIDReusePolicy: WorkflowIDReusePolicyAllowDuplicateFailedOnly,
+			WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		})
 
 		var result1, result2 string

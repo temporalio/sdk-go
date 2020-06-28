@@ -142,7 +142,7 @@ func (ts *AsyncBindingsTestSuite) startWorkflowOptions(wfID string) client.Start
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    client.WorkflowIDReusePolicyAllowDuplicate,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
 }
 
