@@ -137,8 +137,7 @@ type (
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 		// - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
 		// - options, workflow, workflowArgs are same as StartWorkflow's parameters
-		// Note: options.WorkflowIDReusePolicy is default to WorkflowIDReusePolicyAllowDuplicate in this API;
-		// while in StartWorkflow/ExecuteWorkflow APIs it is default to WorkflowIdReusePolicyAllowDuplicateFailedOnly.
+		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
 		//  - EntityNotExistsError, if namespace does not exist
 		//  - BadRequestError
