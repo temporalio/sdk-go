@@ -1277,7 +1277,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	}
 
 	if failedReq, ok := resp.(*workflowservice.RespondDecisionTaskFailedRequest); ok {
-		return fmt.Errorf("replay workflow failed with failure: %v", failedReq.GetFailure().GetMessage())
+		return fmt.Errorf("replay workflow failed with failure: %v", failedReq.GetFailure())
 	}
 
 	if last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED && last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
