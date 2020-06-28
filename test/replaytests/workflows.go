@@ -34,6 +34,7 @@ import (
 	"go.temporal.io/temporal/workflow"
 )
 
+// Workflow1 test workflow
 func Workflow1(ctx workflow.Context, name string) error {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -77,6 +78,7 @@ func Workflow1(ctx workflow.Context, name string) error {
 	return nil
 }
 
+// Workflow2 test workflow
 func Workflow2(ctx workflow.Context, name string) error {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
