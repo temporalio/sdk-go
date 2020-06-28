@@ -21,7 +21,7 @@ require (
 	github.com/uber-go/tally v3.3.17+incompatible
 	github.com/uber/jaeger-client-go v2.23.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.temporal.io/temporal-proto v0.25.1-0.20200626222731-b3949ecf5fb6
+	go.temporal.io/temporal-proto v0.26.0
 	go.uber.org/atomic v1.6.0
 	go.uber.org/goleak v1.0.0
 	go.uber.org/zap v1.15.0
