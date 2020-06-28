@@ -1,0 +1,161 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "timestamp": "1593300497763824460",
+      "eventType": "WorkflowExecutionStarted",
+      "version": "-24",
+      "taskId": "2097152",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "Workflow1"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "workflowExecutionTimeoutSeconds": 315360000,
+        "workflowRunTimeoutSeconds": 315360000,
+        "workflowTaskTimeoutSeconds": 10,
+        "initiator": "Decider",
+        "originalExecutionRunId": "7a971df0-94f4-416d-ab2b-d7de0571b75c",
+        "identity": "24014@ShtinUbuntu2@",
+        "firstExecutionRunId": "7a971df0-94f4-416d-ab2b-d7de0571b75c",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "timestamp": "1593300497764016736",
+      "eventType": "DecisionTaskScheduled",
+      "version": "-24",
+      "taskId": "2097153",
+      "decisionTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "replay-test"
+        },
+        "startToCloseTimeoutSeconds": 10
+      }
+    },
+    {
+      "eventId": "3",
+      "timestamp": "1593300497780333506",
+      "eventType": "DecisionTaskStarted",
+      "version": "-24",
+      "taskId": "2097158",
+      "decisionTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "24014@ShtinUbuntu2@",
+        "requestId": "8e49179d-f49a-4168-94d0-ed871bdedd96"
+      }
+    },
+    {
+      "eventId": "4",
+      "timestamp": "1593300497788670410",
+      "eventType": "DecisionTaskCompleted",
+      "version": "-24",
+      "taskId": "2097161",
+      "decisionTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "24014@ShtinUbuntu2@",
+        "binaryChecksum": "d1ff0bb159bafbbf7536b67290908482"
+      }
+    },
+    {
+      "eventId": "5",
+      "timestamp": "1593300497788810292",
+      "eventType": "MarkerRecorded",
+      "version": "-24",
+      "taskId": "2097162",
+      "markerRecordedEventAttributes": {
+        "markerName": "Version",
+        "details": {
+          "change-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbg=="
+                },
+                "data": "InRlc3QtY2hhbmdlIg=="
+              }
+            ]
+          },
+          "version": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbg=="
+                },
+                "data": "MQ=="
+              }
+            ]
+          }
+        },
+        "decisionTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "timestamp": "1593300497788963911",
+      "eventType": "UpsertWorkflowSearchAttributes",
+      "version": "-24",
+      "taskId": "2097163",
+      "upsertWorkflowSearchAttributesEventAttributes": {
+        "decisionTaskCompletedEventId": "4",
+        "searchAttributes": {
+          "indexedFields": {
+            "TemporalChangeVersion": {
+              "metadata": {
+                "encoding": "anNvbg=="
+              },
+              "data": "WyJ0ZXN0LWNoYW5nZS0xIl0="
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "7",
+      "timestamp": "1593300497788982477",
+      "eventType": "ActivityTaskScheduled",
+      "version": "-24",
+      "taskId": "2097164",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "0",
+        "activityType": {
+          "name": "helloworldActivity"
+        },
+        "taskQueue": {
+          "name": "replay-test"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeoutSeconds": 315360000,
+        "scheduleToStartTimeoutSeconds": 60,
+        "startToCloseTimeoutSeconds": 60,
+        "heartbeatTimeoutSeconds": 20,
+        "decisionTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}
