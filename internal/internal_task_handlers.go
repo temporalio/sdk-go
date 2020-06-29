@@ -931,7 +931,7 @@ ProcessEvents:
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewApplicationError("FailWorkflow", false, nonDeterministicErr))
+			eventHandler.Complete(nil, NewApplicationError("Non-determimistic error cause workflow to fail due to FailWorkflow workflow panic policy.", ApplicationErrorType, false, nonDeterministicErr))
 		case BlockWorkflow:
 			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or

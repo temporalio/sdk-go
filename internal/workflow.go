@@ -159,7 +159,7 @@ type (
 		RunID string
 	}
 
-	// EncodedValue is type alias used to encapsulate/extract encoded result from workflow/activity.
+	// EncodedValue is type used to encapsulate/extract encoded result from workflow/activity.
 	EncodedValue struct {
 		value         *commonpb.Payloads
 		dataConverter DataConverter

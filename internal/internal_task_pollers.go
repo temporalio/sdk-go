@@ -572,7 +572,7 @@ WaitResult:
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
 		} else {
 			// should not happen
-			return &localActivityResult{err: NewApplicationError("unexpected context done", true, nil), task: task}
+			return &localActivityResult{err: NewApplicationError("unexpected context done", ApplicationErrorType, true, nil), task: task}
 		}
 	case <-doneCh:
 		// local activity completed
