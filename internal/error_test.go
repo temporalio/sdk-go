@@ -166,12 +166,12 @@ func Test_ApplicationError(t *testing.T) {
 	var a1 string
 	var a2 int
 	var a3 testStruct
-	err0 := NewApplicationError(applicationErrReasonA, ApplicationErrorType, false, nil, testErrorDetails1)
+	err0 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
-	err0 = NewApplicationError(applicationErrReasonA, ApplicationErrorType, false, nil, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	err0 = NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
@@ -200,11 +200,11 @@ func Test_ApplicationError(t *testing.T) {
 
 	// test reason and no detail
 	newReason := "another reason"
-	err2 := NewApplicationError(newReason, ApplicationErrorType, false, nil)
+	err2 := NewApplicationError(newReason, "", false, nil)
 	require.True(t, !err2.HasDetails())
 	require.Equal(t, ErrNoData, err2.Details())
 	require.Equal(t, newReason, err2.Error())
-	err3 := NewApplicationError(newReason, ApplicationErrorType, false, nil, nil)
+	err3 := NewApplicationError(newReason, "", false, nil, nil)
 	// TODO: probably we want to handle this case when details are nil, HasDetails return false
 	require.True(t, err3.HasDetails())
 
@@ -228,14 +228,14 @@ func Test_ApplicationError(t *testing.T) {
 
 func Test_ApplicationError_Pointer(t *testing.T) {
 	a1 := testStruct2{}
-	err1 := NewApplicationError(applicationErrReasonA, ApplicationErrorType, false, nil, testErrorDetails4)
+	err1 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails4)
 	require.True(t, err1.HasDetails())
 	err := err1.Details(&a1)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails4, a1)
 
 	a2 := &testStruct2{}
-	err2 := NewApplicationError(applicationErrReasonA, ApplicationErrorType, false, nil, &testErrorDetails4) // // pointer in details
+	err2 := NewApplicationError(applicationErrReasonA, "", false, nil, &testErrorDetails4) // // pointer in details
 	require.True(t, err2.HasDetails())
 	err = err2.Details(&a2)
 	require.NoError(t, err)
@@ -649,7 +649,7 @@ func Test_convertErrorToFailure_ServerError(t *testing.T) {
 func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
 
-	applicationErr := NewApplicationError("app err", ApplicationErrorType, true, nil)
+	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
@@ -676,7 +676,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
-	applicationErr := NewApplicationError("app err", ApplicationErrorType, true, nil)
+	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())

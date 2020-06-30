@@ -148,9 +148,6 @@ type (
 var (
 	// ErrNoData is returned when trying to extract strong typed data while there is no data available.
 	ErrNoData = internal.ErrNoData
-
-	// ApplicationErrorType is default error type for ApplicationError.
-	ApplicationErrorType = internal.ApplicationErrorType
 )
 
 // NewApplicationError creates new instance of retryable *ApplicationError with message and optional details.

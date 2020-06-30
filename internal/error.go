@@ -236,9 +236,6 @@ var (
 	// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
 	// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 	ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
-
-	// ApplicationErrorType is default error type for ApplicationError.
-	ApplicationErrorType = getErrType(&ApplicationError{})
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
@@ -411,7 +408,8 @@ func (e *ApplicationError) Error() string {
 	return e.message
 }
 
-// Type returns original error type represented as string.
+// Type returns error type represented as string.
+// This type can be passed explicitly to ApplicationError constructor or will be set automatically for any other go errors.
 func (e *ApplicationError) Type() string {
 	return e.errType
 }
@@ -612,12 +610,12 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 	}
 
 	var applicationErr *ApplicationError
-	var applicationErrType string
+	var errType string
 	if errors.As(err, &applicationErr) {
 		if applicationErr.nonRetryable {
 			return false
 		}
-		applicationErrType = applicationErr.errType
+		errType = applicationErr.errType
 	}
 
 	var timeoutErr *TimeoutError
@@ -642,9 +640,12 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		}
 		err = causeErr
 	}
-	errType := getErrType(err)
+
+	if errType == "" {
+		errType = getErrType(err)
+	}
 	for _, nonRetryableType := range nonRetryableTypes {
-		if nonRetryableType == errType || nonRetryableType == applicationErrType {
+		if nonRetryableType == errType {
 			return false
 		}
 	}
@@ -790,7 +791,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	} else if failure.GetServerFailureInfo() != nil {
 		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(failure.GetMessage(), ApplicationErrorType, true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), "", true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(
@@ -818,7 +819,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), ApplicationErrorType, false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {
