@@ -560,11 +560,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, wrapActivityError(env.identity, scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_TIMEOUT, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
+			return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_TIMEOUT, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskQueue)
 		st := getStackTraceRaw(topLine, 7, 0)
-		return nil, wrapActivityError(env.identity, scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, newPanicError(err.Error(), st))
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, newPanicError(err.Error(), st))
 	}
 
 	if result == ErrActivityResultPending {
@@ -574,9 +574,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		details := newEncodedValues(request.Details, env.GetDataConverter())
-		return nil, wrapActivityError(env.identity, scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, NewCanceledError(details))
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, NewCanceledError(details))
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, wrapActivityError(env.identity, scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -613,7 +613,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
 		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
-		return nil, wrapActivityError(env.identity, task.activityID, activityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, result.err)
+		return nil, env.wrapActivityError(task.activityID, activityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, result.err)
 	}
 	return newEncodedValue(result.result, env.GetDataConverter()), nil
 }
@@ -1368,8 +1368,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		details := newEncodedValues(request.Details, dataConverter)
-		err = wrapActivityError(
-			env.identity,
+		err = env.wrapActivityError(
 			activityID,
 			activityType,
 			enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
@@ -1377,8 +1376,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		err = wrapActivityError(
-			env.identity,
+		err = env.wrapActivityError(
 			activityID,
 			activityType,
 			enumspb.RETRY_STATUS_UNSPECIFIED,
@@ -1390,8 +1388,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = wrapActivityError(
-				env.identity,
+			err = env.wrapActivityError(
 				activityID,
 				activityType,
 				enumspb.RETRY_STATUS_TIMEOUT,
@@ -1414,7 +1411,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	env.startDecisionTask()
 }
 
-func wrapActivityError(identity, activityID, activityType string, retryStatus enumspb.RetryStatus, activityErr error) error {
+func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID, activityType string, retryStatus enumspb.RetryStatus, activityErr error) error {
 	if activityErr == nil {
 		return nil
 	}
@@ -1422,7 +1419,7 @@ func wrapActivityError(identity, activityID, activityType string, retryStatus en
 	return NewActivityError(
 		0,
 		0,
-		identity,
+		env.identity,
 		&commonpb.ActivityType{Name: activityType},
 		activityID,
 		retryStatus,
@@ -1457,7 +1454,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		}
 	}
 	lar := &LocalActivityResultWrapper{
-		Err:     wrapActivityError(env.identity, activityID, activityType, enumspb.RETRY_STATUS_UNSPECIFIED, result.err),
+		Err:     env.wrapActivityError(activityID, activityType, enumspb.RETRY_STATUS_UNSPECIFIED, result.err),
 		Result:  result.result,
 		Backoff: noRetryBackoff,
 	}
