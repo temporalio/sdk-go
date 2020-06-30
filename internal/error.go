@@ -609,6 +609,21 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		return false
 	}
 
+	var timeoutErr *TimeoutError
+	if errors.As(err, &timeoutErr) {
+		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
+			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
+			return false
+		} else {
+			return true
+		}
+	}
+
+	var serverErr *ServerError
+	if errors.As(err, &serverErr) {
+		return !serverErr.nonRetryable
+	}
+
 	var applicationErr *ApplicationError
 	var errType string
 	if errors.As(err, &applicationErr) {
@@ -616,34 +631,23 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 			return false
 		}
 		errType = applicationErr.errType
-	}
-
-	var timeoutErr *TimeoutError
-	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
-			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
-			return false
+	} else {
+	ForLoop:
+		for {
+			switch err.(type) {
+			case *WorkflowExecutionError, *ChildWorkflowExecutionError, *ActivityError:
+				causeErr := errors.Unwrap(err)
+				if causeErr == nil {
+					break ForLoop
+				}
+				err = causeErr
+			default:
+				break ForLoop
+			}
 		}
-	}
-
-	var serverErr *ServerError
-	if errors.As(err, &serverErr) {
-		if serverErr.nonRetryable {
-			return false
-		}
-	}
-
-	for {
-		causeErr := errors.Unwrap(err)
-		if causeErr == nil {
-			break
-		}
-		err = causeErr
-	}
-
-	if errType == "" {
 		errType = getErrType(err)
 	}
+
 	for _, nonRetryableType := range nonRetryableTypes {
 		if nonRetryableType == errType {
 			return false
