@@ -111,6 +111,7 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
+	s.Error(err)
 
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
@@ -384,6 +385,7 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 
@@ -517,6 +519,7 @@ func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
 
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 

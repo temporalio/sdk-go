@@ -2302,6 +2302,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 
 		err := ExecuteActivity(ctx, activityFailedFn).Get(ctx, nil)
 
+		s.Error(err)
 		var activityErr *ActivityError
 		s.True(errors.As(err, &activityErr))
 
@@ -2325,7 +2326,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 
 	// set a workflow timeout timer to test
 	// if the timer will fire during activity retry
-	env.SetWorkflowRunTimeout(1000 * time.Second)
+	env.SetWorkflowRunTimeout(10 * time.Second)
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -2912,6 +2913,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 	env.RegisterWorkflow(wf)
 	env.ExecuteWorkflow(wf)
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 

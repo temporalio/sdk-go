@@ -206,8 +206,8 @@ func TestWorkflowPanic(t *testing.T) {
 	env.RegisterActivity(testAct)
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
-	require.NotNil(t, env.GetWorkflowError())
 	err := env.GetWorkflowError()
+	require.Error(t, err)
 	var workflowErr *WorkflowExecutionError
 	require.True(t, errors.As(err, &workflowErr))
 
@@ -225,8 +225,8 @@ func TestWorkflowReturnsPanic(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(returnPanicWorkflow)
 	require.True(t, env.IsWorkflowCompleted())
-	require.NotNil(t, env.GetWorkflowError())
 	err := env.GetWorkflowError()
+	require.Error(t, err)
 	var workflowErr *WorkflowExecutionError
 	require.True(t, errors.As(err, &workflowErr))
 
@@ -436,8 +436,8 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	})
 	env.ExecuteWorkflow(continueAsNewWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
-	s.NotNil(env.GetWorkflowError())
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 
@@ -1147,6 +1147,7 @@ func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 	s.True(env.IsWorkflowCompleted())
 
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 
@@ -1166,6 +1167,7 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTe
 	s.True(env.IsWorkflowCompleted())
 
 	err := env.GetWorkflowError()
+	s.Error(err)
 	var workflowErr *WorkflowExecutionError
 	s.True(errors.As(err, &workflowErr))
 
