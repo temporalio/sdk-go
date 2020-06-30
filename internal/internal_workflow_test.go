@@ -207,7 +207,14 @@ func TestWorkflowPanic(t *testing.T) {
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NotNil(t, env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(*PanicError)
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var resultErr *PanicError
+	require.True(t, errors.As(err, &resultErr))
+
 	require.EqualValues(t, "simulated", resultErr.Error())
 	require.Contains(t, resultErr.StackTrace(), "temporal/internal.splitJoinActivityWorkflow")
 }
@@ -219,7 +226,13 @@ func TestWorkflowReturnsPanic(t *testing.T) {
 	env.ExecuteWorkflow(returnPanicWorkflow)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NotNil(t, env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(*PanicError)
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var resultErr *PanicError
+	require.True(t, errors.As(err, &resultErr))
 	require.EqualValues(t, "panicError", resultErr.Error())
 	require.EqualValues(t, "stackTrace", resultErr.StackTrace())
 }
@@ -424,7 +437,13 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	env.ExecuteWorkflow(continueAsNewWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NotNil(env.GetWorkflowError())
-	resultErr := env.GetWorkflowError().(*ContinueAsNewError)
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var resultErr *ContinueAsNewError
+	s.True(errors.As(err, &resultErr))
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.WorkflowType.Name)
 	s.EqualValues(100, resultErr.params.WorkflowExecutionTimeoutSeconds)
 	s.EqualValues(50, resultErr.params.WorkflowRunTimeoutSeconds)
@@ -1127,7 +1146,14 @@ func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 	env.ExecuteWorkflow(waitGroupNegativeCounterPanicsWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 
-	resultErr := env.GetWorkflowError().(*PanicError)
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var resultErr *PanicError
+	s.True(errors.As(err, &resultErr))
+
 	s.EqualValues("negative WaitGroup counter", resultErr.Error())
 	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupNegativeCounterPanicsWorkflowTest")
 }
@@ -1139,7 +1165,14 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTe
 	env.ExecuteWorkflow(waitGroupMultipleConcurrentWaitsPanicsWorkflowTest)
 	s.True(env.IsWorkflowCompleted())
 
-	resultErr := env.GetWorkflowError().(*PanicError)
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var resultErr *PanicError
+	s.True(errors.As(err, &resultErr))
+
 	s.EqualValues("WaitGroup is reused before previous Wait has returned", resultErr.Error())
 	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
 }

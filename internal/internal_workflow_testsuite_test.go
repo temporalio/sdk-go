@@ -482,9 +482,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.NotNil(env.GetWorkflowError())
-	_, ok := env.GetWorkflowError().(*CanceledError)
-	s.True(ok)
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *CanceledError
+	s.True(errors.As(err, &err1))
 }
 
 func testWorkflowHello(ctx Context) (string, error) {
@@ -770,10 +776,19 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	workflowError := env.GetWorkflowError()
-	s.Error(workflowError)
-	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3",
-		workflowError.Error())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var childWorkflowErr *ChildWorkflowExecutionError
+	s.True(errors.As(err, &childWorkflowErr))
+
+	err = errors.Unwrap(childWorkflowErr)
+	var err1 *PanicError
+	s.True(errors.As(err, &err1))
+	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3", err1.Error())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
@@ -795,8 +810,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Error(env.GetWorkflowError())
-	s.Equal("fail to start child", env.GetWorkflowError().Error())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+	s.Equal("fail to start child", err1.Error())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
@@ -1779,7 +1801,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		cancel()
 
 		err2 := f2.Get(ctx, nil)
-		if _, ok := err2.(*CanceledError); !ok {
+		var canceledErr *CanceledError
+		if !errors.As(err2, &canceledErr) {
 			return "", err2
 		}
 
@@ -1968,8 +1991,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 		cancel()
 
 		err := childFuture.Get(childCtx, nil)
-		if _, ok := err.(*CanceledError); !ok {
-			return fmt.Errorf("cancel child workflow should receive CanceledError, instead got: %v", err)
+		var childWorkflowErr *ChildWorkflowExecutionError
+		if !errors.As(err, &childWorkflowErr) {
+			return fmt.Errorf("cancel child workflow should receive ChildWorkflowExecutionError, instead got: %v", err)
+		}
+
+		err = errors.Unwrap(childWorkflowErr)
+		var err1 *CanceledError
+		if !errors.As(err, &err1) {
+			return fmt.Errorf("cancel child workflow cause should be CanceledError, instead got: %v", err)
 		}
 		return nil
 	}
@@ -2174,9 +2204,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_Channel() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Error(env.GetWorkflowError())
-	_, ok := env.GetWorkflowError().(*ContinueAsNewError)
-	s.True(ok)
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ContinueAsNewError
+	s.True(errors.As(err, &err1))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ContextMisuse() {
@@ -2257,18 +2292,22 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 			ScheduleToStartTimeout: time.Minute,
 			StartToCloseTimeout:    time.Minute,
 			RetryPolicy: &RetryPolicy{
-				MaximumAttempts:        5,
-				InitialInterval:        time.Second,
-				MaximumInterval:        time.Second * 10,
-				BackoffCoefficient:     2,
-				NonRetryableErrorTypes: []string{"bad-bug"},
+				MaximumAttempts:    5,
+				InitialInterval:    time.Second,
+				MaximumInterval:    time.Second * 10,
+				BackoffCoefficient: 2,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
 
 		err := ExecuteActivity(ctx, activityFailedFn).Get(ctx, nil)
-		badBug, ok := err.(*ApplicationError)
-		s.True(ok)
+
+		var activityErr *ActivityError
+		s.True(errors.As(err, &activityErr))
+
+		err = errors.Unwrap(activityErr)
+		var badBug *ApplicationError
+		s.True(errors.As(err, &badBug))
 		s.Equal("bad-bug", badBug.Error())
 
 		var result string
@@ -2286,7 +2325,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 
 	// set a workflow timeout timer to test
 	// if the timer will fire during activity retry
-	env.SetWorkflowRunTimeout(10 * time.Second)
+	env.SetWorkflowRunTimeout(1000 * time.Second)
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
@@ -2592,9 +2631,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestWorkflowTimeoutInBusyLoop() {
 
 	env.ExecuteWorkflow(neverEndingWorkflow)
 	s.Equal(10, timerFiredCount)
-	s.Error(env.GetWorkflowError())
-	_, ok := env.GetWorkflowError().(*TimeoutError)
-	s.True(ok)
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *TimeoutError
+	s.True(errors.As(err, &err1))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
@@ -2611,10 +2656,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_TestChildWorkflowTimeout() {
 		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
 
 		s.Error(err)
-		if _, ok := err.(*TimeoutError); ok {
-			return nil
+		var childWorkflowErr *ChildWorkflowExecutionError
+		if !errors.As(err, &childWorkflowErr) {
+			return fmt.Errorf("error should be *ChildWorkflowExecutionError but got: %v", err)
 		}
-		return err
+
+		err = errors.Unwrap(childWorkflowErr)
+		var err1 *TimeoutError
+		if !errors.As(err, &err1) {
+			return fmt.Errorf("error cause should be *TimeoutError but got: %v", err)
+		}
+
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -2859,7 +2912,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 	env.RegisterWorkflow(wf)
 	env.ExecuteWorkflow(wf)
 	err := env.GetWorkflowError()
-	s.EqualError(err, "activity called runtime.Goexit")
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+
+	s.EqualError(err1, "activity called runtime.Goexit")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SetWorkerStopChannel() {
@@ -2883,7 +2947,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 1.1,
 				MaximumAttempts:    3,
-				// NonRetryableErrorTypes: []string{"temporalInternal:Timeout StartToClose"},
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)
@@ -2898,8 +2961,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	wfEnv.ExecuteWorkflow(timeoutWf)
 	err := wfEnv.GetWorkflowError()
 	s.Error(err)
-	timeoutErr, ok := err.(*TimeoutError)
-	s.True(ok)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+
 	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasLastHeartbeatDetails())
 	var details string
@@ -2913,8 +2986,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 
 	_, err = activityEnv.ExecuteActivity(timeoutFn)
 	s.Error(err)
-	timeoutErr, ok = err.(*TimeoutError)
-	s.True(ok)
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	s.True(errors.As(err, &timeoutErr))
+
 	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.True(timeoutErr.HasLastHeartbeatDetails())
 	err = timeoutErr.LastHeartbeatDetails(&details)
@@ -2944,8 +3020,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	wfEnv.ExecuteWorkflow(timeoutWf)
 	err := wfEnv.GetWorkflowError()
 	s.Error(err)
-	timeoutErr, ok := err.(*TimeoutError)
-	s.True(ok)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
 	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 	s.Equal("context deadline exceeded", timeoutErr.cause.Error())
 }
