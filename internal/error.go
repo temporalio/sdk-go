@@ -614,9 +614,8 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
 			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
 			return false
-		} else {
-			return true
 		}
+		return true
 	}
 
 	var serverErr *ServerError
