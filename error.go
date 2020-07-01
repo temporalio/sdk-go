@@ -168,7 +168,7 @@ func NewApplicationErrorWithCause(message, errType string, cause error, details 
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, and optional cause and details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(message, cause error, details ...interface{}) *ApplicationError {
+func NewNonRetryableApplicationError(message string, cause error, details ...interface{}) *ApplicationError {
 	return internal.NewApplicationError(message, "", true, cause, details...)
 }
 
