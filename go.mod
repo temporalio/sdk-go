@@ -23,6 +23,7 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	go.temporal.io/temporal-proto v0.26.1-0.20200701225807-2dec5f6b66cf
 	go.uber.org/atomic v1.6.0
+	go.uber.org/cadence v0.12.2
 	go.uber.org/goleak v1.0.0
 	go.uber.org/zap v1.15.0
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
