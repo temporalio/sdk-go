@@ -33,8 +33,9 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	"go.uber.org/cadence/internal/common/backoff"
 	"go.uber.org/zap"
+
+	"go.temporal.io/temporal/internal/common/backoff"
 )
 
 type (
