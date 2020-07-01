@@ -150,22 +150,26 @@ var (
 	ErrNoData = internal.ErrNoData
 )
 
-// NewApplicationError creates new instance of retryable *ApplicationError with message and optional details.
+// NewApplicationError creates new instance of retryable *ApplicationError with message, type, and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
+// errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
+// to avoid retrying of particular error types.
 func NewApplicationError(message, errType string, details ...interface{}) *ApplicationError {
 	return internal.NewApplicationError(message, errType, false, nil, details...)
 }
 
-// NewApplicationErrorWithCause creates new instance of retryable *ApplicationError with message, cause, and optional details.
+// NewApplicationErrorWithCause creates new instance of retryable *ApplicationError with message, type, cause, and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
+// errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
+// to avoid retrying of particular error types.
 func NewApplicationErrorWithCause(message, errType string, cause error, details ...interface{}) *ApplicationError {
 	return internal.NewApplicationError(message, errType, false, cause, details...)
 }
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, and optional cause and details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(message, errType string, cause error, details ...interface{}) *ApplicationError {
-	return internal.NewApplicationError(message, errType, true, cause, details...)
+func NewNonRetryableApplicationError(message, cause error, details ...interface{}) *ApplicationError {
+	return internal.NewApplicationError(message, "", true, cause, details...)
 }
 
 // NewCanceledError creates CanceledError instance.

@@ -409,7 +409,9 @@ func (e *ApplicationError) Error() string {
 }
 
 // Type returns error type represented as string.
-// This type can be passed explicitly to ApplicationError constructor or will be set automatically for any other go errors.
+// This type can be passed explicitly to ApplicationError constructor.
+// Also any other Go error is converted to ApplicationError and type is set automatically using reflection.
+// For example instance of "MyCustomError struct" will be converted to ApplicationError and Type() will return "MyCustomError" string.
 func (e *ApplicationError) Type() string {
 	return e.errType
 }
@@ -612,11 +614,6 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
 		return timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_START_TO_CLOSE || timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_HEARTBEAT
-	}
-
-	var serverErr *ServerError
-	if errors.As(err, &serverErr) {
-		return !serverErr.nonRetryable
 	}
 
 	var applicationErr *ApplicationError
