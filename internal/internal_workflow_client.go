@@ -846,9 +846,10 @@ type QueryWorkflowWithOptionsRequest struct {
 	// Args is an optional field used to identify the arguments passed to the query.
 	Args []interface{}
 
-	// QUERY_REJECT_CONDITION_UNSPECIFIED is an optional field used to reject queries based on workflow state.
-	// QUERY_REJECT_CONDITION_NOT_OPEN will reject queries to workflows which are not open.
-	// QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY will reject queries to workflows which completed in any state other than completed (e.g. terminated, canceled timeout etc...).
+	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
+	// QUERY_REJECT_CONDITION_NONE indicates that query should not be rejected.
+	// QUERY_REJECT_CONDITION_NOT_OPEN indicates that query should be rejected if workflow is not open.
+	// QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY indicates that query should be rejected if workflow did not complete cleanly (e.g. terminated, canceled timeout etc...).
 	QueryRejectCondition enumspb.QueryRejectCondition
 }
 
