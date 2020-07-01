@@ -72,7 +72,7 @@ if err != nil {
 		applicationErr.Details(&detailMsg) // extract strong typed details
 
 		// handle activity errors (errors created other than using NewApplicationError() API)
-		switch err.OriginalType() {
+		switch err.Type() {
 		case "CustomErrTypeA":
 			// handle CustomErrTypeA
 		case CustomErrTypeB:
@@ -120,7 +120,7 @@ type (
 	ApplicationError struct {
 		temporalError
 		message      string
-		originalType string
+		errType      string
 		nonRetryable bool
 		cause        error
 		details      Values
@@ -223,24 +223,26 @@ type (
 	}
 )
 
-// ErrNoData is returned when trying to extract strong typed data while there is no data available.
-var ErrNoData = errors.New("no data available")
+var (
+	// ErrNoData is returned when trying to extract strong typed data while there is no data available.
+	ErrNoData = errors.New("no data available")
 
-// ErrTooManyArg is returned when trying to extract strong typed data with more arguments than available data.
-var ErrTooManyArg = errors.New("too many arguments")
+	// ErrTooManyArg is returned when trying to extract strong typed data with more arguments than available data.
+	ErrTooManyArg = errors.New("too many arguments")
 
-// ErrActivityResultPending is returned from activity's implementation to indicate the activity is not completed when
-// activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
-// activity require human interaction (like approve an expense report), the activity could return activity.ErrResultPending
-// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
-// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
-var ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
+	// ErrActivityResultPending is returned from activity's implementation to indicate the activity is not completed when
+	// activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
+	// activity require human interaction (like approve an expense report), the activity could return activity.ErrResultPending
+	// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
+	// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
+	ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
+)
 
-// NewApplicationError create new instance of *ApplicationError with message and optional details.
-func NewApplicationError(message string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+// NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
+func NewApplicationError(message, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
 	applicationErr := &ApplicationError{
 		message:      message,
-		originalType: getErrorType(&ApplicationError{}),
+		errType:      errType,
 		nonRetryable: nonRetryable,
 		cause:        cause}
 
@@ -406,9 +408,12 @@ func (e *ApplicationError) Error() string {
 	return e.message
 }
 
-// OriginalType returns original error type represented as string.
-func (e *ApplicationError) OriginalType() string {
-	return e.originalType
+// Type returns error type represented as string.
+// This type can be passed explicitly to ApplicationError constructor.
+// Also any other Go error is converted to ApplicationError and type is set automatically using reflection.
+// For example instance of "MyCustomError struct" will be converted to ApplicationError and Type() will return "MyCustomError" string.
+func (e *ApplicationError) Type() string {
+	return e.errType
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -606,40 +611,25 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		return false
 	}
 
+	var timeoutErr *TimeoutError
+	if errors.As(err, &timeoutErr) {
+		return timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_START_TO_CLOSE || timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_HEARTBEAT
+	}
+
 	var applicationErr *ApplicationError
-	var applicationErrOriginalType string
+	var errType string
 	if errors.As(err, &applicationErr) {
 		if applicationErr.nonRetryable {
 			return false
 		}
-		applicationErrOriginalType = applicationErr.originalType
+		errType = applicationErr.errType
+	} else {
+		// If it is generic Go error.
+		errType = getErrType(err)
 	}
 
-	var timeoutErr *TimeoutError
-	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
-			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
-			return false
-		}
-	}
-
-	var serverErr *ServerError
-	if errors.As(err, &serverErr) {
-		if serverErr.nonRetryable {
-			return false
-		}
-	}
-
-	for {
-		causeErr := errors.Unwrap(err)
-		if causeErr == nil {
-			break
-		}
-		err = causeErr
-	}
-	errType := getErrorType(err)
 	for _, nonRetryableType := range nonRetryableTypes {
-		if nonRetryableType == errType || nonRetryableType == applicationErrOriginalType {
+		if nonRetryableType == errType {
 			return false
 		}
 	}
@@ -647,7 +637,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 	return true
 }
 
-func getErrorType(err error) string {
+func getErrType(err error) string {
 	var t reflect.Type
 	for t = reflect.TypeOf(err); t.Kind() == reflect.Ptr; t = t.Elem() {
 	}
@@ -675,7 +665,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 	switch err := err.(type) {
 	case *ApplicationError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type:         getErrorType(err),
+			Type:         err.errType,
 			NonRetryable: err.nonRetryable,
 			Details:      convertErrDetailsToPayloads(err.details, dc),
 		}
@@ -687,13 +677,13 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{CanceledFailureInfo: failureInfo}
 	case *PanicError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type: getErrorType(err),
+			Type: getErrType(err),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 		failure.StackTrace = err.StackTrace()
 	case *workflowPanicError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type:         getErrorType(&PanicError{}),
+			Type:         getErrType(&PanicError{}),
 			NonRetryable: true,
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
@@ -737,7 +727,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type:         getErrorType(err),
+			Type:         getErrType(err),
 			NonRetryable: false,
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
@@ -760,14 +750,15 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 		applicationFailureInfo := failure.GetApplicationFailureInfo()
 		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
 		switch applicationFailureInfo.GetType() {
-		case getErrorType(&ApplicationError{}):
-			err = NewApplicationError(failure.GetMessage(), applicationFailureInfo.GetNonRetryable(), convertFailureToError(failure.GetCause(), dc), details)
-		case getErrorType(&PanicError{}):
+		case getErrType(&PanicError{}):
 			err = newPanicError(failure.GetMessage(), failure.GetStackTrace())
 		default:
-			applicationErr := NewApplicationError(failure.GetMessage(), false, convertFailureToError(failure.GetCause(), dc))
-			applicationErr.originalType = failure.GetApplicationFailureInfo().GetType()
-			err = applicationErr
+			err = NewApplicationError(
+				failure.GetMessage(),
+				applicationFailureInfo.GetType(),
+				applicationFailureInfo.GetNonRetryable(),
+				convertFailureToError(failure.GetCause(), dc),
+				details)
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
@@ -784,7 +775,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 	} else if failure.GetServerFailureInfo() != nil {
 		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(failure.GetMessage(), true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), "", true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(
@@ -812,7 +803,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {

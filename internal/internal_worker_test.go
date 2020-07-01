@@ -1519,7 +1519,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewApplicationError("testReason", false, nil, "testStringDetails")
+			return NewApplicationError("testReason", "", false, nil, "testStringDetails")
 		}}
 	_, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
@@ -1532,7 +1532,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a2 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
-			return NewApplicationError("testReason", false, nil, testErrorDetails{T: "testErrorStack"})
+			return NewApplicationError("testReason", "", false, nil, testErrorDetails{T: "testErrorStack"})
 		}}
 	_, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
@@ -1545,7 +1545,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a3 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult", NewApplicationError("testReason", false, nil, testErrorDetails{T: "testErrorStack3"})
+			return "testResult", NewApplicationError("testReason", "", false, nil, testErrorDetails{T: "testErrorStack3"})
 		}}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var result string
@@ -1561,7 +1561,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 	a4 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
-			return "testResult4", NewApplicationError("testReason", false, nil, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
+			return "testResult4", NewApplicationError("testReason", "", false, nil, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
 		}}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	err = dataConverter.FromPayloads(encResult, &result)

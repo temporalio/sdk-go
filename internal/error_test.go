@@ -178,12 +178,12 @@ func Test_ApplicationError(t *testing.T) {
 	var a1 string
 	var a2 int
 	var a3 testStruct
-	err0 := NewApplicationError(applicationErrReasonA, false, nil, testErrorDetails1)
+	err0 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1)
 	require.Equal(t, testErrorDetails1, a1)
 	a1 = ""
-	err0 = NewApplicationError(applicationErrReasonA, false, nil, testErrorDetails1, testErrorDetails2, testErrorDetails3)
+	err0 = NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1, testErrorDetails2, testErrorDetails3)
 	require.True(t, err0.HasDetails())
 	_ = err0.Details(&a1, &a2, &a3)
 	require.Equal(t, testErrorDetails1, a1)
@@ -216,11 +216,11 @@ func Test_ApplicationError(t *testing.T) {
 
 	// test reason and no detail
 	newReason := "another reason"
-	err2 := NewApplicationError(newReason, false, nil)
+	err2 := NewApplicationError(newReason, "", false, nil)
 	require.True(t, !err2.HasDetails())
 	require.Equal(t, ErrNoData, err2.Details())
 	require.Equal(t, newReason, err2.Error())
-	err3 := NewApplicationError(newReason, false, nil, nil)
+	err3 := NewApplicationError(newReason, "", false, nil, nil)
 	// TODO: probably we want to handle this case when details are nil, HasDetails return false
 	require.True(t, err3.HasDetails())
 
@@ -248,14 +248,14 @@ func Test_ApplicationError(t *testing.T) {
 
 func Test_ApplicationError_Pointer(t *testing.T) {
 	a1 := testStruct2{}
-	err1 := NewApplicationError(applicationErrReasonA, false, nil, testErrorDetails4)
+	err1 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails4)
 	require.True(t, err1.HasDetails())
 	err := err1.Details(&a1)
 	require.NoError(t, err)
 	require.Equal(t, testErrorDetails4, a1)
 
 	a2 := &testStruct2{}
-	err2 := NewApplicationError(applicationErrReasonA, false, nil, &testErrorDetails4) // // pointer in details
+	err2 := NewApplicationError(applicationErrReasonA, "", false, nil, &testErrorDetails4) // // pointer in details
 	require.True(t, err2.HasDetails())
 	err = err2.Details(&a2)
 	require.NoError(t, err)
@@ -527,72 +527,59 @@ func Test_ContinueAsNewError(t *testing.T) {
 	require.Equal(t, header, continueAsNewErr.params.Header)
 }
 
-func Test_GetErrorType(t *testing.T) {
-	require := require.New(t)
-	err := errors.New("some error")
-	errType := getErrorType(err)
-	require.Equal("errorString", errType)
-
-	err = NewApplicationError("application error", false, nil)
-	errType = getErrorType(err)
-	require.Equal("ApplicationError", errType)
-}
-
 type coolError struct{}
 
 func (e coolError) Error() string {
 	return "cool error"
 }
 
-func Test_GetErrorTypePointer(t *testing.T) {
+func Test_GetErrorType(t *testing.T) {
 	require := require.New(t)
+	err := errors.New("some error")
+	errType := getErrType(err)
+	require.Equal("errorString", errType)
 
-	err := coolError{}
-	errType := getErrorType(err)
+	err = coolError{}
+	errType = getErrType(err)
 	require.Equal("coolError", errType)
 
 	err2 := &coolError{}
-	errType2 := getErrorType(err2)
+	errType2 := getErrType(err2)
 	require.Equal("coolError", errType2)
 }
 
 func Test_IsRetryable(t *testing.T) {
 	require := require.New(t)
-	require.False(IsRetryable(newTerminatedError(), []string{}))
-	require.False(IsRetryable(NewCanceledError(), []string{}))
-	require.False(IsRetryable(newWorkflowPanicError("", ""), []string{}))
+	require.False(IsRetryable(newTerminatedError(), nil))
+	require.False(IsRetryable(NewCanceledError(), nil))
+	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.False(IsRetryable(NewApplicationError("", true, nil), []string{}))
-	require.True(IsRetryable(NewApplicationError("", false, nil), []string{}))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), []string{}))
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), []string{}))
+	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
+	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
 
-	require.False(IsRetryable(NewServerError("", true, nil), []string{}))
-	require.True(IsRetryable(NewServerError("", false, nil), []string{}))
-
-	applicationErr := &ApplicationError{originalType: "MyCoolErr"}
-	require.True(IsRetryable(applicationErr, []string{}))
+	applicationErr := NewApplicationError("", "MyCoolErr", false, nil)
+	require.True(IsRetryable(applicationErr, nil))
 	require.False(IsRetryable(applicationErr, []string{"MyCoolErr"}))
 
 	coolErr := &coolError{}
-	require.True(IsRetryable(coolErr, []string{}))
+	require.True(IsRetryable(coolErr, nil))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
-
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityError(0, 0, "", nil, "", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, coolErr))
-	require.True(IsRetryable(workflowExecutionErr, []string{}))
-	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
+	require.True(IsRetryable(coolErr, []string{"anotherError"}))
+	require.False(IsRetryable(coolErr, []string{"anotherError", "coolError"}))
 }
 
 func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewApplicationError("message", true, errors.New("cause error"), "details", 2208)
+	err := NewApplicationError("message", "customType", true, errors.New("cause error"), "details", 2208)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("message", f.GetMessage())
-	require.Equal("ApplicationError", f.GetApplicationFailureInfo().GetType())
+	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
@@ -704,7 +691,7 @@ func Test_convertErrorToFailure_ServerError(t *testing.T) {
 func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
 
-	applicationErr := NewApplicationError("app err", true, nil)
+	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
@@ -731,7 +718,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
-	applicationErr := NewApplicationError("app err", true, nil)
+	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
@@ -761,12 +748,12 @@ func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	var coolErr *ApplicationError
 	require.True(errors.As(err2, &coolErr))
 	require.Equal(err.Error(), coolErr.Error())
-	require.Equal("coolError", coolErr.OriginalType())
+	require.Equal("coolError", coolErr.Type())
 }
 
 func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
 	require := require.New(t)
-	err := NewApplicationError("message that will be ignored", false, nil)
+	err := NewApplicationError("message that will be ignored", "type nobody cares", false, nil)
 	err.originalFailure = &failurepb.Failure{
 		Message:    "actual message",
 		StackTrace: "some stack trace",
@@ -792,7 +779,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	f := &failurepb.Failure{
 		Message: "message",
 		FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
-			Type:         "ApplicationError",
+			Type:         "MyCoolType",
 			NonRetryable: true,
 			Details:      details,
 		}},
@@ -809,7 +796,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
 	require.Equal("message", applicationErr.Error())
-	require.Equal("ApplicationError", applicationErr.OriginalType())
+	require.Equal("MyCoolType", applicationErr.Type())
 	require.Equal(true, applicationErr.NonRetryable())
 	var str string
 	var n int
@@ -820,7 +807,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	err = errors.Unwrap(err)
 	require.True(errors.As(err, &applicationErr))
 	require.Equal("cause message", applicationErr.Error())
-	require.Equal("UnknownType", applicationErr.OriginalType())
+	require.Equal("UnknownType", applicationErr.Type())
 	require.Equal(false, applicationErr.NonRetryable())
 
 	f = &failurepb.Failure{
@@ -849,7 +836,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	var coolErr *ApplicationError
 	require.True(errors.As(err, &coolErr))
 	require.Equal("message", coolErr.Error())
-	require.Equal("CoolError", coolErr.OriginalType())
+	require.Equal("CoolError", coolErr.Type())
 	require.Equal(false, coolErr.NonRetryable())
 }
 
@@ -936,7 +923,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require.True(errors.As(err, &applicationErr))
 	require.NotNil(applicationErr.originalFailure)
 	applicationErr.message = "errors are immutable, message can't be changed"
-	applicationErr.originalType = "ApplicationError (is ignored)"
+	applicationErr.errType = "ApplicationError (is ignored)"
 	applicationErr.nonRetryable = false
 
 	var activityErr *ActivityError
