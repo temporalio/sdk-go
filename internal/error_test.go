@@ -66,27 +66,39 @@ var (
 func Test_GenericGoError(t *testing.T) {
 	// test activity error
 	errorActivityFn := func() error {
-		return errors.New("error:foo")
+		return errors.New("activity error")
 	}
 	s := &WorkflowTestSuite{}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	require.IsType(t, &ApplicationError{}, err)
-	require.Equal(t, "error:foo", err.Error())
+
+	var activityErr *ActivityError
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var applicationErr *ApplicationError
+	require.True(t, errors.As(err, &applicationErr))
+
+	require.Equal(t, "activity error", err.Error())
 
 	// test workflow error
 	errorWorkflowFn := func(ctx Context) error {
-		return errors.New("error:foo")
+		return errors.New("workflow error")
 	}
 	wfEnv := s.NewTestWorkflowEnvironment()
 	wfEnv.RegisterWorkflow(errorWorkflowFn)
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	require.IsType(t, &ApplicationError{}, err)
-	require.Equal(t, "error:foo", err.Error())
+
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	require.True(t, errors.As(err, &applicationErr))
+	require.Equal(t, "workflow error", err.Error())
 }
 
 func Test_ActivityNotRegistered(t *testing.T) {
@@ -187,8 +199,12 @@ func Test_ApplicationError(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	err1, ok := err.(*ApplicationError)
-	require.True(t, ok)
+	var activityErr *ActivityError
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err1 *ApplicationError
+	require.True(t, errors.As(err, &err1))
 	require.True(t, err1.HasDetails())
 	var b1 string
 	var b2 int
@@ -217,8 +233,12 @@ func Test_ApplicationError(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err4, ok := err.(*ApplicationError)
-	require.True(t, ok)
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err4 *ApplicationError
+	require.True(t, errors.As(err, &err4))
 	require.True(t, err4.HasDetails())
 	_ = err4.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
@@ -250,8 +270,13 @@ func Test_ApplicationError_Pointer(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err = env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	err3, ok := err.(*ApplicationError)
-	require.True(t, ok)
+
+	var activityErr *ActivityError
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err3 *ApplicationError
+	require.True(t, errors.As(err, &err3))
 	require.True(t, err3.HasDetails())
 	b1 := testStruct2{}
 	require.NoError(t, err3.Details(&b1))
@@ -263,8 +288,11 @@ func Test_ApplicationError_Pointer(t *testing.T) {
 	env.RegisterActivity(errorActivityFn2)
 	_, err = env.ExecuteActivity(errorActivityFn2)
 	require.Error(t, err)
-	err4, ok := err.(*ApplicationError)
-	require.True(t, ok)
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err4 *ApplicationError
+	require.True(t, errors.As(err, &err4))
 	require.True(t, err4.HasDetails())
 	b2 := &testStruct2{}
 	require.NoError(t, err4.Details(&b2))
@@ -279,8 +307,12 @@ func Test_ApplicationError_Pointer(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err5, ok := err.(*ApplicationError)
-	require.True(t, ok)
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err5 *ApplicationError
+	require.True(t, errors.As(err, &err5))
 	require.True(t, err5.HasDetails())
 	_ = err5.Details(&b1)
 	require.NoError(t, err5.Details(&b1))
@@ -294,8 +326,11 @@ func Test_ApplicationError_Pointer(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn2)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err6, ok := err.(*ApplicationError)
-	require.True(t, ok)
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err6 *ApplicationError
+	require.True(t, errors.As(err, &err6))
 	require.True(t, err6.HasDetails())
 	_ = err6.Details(&b2)
 	require.NoError(t, err6.Details(&b2))
@@ -328,8 +363,12 @@ func Test_CanceledError(t *testing.T) {
 	env.RegisterActivity(errorActivityFn)
 	_, err := env.ExecuteActivity(errorActivityFn)
 	require.Error(t, err)
-	err1, ok := err.(*CanceledError)
-	require.True(t, ok)
+	var activityErr *ActivityError
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err1 *CanceledError
+	require.True(t, errors.As(err, &err1))
 	require.True(t, err1.HasDetails())
 	var b1 string
 	var b2 int
@@ -351,8 +390,12 @@ func Test_CanceledError(t *testing.T) {
 	wfEnv.ExecuteWorkflow(errorWorkflowFn)
 	err = wfEnv.GetWorkflowError()
 	require.Error(t, err)
-	err3, ok := err.(*CanceledError)
-	require.True(t, ok)
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err3 *CanceledError
+	require.True(t, errors.As(err, &err3))
 	require.True(t, err3.HasDetails())
 	_ = err3.Details(&b1, &b2, &b3)
 	require.Equal(t, testErrorDetails1, b1)
@@ -466,8 +509,12 @@ func Test_ContinueAsNewError(t *testing.T) {
 	err = wfEnv.GetWorkflowError()
 
 	require.Error(t, err)
-	continueAsNewErr, ok := err.(*ContinueAsNewError)
-	require.True(t, ok)
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var continueAsNewErr *ContinueAsNewError
+	require.True(t, errors.As(err, &continueAsNewErr))
 	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType().Name)
 
 	args := continueAsNewErr.Args()

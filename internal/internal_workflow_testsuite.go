@@ -560,11 +560,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err)
+			return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_TIMEOUT, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskQueue)
 		st := getStackTraceRaw(topLine, 7, 0)
-		return nil, newPanicError(err.Error(), st)
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, newPanicError(err.Error(), st))
 	}
 
 	if result == ErrActivityResultPending {
@@ -574,9 +574,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		details := newEncodedValues(request.Details, env.GetDataConverter())
-		return nil, NewCanceledError(details)
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, NewCanceledError(details))
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, convertFailureToError(request.GetFailure(), env.GetDataConverter())
+		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -612,7 +612,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
-		return nil, result.err
+		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
+		return nil, env.wrapActivityError(task.activityID, activityType.Name, enumspb.RETRY_STATUS_UNSPECIFIED, result.err)
 	}
 	return newEncodedValue(result.result, env.GetDataConverter()), nil
 }
@@ -822,6 +823,15 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 			failure := convertErrorToFailure(err, dc)
 			env.testError = convertFailureToError(failure, dc)
 		}
+
+		if !env.isChildWorkflow() {
+			env.testError = NewWorkflowExecutionError(
+				env.WorkflowInfo().WorkflowExecution.ID,
+				env.WorkflowInfo().WorkflowExecution.RunID,
+				env.WorkflowInfo().WorkflowType.Name,
+				env.testError,
+			)
+		}
 	} else {
 		env.testResult = newEncodedValue(result, dc)
 	}
@@ -844,10 +854,21 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 			// no rerun, child workflow is done.
 			env.parentEnv.postCallback(func() {
 				// deliver result
-				childWorkflowHandle.err = env.testError
-				childWorkflowHandle.callback(result, env.testError)
+				if env.testError != nil {
+					childWorkflowHandle.err = NewChildWorkflowExecutionError(
+						defaultTestNamespace,
+						env.WorkflowInfo().WorkflowExecution.ID,
+						env.WorkflowInfo().WorkflowExecution.RunID,
+						env.WorkflowInfo().WorkflowType.Name,
+						0,
+						0,
+						enumspb.RETRY_STATUS_UNSPECIFIED,
+						env.testError,
+					)
+				}
+				childWorkflowHandle.callback(result, childWorkflowHandle.err)
 				if env.onChildWorkflowCompletedListener != nil {
-					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, env.testError)
+					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, childWorkflowHandle.err)
 				}
 			}, true /* true to trigger parent workflow to resume to handle child workflow's result */)
 		}
@@ -1030,12 +1051,12 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	runTimeout int32,
 ) error {
 
-	//if err := v.validateCrossNamespaceCall(
+	// if err := v.validateCrossNamespaceCall(
 	//	namespaceID,
 	//	targetNamespaceID,
-	//); err != nil {
+	// ); err != nil {
 	//	return err
-	//}
+	// }
 
 	if attributes == nil {
 		return serviceerror.NewInvalidArgument("ScheduleActivityTaskDecisionAttributes is not set on decision.")
@@ -1347,17 +1368,32 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		details := newEncodedValues(request.Details, dataConverter)
-		err = NewCanceledError(details)
+		err = env.wrapActivityError(
+			activityID,
+			activityType,
+			enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+			NewCanceledError(details),
+		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		err = convertFailureToError(request.GetFailure(), dataConverter)
+		err = env.wrapActivityError(
+			activityID,
+			activityType,
+			enumspb.RETRY_STATUS_UNSPECIFIED,
+			convertFailureToError(request.GetFailure(), dataConverter),
+		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		blob = request.Result
 		activityHandle.callback(blob, nil)
 	default:
 		if result == context.DeadlineExceeded {
-			err = NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded)
+			err = env.wrapActivityError(
+				activityID,
+				activityType,
+				enumspb.RETRY_STATUS_TIMEOUT,
+				NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded),
+			)
 			activityHandle.callback(nil, err)
 		} else {
 			panic(fmt.Sprintf("unsupported respond type %T", result))
@@ -1373,6 +1409,22 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	}
 
 	env.startDecisionTask()
+}
+
+func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID, activityType string, retryStatus enumspb.RetryStatus, activityErr error) error {
+	if activityErr == nil {
+		return nil
+	}
+
+	return NewActivityError(
+		0,
+		0,
+		env.identity,
+		&commonpb.ActivityType{Name: activityType},
+		activityID,
+		retryStatus,
+		activityErr,
+	)
 }
 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
@@ -1395,19 +1447,24 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	}
 	// Always return CancelledError for cancelled tasks
 	if task.canceled {
-		if _, ok := result.err.(*CanceledError); !ok {
+		var canceledErr *CanceledError
+		if !errors.As(result.err, &canceledErr) {
 			result.err = NewCanceledError()
 			result.result = nil
 		}
 	}
-	lar := &LocalActivityResultWrapper{Err: result.err, Result: result.result, Backoff: noRetryBackoff}
+	lar := &LocalActivityResultWrapper{
+		Err:     env.wrapActivityError(activityID, activityType, enumspb.RETRY_STATUS_UNSPECIFIED, result.err),
+		Result:  result.result,
+		Backoff: noRetryBackoff,
+	}
 	if result.task.retryPolicy != nil && result.err != nil {
 		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
 		lar.Attempt = task.attempt
 	}
 	task.callback(lar)
 	var canceledErr *CanceledError
-	if errors.As(result.err, &canceledErr) {
+	if errors.As(lar.Err, &canceledErr) {
 		if env.onLocalActivityCanceledListener != nil {
 			env.onLocalActivityCanceledListener(activityInfo)
 		}

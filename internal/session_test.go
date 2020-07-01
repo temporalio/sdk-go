@@ -110,7 +110,17 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Equal(errFoundExistingOpenSession.Error(), env.GetWorkflowError().Error())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+
+	s.Equal(errFoundExistingOpenSession.Error(), err1.Error())
 	env.AssertExpectations(s.T())
 }
 
@@ -323,7 +333,14 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Equal(errTooManySessionsMsg, env.GetWorkflowError().Error())
+	err := env.GetWorkflowError()
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+	s.Equal(errTooManySessionsMsg, err1.Error())
 }
 
 func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
@@ -367,7 +384,16 @@ func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Equal(errTooManySessionsMsg, env.GetWorkflowError().Error())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+
+	s.Equal(errTooManySessionsMsg, err1.Error())
 	env.AssertExpectations(s.T())
 }
 
@@ -492,7 +518,16 @@ func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
-	s.Equal(ErrSessionFailed.Error(), env.GetWorkflowError().Error())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var err1 *ApplicationError
+	s.True(errors.As(err, &err1))
+
+	s.Equal(ErrSessionFailed.Error(), err1.Error())
 }
 
 func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
