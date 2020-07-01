@@ -503,32 +503,30 @@ func Test_GetErrorType(t *testing.T) {
 
 func Test_IsRetryable(t *testing.T) {
 	require := require.New(t)
-	require.False(IsRetryable(newTerminatedError(), []string{}))
-	require.False(IsRetryable(NewCanceledError(), []string{}))
-	require.False(IsRetryable(newWorkflowPanicError("", ""), []string{}))
+	require.False(IsRetryable(newTerminatedError(), nil))
+	require.False(IsRetryable(NewCanceledError(), nil))
+	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.False(IsRetryable(NewApplicationError("", "", true, nil), []string{}))
-	require.True(IsRetryable(NewApplicationError("", "", false, nil), []string{}))
+	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
+	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
 
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), []string{}))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), []string{}))
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), []string{}))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
+	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
+	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
-	require.False(IsRetryable(NewServerError("", true, nil), []string{}))
-	require.True(IsRetryable(NewServerError("", false, nil), []string{}))
+	require.False(IsRetryable(NewServerError("", true, nil), nil))
+	require.True(IsRetryable(NewServerError("", false, nil), nil))
 
 	applicationErr := NewApplicationError("", "MyCoolErr", false, nil)
-	require.True(IsRetryable(applicationErr, []string{}))
+	require.True(IsRetryable(applicationErr, nil))
 	require.False(IsRetryable(applicationErr, []string{"MyCoolErr"}))
 
 	coolErr := &coolError{}
-	require.True(IsRetryable(coolErr, []string{}))
+	require.True(IsRetryable(coolErr, nil))
 	require.False(IsRetryable(coolErr, []string{"coolError"}))
-
-	workflowExecutionErr := NewWorkflowExecutionError("", "", "", NewActivityError(0, 0, "", nil, "", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, coolErr))
-	require.True(IsRetryable(workflowExecutionErr, []string{}))
-	require.False(IsRetryable(workflowExecutionErr, []string{"coolError"}))
+	require.True(IsRetryable(coolErr, []string{"anotherError"}))
+	require.False(IsRetryable(coolErr, []string{"anotherError", "coolError"}))
 }
 
 func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
