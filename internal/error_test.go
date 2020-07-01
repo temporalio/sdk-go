@@ -554,16 +554,13 @@ func Test_IsRetryable(t *testing.T) {
 	require.False(IsRetryable(NewCanceledError(), nil))
 	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
-	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
-
 	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
 	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
 	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
 	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
-	require.False(IsRetryable(NewServerError("", true, nil), nil))
-	require.True(IsRetryable(NewServerError("", false, nil), nil))
+	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
+	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
 
 	applicationErr := NewApplicationError("", "MyCoolErr", false, nil)
 	require.True(IsRetryable(applicationErr, nil))
