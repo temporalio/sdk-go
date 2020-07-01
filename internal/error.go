@@ -611,11 +611,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
-		if timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_START_TO_CLOSE &&
-			timeoutErr.timeoutType != enumspb.TIMEOUT_TYPE_HEARTBEAT {
-			return false
-		}
-		return true
+		return timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_START_TO_CLOSE || timeoutErr.timeoutType == enumspb.TIMEOUT_TYPE_HEARTBEAT
 	}
 
 	var serverErr *ServerError
@@ -631,19 +627,7 @@ func IsRetryable(err error, nonRetryableTypes []string) bool {
 		}
 		errType = applicationErr.errType
 	} else {
-	ForLoop:
-		for {
-			switch err.(type) {
-			case *WorkflowExecutionError, *ChildWorkflowExecutionError, *ActivityError:
-				causeErr := errors.Unwrap(err)
-				if causeErr == nil {
-					break ForLoop
-				}
-				err = causeErr
-			default:
-				break ForLoop
-			}
-		}
+		// If it is generic Go error.
 		errType = getErrType(err)
 	}
 
