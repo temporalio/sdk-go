@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -112,7 +113,18 @@ func TestUnregisteredActivity(t *testing.T) {
 	env.RegisterWorkflow(workflow)
 	env.ExecuteWorkflow(workflow)
 	require.Error(t, env.GetWorkflowError())
-	ee := env.GetWorkflowError()
-	require.NotNil(t, ee)
-	require.True(t, strings.HasPrefix(ee.Error(), "unable to find activityType=unregistered"), ee.Error())
+	err := env.GetWorkflowError()
+	require.Error(t, err)
+	var workflowErr *WorkflowExecutionError
+	require.True(t, errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	require.True(t, errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var err1 *PanicError
+	require.True(t, errors.As(err, &err1))
+
+	require.True(t, strings.HasPrefix(err1.Error(), "unable to find activityType=unregistered"), err1.Error())
 }
