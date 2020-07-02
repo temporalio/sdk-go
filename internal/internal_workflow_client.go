@@ -511,7 +511,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 			WaitForNewEvent:        isLongPoll,
 			HistoryEventFilterType: filterType,
 			NextPageToken:          nextToken,
-			SkipArchival:           common.BoolPtr(isLongPoll),
+			SkipArchival:           isLongPoll,
 		}
 
 		var response *workflowservice.GetWorkflowExecutionHistoryResponse
@@ -544,7 +544,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 				},
 				createDynamicServiceRetryPolicy(ctx),
 				func(err error) bool {
-					return isServiceTransientError(err) || isEntityNonExistFromPassive(err)
+					return isServiceTransientError(err) || isEntityNotFoundFromPassive(err)
 				},
 			)
 
@@ -565,11 +565,11 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 	}
 }
 
-func isEntityNonExistFromPassive(err error) bool {
-	if nonExistError, ok := err.(*s.EntityNotExistsError); ok {
-		return nonExistError.GetActiveCluster() != "" &&
-			nonExistError.GetCurrentCluster() != "" &&
-			nonExistError.GetActiveCluster() != nonExistError.GetCurrentCluster()
+func isEntityNotFoundFromPassive(err error) bool {
+	if notFoundError, ok := err.(*serviceerror.NotFound); ok {
+		return notFoundError.ActiveCluster != "" &&
+			notFoundError.CurrentCluster != "" &&
+			notFoundError.ActiveCluster != notFoundError.CurrentCluster
 	}
 
 	return false

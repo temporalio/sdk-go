@@ -134,8 +134,8 @@ func TestConsistentInjectionExtraction(t *testing.T) {
 	span.SetBaggageItem("request-tenancy", baggageVal)
 	assert.NotNil(t, span.Context())
 	ctx := contextWithSpan(Background(), span.Context())
-	header := &shared.Header{
-		Fields: map[string][]byte{},
+	header := &commonpb.Header{
+		Fields: map[string]*commonpb.Payload{},
 	}
 	err = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
 	require.NoError(t, err)

@@ -2750,27 +2750,25 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockChildWorkflowAlreadyRunning() {
 	runID := "run-id"
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
-			ExecutionStartToCloseTimeout: time.Minute,
+			WorkflowExecutionTimeout: time.Minute,
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
 		s.Error(err)
 
-		alreadySytartedErr, ok := err.(*shared.WorkflowExecutionAlreadyStartedError)
-		s.True(ok)
-		s.Equal(runID, *alreadySytartedErr.RunId)
+		var alreadySytartedErr *serviceerror.WorkflowExecutionAlreadyStarted
+		s.True(errors.As(err, &alreadySytartedErr))
+		s.Equal(runID, alreadySytartedErr.RunId)
 
 		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
-	RegisterWorkflow(childWorkflowFn)
-	RegisterWorkflow(workflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(workflowFn)
 
 	env.OnWorkflow(childWorkflowFn, mock.Anything).
-		Return(&shared.WorkflowExecutionAlreadyStartedError{
-			RunId: &runID,
-		})
+		Return(serviceerror.NewWorkflowExecutionAlreadyStarted("", "", runID))
 
 	env.ExecuteWorkflow(workflowFn)
 	s.NoError(env.GetWorkflowError())
