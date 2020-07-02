@@ -43,7 +43,6 @@ import (
 	"go.temporal.io/temporal-proto/workflowservice/v1"
 	"go.temporal.io/temporal-proto/workflowservicemock/v1"
 
-	"go.temporal.io/temporal/internal/common"
 	"go.temporal.io/temporal/internal/common/metrics"
 	"go.temporal.io/temporal/internal/common/serializer"
 )
@@ -961,7 +960,7 @@ func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilter
 		},
 		WaitForNewEvent:        true,
 		HistoryEventFilterType: filterType,
-		SkipArchival:           common.BoolPtr(true),
+		SkipArchival:           true,
 	}
 
 	return request
