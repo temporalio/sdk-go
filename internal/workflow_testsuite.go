@@ -294,7 +294,7 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 	case reflect.String:
 		name := activity.(string)
-		_, ok := e.impl.registry.getActivity(name)
+		_, ok := e.impl.registry.GetActivity(name)
 		if !ok {
 			registered := strings.Join(e.impl.registry.getRegisteredActivityTypes(), ", ")
 			panic(fmt.Sprintf("activity \""+name+"\" is not registered with the TestWorkflowEnvironment, "+

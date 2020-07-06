@@ -245,7 +245,6 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, registry *r
 	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(f).String()
-
 	case reflect.Func:
 		if err := validateFunctionArgs(f, args, false); err != nil {
 			return nil, err

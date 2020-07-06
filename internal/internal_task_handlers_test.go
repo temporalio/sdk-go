@@ -1407,7 +1407,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	}
 	a := &testActivityDeadline{logger: t.logger}
 	registry := t.registry
-	registry.addActivity(a.ActivityType().Name, a)
+	registry.addActivityWithLock(a.ActivityType().Name, a)
 
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
@@ -1461,7 +1461,10 @@ func activityWithWorkerStop(ctx context.Context) error {
 func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	a := &testActivityDeadline{logger: t.logger}
 	registry := t.registry
-	registry.addActivityFn(a.ActivityType().Name, activityWithWorkerStop)
+	registry.RegisterActivityWithOptions(
+		activityWithWorkerStop,
+		RegisterActivityOptions{Name: a.ActivityType().Name, DisableAlreadyRegisteredCheck: true},
+	)
 
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
