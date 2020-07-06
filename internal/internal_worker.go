@@ -509,37 +509,41 @@ func (r *registry) RegisterWorkflow(af interface{}) {
 }
 
 func (r *registry) RegisterWorkflowWithOptions(
-	af interface{},
+	wf interface{},
 	options RegisterWorkflowOptions,
 ) {
 	// Support direct registration of WorkflowDefinition
-	factory, ok := af.(WorkflowDefinitionFactory)
+	factory, ok := wf.(WorkflowDefinitionFactory)
 	if ok {
 		if len(options.Name) == 0 {
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
-		r.addWorkflowFn(options.Name, factory)
+		r.workflowFuncMap[options.Name] = factory
 		return
 	}
 	// Validate that it is a function
-	fnType := reflect.TypeOf(af)
+	fnType := reflect.TypeOf(wf)
 	if err := validateFnFormat(fnType, true); err != nil {
 		panic(err)
 	}
-	fnName := getFunctionName(af)
+	fnName := getFunctionName(wf)
 	alias := options.Name
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
 	}
+
+	r.Lock()
+	defer r.Unlock()
+
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.workflowFuncMap[registerName]; ok {
 			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
 		}
 	}
-	r.addWorkflowFn(registerName, af)
+	r.workflowFuncMap[registerName] = wf
 	if len(alias) > 0 {
-		r.addWorkflowAlias(fnName, alias)
+		r.workflowAliasMap[fnName] = alias
 	}
 }
 
@@ -557,7 +561,7 @@ func (r *registry) RegisterActivityWithOptions(
 		if options.Name == "" {
 			panic("registration of activity interface requires name")
 		}
-		r.addActivity(options.Name, a)
+		r.addActivityWithLock(options.Name, a)
 		return
 	}
 	// Validate that it is a function
@@ -575,18 +579,25 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 {
 		registerName = alias
 	}
+
+	r.Lock()
+	defer r.Unlock()
+
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.activityFuncMap[registerName]; ok {
 			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
 		}
 	}
-	r.addActivityFn(registerName, af)
+	r.activityFuncMap[registerName] = &activityExecutor{registerName, af}
 	if len(alias) > 0 {
-		r.addActivityAlias(fnName, alias)
+		r.activityAliasMap[fnName] = alias
 	}
 }
 
 func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+	r.Lock()
+	defer r.Unlock()
+
 	structValue := reflect.ValueOf(aStruct)
 	structType := structValue.Type()
 	count := 0
@@ -603,11 +614,11 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		}
 		registerName := options.Name + name
 		if !options.DisableAlreadyRegisteredCheck {
-			if _, ok := r.getActivityFn(registerName); ok {
+			if _, ok := r.getActivityNoLock(registerName); ok {
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 			}
 		}
-		r.addActivityFn(registerName, methodValue.Interface())
+		r.activityFuncMap[registerName] = &activityExecutor{registerName, methodValue.Interface()}
 		count++
 	}
 	if count == 0 {
@@ -616,26 +627,11 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 	return nil
 }
 
-func (r *registry) addWorkflowAlias(fnName string, alias string) {
-	r.Lock()
-	defer r.Unlock()
-	r.workflowAliasMap[fnName] = alias
-}
-
 func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 	r.Lock()
 	defer r.Unlock()
 	alias, ok := r.workflowAliasMap[fnName]
 	return alias, ok
-}
-
-func (r *registry) addWorkflowFn(fnName string, wf interface{}) {
-	r.Lock()
-	defer r.Unlock()
-	if r.workflowFuncMap == nil {
-		panic("nil workflowFuncMap: registry must be created with newRegistry")
-	}
-	r.workflowFuncMap[fnName] = wf
 }
 
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
@@ -655,12 +651,6 @@ func (r *registry) getRegisteredWorkflowTypes() []string {
 	return result
 }
 
-func (r *registry) addActivityAlias(fnName string, alias string) {
-	r.Lock()
-	defer r.Unlock()
-	r.activityAliasMap[fnName] = alias
-}
-
 func (r *registry) getActivityAlias(fnName string) (string, bool) {
 	r.Lock()
 	defer r.Unlock()
@@ -668,28 +658,22 @@ func (r *registry) getActivityAlias(fnName string) (string, bool) {
 	return alias, ok
 }
 
-func (r *registry) addActivity(fnName string, a activity) {
+func (r *registry) addActivityWithLock(fnName string, a activity) {
 	r.Lock()
 	defer r.Unlock()
 	r.activityFuncMap[fnName] = a
 }
 
-func (r *registry) addActivityFn(fnName string, af interface{}) {
-	r.addActivity(fnName, &activityExecutor{fnName, af})
-}
-
-func (r *registry) getActivity(fnName string) (activity, bool) {
+func (r *registry) GetActivity(fnName string) (activity, bool) {
 	r.Lock()
 	defer r.Unlock()
 	a, ok := r.activityFuncMap[fnName]
 	return a, ok
 }
 
-func (r *registry) getActivityFn(fnName string) (interface{}, bool) {
-	if a, ok := r.getActivity(fnName); ok {
-		return a.GetFunction(), ok
-	}
-	return nil, false
+func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
+	a, ok := r.activityFuncMap[fnName]
+	return a, ok
 }
 
 func (r *registry) getRegisteredActivities() []activity {

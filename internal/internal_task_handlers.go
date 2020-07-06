@@ -1831,7 +1831,7 @@ func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
 		return ath.activityProvider(name)
 	}
 
-	if a, ok := ath.registry.getActivity(name); ok {
+	if a, ok := ath.registry.GetActivity(name); ok {
 		return a
 	}
 

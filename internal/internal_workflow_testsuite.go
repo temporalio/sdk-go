@@ -1802,7 +1802,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 			}
 		}
 
-		activity, ok := registry.getActivity(name)
+		activity, ok := registry.GetActivity(name)
 		if !ok {
 			return nil
 		}
