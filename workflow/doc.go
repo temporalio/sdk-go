@@ -25,7 +25,7 @@
 /*
 Package workflow contains functions and types used to implement Temporal workflows.
 
-A workflow is an implementation of coordination logic. The Temporal programming framework (aka client library) allows
+A workflow is an implementation of coordination logic. The Temporal programming framework (aka SDK) allows
 you to write the workflow coordination logic as simple procedural code that uses standard Go data modeling. The client
 library takes care of the communication between the worker service and the Temporal service, and ensures state
 persistence between events even in case of worker failures. Any particular execution is not tied to a
@@ -228,10 +228,10 @@ for an activity it invoked.
 		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
 		WorkflowExecutionTimeout: time.Minute * 30,
 	}
-	childCtx = workflow.WithChildOptions(ctx, cwo)
+	ctx = workflow.WithChildOptions(ctx, cwo)
 
 	var result string
-	future := workflow.ExecuteChildWorkflow(childCtx, SimpleChildWorkflow, value)
+	future := workflow.ExecuteChildWorkflow(ctx, SimpleChildWorkflow, value)
 	if err := future.Get(ctx, &result); err != nil {
 		workflow.GetLogger(ctx).Error("SimpleChildWorkflow failed.", zap.Error(err))
 		return err
@@ -270,16 +270,12 @@ Child workflows can also be configured to continue to exist once their parent wo
 pattern, extra care needs to be taken to ensure the child workflow is started before the parent workflow finishes.
 
 	cwo := workflow.ChildWorkflowOptions{
-		// Do not specify WorkflowID if you want cadence to generate a unique ID for child execution
-		WorkflowID:                   "BID-SIMPLE-CHILD-WORKFLOW",
-		ExecutionStartToCloseTimeout: time.Minute * 30,
-
 		// Do not terminate when parent closes.
 		ParentClosePolicy: client.ParentClosePolicyAbandon,
 	}
-	childCtx = workflow.WithChildOptions(ctx, cwo)
+	ctx = workflow.WithChildOptions(ctx, cwo)
 
-	future := workflow.ExecuteChildWorkflow(childCtx, SimpleChildWorkflow, value)
+	future := workflow.ExecuteChildWorkflow(ctx, SimpleChildWorkflow, value)
 
 	// Wait for the child workflow to start
 	if err := future.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
