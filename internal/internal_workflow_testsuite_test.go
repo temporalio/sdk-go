@@ -1853,10 +1853,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		var result string
 		f := ExecuteLocalActivity(ctx, localActivityFn, "local_activity")
 
-		// Hack to avoid race condition. Never do anything similar in real production code
-		// TODO: Fix race condition somewhere in test environment
-		time.Sleep(100 * time.Millisecond)
-
 		ctx2, cancel := WithCancel(ctx)
 		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
 
