@@ -64,7 +64,7 @@ func WithTaskQueue(ctx Context, name string) Context {
 // the ScheduleToCloseTimeout field in its activity options. An empty activity
 // options will be created if it does not exist in the original context.
 //
-// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// Temporal time resolution is in seconds and the library uses math.Ceil(d.Seconds())
 // to calculate the final value. This is subject to change in the future.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithScheduleToCloseTimeout(ctx, d)
@@ -74,7 +74,7 @@ func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 // the ScheduleToStartTimeout field in its activity options. An empty activity
 // options will be created if it does not exist in the original context.
 //
-// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// Temporal time resolution is in seconds and the library uses math.Ceil(d.Seconds())
 // to calculate the final value. This is subject to change in the future.
 func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithScheduleToStartTimeout(ctx, d)
@@ -84,7 +84,7 @@ func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 // the StartToCloseTimeout field in its activity options. An empty activity
 // options will be created if it does not exist in the original context.
 //
-// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// Temporal time resolution is in seconds and the library uses math.Ceil(d.Seconds())
 // to calculate the final value. This is subject to change in the future.
 func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithStartToCloseTimeout(ctx, d)
@@ -94,7 +94,7 @@ func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 // the HeartbeatTimeout field in its activity options. An empty activity
 // options will be created if it does not exist in the original context.
 //
-// Cadence time resolution is in seconds and the library uses math.Ceil(d.Seconds())
+// Temporal time resolution is in seconds and the library uses math.Ceil(d.Seconds())
 // to calculate the final value. This is subject to change in the future.
 func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return internal.WithHeartbeatTimeout(ctx, d)

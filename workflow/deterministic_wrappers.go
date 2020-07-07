@@ -64,11 +64,19 @@ type (
 // Do not mutate values or trigger side effects inside condition.
 // Returns CanceledError if the ctx is canceled.
 // The following code is going to block until the captured count
-// variable is set to 5.
+// variable is set to 5:
+//   workflow.Await(ctx, func() bool {
+//       return count == 5
+//   })
 //
-// workflow.Await(ctx, func() bool {
-//   return count == 5
-// })
+// The trigger is evaluated on every workflow state transition.
+// Note that conditions that wait for time can be error-prone as nothing might cause evaluation.
+// For example:
+//   workflow.Await(ctx, func() bool {
+//       return workflow.Now() > someTime
+//   })
+// might never return true unless some other event like Signal or activity completion would force the condition evaluation.
+// For a time-based wait use workflow.AwaitWithTimeout function.
 func Await(ctx Context, condition func() bool) error {
 	return internal.Await(ctx, condition)
 }
