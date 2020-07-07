@@ -125,7 +125,7 @@ func TestConsistentInjectionExtraction(t *testing.T) {
 	t.Parallel()
 	tracer, closer, err := jaeger_config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
-	defer closer.Close()
+	defer func() { _ = closer.Close() }()
 	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
 
 	span := tracer.StartSpan("test-operation")
