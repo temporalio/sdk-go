@@ -30,7 +30,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/internal"
+	"go.temporal.io/sdk/internal"
 )
 
 type (

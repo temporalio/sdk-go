@@ -15,13 +15,13 @@ git clone git@github.com:temporalio/go-sdk.git
 or
 
 ```bash
-go get go.temporal.io/temporal
+go get -u go.temporal.io/sdk
 ```
 
 See [samples](https://github.com/temporalio/temporal-go-samples) to get started. 
 
 Documentation is available [here](https://docs.temporal.io/docs/go-quick-start). 
-You can also find the API documentation [here](https://godoc.org/go.temporal.io/temporal).
+You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
 
 ## Contributing
 We'd love your help in making the Temporal Go SDK great. Please review our [contribution guidelines](CONTRIBUTING.md).

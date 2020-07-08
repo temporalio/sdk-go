@@ -36,17 +36,17 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	"go.temporal.io/temporal-proto/serviceerror"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/interceptors"
-	"go.temporal.io/temporal/worker"
-	"go.temporal.io/temporal/workflow"
+	temporal "go.temporal.io/sdk"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 type IntegrationTestSuite struct {
@@ -238,7 +238,7 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.NotNil(value)
 	var trace string
 	ts.Nil(value.Get(&trace))
-	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test_test.(*Workflows).Basic"), trace)
+	ts.True(strings.Contains(trace, "go.temporal.io/sdk/test_test.(*Workflows).Basic"), trace)
 }
 
 func (ts *IntegrationTestSuite) TestConsistentQuery() {

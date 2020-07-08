@@ -35,15 +35,15 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/temporal-proto/serviceerror"
+	"go.temporal.io/api/serviceerror"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/temporal/internal/common/backoff"
-	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/backoff"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (

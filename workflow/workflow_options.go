@@ -27,8 +27,8 @@ package workflow
 import (
 	"time"
 
-	"go.temporal.io/temporal/encoded"
-	"go.temporal.io/temporal/internal"
+	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/internal"
 )
 
 // WithChildOptions adds all workflow options to the context.

@@ -28,11 +28,11 @@ import (
 	"context"
 	"time"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/temporal/encoded"
-	bindings "go.temporal.io/temporal/internalbindings"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/encoded"
+	bindings "go.temporal.io/sdk/internalbindings"
+	"go.temporal.io/sdk/workflow"
 )
 
 type EmptyWorkflowDefinitionFactory struct {

@@ -32,11 +32,11 @@ import (
 	"strings"
 	"time"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/encoded"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/workflow"
 )
 
 type (

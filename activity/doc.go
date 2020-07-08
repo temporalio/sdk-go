@@ -39,7 +39,7 @@ string parameter, appends a word to it and then returns the result.
 	import (
 		"context"
 
-		"go.temporal.io/temporal/activity"
+		"go.temporal.io/sdk/activity"
 		"go.uber.org/zap"
 	)
 

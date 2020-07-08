@@ -41,17 +41,17 @@ import (
 	"github.com/golang/mock/gomock"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	historypb "go.temporal.io/temporal-proto/history/v1"
-	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
-	"go.temporal.io/temporal-proto/workflowservicemock/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"go.temporal.io/temporal/internal"
-	"go.temporal.io/temporal/worker"
+	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/worker"
 )
 
 func testReplayWorkflow(ctx internal.Context) error {

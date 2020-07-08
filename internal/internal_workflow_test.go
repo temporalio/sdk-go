@@ -37,7 +37,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 type WorkflowUnitTest struct {

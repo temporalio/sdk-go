@@ -29,9 +29,9 @@ import (
 	"fmt"
 	"reflect"
 
-	decisionpb "go.temporal.io/temporal-proto/decision/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	historypb "go.temporal.io/temporal-proto/history/v1"
+	decisionpb "go.temporal.io/api/decision/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 )
 
 func anyToString(d interface{}) string {

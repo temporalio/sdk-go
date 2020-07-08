@@ -25,7 +25,7 @@
 package interceptors
 
 import (
-	"go.temporal.io/temporal/internal"
+	"go.temporal.io/sdk/internal"
 )
 
 type (

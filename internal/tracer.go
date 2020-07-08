@@ -28,7 +28,7 @@ import (
 	"context"
 
 	"github.com/opentracing/opentracing-go"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.uber.org/zap"
 )
 

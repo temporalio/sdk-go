@@ -27,7 +27,7 @@ package internal
 import (
 	"context"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 )
 
 // HeaderWriter is an interface to write information to temporal headers

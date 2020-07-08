@@ -25,8 +25,8 @@
 package mocks
 
 import (
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/encoded"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/encoded"
 )
 
 // make sure mocks are in sync with interfaces

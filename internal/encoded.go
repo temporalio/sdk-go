@@ -30,7 +30,7 @@ import (
 	"fmt"
 	"reflect"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 )
 
 const (

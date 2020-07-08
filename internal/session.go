@@ -35,7 +35,7 @@ import (
 	"github.com/pborman/uuid"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/sdk/internal/common/backoff"
 )
 
 type (

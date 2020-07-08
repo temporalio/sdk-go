@@ -31,7 +31,7 @@
 // Always talk to Temporal team before building anything on top of them.
 package internalbindings
 
-import "go.temporal.io/temporal/internal"
+import "go.temporal.io/sdk/internal"
 
 type (
 	// WorkflowType information

@@ -125,7 +125,7 @@ API to allow you to capture a stack trace from any failed workflow execution his
 */
 package temporal
 
-import "go.temporal.io/temporal/internal"
+import "go.temporal.io/sdk/internal"
 
 // RetryPolicy defines the retry policy for activity/workflow.
 type RetryPolicy = internal.RetryPolicy

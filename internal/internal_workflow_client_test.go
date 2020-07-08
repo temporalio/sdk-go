@@ -33,18 +33,18 @@ import (
 	"testing"
 	"time"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	historypb "go.temporal.io/temporal-proto/history/v1"
-	"go.temporal.io/temporal-proto/serviceerror"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
-	"go.temporal.io/temporal-proto/workflowservicemock/v1"
+	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 
-	"go.temporal.io/temporal/internal/common/metrics"
-	"go.temporal.io/temporal/internal/common/serializer"
+	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/serializer"
 )
 
 const (
