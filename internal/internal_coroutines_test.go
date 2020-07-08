@@ -719,7 +719,7 @@ func TestPanic(t *testing.T) {
 	require.EqualValues(t, "simulated failure", err.Error())
 	panicError, ok := err.(*workflowPanicError)
 	require.True(t, ok)
-	require.Contains(t, panicError.StackTrace(), "temporal/internal.TestPanic")
+	require.Contains(t, panicError.StackTrace(), "go.temporal.io/sdk/internal.TestPanic")
 }
 
 func TestAwait(t *testing.T) {

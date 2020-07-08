@@ -42,9 +42,9 @@ import (
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 
-	temporal "go.temporal.io/sdk"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )

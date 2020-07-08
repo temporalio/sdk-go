@@ -32,9 +32,9 @@ import (
 
 	enumspb "go.temporal.io/api/enums/v1"
 
-	temporal "go.temporal.io/sdk"
 	"go.temporal.io/sdk/encoded"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )

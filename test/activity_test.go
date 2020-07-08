@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
-	temporal "go.temporal.io/sdk"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
 

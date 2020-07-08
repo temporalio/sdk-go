@@ -34,6 +34,4 @@ require (
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 )
 
-replace (
-	go.temporal.io/api v0.26.0 => ../temporal-proto-go
-)
+replace go.temporal.io/api v0.26.0 => ../temporal-proto-go

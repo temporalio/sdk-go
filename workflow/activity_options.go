@@ -27,8 +27,8 @@ package workflow
 import (
 	"time"
 
-	temporal "go.temporal.io/sdk"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
 )
 
 // ActivityOptions stores all activity-specific invocation parameters that will be stored inside of a context.

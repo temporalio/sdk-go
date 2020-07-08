@@ -26,10 +26,10 @@
 package main
 
 import (
-	_ "go.temporal.io/sdk"
 	_ "go.temporal.io/sdk/activity"
 	_ "go.temporal.io/sdk/client"
 	_ "go.temporal.io/sdk/encoded"
+	_ "go.temporal.io/sdk/temporal"
 	_ "go.temporal.io/sdk/testsuite"
 	_ "go.temporal.io/sdk/worker"
 	_ "go.temporal.io/sdk/workflow"
