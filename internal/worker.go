@@ -194,7 +194,7 @@ func NewWorker(
 	taskQueue string,
 	options WorkerOptions,
 ) *AggregatedWorker {
-	// TODO: refactor and remove this downcast: https://github.com/temporalio/temporal-go-sdk/issues/70
+	// TODO: refactor and remove this downcast: https://github.com/temporalio/go-sdk/issues/70
 	workflowClient, ok := client.(*WorkflowClient)
 	if !ok {
 		panic("Client must be created with client.NewClient()")

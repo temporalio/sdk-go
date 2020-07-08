@@ -935,7 +935,7 @@ func activityOptionsWorkflow(ctx Context) (result string, err error) {
 }
 
 // Test that activity options are correctly spawned with WithActivityOptions is called.
-// See https://github.com/temporalio/temporal-go-client/issues/49
+// See https://github.com/temporalio/go-sdk/issues/49
 func (s *WorkflowUnitTest) Test_ActivityOptionsWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(activityOptionsWorkflow)

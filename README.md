@@ -2,14 +2,14 @@
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
-`temporal-go-sdk` is the framework for authoring workflows and activities using Go language.
+"Temporal Go SDK" is the framework for authoring workflows and activities using Go language.
 
 ## How to use
 
 Clone this repo into the preferred location.
 
 ```bash
-git clone git@github.com:temporalio/temporal-go-sdk.git
+git clone git@github.com:temporalio/go-sdk.git
 ```
 
 or
