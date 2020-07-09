@@ -37,7 +37,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 type WorkflowUnitTest struct {
@@ -216,7 +216,7 @@ func TestWorkflowPanic(t *testing.T) {
 	require.True(t, errors.As(err, &resultErr))
 
 	require.EqualValues(t, "simulated", resultErr.Error())
-	require.Contains(t, resultErr.StackTrace(), "temporal/internal.splitJoinActivityWorkflow")
+	require.Contains(t, resultErr.StackTrace(), "go.temporal.io/sdk/internal.splitJoinActivityWorkflow")
 }
 
 func TestWorkflowReturnsPanic(t *testing.T) {
@@ -935,7 +935,7 @@ func activityOptionsWorkflow(ctx Context) (result string, err error) {
 }
 
 // Test that activity options are correctly spawned with WithActivityOptions is called.
-// See https://github.com/temporalio/temporal-go-client/issues/49
+// See https://github.com/temporalio/go-sdk/issues/49
 func (s *WorkflowUnitTest) Test_ActivityOptionsWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(activityOptionsWorkflow)
@@ -1156,7 +1156,7 @@ func (s *WorkflowUnitTest) Test_waitGroupNegativeCounterPanicsWorkflowTest() {
 	s.True(errors.As(err, &resultErr))
 
 	s.EqualValues("negative WaitGroup counter", resultErr.Error())
-	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupNegativeCounterPanicsWorkflowTest")
+	s.Contains(resultErr.StackTrace(), "go.temporal.io/sdk/internal.waitGroupNegativeCounterPanicsWorkflowTest")
 }
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTest() {
@@ -1176,7 +1176,7 @@ func (s *WorkflowUnitTest) Test_WaitGroupMultipleConcurrentWaitsPanicsWorkflowTe
 	s.True(errors.As(err, &resultErr))
 
 	s.EqualValues("WaitGroup is reused before previous Wait has returned", resultErr.Error())
-	s.Contains(resultErr.StackTrace(), "temporal/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
+	s.Contains(resultErr.StackTrace(), "go.temporal.io/sdk/internal.waitGroupMultipleConcurrentWaitsPanicsWorkflowTest")
 }
 
 func (s *WorkflowUnitTest) Test_WaitGroupMultipleWaitsWorkflowTest() {

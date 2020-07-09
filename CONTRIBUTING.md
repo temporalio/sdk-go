@@ -1,20 +1,20 @@
 # Developing Temporal Go SDK
 
-This doc is intended for contributors to `temporal-go-sdk` (hopefully that's you!)
+This doc is intended for contributors to `go-sdk` (hopefully that's you!)
 
 **Note:** All contributors also need to fill out the [Temporal Contributor License Agreement](https://gist.github.com/samarabbas/7dcd41eb1d847e12263cc961ccfdb197) before we can merge in any of your changes
 
 ## Development Environment
 
-* Go. Install on OS X with `brew install go`. The minimum required Go version is 1.10.
+* Go. Install on OS X with `brew install go`. The minimum required Go version is 1.14.
 
 ## Checking out the code
 
 Make sure the repository is cloned to the preferred location:
-(Note: the path is `go.temporal.io/temporal/` instead of github repo)
+(Note: the path is `go.temporal.io/sdk` instead of github repo)
 
 ```bash
-go get go.temporal.io/temporal/...
+go get -u go.temporal.io/sdk
 ```
 
 ## Licence headers

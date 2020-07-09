@@ -31,9 +31,9 @@ import (
 	"sync"
 	"time"
 
-	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/activity"
-	"go.temporal.io/temporal/worker"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
 )
 
 type Activities struct {

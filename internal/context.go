@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 )
 
 const activeSpanContextKey contextKey = "activeSpanContextKey"

@@ -24,7 +24,7 @@
 
 package workflow
 
-import "go.temporal.io/temporal/internal"
+import "go.temporal.io/sdk/internal"
 
 type (
 	// HeaderReader is an interface to read information from temporal headers

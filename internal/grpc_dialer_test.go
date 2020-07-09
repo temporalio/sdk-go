@@ -30,8 +30,8 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/stretchr/testify/require"
-	"go.temporal.io/temporal-proto/errordetails/v1"
-	"go.temporal.io/temporal-proto/serviceerror"
+	"go.temporal.io/api/errordetails/v1"
+	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )

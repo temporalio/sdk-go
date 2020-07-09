@@ -30,8 +30,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/activity"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/workflow"
 )
 
 // Workflow1 test workflow

@@ -33,13 +33,13 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.uber.org/zap"
 
-	namespacepb "go.temporal.io/temporal-proto/namespace/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
-	"go.temporal.io/temporal-proto/workflowservicemock/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 )
 
 const (

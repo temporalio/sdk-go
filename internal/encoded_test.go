@@ -33,7 +33,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 )
 
 const (

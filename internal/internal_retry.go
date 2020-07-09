@@ -30,9 +30,9 @@ import (
 	"context"
 	"time"
 
-	"go.temporal.io/temporal-proto/serviceerror"
+	"go.temporal.io/api/serviceerror"
 
-	"go.temporal.io/temporal/internal/common/backoff"
+	"go.temporal.io/sdk/internal/common/backoff"
 )
 
 const (

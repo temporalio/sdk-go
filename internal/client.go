@@ -31,13 +31,13 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
-	"go.temporal.io/temporal/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (

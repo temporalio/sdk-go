@@ -36,17 +36,17 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	"go.temporal.io/temporal-proto/serviceerror"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/interceptors"
-	"go.temporal.io/temporal/worker"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 type IntegrationTestSuite struct {
@@ -108,8 +108,8 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 			}
 			ts.FailNow("leaks timed out but no error, should be impossible")
 		case <-time.After(time.Second):
-			// https://github.com/temporalio/temporal-go-client/issues/51
-			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/temporal/internal.(*coroutineState).initialYield"))
+			// https://github.com/temporalio/go-sdk/issues/51
+			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/sdk/internal.(*coroutineState).initialYield"))
 			if last == nil {
 				// no leak, done waiting
 				return
@@ -238,7 +238,7 @@ func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ts.NotNil(value)
 	var trace string
 	ts.Nil(value.Get(&trace))
-	ts.True(strings.Contains(trace, "go.temporal.io/temporal/test_test.(*Workflows).Basic"), trace)
+	ts.True(strings.Contains(trace, "go.temporal.io/sdk/test_test.(*Workflows).Basic"), trace)
 }
 
 func (ts *IntegrationTestSuite) TestConsistentQuery() {

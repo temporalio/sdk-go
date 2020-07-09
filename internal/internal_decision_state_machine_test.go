@@ -28,10 +28,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	decisionpb "go.temporal.io/temporal-proto/decision/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	decisionpb "go.temporal.io/api/decision/v1"
 )
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {

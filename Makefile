@@ -3,8 +3,6 @@
 # default target
 default: check test
 
-IMPORT_ROOT := go.temporal.io/temporal
-
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 

@@ -30,12 +30,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 
-	historypb "go.temporal.io/temporal-proto/history/v1"
-	taskqueuepb "go.temporal.io/temporal-proto/taskqueue/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
-	"go.temporal.io/temporal-proto/workflowservicemock/v1"
+	historypb "go.temporal.io/api/history/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 )
 
 type (

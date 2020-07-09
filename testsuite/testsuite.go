@@ -26,7 +26,7 @@
 package testsuite
 
 import (
-	"go.temporal.io/temporal/internal"
+	"go.temporal.io/sdk/internal"
 )
 
 type (

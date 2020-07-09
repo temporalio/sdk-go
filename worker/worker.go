@@ -28,14 +28,14 @@ package worker
 import (
 	"context"
 
-	historypb "go.temporal.io/temporal-proto/history/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
+	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/zap"
 
-	"go.temporal.io/temporal/activity"
-	"go.temporal.io/temporal/client"
-	"go.temporal.io/temporal/internal"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/workflow"
 )
 
 type (

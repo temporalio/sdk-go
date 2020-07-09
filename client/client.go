@@ -31,12 +31,12 @@ package client
 import (
 	"context"
 
-	commonpb "go.temporal.io/temporal-proto/common/v1"
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
-	"go.temporal.io/temporal-proto/workflowservice/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 
-	"go.temporal.io/temporal/encoded"
-	"go.temporal.io/temporal/internal"
+	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/internal"
 )
 
 const (

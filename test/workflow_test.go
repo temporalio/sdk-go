@@ -30,13 +30,13 @@ import (
 	"math/rand"
 	"time"
 
-	enumspb "go.temporal.io/temporal-proto/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 
-	"go.temporal.io/temporal"
-	"go.temporal.io/temporal/encoded"
-	"go.temporal.io/temporal/internal"
-	"go.temporal.io/temporal/worker"
-	"go.temporal.io/temporal/workflow"
+	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 const (
