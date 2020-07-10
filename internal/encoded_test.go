@@ -97,7 +97,7 @@ func TestDefaultDataConverter(t *testing.T) {
 	})
 }
 
-func testDataStringerFunction(
+func testToPrettyStringFunction(
 	t *testing.T,
 	dc DataConverter,
 	args ...interface{},
@@ -111,7 +111,7 @@ func testDataStringerFunction(
 	return prettyStrings
 }
 
-func TestDataStringer(t *testing.T) {
+func TestToPrettyString(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 
@@ -123,7 +123,7 @@ func TestDataStringer(t *testing.T) {
 		B: 3,
 	}
 
-	r := testDataStringerFunction(t, dc,
+	r := testToPrettyStringFunction(t, dc,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",

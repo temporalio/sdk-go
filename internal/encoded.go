@@ -81,9 +81,6 @@ type (
 		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
-	// DataStringer can be used by framework to print human readable data
-	// This interface is currently not settable
-
 	defaultDataConverter struct {
 	}
 )
