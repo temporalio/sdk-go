@@ -97,6 +97,45 @@ func TestDefaultDataConverter(t *testing.T) {
 	})
 }
 
+func testDataConverterPrettyPrintFunction(t *testing.T, dc DataConverter, args ...interface{}) []string {
+	input, err := dc.ToPayloads(args...)
+	require.NoError(t, err, err)
+
+	prettyStrings, err := dc.ToPrettyStrings(input)
+	require.NoError(t, err, err)
+
+	return prettyStrings
+}
+
+func TestDataConverterPrettyPrint(t *testing.T) {
+	t.Parallel()
+	dc := getDefaultDataConverter()
+	testStruct := struct {
+		A string
+		B int
+	}{
+		A: "hi",
+		B: 3,
+	}
+
+	r := testDataConverterPrettyPrintFunction(t, dc,
+		[]byte("test"),
+		[]string{"hello", "world"},
+		"hello world",
+		42,
+		testStruct)
+
+	want := []string{
+		"dGVzdA",
+		"[hello world]",
+		"hello world",
+		"42",
+		"map[A:hi B:3]",
+	}
+
+	require.Equal(t, want, r)
+}
+
 // testDataConverter implements encoded.DataConverter using gob
 type testDataConverter struct{}
 
@@ -166,6 +205,42 @@ func (dc *testDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 	}
 
 	return nil
+}
+
+func (dc *testDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+	var result []string
+	for i, payload := range payloads.GetPayloads() {
+		payloadAsStr, err := toPrettyStringTestHelper(payload)
+
+		if err != nil {
+			return result, fmt.Errorf("args[%d]: %w", i, err)
+		}
+
+		result = append(result, payloadAsStr)
+	}
+
+	return result, nil
+}
+
+func toPrettyStringTestHelper(payload *commonpb.Payload) (string, error) {
+	encoding, ok := payload.GetMetadata()[metadataEncoding]
+
+	if !ok {
+		return "", ErrEncodingIsNotSet
+	}
+
+	e := string(encoding)
+	if e == metadataEncodingGob {
+		var byteSlice []byte
+		dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
+		if err := dec.Decode(&byteSlice); err != nil {
+			return "", fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err)
+		}
+	} else {
+		return "", fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported)
+	}
+
+	return "", nil
 }
 
 func TestDecodeArg(t *testing.T) {

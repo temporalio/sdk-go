@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +76,9 @@ type (
 		// FromPayloads implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
+
+		// ToPrettyStrings converts payloads into human readable strings
+		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
 	defaultDataConverter struct {
@@ -171,16 +175,9 @@ func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 		return nil
 	}
 
-	metadata := payload.GetMetadata()
-	if metadata == nil {
-		return ErrMetadataIsNotSet
-	}
-
-	var encoding string
-	if e, ok := metadata[metadataEncoding]; ok {
-		encoding = string(e)
-	} else {
-		return ErrEncodingIsNotSet
+	encoding, err := getEncoding(payload)
+	if err != nil {
+		return err
 	}
 
 	switch encoding {
@@ -200,4 +197,66 @@ func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	}
 
 	return nil
+}
+
+func (dc *defaultDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+	if payloads == nil {
+		return nil, nil
+	}
+
+	var result []string
+	for i, payload := range payloads.GetPayloads() {
+		payloadAsStr, err := toPrettyString(payload)
+		if err != nil {
+			return result, fmt.Errorf("payload item %d: %w", i, err)
+		}
+		result = append(result, payloadAsStr)
+	}
+
+	return result, nil
+}
+
+func getEncoding(payload *commonpb.Payload) (string, error) {
+	metadata := payload.GetMetadata()
+	if metadata == nil {
+		return "", ErrMetadataIsNotSet
+	}
+
+	if e, ok := metadata[metadataEncoding]; ok {
+		return string(e), nil
+	}
+
+	return "", ErrEncodingIsNotSet
+}
+
+func toPrettyString(payload *commonpb.Payload) (string, error) {
+	result := ""
+
+	if payload == nil {
+		return result, nil
+	}
+
+	encoding, err := getEncoding(payload)
+	if err != nil {
+		return result, err
+	}
+
+	switch encoding {
+	case metadataEncodingRaw:
+		var byteSlice []byte
+		var valueBytes = reflect.ValueOf(&byteSlice).Elem()
+		valueBytes.SetBytes(payload.GetData())
+		result = base64.RawStdEncoding.EncodeToString(byteSlice)
+	case metadataEncodingJSON:
+		var value interface{}
+		err := json.Unmarshal(payload.GetData(), &value)
+		if err != nil {
+			return result, fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+		}
+		result = fmt.Sprintf("%+v", value)
+	default:
+		return result, fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+	}
+
+	return result, nil
 }
