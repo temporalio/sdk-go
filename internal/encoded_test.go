@@ -97,7 +97,7 @@ func TestDefaultDataConverter(t *testing.T) {
 	})
 }
 
-func testToPrettyStringsFunction(
+func testToStringsFunction(
 	t *testing.T,
 	dc DataConverter,
 	args ...interface{},
@@ -105,13 +105,13 @@ func testToPrettyStringsFunction(
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	prettyStrings, err := dc.ToPrettyStrings(input)
+	strings, err := dc.ToStrings(input)
 	require.NoError(t, err, err)
 
-	return prettyStrings
+	return strings
 }
 
-func TestToPrettyStrings(t *testing.T) {
+func TestToStrings(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
 
@@ -123,7 +123,7 @@ func TestToPrettyStrings(t *testing.T) {
 		B: 3,
 	}
 
-	r := testToPrettyStringsFunction(t, dc,
+	got := testToStringsFunction(t, dc,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",
@@ -138,7 +138,7 @@ func TestToPrettyStrings(t *testing.T) {
 		"map[A:hi B:3]",
 	}
 
-	require.Equal(t, want, r)
+	require.Equal(t, want, got)
 }
 
 // testDataConverter implements encoded.DataConverter using gob
@@ -212,10 +212,10 @@ func (dc *testDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 	return nil
 }
 
-func (dc *testDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
 	var result []string
 	for i, payload := range payloads.GetPayloads() {
-		payloadAsStr, err := toPrettyStringTestHelper(payload)
+		payloadAsStr, err := toStringTestHelper(payload)
 
 		if err != nil {
 			return result, fmt.Errorf("args[%d]: %w", i, err)
@@ -227,7 +227,7 @@ func (dc *testDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]str
 	return result, nil
 }
 
-func toPrettyStringTestHelper(payload *commonpb.Payload) (string, error) {
+func toStringTestHelper(payload *commonpb.Payload) (string, error) {
 	encoding, ok := payload.GetMetadata()[metadataEncoding]
 
 	if !ok {

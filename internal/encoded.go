@@ -77,8 +77,8 @@ type (
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
 
-		// ToPrettyStrings converts the Payloads object into human readable strings
-		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
+		// ToStrings converts the Payloads object into human readable strings
+		ToStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
 	defaultDataConverter struct {
@@ -207,14 +207,14 @@ func decodeEncodingJSON(payload *commonpb.Payload, valuePtr interface{}) error {
 	return nil
 }
 
-func (*defaultDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (*defaultDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
 	if payloads == nil {
 		return nil, nil
 	}
 
 	var result []string
 	for i, payload := range payloads.GetPayloads() {
-		payloadAsStr, err := toPrettyString(payload)
+		payloadAsStr, err := toString(payload)
 		if err != nil {
 			return result, fmt.Errorf("payload item %d: %w", i, err)
 		}
@@ -237,7 +237,7 @@ func getEncoding(payload *commonpb.Payload) (string, error) {
 	return "", ErrEncodingIsNotSet
 }
 
-func toPrettyString(payload *commonpb.Payload) (string, error) {
+func toString(payload *commonpb.Payload) (string, error) {
 	result := ""
 
 	if payload == nil {
