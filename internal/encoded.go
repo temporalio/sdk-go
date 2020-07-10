@@ -76,7 +76,11 @@ type (
 		// FromPayloads implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
+	}
 
+	// DataStringer can be used by framework to print human readable data
+	// This interface is currently not settable
+	DataStringer interface {
 		// ToPrettyStrings converts payloads into human readable strings
 		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
 	}
@@ -182,20 +186,28 @@ func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 	switch encoding {
 	case metadataEncodingRaw:
-		valueBytes := reflect.ValueOf(valuePtr).Elem()
-		if !valueBytes.CanSet() {
-			return ErrUnableToSetBytes
-		}
-		valueBytes.SetBytes(payload.GetData())
+		return decodeEncodingRaw(payload, valuePtr)
 	case metadataEncodingJSON:
-		err := json.Unmarshal(payload.GetData(), valuePtr)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
-		}
+		return decodeEncodingJSON(payload, valuePtr)
 	default:
 		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
 	}
+}
 
+func decodeEncodingRaw(payload *commonpb.Payload, valuePtr interface{}) error {
+	valueBytes := reflect.ValueOf(valuePtr).Elem()
+	if !valueBytes.CanSet() {
+		return ErrUnableToSetBytes
+	}
+	valueBytes.SetBytes(payload.GetData())
+	return nil
+}
+
+func decodeEncodingJSON(payload *commonpb.Payload, valuePtr interface{}) error {
+	err := json.Unmarshal(payload.GetData(), valuePtr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+	}
 	return nil
 }
 
@@ -244,14 +256,16 @@ func toPrettyString(payload *commonpb.Payload) (string, error) {
 	switch encoding {
 	case metadataEncodingRaw:
 		var byteSlice []byte
-		var valueBytes = reflect.ValueOf(&byteSlice).Elem()
-		valueBytes.SetBytes(payload.GetData())
+		err := decodeEncodingRaw(payload, &byteSlice)
+		if err != nil {
+			return result, err
+		}
 		result = base64.RawStdEncoding.EncodeToString(byteSlice)
 	case metadataEncodingJSON:
 		var value interface{}
-		err := json.Unmarshal(payload.GetData(), &value)
+		err := decodeEncodingJSON(payload, &value)
 		if err != nil {
-			return result, fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+			return result, err
 		}
 		result = fmt.Sprintf("%+v", value)
 	default:
