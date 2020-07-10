@@ -59,5 +59,5 @@ func GetDefaultDataConverter() DataConverter {
 
 // GetDefaultDataStringer returns data pritty printer
 func GetDefaultDataStringer() DataStringer {
-	return internal.DefaultDataConverter
+	return internal.DefaultDataStringer
 }

@@ -101,7 +101,7 @@ func testDataStringerFunction(t *testing.T, dc DataConverter, args ...interface{
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	prettyStrings, err := DefaultDataConverter.ToPrettyStrings(input)
+	prettyStrings, err := DefaultDataStringer.ToPrettyStrings(input)
 	require.NoError(t, err, err)
 
 	return prettyStrings

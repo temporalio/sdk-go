@@ -87,11 +87,17 @@ type (
 
 	defaultDataConverter struct {
 	}
+
+	defaultDataStringer struct {
+	}
 )
 
 var (
 	// DefaultDataConverter is default data converter used by Temporal worker.
 	DefaultDataConverter = &defaultDataConverter{}
+
+	// DefaultDataStringer is the default data stringer
+	DefaultDataStringer = &defaultDataStringer{}
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
 	ErrMetadataIsNotSet = errors.New("metadata is not set")
@@ -110,6 +116,10 @@ var (
 // getDefaultDataConverter return default data converter used by Temporal worker.
 func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
+}
+
+func getDefaultDataStringer() DataStringer {
+	return DefaultDataStringer
 }
 
 func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
@@ -211,7 +221,7 @@ func decodeEncodingJSON(payload *commonpb.Payload, valuePtr interface{}) error {
 	return nil
 }
 
-func (dc *defaultDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (ds *defaultDataStringer) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
 	if payloads == nil {
 		return nil, nil
 	}
