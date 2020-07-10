@@ -83,8 +83,8 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 	name := namespace
 	retention := int32(1)
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                                   name,
-		WorkflowExecutionRetentionPeriodInDays: retention,
+		Name:                                 name,
+		WorkflowExecutionRetentionPeriodDays: retention,
 	})
 	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
