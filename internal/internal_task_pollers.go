@@ -854,7 +854,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	atp.metricsScope.Counter(metrics.ActivityPollSucceedCounter).Inc(1)
 	atp.metricsScope.Timer(metrics.ActivityPollLatency).Record(time.Since(startTime))
 
-	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestampOfThisAttempt())
+	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestampThisAttempt())
 	atp.metricsScope.Timer(metrics.ActivityScheduledToStartLatency).Record(scheduledToStartLatency)
 
 	return &activityTask{task: response, pollStartTime: startTime}, nil

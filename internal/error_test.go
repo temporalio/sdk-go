@@ -158,7 +158,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 				TimeoutType:          timeoutType,
 			}},
 		},
-		RetryStatus:      enumspb.RETRY_STATUS_TIMEOUT,
+		RetryState:       enumspb.RETRY_STATE_TIMEOUT,
 		ScheduledEventId: 5,
 		StartedEventId:   6,
 	})
@@ -692,7 +692,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", "", true, nil)
-	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
+	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
@@ -700,7 +700,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require.Equal("alex", f.GetActivityFailureInfo().GetIdentity())
 	require.Equal("activityType", f.GetActivityFailureInfo().GetActivityType().GetName())
 	require.Equal("32283", f.GetActivityFailureInfo().GetActivityId())
-	require.Equal(enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetActivityFailureInfo().GetRetryStatus())
+	require.Equal(enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, f.GetActivityFailureInfo().GetRetryState())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)
@@ -719,13 +719,13 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
 
 	applicationErr := NewApplicationError("app err", "", true, nil)
-	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, applicationErr)
+	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, DefaultDataConverter)
 	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
-	require.Equal(enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE, f.GetChildWorkflowExecutionFailureInfo().GetRetryStatus())
+	require.Equal(enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, f.GetChildWorkflowExecutionFailureInfo().GetRetryState())
 	require.Equal(convertErrorToFailure(applicationErr, DefaultDataConverter), f.GetCause())
 
 	err2 := convertFailureToError(f, DefaultDataConverter)

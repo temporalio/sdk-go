@@ -186,7 +186,7 @@ type (
 		identity         string
 		activityType     *commonpb.ActivityType
 		activityID       string
-		retryStatus      enumspb.RetryStatus
+		retryState       enumspb.RetryState
 		cause            error
 	}
 
@@ -200,7 +200,7 @@ type (
 		workflowType     string
 		initiatedEventID int64
 		startedEventID   int64
-		retryStatus      enumspb.RetryStatus
+		retryState       enumspb.RetryState
 		cause            error
 	}
 
@@ -304,7 +304,7 @@ func NewActivityError(
 	identity string,
 	activityType *commonpb.ActivityType,
 	activityID string,
-	retryStatus enumspb.RetryStatus,
+	retryState enumspb.RetryState,
 	cause error,
 ) *ActivityError {
 	return &ActivityError{
@@ -313,7 +313,7 @@ func NewActivityError(
 		identity:         identity,
 		activityType:     activityType,
 		activityID:       activityID,
-		retryStatus:      retryStatus,
+		retryState:       retryState,
 		cause:            cause,
 	}
 }
@@ -326,7 +326,7 @@ func NewChildWorkflowExecutionError(
 	workflowType string,
 	initiatedEventID int64,
 	startedEventID int64,
-	retryStatus enumspb.RetryStatus,
+	retryState enumspb.RetryState,
 	cause error,
 ) *ChildWorkflowExecutionError {
 	return &ChildWorkflowExecutionError{
@@ -336,7 +336,7 @@ func NewChildWorkflowExecutionError(
 		workflowType:     workflowType,
 		initiatedEventID: initiatedEventID,
 		startedEventID:   startedEventID,
-		retryStatus:      retryStatus,
+		retryState:       retryState,
 		cause:            cause,
 	}
 }
@@ -709,7 +709,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			Identity:         err.identity,
 			ActivityType:     err.activityType,
 			ActivityId:       err.activityID,
-			RetryStatus:      err.retryStatus,
+			RetryState:       err.retryState,
 		}
 		failure.FailureInfo = &failurepb.Failure_ActivityFailureInfo{ActivityFailureInfo: failureInfo}
 	case *ChildWorkflowExecutionError:
@@ -722,7 +722,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 			WorkflowType:     &commonpb.WorkflowType{Name: err.workflowType},
 			InitiatedEventId: err.initiatedEventID,
 			StartedEventId:   err.startedEventID,
-			RetryStatus:      err.retryStatus,
+			RetryState:       err.retryState,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
@@ -784,7 +784,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			activityTaskInfoFailure.GetIdentity(),
 			activityTaskInfoFailure.GetActivityType(),
 			activityTaskInfoFailure.GetActivityId(),
-			activityTaskInfoFailure.GetRetryStatus(),
+			activityTaskInfoFailure.GetRetryState(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
@@ -796,7 +796,7 @@ func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
 			childWorkflowExecutionFailureInfo.GetWorkflowType().GetName(),
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
-			childWorkflowExecutionFailureInfo.GetRetryStatus(),
+			childWorkflowExecutionFailureInfo.GetRetryState(),
 			convertFailureToError(failure.GetCause(), dc),
 		)
 	}

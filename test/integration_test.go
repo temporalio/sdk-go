@@ -489,8 +489,8 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	name := namespace
 	retention := int32(1)
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                                   name,
-		WorkflowExecutionRetentionPeriodInDays: retention,
+		Name:                                 name,
+		WorkflowExecutionRetentionPeriodDays: retention,
 	})
 	client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {

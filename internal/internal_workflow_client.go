@@ -508,7 +508,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 				WorkflowId: workflowID,
 				RunId:      runID,
 			},
-			WaitForNewEvent:        isLongPoll,
+			WaitNewEvent:           isLongPoll,
 			HistoryEventFilterType: filterType,
 			NextPageToken:          nextToken,
 			SkipArchival:           isLongPoll,
