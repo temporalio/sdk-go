@@ -97,11 +97,16 @@ func TestDefaultDataConverter(t *testing.T) {
 	})
 }
 
-func testDataStringerFunction(t *testing.T, dc DataConverter, args ...interface{}) []string {
+func testDataStringerFunction(
+	t *testing.T,
+	dc DataConverter,
+	ds DataStringer,
+	args ...interface{},
+) []string {
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	prettyStrings, err := DefaultDataStringer.ToPrettyStrings(input)
+	prettyStrings, err := getDefaultDataStringer().ToPrettyStrings(input)
 	require.NoError(t, err, err)
 
 	return prettyStrings
@@ -110,6 +115,8 @@ func testDataStringerFunction(t *testing.T, dc DataConverter, args ...interface{
 func TestDataStringer(t *testing.T) {
 	t.Parallel()
 	dc := getDefaultDataConverter()
+	ds := getDefaultDataStringer()
+
 	testStruct := struct {
 		A string
 		B int
@@ -118,7 +125,7 @@ func TestDataStringer(t *testing.T) {
 		B: 3,
 	}
 
-	r := testDataStringerFunction(t, dc,
+	r := testDataStringerFunction(t, dc, ds,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",
