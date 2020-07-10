@@ -995,7 +995,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		attributes.GetIdentity(),
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
-		attributes.GetRetryStatus(),
+		attributes.GetRetryState(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 
@@ -1020,7 +1020,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 		"",
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
-		attributes.GetRetryStatus(),
+		attributes.GetRetryState(),
 		timeoutError,
 	)
 
@@ -1048,7 +1048,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 			attributes.GetIdentity(),
 			&commonpb.ActivityType{Name: activity.activityType.Name},
 			activityID,
-			enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 			NewCanceledError(details),
 		)
 
@@ -1286,7 +1286,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		attributes.GetRetryStatus(),
+		attributes.GetRetryState(),
 		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1310,7 +1310,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+		enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 		NewCanceledError(details),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1333,7 +1333,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		attributes.GetRetryStatus(),
+		attributes.GetRetryState(),
 		NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
@@ -1356,7 +1356,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		attributes.GetWorkflowType().GetName(),
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
-		enumspb.RETRY_STATUS_NON_RETRYABLE_FAILURE,
+		enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)

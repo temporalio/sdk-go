@@ -816,7 +816,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_TimedOut() {
 				{
 					EventType: eventType,
 					Attributes: &historypb.HistoryEvent_WorkflowExecutionTimedOutEventAttributes{WorkflowExecutionTimedOutEventAttributes: &historypb.WorkflowExecutionTimedOutEventAttributes{
-						RetryStatus: enumspb.RETRY_STATUS_TIMEOUT,
+						RetryState: enumspb.RETRY_STATE_TIMEOUT,
 					}},
 				},
 			},
@@ -958,7 +958,7 @@ func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilter
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		WaitForNewEvent:        true,
+		WaitNewEvent:           true,
 		HistoryEventFilterType: filterType,
 		SkipArchival:           true,
 	}
