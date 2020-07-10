@@ -46,18 +46,9 @@ type (
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter = internal.DataConverter
-
-	// DataStringer can be used in the future to pretty print the input and output of an activity/workflow
-	// that needs to be sent over the wire. This is currently not settable
-	DataStringer = internal.DataStringer
 )
 
 // GetDefaultDataConverter return default data converter used by Temporal worker
 func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
-}
-
-// GetDefaultDataStringer returns data pritty printer
-func GetDefaultDataStringer() DataStringer {
-	return internal.DefaultDataStringer
 }

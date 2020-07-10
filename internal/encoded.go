@@ -76,28 +76,21 @@ type (
 		// FromPayloads implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
+
+		// ToPrettyStrings converts the Payloads object into human readable strings
+		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
 	// DataStringer can be used by framework to print human readable data
 	// This interface is currently not settable
-	DataStringer interface {
-		// ToPrettyStrings converts payloads into human readable strings
-		ToPrettyStrings(input *commonpb.Payloads) ([]string, error)
-	}
 
 	defaultDataConverter struct {
-	}
-
-	defaultDataStringer struct {
 	}
 )
 
 var (
 	// DefaultDataConverter is default data converter used by Temporal worker.
 	DefaultDataConverter = &defaultDataConverter{}
-
-	// DefaultDataStringer is the default data stringer
-	DefaultDataStringer = &defaultDataStringer{}
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
 	ErrMetadataIsNotSet = errors.New("metadata is not set")
@@ -116,10 +109,6 @@ var (
 // getDefaultDataConverter return default data converter used by Temporal worker.
 func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
-}
-
-func getDefaultDataStringer() DataStringer {
-	return DefaultDataStringer
 }
 
 func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
@@ -159,7 +148,7 @@ func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 	return nil
 }
 
-func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (*defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	var payload *commonpb.Payload
 	if bytes, isByteSlice := value.([]byte); isByteSlice {
 		payload = &commonpb.Payload{
@@ -184,7 +173,7 @@ func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (*defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}
@@ -221,7 +210,7 @@ func decodeEncodingJSON(payload *commonpb.Payload, valuePtr interface{}) error {
 	return nil
 }
 
-func (ds *defaultDataStringer) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (*defaultDataConverter) ToPrettyStrings(payloads *commonpb.Payloads) ([]string, error) {
 	if payloads == nil {
 		return nil, nil
 	}
