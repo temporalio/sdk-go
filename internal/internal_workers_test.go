@@ -33,6 +33,7 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
+
 	enumspb "go.temporal.io/api/enums/v1"
 
 	commonpb "go.temporal.io/api/common/v1"

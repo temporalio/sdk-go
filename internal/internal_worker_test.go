@@ -1703,11 +1703,11 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
-	decisionWorker := aggWorker.workflowWorker
-	require.True(t, decisionWorker.executionParameters.Identity != "")
-	require.NotNil(t, decisionWorker.executionParameters.Logger)
-	require.NotNil(t, decisionWorker.executionParameters.MetricsScope)
-	require.Nil(t, decisionWorker.executionParameters.ContextPropagators)
+	workflowWorker := aggWorker.workflowWorker
+	require.True(t, workflowWorker.executionParameters.Identity != "")
+	require.NotNil(t, workflowWorker.executionParameters.Logger)
+	require.NotNil(t, workflowWorker.executionParameters.MetricsScope)
+	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
 		Namespace:                            DefaultNamespace,
@@ -1724,13 +1724,13 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:         stickyDecisionScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                        getDefaultDataConverter(),
 		Tracer:                               opentracing.NoopTracer{},
-		Logger:                               decisionWorker.executionParameters.Logger,
-		MetricsScope:                         decisionWorker.executionParameters.MetricsScope,
-		Identity:                             decisionWorker.executionParameters.Identity,
-		UserContext:                          decisionWorker.executionParameters.UserContext,
+		Logger:                               workflowWorker.executionParameters.Logger,
+		MetricsScope:                         workflowWorker.executionParameters.MetricsScope,
+		Identity:                             workflowWorker.executionParameters.Identity,
+		UserContext:                          workflowWorker.executionParameters.UserContext,
 	}
 
-	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
 
 	activityWorker := aggWorker.activityWorker
 	require.True(t, activityWorker.executionParameters.Identity != "")
@@ -1772,8 +1772,8 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
 
-	decisionWorker := aggWorker.workflowWorker
-	require.Len(t, decisionWorker.executionParameters.ContextPropagators, 0)
+	workflowWorker := aggWorker.workflowWorker
+	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
 	expected := workerExecutionParameters{
 		TaskQueue:                            taskQueue,
@@ -1794,7 +1794,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		Identity:                             client.identity,
 	}
 
-	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
 
 	activityWorker := aggWorker.activityWorker
 	require.Len(t, activityWorker.executionParameters.ContextPropagators, 0)
