@@ -1459,6 +1459,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		Err:     env.wrapActivityError(activityID, activityType, enumspb.RETRY_STATE_UNSPECIFIED, result.err),
 		Result:  result.result,
 		Backoff: noRetryBackoff,
+		Attempt: 1,
 	}
 	if result.task.retryPolicy != nil && result.err != nil {
 		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
@@ -2156,6 +2157,7 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType
 		ActivityType:      ActivityType{Name: activityType},
 		TaskToken:         []byte(activityID),
 		WorkflowExecution: env.workflowInfo.WorkflowExecution,
+		Attempt:           1,
 	}
 }
 

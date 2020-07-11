@@ -10,18 +10,6 @@ services:
         aliases:
           - cassandra
 
-  statsd:
-    image: hopsoft/graphite-statsd
-    ports:
-      - "8080:80"
-      - "2003:2003"
-      - "8125:8125"
-      - "8126:8126"
-    networks:
-      services-network:
-        aliases:
-          - statsd
-
   temporal:
     image: temporalio/auto-setup:latest
     ports:
@@ -31,11 +19,9 @@ services:
       - "7239:7239"
     environment:
       - "CASSANDRA_SEEDS=cassandra"
-      - "STATSD_ENDPOINT=statsd:8125"
       - "DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml"
     depends_on:
       - cassandra
-      - statsd
     networks:
       services-network:
         aliases:
