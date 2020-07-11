@@ -21,7 +21,7 @@ require (
 	github.com/uber-go/tally v3.3.17+incompatible
 	github.com/uber/jaeger-client-go v2.23.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.temporal.io/api v0.26.1-0.20200710002840-ffa3765cd431
+	go.temporal.io/api v0.26.1-0.20200711201123-1d253f31fb6f
 	go.uber.org/atomic v1.6.0
 	go.uber.org/goleak v1.0.0
 	go.uber.org/zap v1.15.0
@@ -33,5 +33,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200605160147-a5ece683394c // indirect
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 )
-
-replace go.temporal.io/api v0.26.1-0.20200710002840-ffa3765cd431 => ../temporal-proto-go
