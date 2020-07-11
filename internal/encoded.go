@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +76,9 @@ type (
 		// FromPayloads implements conversion of an array of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(input *commonpb.Payloads, valuePtrs ...interface{}) error
+
+		// ToStrings converts the Payloads object into human readable strings
+		ToStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
 	defaultDataConverter struct {
@@ -141,7 +145,7 @@ func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 	return nil
 }
 
-func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (*defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	var payload *commonpb.Payload
 	if bytes, isByteSlice := value.([]byte); isByteSlice {
 		payload = &commonpb.Payload{
@@ -166,38 +170,103 @@ func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	return payload, nil
 }
 
-func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (*defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}
 
-	metadata := payload.GetMetadata()
-	if metadata == nil {
-		return ErrMetadataIsNotSet
-	}
-
-	var encoding string
-	if e, ok := metadata[metadataEncoding]; ok {
-		encoding = string(e)
-	} else {
-		return ErrEncodingIsNotSet
+	encoding, err := getEncoding(payload)
+	if err != nil {
+		return err
 	}
 
 	switch encoding {
 	case metadataEncodingRaw:
-		valueBytes := reflect.ValueOf(valuePtr).Elem()
-		if !valueBytes.CanSet() {
-			return ErrUnableToSetBytes
-		}
-		valueBytes.SetBytes(payload.GetData())
+		return decodeEncodingRaw(payload, valuePtr)
 	case metadataEncodingJSON:
-		err := json.Unmarshal(payload.GetData(), valuePtr)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
-		}
+		return decodeEncodingJSON(payload, valuePtr)
 	default:
 		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
 	}
+}
 
+func decodeEncodingRaw(payload *commonpb.Payload, valuePtr interface{}) error {
+	valueBytes := reflect.ValueOf(valuePtr).Elem()
+	if !valueBytes.CanSet() {
+		return ErrUnableToSetBytes
+	}
+	valueBytes.SetBytes(payload.GetData())
 	return nil
+}
+
+func decodeEncodingJSON(payload *commonpb.Payload, valuePtr interface{}) error {
+	err := json.Unmarshal(payload.GetData(), valuePtr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+	}
+	return nil
+}
+
+func (*defaultDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+	if payloads == nil {
+		return nil, nil
+	}
+
+	var result []string
+	for i, payload := range payloads.GetPayloads() {
+		payloadAsStr, err := toString(payload)
+		if err != nil {
+			return result, fmt.Errorf("payload item %d: %w", i, err)
+		}
+		result = append(result, payloadAsStr)
+	}
+
+	return result, nil
+}
+
+func getEncoding(payload *commonpb.Payload) (string, error) {
+	metadata := payload.GetMetadata()
+	if metadata == nil {
+		return "", ErrMetadataIsNotSet
+	}
+
+	if e, ok := metadata[metadataEncoding]; ok {
+		return string(e), nil
+	}
+
+	return "", ErrEncodingIsNotSet
+}
+
+func toString(payload *commonpb.Payload) (string, error) {
+	result := ""
+
+	if payload == nil {
+		return result, nil
+	}
+
+	encoding, err := getEncoding(payload)
+	if err != nil {
+		return result, err
+	}
+
+	switch encoding {
+	case metadataEncodingRaw:
+		var byteSlice []byte
+		err := decodeEncodingRaw(payload, &byteSlice)
+		if err != nil {
+			return result, err
+		}
+		result = base64.RawStdEncoding.EncodeToString(byteSlice)
+	case metadataEncodingJSON:
+		var value interface{}
+		err := decodeEncodingJSON(payload, &value)
+		if err != nil {
+			return result, err
+		}
+		result = fmt.Sprintf("%+v", value)
+	default:
+		return result, fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+	}
+
+	return result, nil
 }
