@@ -247,9 +247,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "5",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
@@ -262,14 +262,14 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 			ScheduledEventId: 5,
 			StartedEventId:   6,
 		}),
-		createTestEventDecisionTaskScheduled(8, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 8,
 			StartedEventId:   9,
 		}),
 		createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 10,
+			WorkflowTaskCompletedEventId: 10,
 		}),
 	}
 
@@ -289,23 +289,23 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("5"),
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("6"),
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(7, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -481,9 +481,9 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventVersionMarker(5, 4, "change_id_A", Version(3)),
 		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "change_id_A", Version(3)),
 		createTestEventActivityTaskScheduled(7, &historypb.ActivityTaskScheduledEventAttributes{
@@ -498,9 +498,9 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 			ScheduledEventId: 7,
 			StartedEventId:   8,
 		}),
-		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(11),
-		createTestEventDecisionTaskCompleted(12, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(11),
+		createTestEventWorkflowTaskCompleted(12, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 10,
 			StartedEventId:   11,
 		}),
@@ -516,9 +516,9 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 			ScheduledEventId: 13,
 			StartedEventId:   14,
 		}),
-		createTestEventDecisionTaskScheduled(16, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(17),
-		createTestEventDecisionTaskCompleted(18, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(17),
+		createTestEventWorkflowTaskCompleted(18, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 16,
 			StartedEventId:   17,
 		}),
@@ -535,14 +535,14 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 			StartedEventId:   20,
 		}),
 
-		createTestEventDecisionTaskScheduled(22, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(23),
-		createTestEventDecisionTaskCompleted(24, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(22, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(23),
+		createTestEventWorkflowTaskCompleted(24, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 22,
 			StartedEventId:   23,
 		}),
 		createTestEventWorkflowExecutionCompleted(25, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 24,
+			WorkflowTaskCompletedEventId: 24,
 		}),
 	}
 }
@@ -585,9 +585,9 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "5",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity1"},
@@ -598,12 +598,12 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 			ScheduledEventId: 5,
 		}),
 		createTestEventTimerFired(8, 6),
-		createTestEventDecisionTaskScheduled(9, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(10),
-		createTestEventDecisionTaskCompleted(11, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(10),
+		createTestEventWorkflowTaskCompleted(11, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventActivityTaskCancelRequested(12, &historypb.ActivityTaskCancelRequestedEventAttributes{
 			ScheduledEventId:             5,
-			DecisionTaskCompletedEventId: 11,
+			WorkflowTaskCompletedEventId: 11,
 		}),
 		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "13",
@@ -617,14 +617,14 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 			ScheduledEventId: 13,
 			StartedEventId:   14,
 		}),
-		createTestEventDecisionTaskScheduled(16, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(17),
-		createTestEventDecisionTaskCompleted(18, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(17),
+		createTestEventWorkflowTaskCompleted(18, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 16,
 			StartedEventId:   17,
 		}),
 		createTestEventWorkflowExecutionCompleted(19, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 18,
+			WorkflowTaskCompletedEventId: 18,
 		}),
 	}
 }
@@ -662,15 +662,15 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventTimerStarted(5, 5),
 		createTestEventTimerStarted(6, 6),
 		createTestEventTimerFired(7, 6),
-		createTestEventDecisionTaskScheduled(8, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventTimerCanceled(11, 5),
 		createTestEventActivityTaskScheduled(12, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "12",
@@ -684,14 +684,14 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 			ScheduledEventId: 12,
 			StartedEventId:   13,
 		}),
-		createTestEventDecisionTaskScheduled(15, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(16),
-		createTestEventDecisionTaskCompleted(17, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(15, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(16),
+		createTestEventWorkflowTaskCompleted(17, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 15,
 			StartedEventId:   16,
 		}),
 		createTestEventWorkflowExecutionCompleted(18, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 17,
+			WorkflowTaskCompletedEventId: 17,
 		}),
 	}
 }
@@ -735,9 +735,9 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
 			TaskQueue:  &taskqueuepb.TaskQueue{Name: taskQueue},
 			WorkflowId: "workflowId",
@@ -749,16 +749,16 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
 		}),
 
-		createTestEventDecisionTaskScheduled(8, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(9),
-		createTestEventDecisionTaskCompleted(10, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventTimerFired(11, 6),
-		createTestEventDecisionTaskScheduled(12, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(13),
-		createTestEventDecisionTaskCompleted(14, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(12, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(13),
+		createTestEventWorkflowTaskCompleted(14, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventRequestCancelExternalWorkflowExecutionInitiated(15, &historypb.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
-			DecisionTaskCompletedEventId: 14,
+			WorkflowTaskCompletedEventId: 14,
 			WorkflowExecution:            &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
 		}),
 
@@ -771,13 +771,13 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
 			InitiatedEventId:  15,
 		}),
-		createTestEventDecisionTaskScheduled(18, &historypb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(18, &historypb.WorkflowTaskScheduledEventAttributes{}),
 
 		createTestEventActivityTaskStarted(19, &historypb.ActivityTaskStartedEventAttributes{
 			ScheduledEventId: 16,
 		}),
-		createTestEventDecisionTaskStarted(20),
-		createTestEventDecisionTaskCompleted(21, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskStarted(20),
+		createTestEventWorkflowTaskCompleted(21, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventActivityTaskCompleted(22, &historypb.ActivityTaskCompletedEventAttributes{
 			ScheduledEventId: 16,
@@ -790,14 +790,14 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
 		}),
 
-		createTestEventDecisionTaskScheduled(24, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(25),
-		createTestEventDecisionTaskCompleted(26, &historypb.DecisionTaskCompletedEventAttributes{
+		createTestEventWorkflowTaskScheduled(24, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(25),
+		createTestEventWorkflowTaskCompleted(26, &historypb.WorkflowTaskCompletedEventAttributes{
 			ScheduledEventId: 24,
 			StartedEventId:   25,
 		}),
 		createTestEventWorkflowExecutionCompleted(27, &historypb.WorkflowExecutionCompletedEventAttributes{
-			DecisionTaskCompletedEventId: 26,
+			WorkflowTaskCompletedEventId: 26,
 		}),
 	}
 }
@@ -811,24 +811,24 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("5"),
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("6"),
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(7, &historypb.WorkflowExecutionCompletedEventAttributes{
 			Result:                       result,
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -853,19 +853,19 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 
 		createTestEventWorkflowExecutionCompleted(6, &historypb.WorkflowExecutionCompletedEventAttributes{
 			Result:                       result,
-			DecisionTaskCompletedEventId: 4,
+			WorkflowTaskCompletedEventId: 4,
 		}),
 	}
 
@@ -893,22 +893,22 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 	require.NoError(s.T(), err)
 }
 
-func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExecutionParameters) {
+func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExecutionParameters) {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue},
 			Input:     testEncodeFunctionArgs(params.DataConverter),
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
-		createTestEventDecisionTaskStarted(3),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
 	}
 
 	workflowType := "testReplayWorkflow"
 	workflowID := "testID"
 	runID := "testRunID"
 
-	task := &workflowservice.PollForDecisionTaskResponse{
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 		WorkflowType:           &commonpb.WorkflowType{Name: workflowType},
 		History:                &historypb.History{Events: testEvents},
@@ -920,14 +920,14 @@ func (s *internalWorkerTestSuite) testDecisionTaskHandlerHelper(params workerExe
 	s.NoError(err)
 }
 
-func (s *internalWorkerTestSuite) TestDecisionTaskHandlerWithDataConverter() {
+func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
 		DataConverter: newTestDataConverter(),
 	}
-	s.testDecisionTaskHandlerHelper(params)
+	s.testWorkflowTaskHandlerHelper(params)
 }
 
 // testSampleWorkflow
@@ -1041,16 +1041,16 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 	}
 }
 
-func ofPollForActivityTaskRequest(tps float64) gomock.Matcher {
-	return &mockPollForActivityTaskRequest{tps: tps}
+func ofPollActivityTaskQueueRequest(tps float64) gomock.Matcher {
+	return &mockPollActivityTaskQueueRequest{tps: tps}
 }
 
-type mockPollForActivityTaskRequest struct {
+type mockPollActivityTaskQueueRequest struct {
 	tps float64
 }
 
-func (m *mockPollForActivityTaskRequest) Matches(x interface{}) bool {
-	v, ok := x.(*workflowservice.PollForActivityTaskRequest)
+func (m *mockPollActivityTaskQueueRequest) Matches(x interface{}) bool {
+	v, ok := x.(*workflowservice.PollActivityTaskQueueRequest)
 	if !ok {
 		return false
 	}
@@ -1062,8 +1062,8 @@ func (m *mockPollForActivityTaskRequest) Matches(x interface{}) bool {
 	return false
 }
 
-func (m *mockPollForActivityTaskRequest) String() string {
-	return "PollForActivityTaskRequest"
+func (m *mockPollActivityTaskQueueRequest) String() string {
+	return "PollActivityTaskQueueRequest"
 }
 
 func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
@@ -1087,19 +1087,19 @@ func createWorkerWithThrottle(
 			// log
 		}).AnyTimes()
 
-	activityTask := &workflowservice.PollForActivityTaskResponse{}
+	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
 	expectedActivitiesPerSecond := activitiesPerSecond
 	if expectedActivitiesPerSecond == 0.0 {
 		expectedActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
 	}
-	service.EXPECT().PollForActivityTask(
-		gomock.Any(), ofPollForActivityTaskRequest(expectedActivitiesPerSecond), gomock.Any(),
+	service.EXPECT().PollActivityTaskQueue(
+		gomock.Any(), ofPollActivityTaskQueueRequest(expectedActivitiesPerSecond), gomock.Any(),
 	).Return(activityTask, nil).AnyTimes()
 	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
-	decisionTask := &workflowservice.PollForDecisionTaskResponse{}
-	service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(decisionTask, nil).AnyTimes()
-	service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
+	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
@@ -1716,9 +1716,9 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		MaxConcurrentDecisionPollers:         defaultConcurrentPollRoutineSize,
 		ConcurrentLocalActivityExecutionSize: defaultMaxConcurrentLocalActivityExecutionSize,
 		ConcurrentActivityExecutionSize:      defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentDecisionTaskExecutionSize:  defaultMaxConcurrentTaskExecutionSize,
+		ConcurrentWorkflowTaskExecutionSize:  defaultMaxConcurrentTaskExecutionSize,
 		WorkerActivitiesPerSecond:            defaultTaskQueueActivitiesPerSecond,
-		WorkerDecisionTasksPerSecond:         defaultWorkerTaskExecutionRate,
+		WorkerWorkflowTasksPerSecond:         defaultWorkerTaskExecutionRate,
 		TaskQueueActivitiesPerSecond:         defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:       defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:         stickyDecisionScheduleToStartTimeoutSeconds * time.Second,
@@ -1758,13 +1758,13 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	options := WorkerOptions{
 		TaskQueueActivitiesPerSecond:            8888,
 		MaxConcurrentSessionExecutionSize:       3333,
-		MaxConcurrentDecisionTaskExecutionSize:  2222,
+		MaxConcurrentWorkflowTaskExecutionSize:  2222,
 		MaxConcurrentActivityExecutionSize:      1111,
 		MaxConcurrentLocalActivityExecutionSize: 101,
-		MaxConcurrentDecisionTaskPollers:        11,
+		MaxConcurrentWorkflowTaskPollers:        11,
 		MaxConcurrentActivityTaskPollers:        12,
 		WorkerLocalActivitiesPerSecond:          222,
-		WorkerDecisionTasksPerSecond:            111,
+		WorkerWorkflowTasksPerSecond:            111,
 		WorkerActivitiesPerSecond:               99,
 		StickyScheduleToStartTimeout:            555 * time.Minute,
 		BackgroundActivityContext:               context.Background(),
@@ -1778,12 +1778,12 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	expected := workerExecutionParameters{
 		TaskQueue:                            taskQueue,
 		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
-		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
+		MaxConcurrentDecisionPollers:         options.MaxConcurrentWorkflowTaskPollers,
 		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
 		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
-		ConcurrentDecisionTaskExecutionSize:  options.MaxConcurrentDecisionTaskExecutionSize,
+		ConcurrentWorkflowTaskExecutionSize:  options.MaxConcurrentWorkflowTaskExecutionSize,
 		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
-		WorkerDecisionTasksPerSecond:         options.WorkerDecisionTasksPerSecond,
+		WorkerWorkflowTasksPerSecond:         options.WorkerWorkflowTasksPerSecond,
 		TaskQueueActivitiesPerSecond:         options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
@@ -1808,9 +1808,9 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.Tracer, paramsB.Tracer)
 	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
 	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
-	require.Equal(t, paramsA.ConcurrentDecisionTaskExecutionSize, paramsB.ConcurrentDecisionTaskExecutionSize)
+	require.Equal(t, paramsA.ConcurrentWorkflowTaskExecutionSize, paramsB.ConcurrentWorkflowTaskExecutionSize)
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
-	require.Equal(t, paramsA.WorkerDecisionTasksPerSecond, paramsB.WorkerDecisionTasksPerSecond)
+	require.Equal(t, paramsA.WorkerWorkflowTasksPerSecond, paramsB.WorkerWorkflowTasksPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
 	require.Equal(t, paramsA.MaxConcurrentDecisionPollers, paramsB.MaxConcurrentDecisionPollers)

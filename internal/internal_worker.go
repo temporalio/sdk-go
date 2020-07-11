@@ -142,13 +142,13 @@ type (
 		// MaxConcurrentActivityPollers is the max number of pollers for activity task queue
 		MaxConcurrentActivityPollers int
 
-		// Defines how many concurrent decision task executions by this worker.
-		ConcurrentDecisionTaskExecutionSize int
+		// Defines how many concurrent workflow task executions by this worker.
+		ConcurrentWorkflowTaskExecutionSize int
 
-		// Defines rate limiting on number of decision tasks that can be executed per second per worker.
-		WorkerDecisionTasksPerSecond float64
+		// Defines rate limiting on number of workflow tasks that can be executed per second per worker.
+		WorkerWorkflowTasksPerSecond float64
 
-		// MaxConcurrentDecisionPollers is the max number of pollers for decision task queue
+		// MaxConcurrentDecisionPollers is the max number of pollers for workflow task queue
 		MaxConcurrentDecisionPollers int
 
 		// Defines how many concurrent local activity executions by this worker.
@@ -182,7 +182,7 @@ type (
 
 		StickyScheduleToStartTimeout time.Duration
 
-		// WorkflowPanicPolicy is used for configuring how client's decision task handler deals with workflow
+		// WorkflowPanicPolicy is used for configuring how client's workflow task handler deals with workflow
 		// code panicking which includes non backwards compatible changes to the workflow code without appropriate
 		// versioning (see workflow.GetVersion).
 		// The default behavior is to block workflow execution until the problem is fixed.
@@ -286,8 +286,8 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.MaxConcurrentDecisionPollers,
 		pollerRate:        defaultPollerRate,
-		maxConcurrentTask: params.ConcurrentDecisionTaskExecutionSize,
-		maxTaskPerSecond:  params.WorkerDecisionTasksPerSecond,
+		maxConcurrentTask: params.ConcurrentWorkflowTaskExecutionSize,
+		maxTaskPerSecond:  params.WorkerWorkflowTasksPerSecond,
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "DecisionWorker",
@@ -1018,7 +1018,7 @@ var binaryChecksum string
 var binaryChecksumLock sync.Mutex
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
-// The identifier is mainly used in recording reset points when respondDecisionTaskCompleted. For each workflow, the very first
+// The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
 // decision completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
 // mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
 // by the binary.
@@ -1128,7 +1128,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-// ReplayWorkflowHistory executes a single decision task for the given history.
+// ReplayWorkflowHistory executes a single workflow task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error {
@@ -1143,14 +1143,14 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *h
 	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
 }
 
-// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the given json history file.
+// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
 	return aw.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
 }
 
-// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the given json history file upto provided
+// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file upto provided
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
@@ -1227,7 +1227,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
-	task := &workflowservice.PollForDecisionTaskResponse{
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		Attempt:                0,
 		TaskToken:              []byte("ReplayTaskToken"),
 		WorkflowType:           workflowType,
@@ -1260,7 +1260,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		return err
 	}
 
-	if failedReq, ok := resp.(*workflowservice.RespondDecisionTaskFailedRequest); ok {
+	if failedReq, ok := resp.(*workflowservice.RespondWorkflowTaskFailedRequest); ok {
 		return fmt.Errorf("replay workflow failed with failure: %v", failedReq.GetFailure())
 	}
 
@@ -1269,7 +1269,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	}
 
 	if resp != nil {
-		completeReq, ok := resp.(*workflowservice.RespondDecisionTaskCompletedRequest)
+		completeReq, ok := resp.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Decisions {
 				if d.GetDecisionType() == enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
@@ -1345,9 +1345,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
 		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
 		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
-		ConcurrentDecisionTaskExecutionSize:  options.MaxConcurrentDecisionTaskExecutionSize,
-		WorkerDecisionTasksPerSecond:         options.WorkerDecisionTasksPerSecond,
-		MaxConcurrentDecisionPollers:         options.MaxConcurrentDecisionTaskPollers,
+		ConcurrentWorkflowTaskExecutionSize:  options.MaxConcurrentWorkflowTaskExecutionSize,
+		WorkerWorkflowTasksPerSecond:         options.WorkerWorkflowTasksPerSecond,
+		MaxConcurrentDecisionPollers:         options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                             client.identity,
 		MetricsScope:                         client.metricsScope,
 		Logger:                               client.logger,
@@ -1522,14 +1522,14 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.MaxConcurrentActivityTaskPollers <= 0 {
 		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
 	}
-	if options.MaxConcurrentDecisionTaskExecutionSize == 0 {
-		options.MaxConcurrentDecisionTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
+	if options.MaxConcurrentWorkflowTaskExecutionSize == 0 {
+		options.MaxConcurrentWorkflowTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
 	}
-	if options.WorkerDecisionTasksPerSecond == 0 {
-		options.WorkerDecisionTasksPerSecond = defaultWorkerTaskExecutionRate
+	if options.WorkerWorkflowTasksPerSecond == 0 {
+		options.WorkerWorkflowTasksPerSecond = defaultWorkerTaskExecutionRate
 	}
-	if options.MaxConcurrentDecisionTaskPollers <= 0 {
-		options.MaxConcurrentDecisionTaskPollers = defaultConcurrentPollRoutineSize
+	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
+		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize == 0 {
 		options.MaxConcurrentLocalActivityExecutionSize = defaultMaxConcurrentLocalActivityExecutionSize

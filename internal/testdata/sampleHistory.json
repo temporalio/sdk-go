@@ -19,8 +19,8 @@
     {
       "eventId": 2,
       "timestamp": 1528336257159349200,
-      "eventType": "DecisionTaskScheduled",
-      "decisionTaskScheduledEventAttributes": {
+      "eventType": "WorkflowTaskScheduled",
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "taskQueue1"
         },
@@ -31,8 +31,8 @@
     {
       "eventId": 3,
       "timestamp": 1528336257174772700,
-      "eventType": "DecisionTaskStarted",
-      "decisionTaskStartedEventAttributes": {
+      "eventType": "WorkflowTaskStarted",
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 2,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId": "b7403b35-b4b1-432f-84ff-01d66d060a87"
@@ -41,8 +41,8 @@
     {
       "eventId": 4,
       "timestamp": 1528336257188460300,
-      "eventType": "DecisionTaskCompleted",
-      "decisionTaskCompletedEventAttributes": {
+      "eventType": "WorkflowTaskCompleted",
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
         "startedEventId": 3,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1"
@@ -65,7 +65,7 @@
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
         "heartbeatTimeoutSeconds": 20,
-        "decisionTaskCompletedEventId": 4
+        "workflowTaskCompletedEventId": 4
       }
     },
     {
@@ -97,10 +97,10 @@
     {
       "eventId":8,
       "timestamp":1558126757403476000,
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version":-24,
       "taskId":33554450,
-      "decisionTaskScheduledEventAttributes":{
+      "workflowTaskScheduledEventAttributes":{
         "taskQueue":{
           "name":"longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
         },
@@ -111,10 +111,10 @@
     {
       "eventId":9,
       "timestamp":1558126757410564000,
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version":-24,
       "taskId":33554454,
-      "decisionTaskStartedEventAttributes":{
+      "workflowTaskStartedEventAttributes":{
         "scheduledEventId":8,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId":"cb1fdadf-f46b-4840-9b97-863f4b3b6b11"
@@ -123,10 +123,10 @@
     {
       "eventId":10,
       "timestamp":1558126757491491000,
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version":-24,
       "taskId":33554457,
-      "decisionTaskCompletedEventAttributes":{
+      "workflowTaskCompletedEventAttributes":{
         "scheduledEventId":8,
         "startedEventId":9,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
@@ -140,7 +140,7 @@
       "version":-24,
       "taskId":33554458,
       "workflowExecutionCompletedEventAttributes":{
-        "decisionTaskCompletedEventId":10
+        "workflowTaskCompletedEventId":10
       }
     }
   ]

@@ -396,7 +396,7 @@ about workflow.SideEffect is that whereas for activities Temporal guarantees "at
 exists for workflow.SideEffect. Under certain failure conditions, workflow.SideEffect can end up executing the function
 more than once.
 
-The only way to fail SideEffect is to panic, which causes decision task failure. The decision task after timeout is
+The only way to fail SideEffect is to panic, which causes workflow task failure. The workflow task after timeout is
 rescheduled and re-executed giving SideEffect another chance to succeed. Be careful to not return any data from the
 SideEffect function any other way than through its recorded return value.
 

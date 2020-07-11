@@ -55,7 +55,7 @@ const (
 
 	stickyDecisionScheduleToStartTimeoutSeconds = 5
 
-	ratioToForceCompleteDecisionTaskComplete = 0.8
+	ratioToForceCompleteWorkflowTaskComplete = 0.8
 )
 
 type (
@@ -277,23 +277,23 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	defer close(doneCh)
 
 	for {
-		var response *workflowservice.RespondDecisionTaskCompletedResponse
+		var response *workflowservice.RespondWorkflowTaskCompletedResponse
 		startTime := time.Now()
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
 		completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(
 			task,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
-				wtp.logger.Debug("Force RespondDecisionTaskCompleted.", zap.Int64("TaskStartedEventID", task.task.GetStartedEventId()))
-				wtp.metricsScope.Counter(metrics.DecisionTaskForceCompleted).Inc(1)
+				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", zap.Int64("TaskStartedEventID", task.task.GetStartedEventId()))
+				wtp.metricsScope.Counter(metrics.WorkflowTaskForceCompleted).Inc(1)
 				heartbeatResponse, err := wtp.RespondTaskCompletedWithMetrics(response, nil, task.task, startTime)
 				if err != nil {
 					return nil, err
 				}
-				if heartbeatResponse == nil || heartbeatResponse.DecisionTask == nil {
+				if heartbeatResponse == nil || heartbeatResponse.WorkflowTask == nil {
 					return nil, nil
 				}
-				task := wtp.toWorkflowTask(heartbeatResponse.DecisionTask)
+				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				return task, nil
@@ -310,12 +310,12 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 			return err
 		}
 
-		if response == nil || response.DecisionTask == nil {
+		if response == nil || response.WorkflowTask == nil {
 			return nil
 		}
 
-		// we are getting new decision task, so reset the workflowTask and continue process the new one
-		task = wtp.toWorkflowTask(response.DecisionTask)
+		// we are getting new workflow task, so reset the workflowTask and continue process the new one
+		task = wtp.toWorkflowTask(response.WorkflowTask)
 	}
 }
 
@@ -334,19 +334,19 @@ func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTa
 	return nil
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest interface{}, taskErr error, task *workflowservice.PollForDecisionTaskResponse, startTime time.Time) (response *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
+func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest interface{}, taskErr error, task *workflowservice.PollWorkflowTaskQueueResponse, startTime time.Time) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 
 	if taskErr != nil {
 		wtp.metricsScope.Counter(metrics.DecisionExecutionFailedCounter).Inc(1)
-		wtp.logger.Warn("Failed to process decision task.",
+		wtp.logger.Warn("Failed to process workflow task.",
 			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.Error(taskErr))
-		// convert err to DecisionTaskFailed
-		completedRequest = errorToFailDecisionTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
+		// convert err to WorkflowTaskFailed
+		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
 	} else {
-		wtp.metricsScope.Counter(metrics.DecisionTaskCompletedCounter).Inc(1)
+		wtp.metricsScope.Counter(metrics.WorkflowTaskCompletedCounter).Inc(1)
 	}
 
 	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Since(startTime))
@@ -361,7 +361,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 	return
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollForDecisionTaskResponse) (response *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
+func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollWorkflowTaskQueueResponse) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
 	err = backoff.Retry(ctx,
@@ -370,30 +370,30 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
-			case *workflowservice.RespondDecisionTaskFailedRequest:
-				// Only fail decision on first attempt, subsequent failure on the same decision task will timeout.
-				// This is to avoid spin on the failed decision task. Checking Attempt not nil for older server.
+			case *workflowservice.RespondWorkflowTaskFailedRequest:
+				// Only fail decision on first attempt, subsequent failure on the same workflow task will timeout.
+				// This is to avoid spin on the failed workflow task. Checking Attempt not nil for older server.
 				if task.GetAttempt() == 0 {
-					_, err1 = wtp.service.RespondDecisionTaskFailed(tchCtx, request)
+					_, err1 = wtp.service.RespondWorkflowTaskFailed(tchCtx, request)
 					if err1 != nil {
 						traceLog(func() {
-							wtp.logger.Debug("RespondDecisionTaskFailed failed.", zap.Error(err1))
+							wtp.logger.Debug("RespondWorkflowTaskFailed failed.", zap.Error(err1))
 						})
 					}
 				}
-			case *workflowservice.RespondDecisionTaskCompletedRequest:
+			case *workflowservice.RespondWorkflowTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
 					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
 						WorkerTaskQueue:               &taskqueuepb.TaskQueue{Name: getWorkerTaskQueue(wtp.stickyUUID)},
 						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
 				} else {
-					request.ReturnNewDecisionTask = false
+					request.ReturnNewWorkflowTask = false
 				}
-				response, err1 = wtp.service.RespondDecisionTaskCompleted(tchCtx, request)
+				response, err1 = wtp.service.RespondWorkflowTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
-						wtp.logger.Debug("RespondDecisionTaskCompleted failed.", zap.Error(err1))
+						wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", zap.Error(err1))
 					})
 				}
 			case *workflowservice.RespondQueryTaskCompletedRequest:
@@ -625,7 +625,7 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 //   2.1) if sticky task queue has backlog, always prefer to process sticky task first
 //   2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
 // TODO: make this more smart to auto adjust based on poll latency
-func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollForDecisionTaskRequest) {
+func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
 	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
 	if !wtp.disableStickyExecution {
@@ -644,7 +644,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Name: taskQueueName,
 		Kind: taskQueueKind,
 	}
-	return &workflowservice.PollForDecisionTaskRequest{
+	return &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
@@ -664,7 +664,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	request := wtp.getNextPollRequest()
 	defer wtp.release(request.TaskQueue.GetKind())
 
-	response, err := wtp.service.PollForDecisionTask(ctx, request)
+	response, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
@@ -704,7 +704,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	return task, nil
 }
 
-func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollForDecisionTaskResponse) *workflowTask {
+func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
 		nextPageToken: response.NextPageToken,
 		execution:     response.WorkflowExecution,
@@ -752,7 +752,7 @@ func newGetHistoryPageFunc(
 	service workflowservice.WorkflowServiceClient,
 	namespace string,
 	execution *commonpb.WorkflowExecution,
-	atDecisionTaskCompletedEventID int64,
+	atWorkflowTaskCompletedEventID int64,
 	metricsScope tally.Scope,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
 	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
@@ -793,13 +793,13 @@ func newGetHistoryPageFunc(
 		}
 
 		size := len(h.Events)
-		if size > 0 && atDecisionTaskCompletedEventID > 0 &&
-			h.Events[size-1].GetEventId() > atDecisionTaskCompletedEventID {
+		if size > 0 && atWorkflowTaskCompletedEventID > 0 &&
+			h.Events[size-1].GetEventId() > atWorkflowTaskCompletedEventID {
 			first := h.Events[0].GetEventId() // eventIds start from 1
-			h.Events = h.Events[:atDecisionTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED {
-				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atDecisionTaskCompletedEventID(%v) "+
-					"points to event that is not DecisionTaskCompleted", atDecisionTaskCompletedEventID)
+			h.Events = h.Events[:atWorkflowTaskCompletedEventID-first+1]
+			if h.Events[len(h.Events)-1].GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atWorkflowTaskCompletedEventID(%v) "+
+					"points to event that is not WorkflowTaskCompleted", atWorkflowTaskCompletedEventID)
 			}
 			return h, nil, nil
 		}
@@ -830,14 +830,14 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
-	request := &workflowservice.PollForActivityTaskRequest{
+	request := &workflowservice.PollActivityTaskQueueRequest{
 		Namespace:         atp.namespace,
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
-	response, err := atp.service.PollForActivityTask(ctx, request)
+	response, err := atp.service.PollActivityTaskQueue(ctx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
 			atp.metricsScope.Counter(metrics.ActivityPollTransientFailedCounter).Inc(1)

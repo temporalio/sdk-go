@@ -39,8 +39,8 @@ import (
 
 // PressurePoints
 const (
-	pressurePointTypeDecisionTaskStartTimeout    = "decision-task-start-timeout"
-	pressurePointTypeDecisionTaskCompleted       = "decision-task-complete"
+	pressurePointTypeWorkflowTaskStartTimeout    = "workflow-task-start-timeout"
+	pressurePointTypeWorkflowTaskCompleted       = "workflow-task-complete"
 	pressurePointTypeActivityTaskScheduleTimeout = "activity-task-schedule-timeout"
 	pressurePointTypeActivityTaskStartTimeout    = "activity-task-start-timeout"
 	pressurePointConfigProbability               = "probability"

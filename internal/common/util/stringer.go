@@ -98,17 +98,17 @@ func HistoryEventToString(e *historypb.HistoryEvent) string {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		data = e.GetWorkflowExecutionTimedOutEventAttributes()
 
-	case enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
-		data = e.GetDecisionTaskScheduledEventAttributes()
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED:
+		data = e.GetWorkflowTaskScheduledEventAttributes()
 
-	case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
-		data = e.GetDecisionTaskStartedEventAttributes()
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+		data = e.GetWorkflowTaskStartedEventAttributes()
 
-	case enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED:
-		data = e.GetDecisionTaskCompletedEventAttributes()
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
+		data = e.GetWorkflowTaskCompletedEventAttributes()
 
-	case enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
-		data = e.GetDecisionTaskTimedOutEventAttributes()
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
+		data = e.GetWorkflowTaskTimedOutEventAttributes()
 
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		data = e.GetActivityTaskScheduledEventAttributes()

@@ -481,7 +481,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		func(ctx Context) {
 			r := &workflowResult{}
 
-			// We want to execute the user workflow definition from the first decision task started,
+			// We want to execute the user workflow definition from the first workflow task started,
 			// so they can see everything before that. Here we would have all initialization done, hence
 			// we are yielding.
 			state := getState(d.rootCtx)
@@ -535,7 +535,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	})
 }
 
-func (d *syncWorkflowDefinition) OnDecisionTaskStarted() {
+func (d *syncWorkflowDefinition) OnWorkflowTaskStarted() {
 	executeDispatcher(d.rootCtx, d.dispatcher)
 }
 

@@ -100,11 +100,11 @@ func createTestEventWorkflowExecutionStarted(eventID int64, attr *historypb.Work
 		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventDecisionTaskScheduled(eventID int64, attr *historypb.DecisionTaskScheduledEventAttributes) *historypb.HistoryEvent {
+func createTestEventWorkflowTaskScheduled(eventID int64, attr *historypb.WorkflowTaskScheduledEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
-		EventType:  enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
-		Attributes: &historypb.HistoryEvent_DecisionTaskScheduledEventAttributes{DecisionTaskScheduledEventAttributes: attr}}
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_WorkflowTaskScheduledEventAttributes{WorkflowTaskScheduledEventAttributes: attr}}
 }
 
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
@@ -112,13 +112,13 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			TaskQueue: &taskqueuepb.TaskQueue{Name: "taskqueue"},
 		}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 	}
 
 	var taskCounter atomic.Int32 // lambda variable to keep count
-	// mock that manufactures unique decision tasks
-	mockPollForDecisionTask := func(ctx context.Context, _PollRequest *workflowservice.PollForDecisionTaskRequest, opts ...grpc.CallOption,
-	) (success *workflowservice.PollForDecisionTaskResponse, err error) {
+	// mock that manufactures unique workflow tasks
+	mockPollWorkflowTaskQueue := func(ctx context.Context, _PollRequest *workflowservice.PollWorkflowTaskQueueRequest, opts ...grpc.CallOption,
+	) (success *workflowservice.PollWorkflowTaskQueueResponse, err error) {
 		taskID := taskCounter.Inc()
 		workflowID := "testID" + strconv.Itoa(int(taskID))
 		runID := "runID" + strconv.Itoa(int(taskID))
@@ -126,7 +126,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 		// the goal is we want to fabricate a response that looks real enough to our worker
 		// that it will actually go along with processing it instead of just tossing it out
 		// after polling it or giving an error
-		ret := &workflowservice.PollForDecisionTaskResponse{
+		ret := &workflowservice.PollWorkflowTaskQueueResponse{
 			TaskToken:              make([]byte, 5),
 			WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
 			WorkflowType:           &commonpb.WorkflowType{Name: "testReplayWorkflow"},
@@ -146,18 +146,18 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	internal.SetStickyWorkflowCacheSize(cacheSize)
 	// once for workflow worker because we disable activity worker
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
-	// feed our worker exactly *cacheSize* "legit" decision tasks
-	// these are handcrafted decision tasks that are not blatantly obviously mocks
+	// feed our worker exactly *cacheSize* "legit" workflow tasks
+	// these are handcrafted workflow tasks that are not blatantly obviously mocks
 	// the goal is to trick our worker into thinking they are real so it
 	// actually goes along with processing these and puts their execution in the cache.
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).DoAndReturn(mockPollForDecisionTask).Times(cacheSize)
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any()).DoAndReturn(mockPollWorkflowTaskQueue).Times(cacheSize)
 	// after *cacheSize* "legit" tasks are fed to our worker, start feeding our worker empty responses.
 	// these will get tossed away immediately after polled, but we still need them so gomock doesn't compain about unexpected calls.
 	// this is because our worker's poller doesn't stop, it keeps polling on the service client as long
 	// as Stop() is not called on the worker
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	// this gets called after polled decision tasks are processed, any number of times doesn't matter
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondDecisionTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	// this gets called after polled workflow tasks are processed, any number of times doesn't matter
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondWorkflowTaskCompletedResponse{}, nil).AnyTimes()
 	// this is the critical point of the test.
 	// ResetSticky should be called exactly once because our workflow cache evicts when full
 	// so if our worker puts *cacheSize* entries in the cache, it should evict exactly one

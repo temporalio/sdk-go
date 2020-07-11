@@ -115,8 +115,8 @@ type (
 		// Executed after all history events since the previous decision are applied to WorkflowDefinition
 		// Application level code must be executed from this function only.
 		// Execute call as well as callbacks called from WorkflowEnvironment functions can only schedule callbacks
-		// which can be executed from OnDecisionTaskStarted()
-		OnDecisionTaskStarted()
+		// which can be executed from OnWorkflowTaskStarted()
+		OnWorkflowTaskStarted()
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 		Close()
 	}
