@@ -39,7 +39,7 @@ type (
 	// WorkflowTimerClient wraps the async workflow timer functionality.
 	WorkflowTimerClient interface {
 
-		// Now - Current time when the decision task is started or replayed.
+		// Now - Current time when the workflow task is started or replayed.
 		// the workflow need to use this for wall clock to make the flow logic deterministic.
 		Now() time.Time
 

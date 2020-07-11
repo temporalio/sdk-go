@@ -235,7 +235,7 @@ type ServiceInvoker interface {
 // Use this method to unit test activity implementations that use context extractor methodshared.
 func WithActivityTask(
 	ctx context.Context,
-	task *workflowservice.PollForActivityTaskResponse,
+	task *workflowservice.PollActivityTaskQueueResponse,
 	taskQueue string,
 	invoker ServiceInvoker,
 	logger *zap.Logger,

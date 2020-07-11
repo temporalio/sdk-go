@@ -109,7 +109,7 @@ workflow code. It might contain *ActivityError in case if error comes from activ
 or *ApplicationError in case if error comes from child workflow itslef.
 
 When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
-That decision task will be retried at a later time (with exponential backoff retry intervals).
+That workflow task will be retried at a later time (with exponential backoff retry intervals).
 Workflow consumers will get an instance of *WorkflowExecutionError. This error will contains one of errors above.
 */
 

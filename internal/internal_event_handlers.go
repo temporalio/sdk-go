@@ -759,7 +759,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			weh.metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
+			weh.metricsScope.Counter(metrics.WorkflowTaskPanicCounter).Inc(1)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.logger.Error("ProcessEvent panic.",
@@ -787,20 +787,20 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		// No Operation
-	case enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED:
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED:
 		// No Operation
-	case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
 		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
 		// Reset the counter on decision helper used for generating ID for decisions
 		weh.decisionsHelper.setCurrentDecisionStartedEventID(event.GetEventId())
-		weh.workflowDefinition.OnDecisionTaskStarted()
+		weh.workflowDefinition.OnWorkflowTaskStarted()
 
-	case enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 		// No Operation
-	case enumspb.EVENT_TYPE_DECISION_TASK_FAILED:
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
 		// No Operation
-	case enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED:
+	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		weh.decisionsHelper.handleActivityTaskScheduled(
@@ -911,10 +911,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 
 	// When replaying histories to get stack trace or current state the last event might be not
-	// decision started. So always call OnDecisionTaskStarted on the last event.
-	// Don't call for EventType_DecisionTaskStarted as it was already called when handling it.
-	if isLast && event.GetEventType() != enumspb.EVENT_TYPE_DECISION_TASK_STARTED {
-		weh.workflowDefinition.OnDecisionTaskStarted()
+	// decision started. So always call OnWorkflowTaskStarted on the last event.
+	// Don't call for EventType_WorkflowTaskStarted as it was already called when handling it.
+	if isLast && event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+		weh.workflowDefinition.OnWorkflowTaskStarted()
 	}
 
 	return nil
@@ -1175,7 +1175,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		weh.SetCurrentReplayTime(lamd.ReplayTime)
 
 		// resume workflow execution after apply local activity result
-		weh.workflowDefinition.OnDecisionTaskStarted()
+		weh.workflowDefinition.OnWorkflowTaskStarted()
 	}
 
 	return nil

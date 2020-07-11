@@ -50,7 +50,7 @@ func (wd *EmptyWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, hea
 	env.Complete(payload, err)
 }
 
-func (wd *EmptyWorkflowDefinition) OnDecisionTaskStarted() {
+func (wd *EmptyWorkflowDefinition) OnWorkflowTaskStarted() {
 
 }
 
@@ -119,7 +119,7 @@ func (d *SingleActivityWorkflowDefinition) addCallback(callback bindings.ResultH
 	}
 }
 
-func (d *SingleActivityWorkflowDefinition) OnDecisionTaskStarted() {
+func (d *SingleActivityWorkflowDefinition) OnWorkflowTaskStarted() {
 	for _, callback := range d.callbacks {
 		callback()
 	}

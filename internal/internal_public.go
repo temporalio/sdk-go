@@ -58,28 +58,28 @@ type (
 		Unlock(err error)
 		ProcessWorkflowTask(workflowTask *workflowTask) (completeRequest interface{}, err error)
 		ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error)
-		// CompleteDecisionTask try to complete current decision task and get response that needs to be sent back to server.
+		// CompleteWorkflowTask try to complete current workflow task and get response that needs to be sent back to server.
 		// The waitLocalActivity is used to control if we should wait for outstanding local activities.
 		// If there is no outstanding local activities or if waitLocalActivity is false, the complete will return response
 		// which will be one of following:
-		// - RespondDecisionTaskCompletedRequest
-		// - RespondDecisionTaskFailedRequest
+		// - RespondWorkflowTaskCompletedRequest
+		// - RespondWorkflowTaskFailedRequest
 		// - RespondQueryTaskCompletedRequest
 		// If waitLocalActivity is true, and there is outstanding local activities, this call will return nil.
-		CompleteDecisionTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
+		CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
 		// GetWorkflowTaskTimeout returns the WorkflowTaskTimeout
 		GetDecisionTimeout() time.Duration
-		GetCurrentDecisionTask() *workflowservice.PollForDecisionTaskResponse
+		GetCurrentWorkflowTask() *workflowservice.PollWorkflowTaskQueueResponse
 		IsDestroyed() bool
 		StackTrace() string
 	}
 
-	// WorkflowTaskHandler represents decision task handlers.
+	// WorkflowTaskHandler represents workflow task handlers.
 	WorkflowTaskHandler interface {
 		// Processes the workflow task
 		// The response could be:
-		// - RespondDecisionTaskCompletedRequest
-		// - RespondDecisionTaskFailedRequest
+		// - RespondWorkflowTaskCompletedRequest
+		// - RespondWorkflowTaskFailedRequest
 		// - RespondQueryTaskCompletedRequest
 		ProcessWorkflowTask(
 			task *workflowTask,
@@ -94,7 +94,7 @@ type (
 		// - RespondActivityTaskCompletedRequest
 		// - RespondActivityTaskFailedRequest
 		// - RespondActivityTaskCanceledRequest
-		Execute(taskQueue string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error)
+		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error)
 	}
 )
 

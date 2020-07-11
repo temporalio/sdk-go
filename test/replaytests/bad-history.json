@@ -37,10 +37,10 @@
     {
       "eventId": "2",
       "timestamp": "1593300497764016736",
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097153",
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "replay-test"
         },
@@ -50,10 +50,10 @@
     {
       "eventId": "3",
       "timestamp": "1593300497780333506",
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097158",
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "2",
         "identity": "24014@ShtinUbuntu2@",
         "requestId": "8e49179d-f49a-4168-94d0-ed871bdedd96"
@@ -62,10 +62,10 @@
     {
       "eventId": "4",
       "timestamp": "1593300497788670410",
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097161",
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "2",
         "startedEventId": "3",
         "identity": "24014@ShtinUbuntu2@",
@@ -102,7 +102,7 @@
             ]
           }
         },
-        "decisionTaskCompletedEventId": "4"
+        "workflowTaskCompletedEventId": "4"
       }
     },
     {
@@ -112,7 +112,7 @@
       "version": "-24",
       "taskId": "2097163",
       "upsertWorkflowSearchAttributesEventAttributes": {
-        "decisionTaskCompletedEventId": "4",
+        "workflowTaskCompletedEventId": "4",
         "searchAttributes": {
           "indexedFields": {
             "TemporalChangeVersion": {
@@ -154,7 +154,7 @@
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
         "heartbeatTimeoutSeconds": 20,
-        "decisionTaskCompletedEventId": "4"
+        "workflowTaskCompletedEventId": "4"
       }
     }
   ]

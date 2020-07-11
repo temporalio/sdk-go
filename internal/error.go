@@ -110,7 +110,7 @@ if err != nil {
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
 workflow code. It will contains *ActivityError, which in turn will contains on of the errors above.
 When panic happen in workflow implementation code, SDK catches that panic and causing the decision timeout.
-That decision task will be retried at a later time (with exponential backoff retry intervals).
+That workflow task will be retried at a later time (with exponential backoff retry intervals).
 
 Workflow consumers will get an instance of *WorkflowExecutionError. This error will contains one of errors above.
 */

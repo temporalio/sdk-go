@@ -781,7 +781,7 @@ func (wc *workflowEnvironmentInterceptor) GetMetricsScope(ctx Context) tally.Sco
 	return wc.env.GetMetricsScope()
 }
 
-// Now returns the current time in UTC. It corresponds to the time when the decision task is started or replayed.
+// Now returns the current time in UTC. It corresponds to the time when the workflow task is started or replayed.
 // Workflow needs to use this method to get the wall clock time instead of the one from the golang library.
 func Now(ctx Context) time.Time {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
@@ -1101,7 +1101,7 @@ func (b EncodedValue) HasValue() bool {
 // history will be returned without executing the provided function during replay. This guarantees the deterministic
 // requirement for workflow as the exact same result will be returned in replay.
 // Common use case is to run some short non-deterministic code in workflow, like getting random number or new UUID.
-// The only way to fail SideEffect is to panic which causes decision task failure. The decision task after timeout is
+// The only way to fail SideEffect is to panic which causes workflow task failure. The workflow task after timeout is
 // rescheduled and re-executed giving SideEffect another chance to succeed.
 //
 // Caution: do not use SideEffect to modify closures. Always retrieve result from SideEffect's encoded return value.
@@ -1317,7 +1317,7 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType
 // Warning! Any action protected by this flag should not fail or if it does fail should ignore that failure or panic
 // on the failure. If workflow don't want to be blocked on those failure, it should ignore those failure; if workflow do
 // want to make sure it proceed only when that action succeed then it should panic on that failure. Panic raised from a
-// workflow causes decision task to fail and temporal server will rescheduled later to retry.
+// workflow causes workflow task to fail and temporal server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.IsReplaying(ctx)

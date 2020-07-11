@@ -410,7 +410,7 @@ type (
 		WorkflowRunTimeout time.Duration
 
 		// WorkflowTaskTimeout - The timeout for processing workflow task from the time the worker
-		// pulled this task. If a decision task is lost, it is retried after this timeout.
+		// pulled this task. If a workflow task is lost, it is retried after this timeout.
 		// The resolution is seconds.
 		// Optional: defaulted to 10 secs.
 		WorkflowTaskTimeout time.Duration

@@ -54,7 +54,7 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
 	_ decisionHeartbeatFunc,
 ) (interface{}, error) {
-	return &workflowservice.RespondDecisionTaskCompletedRequest{
+	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
 	}, nil
 }
@@ -71,7 +71,7 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
@@ -106,19 +106,19 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	defer cancel()
 
 	// mocks
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil)
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil)
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).Return(nil, nil)
 
-	response, err := s.service.PollForDecisionTask(ctx, &workflowservice.PollForDecisionTaskRequest{})
+	response, err := s.service.PollWorkflowTaskQueue(ctx, &workflowservice.PollWorkflowTaskQueueRequest{})
 	s.NoError(err)
 
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil)
-	completionRequest := request.(*workflowservice.RespondDecisionTaskCompletedRequest)
+	completionRequest := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)
 
-	_, err = s.service.RespondDecisionTaskCompleted(ctx, completionRequest)
+	_, err = s.service.RespondWorkflowTaskCompleted(ctx, completionRequest)
 	s.NoError(err)
 }
 
@@ -127,10 +127,10 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	defer cancel()
 
 	// mocks
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil)
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil)
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil)
 
-	response, err := s.service.PollForActivityTask(ctx, &workflowservice.PollForActivityTaskRequest{})
+	response, err := s.service.PollActivityTaskQueue(ctx, &workflowservice.PollActivityTaskQueueRequest{})
 	s.NoError(err)
 
 	// Execute activity task and respond to the service.
@@ -152,18 +152,18 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(3),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enumspb.EVENT_TYPE_DECISION_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
 		},
 		{
 			EventId:   5,
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
 		},
-		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(7),
+		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(7),
 	}
 	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "HelloWorld_Workflow", nil, false)
 
@@ -185,6 +185,6 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 	s.NoError(err)
 	s.Equal(3, len(events))
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, events[1].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_DECISION_TASK_STARTED, events[2].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
 }

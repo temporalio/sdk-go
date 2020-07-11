@@ -51,9 +51,9 @@ const (
 	DecisionExecutionLatency           = TemporalMetricsPrefix + "decision_execution_latency"
 	DecisionResponseFailedCounter      = TemporalMetricsPrefix + "decision_response_failed"
 	DecisionResponseLatency            = TemporalMetricsPrefix + "decision_response_latency"
-	DecisionTaskPanicCounter           = TemporalMetricsPrefix + "decision_task_panic"
-	DecisionTaskCompletedCounter       = TemporalMetricsPrefix + "decision_task_completed"
-	DecisionTaskForceCompleted         = TemporalMetricsPrefix + "decision_task_force_completed"
+	WorkflowTaskPanicCounter           = TemporalMetricsPrefix + "workflow_task_panic"
+	WorkflowTaskCompletedCounter       = TemporalMetricsPrefix + "workflow_task_completed"
+	WorkflowTaskForceCompleted         = TemporalMetricsPrefix + "workflow_task_force_completed"
 
 	ActivityPollCounter                = TemporalMetricsPrefix + "activity_poll_total"
 	ActivityPollFailedCounter          = TemporalMetricsPrefix + "activity_poll_failed"
