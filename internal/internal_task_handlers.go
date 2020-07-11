@@ -39,8 +39,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
@@ -113,7 +113,7 @@ type (
 
 		previousStartedEventID int64
 
-		newDecisions        []*decisionpb.Decision
+		newDecisions        []*commandpb.Command
 		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
 		decisionStartTime   time.Time
@@ -816,7 +816,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
-	var replayDecisions []*decisionpb.Decision
+	var replayDecisions []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
 	skipReplayCheck := w.skipReplayCheck()
@@ -1129,9 +1129,9 @@ func (w *workflowExecutionContextImpl) GetWorkflowTaskTimeout() time.Duration {
 	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
 }
 
-func skipDeterministicCheckForDecision(d *decisionpb.Decision) bool {
-	if d.GetDecisionType() == enumspb.DECISION_TYPE_RECORD_MARKER {
-		markerName := d.GetRecordMarkerDecisionAttributes().GetMarkerName()
+func skipDeterministicCheckForDecision(d *commandpb.Command) bool {
+	if d.GetCommandType() == enumspb.COMMAND_TYPE_RECORD_MARKER {
+		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
@@ -1163,7 +1163,7 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayDecisions []*decisionpb.Decision, historyEvents []*historypb.HistoryEvent) error {
+func matchReplayWithHistory(replayDecisions []*commandpb.Command, historyEvents []*historypb.HistoryEvent) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1183,7 +1183,7 @@ matchLoop:
 			}
 		}
 
-		var d *decisionpb.Decision
+		var d *commandpb.Command
 		if di < dSize {
 			d = replayDecisions[di]
 			if skipDeterministicCheckForDecision(d) {
@@ -1219,179 +1219,179 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isDecisionMatchEvent(d *decisionpb.Decision, e *historypb.HistoryEvent, strictMode bool) bool {
-	switch d.GetDecisionType() {
-	case enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
+func isDecisionMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strictMode bool) bool {
+	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
 			return false
 		}
 		eventAttributes := e.GetActivityTaskScheduledEventAttributes()
-		decisionAttributes := d.GetScheduleActivityTaskDecisionAttributes()
+		commandAttributes := d.GetScheduleActivityTaskCommandAttributes()
 
-		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
-			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) ||
-			(strictMode && !proto.Equal(eventAttributes.GetInput(), decisionAttributes.GetInput())) {
+		if eventAttributes.GetActivityId() != commandAttributes.GetActivityId() ||
+			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(commandAttributes.ActivityType.GetName()) ||
+			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) ||
+			(strictMode && !proto.Equal(eventAttributes.GetInput(), commandAttributes.GetInput())) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED {
 			return false
 		}
-		decisionAttributes := d.GetRequestCancelActivityTaskDecisionAttributes()
+		commandAttributes := d.GetRequestCancelActivityTaskCommandAttributes()
 		eventAttributes := e.GetActivityTaskCancelRequestedEventAttributes()
-		if eventAttributes.GetScheduledEventId() != decisionAttributes.GetScheduledEventId() {
+		if eventAttributes.GetScheduledEventId() != commandAttributes.GetScheduledEventId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_START_TIMER:
+	case enumspb.COMMAND_TYPE_START_TIMER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_STARTED {
 			return false
 		}
 		eventAttributes := e.GetTimerStartedEventAttributes()
-		decisionAttributes := d.GetStartTimerDecisionAttributes()
+		commandAttributes := d.GetStartTimerCommandAttributes()
 
-		if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() ||
-			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != decisionAttributes.GetStartToFireTimeoutSeconds()) {
+		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() ||
+			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != commandAttributes.GetStartToFireTimeoutSeconds()) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_CANCEL_TIMER:
+	case enumspb.COMMAND_TYPE_CANCEL_TIMER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_CANCELED && e.GetEventType() != enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
 			return false
 		}
-		decisionAttributes := d.GetCancelTimerDecisionAttributes()
+		commandAttributes := d.GetCancelTimerCommandAttributes()
 		if e.GetEventType() == enumspb.EVENT_TYPE_TIMER_CANCELED {
 			eventAttributes := e.GetTimerCanceledEventAttributes()
-			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 				return false
 			}
 		} else if e.GetEventType() == enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
 			eventAttributes := e.GetCancelTimerFailedEventAttributes()
-			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
-			decisionAttributes := d.GetCompleteWorkflowExecutionDecisionAttributes()
+			commandAttributes := d.GetCompleteWorkflowExecutionCommandAttributes()
 
-			if !proto.Equal(eventAttributes.GetResult(), decisionAttributes.GetResult()) {
+			if !proto.Equal(eventAttributes.GetResult(), commandAttributes.GetResult()) {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
-			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
+			commandAttributes := d.GetFailWorkflowExecutionCommandAttributes()
 
-			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
+			if !proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_RECORD_MARKER:
+	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_MARKER_RECORDED {
 			return false
 		}
 		eventAttributes := e.GetMarkerRecordedEventAttributes()
-		decisionAttributes := d.GetRecordMarkerDecisionAttributes()
-		if eventAttributes.GetMarkerName() != decisionAttributes.GetMarkerName() {
+		commandAttributes := d.GetRecordMarkerCommandAttributes()
+		if eventAttributes.GetMarkerName() != commandAttributes.GetMarkerName() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetRequestCancelExternalWorkflowExecutionDecisionAttributes()
-		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
-			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
+		commandAttributes := d.GetRequestCancelExternalWorkflowExecutionCommandAttributes()
+		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetSignalExternalWorkflowExecutionDecisionAttributes()
-		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
-			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
-			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
+		commandAttributes := d.GetSignalExternalWorkflowExecutionCommandAttributes()
+		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+			eventAttributes.GetSignalName() != commandAttributes.GetSignalName() ||
+			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.Execution.GetWorkflowId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_CANCEL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
-			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if !proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
+			commandAttributes := d.GetCancelWorkflowExecutionCommandAttributes()
+			if !proto.Equal(eventAttributes.GetDetails(), commandAttributes.GetDetails()) {
 				return false
 			}
 		}
 		return true
 
-	case enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_START_CHILD_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetStartChildWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetStartChildWorkflowExecutionDecisionAttributes()
-		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
-			(strictMode && checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace())) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) {
+		commandAttributes := d.GetStartChildWorkflowExecutionCommandAttributes()
+		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(commandAttributes.WorkflowType.GetName()) ||
+			(strictMode && checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace())) ||
+			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
+	case enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		if e.GetEventType() != enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES {
 			return false
 		}
 		eventAttributes := e.GetUpsertWorkflowSearchAttributesEventAttributes()
-		decisionAttributes := d.GetUpsertWorkflowSearchAttributesDecisionAttributes()
-		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes) {
+		commandAttributes := d.GetUpsertWorkflowSearchAttributesCommandAttributes()
+		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, commandAttributes.SearchAttributes) {
 			return false
 		}
 		return true
@@ -1422,7 +1422,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	eventHandler *workflowExecutionEventHandlerImpl,
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	workflowContext *workflowExecutionContextImpl,
-	decisions []*decisionpb.Decision,
+	commands []*commandpb.Command,
 	forceNewDecision bool) interface{} {
 
 	// for query task
@@ -1462,22 +1462,22 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 
 	// complete workflow task
-	var closeDecision *decisionpb.Decision
+	var closeDecision *commandpb.Command
 	var canceledErr *CanceledError
 	var contErr *ContinueAsNewError
 
 	if errors.As(workflowContext.err, &canceledErr) {
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_CANCEL_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
+		closeDecision = createNewDecision(enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION)
+		closeDecision.Attributes = &commandpb.Command_CancelWorkflowExecutionCommandAttributes{CancelWorkflowExecutionCommandAttributes: &commandpb.CancelWorkflowExecutionCommandAttributes{
 			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
 		}}
 	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
+		closeDecision = createNewDecision(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
+		closeDecision.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
 			Input:                      contErr.params.Input,
 			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName},
@@ -1490,22 +1490,22 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION)
+		closeDecision = createNewDecision(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := convertErrorToFailure(workflowContext.err, wth.dataConverter)
-		closeDecision.Attributes = &decisionpb.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &decisionpb.FailWorkflowExecutionDecisionAttributes{
+		closeDecision.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
 		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
 		metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_CompleteWorkflowExecutionDecisionAttributes{CompleteWorkflowExecutionDecisionAttributes: &decisionpb.CompleteWorkflowExecutionDecisionAttributes{
+		closeDecision = createNewDecision(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION)
+		closeDecision.Attributes = &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
 			Result: workflowContext.result,
 		}}
 	}
 
 	if closeDecision != nil {
-		decisions = append(decisions, closeDecision)
+		commands = append(commands, closeDecision)
 		elapsed := time.Since(workflowContext.workflowStartTime)
 		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewDecision = false
@@ -1532,7 +1532,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
-		Decisions:                  decisions,
+		Commands:                   commands,
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewDecision,
@@ -1845,9 +1845,9 @@ func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames 
 	return
 }
 
-func createNewDecision(decisionType enumspb.DecisionType) *decisionpb.Decision {
-	return &decisionpb.Decision{
-		DecisionType: decisionType,
+func createNewDecision(commandType enumspb.CommandType) *commandpb.Command {
+	return &commandpb.Command{
+		CommandType: commandType,
 	}
 }
 

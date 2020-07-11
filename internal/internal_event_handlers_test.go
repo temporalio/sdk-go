@@ -180,7 +180,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
 	)
 	require.NoError(t, err)
-	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
+	_, ok := env.decisionsHelper.decisions[makeDecisionID(commandTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
 	require.Equal(t, int64(7), env.GenerateSequence())
 

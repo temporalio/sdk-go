@@ -433,7 +433,7 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
-	ts.T().Skip(`Currently fails with "PanicError": "unknown decision internal.decisionID{decisionType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
+	ts.T().Skip(`Currently fails with "PanicError": "unknown decision internal.decisionID{commandType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
 	ts.NoError(err)

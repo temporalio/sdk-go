@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"reflect"
 
-	decisionpb "go.temporal.io/api/decision/v1"
+	commandpb "go.temporal.io/api/command/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 )
@@ -157,33 +157,33 @@ func HistoryEventToString(e *historypb.HistoryEvent) string {
 }
 
 // DecisionToString convert Decision to string
-func DecisionToString(d *decisionpb.Decision) string {
+func DecisionToString(d *commandpb.Command) string {
 	var data interface{}
-	switch d.GetDecisionType() {
-	case enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
-		data = d.GetScheduleActivityTaskDecisionAttributes()
+	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
+		data = d.GetScheduleActivityTaskCommandAttributes()
 
-	case enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
-		data = d.GetRequestCancelActivityTaskDecisionAttributes()
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
+		data = d.GetRequestCancelActivityTaskCommandAttributes()
 
-	case enumspb.DECISION_TYPE_START_TIMER:
-		data = d.GetStartTimerDecisionAttributes()
+	case enumspb.COMMAND_TYPE_START_TIMER:
+		data = d.GetStartTimerCommandAttributes()
 
-	case enumspb.DECISION_TYPE_CANCEL_TIMER:
-		data = d.GetCancelTimerDecisionAttributes()
+	case enumspb.COMMAND_TYPE_CANCEL_TIMER:
+		data = d.GetCancelTimerCommandAttributes()
 
-	case enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
-		data = d.GetCompleteWorkflowExecutionDecisionAttributes()
+	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
+		data = d.GetCompleteWorkflowExecutionCommandAttributes()
 
-	case enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
-		data = d.GetFailWorkflowExecutionDecisionAttributes()
+	case enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION:
+		data = d.GetFailWorkflowExecutionCommandAttributes()
 
-	case enumspb.DECISION_TYPE_RECORD_MARKER:
-		data = d.GetRecordMarkerDecisionAttributes()
+	case enumspb.COMMAND_TYPE_RECORD_MARKER:
+		data = d.GetRecordMarkerCommandAttributes()
 
 	default:
 		data = d
 	}
 
-	return d.GetDecisionType().String() + ": " + anyToString(data)
+	return d.GetCommandType().String() + ": " + anyToString(data)
 }

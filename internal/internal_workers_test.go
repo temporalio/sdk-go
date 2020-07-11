@@ -305,16 +305,16 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 		respondCounter++
 		switch respondCounter {
 		case 1:
-			s.Equal(1, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
+			s.Equal(1, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:7]
 			return &workflowservice.RespondWorkflowTaskCompletedResponse{WorkflowTask: task}, nil
 		case 2:
-			s.Equal(2, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
-			s.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, request.Decisions[1].GetDecisionType())
+			s.Equal(2, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
+			s.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, request.Commands[1].GetCommandType())
 			task.PreviousStartedEventId = 7
 			task.StartedEventId = 11
 			task.History.Events = testEvents[7:11]
@@ -446,8 +446,8 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		respondCounter++
 		switch respondCounter {
 		case 1:
-			s.Equal(3, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
+			s.Equal(3, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:11]

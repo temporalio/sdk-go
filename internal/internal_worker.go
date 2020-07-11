@@ -1271,20 +1271,20 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	if resp != nil {
 		completeReq, ok := resp.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 		if ok {
-			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
+			for _, d := range completeReq.Commands {
+				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
-						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().GetInput()
+						inputA := d.GetContinueAsNewWorkflowExecutionCommandAttributes().GetInput()
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
 						if proto.Equal(inputA, inputB) {
 							return nil
 						}
 					}
 				}
-				if d.GetDecisionType() == enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION {
+				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
-						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
+						resultB := d.GetCompleteWorkflowExecutionCommandAttributes().GetResult()
 						if proto.Equal(resultA, resultB) {
 							return nil
 						}

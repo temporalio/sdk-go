@@ -30,14 +30,14 @@ import (
 	"github.com/stretchr/testify/require"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 )
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -52,7 +52,7 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -61,15 +61,15 @@ func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_START_TIMER, decisions[0].GetDecisionType())
-	require.Equal(t, attributes, decisions[0].GetStartTimerDecisionAttributes())
+	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, decisions[0].GetCommandType())
+	require.Equal(t, attributes, decisions[0].GetStartTimerCommandAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateInitiated, d.getState())
 	h.cancelTimer(timerID)
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_CANCEL_TIMER, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, decisions[0].GetCommandType())
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
 	h.handleTimerCanceled(timerID)
 	require.Equal(t, decisionStateCompleted, d.getState())
@@ -78,7 +78,7 @@ func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -87,7 +87,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_START_TIMER, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, decisions[0].GetCommandType())
 	h.cancelTimer(timerID)
 	require.Equal(t, decisionStateCanceledBeforeInitiated, d.getState())
 	require.Equal(t, 0, len(h.getDecisions(true)))
@@ -95,7 +95,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_CANCEL_TIMER, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, decisions[0].GetCommandType())
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
 	h.handleTimerClosed(timerID)
 	require.Equal(t, decisionStateCompletedAfterCancellationDecisionSent, d.getState())
@@ -104,7 +104,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -113,7 +113,7 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_START_TIMER, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, decisions[0].GetCommandType())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateInitiated, d.getState())
 	require.Equal(t, 0, len(h.getDecisions(false)))
@@ -124,7 +124,7 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 func Test_TimerStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -144,7 +144,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"
 	localActivityID := "test-activity-1"
-	attributes := &decisionpb.StartTimerDecisionAttributes{
+	attributes := &commandpb.StartTimerCommandAttributes{
 		TimerId: timerID,
 	}
 	h := newDecisionsHelper()
@@ -153,8 +153,8 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_START_TIMER, decisions[0].GetDecisionType())
-	require.Equal(t, attributes, decisions[0].GetStartTimerDecisionAttributes())
+	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, decisions[0].GetCommandType())
+	require.Equal(t, attributes, decisions[0].GetStartTimerCommandAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, decisionStateInitiated, d.getState())
 	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil)
@@ -163,14 +163,14 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 2, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_RECORD_MARKER, decisions[0].GetDecisionType())
-	require.Equal(t, enumspb.DECISION_TYPE_CANCEL_TIMER, decisions[1].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, decisions[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, decisions[1].GetCommandType())
 }
 
 func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
-	attributes := &decisionpb.ScheduleActivityTaskDecisionAttributes{
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
@@ -183,7 +183,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetCommandType())
 
 	// activity scheduled
 	h.handleActivityTaskScheduled(scheduleID, activityID)
@@ -197,7 +197,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
-	attributes := &decisionpb.ScheduleActivityTaskDecisionAttributes{
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
@@ -220,7 +220,7 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
-	attributes := &decisionpb.ScheduleActivityTaskDecisionAttributes{
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
@@ -232,7 +232,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	require.Equal(t, decisionStateCreated, d.getState())
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetCommandType())
 
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
@@ -244,7 +244,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, decisions[0].GetCommandType())
 
 	// activity canceled
 	h.handleActivityTaskCanceled(activityID)
@@ -255,7 +255,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
-	attributes := &decisionpb.ScheduleActivityTaskDecisionAttributes{
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
@@ -267,7 +267,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, decisionStateCreated, d.getState())
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, decisions[0].GetCommandType())
 
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
@@ -279,7 +279,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, decisionStateCanceledAfterInitiated, d.getState())
 	decisions = h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, decisions[0].GetCommandType())
 
 	// activity completed after cancel
 	h.handleActivityTaskClosed(activityID)
@@ -290,7 +290,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
-	attributes := &decisionpb.ScheduleActivityTaskDecisionAttributes{
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
 		ActivityId: activityID,
 	}
 	h := newDecisionsHelper()
@@ -321,7 +321,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	t.Parallel()
 	workflowID := "test-child-workflow-1"
-	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{
 		WorkflowId: workflowID,
 	}
 	h := newDecisionsHelper()
@@ -334,7 +334,7 @@ func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_START_CHILD_WORKFLOW_EXECUTION, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION, decisions[0].GetCommandType())
 
 	// child workflow initiated
 	h.handleStartChildWorkflowExecutionInitiated(workflowID)
@@ -359,7 +359,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	runID := ""
 	cancellationID := ""
 	initiatedEventID := int64(28)
-	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{
 		WorkflowId: workflowID,
 	}
 	h := newDecisionsHelper()
@@ -381,7 +381,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetCommandType())
 
 	// cancel request initiated
 	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
@@ -401,7 +401,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := ""
-	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{
 		WorkflowId: workflowID,
 	}
 	cancellationID := ""
@@ -449,7 +449,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	decisions = h.getDecisions(true)
 	require.Equal(t, decisionStateCancellationDecisionSent, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetCommandType())
 
 	// invalid: start child workflow failed after it was already started
 	err = runAndCatchPanic(func() {
@@ -483,7 +483,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	namespace := "test-namespace"
 	workflowID := "test-workflow-id"
 	runID := ""
-	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{
 		WorkflowId: workflowID,
 	}
 	cancellationID := ""
@@ -526,7 +526,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateCompleted, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_RECORD_MARKER, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, decisions[0].GetCommandType())
 }
 
 func Test_UpsertSearchAttributesDecisionStateMachine(t *testing.T) {
@@ -540,7 +540,7 @@ func Test_UpsertSearchAttributesDecisionStateMachine(t *testing.T) {
 	decisions := h.getDecisions(true)
 	require.Equal(t, decisionStateCompleted, d.getState())
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, decisions[0].GetCommandType())
 }
 
 func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
@@ -555,23 +555,23 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	// request cancel external workflow
 	decision := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
-	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
+	d := h.getDecision(makeDecisionID(commandTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// send decisions
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetCommandType())
 	require.Equal(
 		t,
-		&decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes{
+		&commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
 			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},
-		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),
+		decisions[0].GetRequestCancelExternalWorkflowExecutionCommandAttributes(),
 	)
 
 	// cancel request initiated
@@ -601,23 +601,23 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	// request cancel external workflow
 	decision := h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, false)
 	require.False(t, decision.isDone())
-	d := h.getDecision(makeDecisionID(decisionTypeCancellation, cancellationID))
+	d := h.getDecision(makeDecisionID(commandTypeCancellation, cancellationID))
 	require.Equal(t, decisionStateCreated, d.getState())
 
 	// send decisions
 	decisions := h.getDecisions(true)
 	require.Equal(t, 1, len(decisions))
-	require.Equal(t, enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetDecisionType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, decisions[0].GetCommandType())
 	require.Equal(
 		t,
-		&decisionpb.RequestCancelExternalWorkflowExecutionDecisionAttributes{
+		&commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
 			Namespace:         namespace,
 			WorkflowId:        workflowID,
 			RunId:             runID,
 			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},
-		decisions[0].GetRequestCancelExternalWorkflowExecutionDecisionAttributes(),
+		decisions[0].GetRequestCancelExternalWorkflowExecutionCommandAttributes(),
 	)
 
 	// cancel request initiated

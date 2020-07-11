@@ -34,8 +34,8 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.uber.org/zap"
 )
@@ -142,7 +142,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityDecisionStateMachine(
 		5,
-		&decisionpb.ScheduleActivityTaskDecisionAttributes{ActivityId: activityID})
+		&commandpb.ScheduleActivityTaskCommandAttributes{ActivityId: activityID})
 	di.state = decisionStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r *commonpb.Payloads, e error) {
@@ -462,7 +462,7 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	signalID := "signalID"
 	context.decisionsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	di := h.newSignalExternalWorkflowStateMachine(
-		&decisionpb.SignalExternalWorkflowExecutionDecisionAttributes{},
+		&commandpb.SignalExternalWorkflowExecutionCommandAttributes{},
 		signalID,
 	)
 	di.state = decisionStateInitiated

@@ -39,8 +39,8 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -529,7 +529,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		Header:       env.header,
 	}
 
-	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	if parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
 	} else {
@@ -978,7 +978,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
-	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 
 	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
@@ -1049,7 +1049,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 
 // Copy of the server function func (v *decisionAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
-	attributes *decisionpb.ScheduleActivityTaskDecisionAttributes,
+	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	runTimeout int32,
 ) error {
 
@@ -1061,7 +1061,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	// }
 
 	if attributes == nil {
-		return serviceerror.NewInvalidArgument("ScheduleActivityTaskDecisionAttributes is not set on decision.")
+		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on decision.")
 	}
 
 	defaultTaskQueueName := ""
@@ -1826,7 +1826,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 }
 
 func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
-	attr *decisionpb.ScheduleActivityTaskDecisionAttributes) *workflowservice.PollActivityTaskQueueResponse {
+	attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollActivityTaskQueueResponse{
 		WorkflowExecution: &commonpb.WorkflowExecution{

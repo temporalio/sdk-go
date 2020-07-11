@@ -36,8 +36,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -376,7 +376,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		return
 	}
 
-	attributes := &decisionpb.StartChildWorkflowExecutionDecisionAttributes{}
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{}
 
 	attributes.Namespace = params.Namespace
 	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName}
@@ -444,14 +444,14 @@ func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.decisionsHelper.getNextID()
 }
 
-func (wc *workflowEnvironmentImpl) CreateNewDecision(decisionType enumspb.DecisionType) *decisionpb.Decision {
-	return &decisionpb.Decision{
-		DecisionType: decisionType,
+func (wc *workflowEnvironmentImpl) CreateNewDecision(commandType enumspb.CommandType) *commandpb.Command {
+	return &commandpb.Command{
+		CommandType: commandType,
 	}
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
-	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	scheduleID := wc.GenerateSequence()
 	if parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
@@ -554,7 +554,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	}
 
 	timerID := wc.GenerateSequenceID()
-	startTimerAttr := &decisionpb.StartTimerDecisionAttributes{}
+	startTimerAttr := &commandpb.StartTimerCommandAttributes{}
 	startTimerAttr.TimerId = timerID
 	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ceil(d.Seconds())
 

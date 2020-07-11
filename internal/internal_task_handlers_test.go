@@ -37,8 +37,8 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
@@ -415,9 +415,9 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
-	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
+	t.NotNil(response.Commands[0].GetScheduleActivityTaskCommandAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
@@ -471,9 +471,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
-	checksumsPayload := response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[0].GetCommandType())
+	checksumsPayload := response.Commands[0].GetCompleteWorkflowExecutionCommandAttributes().GetResult()
 	var checksums []string
 	_ = DefaultDataConverter.FromPayloads(checksumsPayload, &checksums)
 	t.Equal(3, len(checksums))
@@ -512,9 +512,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
-	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
+	t.NotNil(response.Commands[0].GetScheduleActivityTaskCommandAttributes())
 
 	// Schedule an activity and see if we complete workflow, Having only one last decision.
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
@@ -522,9 +522,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	response = request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
-	t.NotNil(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes())
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[0].GetCommandType())
+	t.NotNil(response.Commands[0].GetCompleteWorkflowExecutionCommandAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
@@ -563,9 +563,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK, response.Decisions[0].GetDecisionType())
-	t.NotNil(response.Decisions[0].GetScheduleActivityTaskDecisionAttributes())
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
+	t.NotNil(response.Commands[0].GetScheduleActivityTaskCommandAttributes())
 
 	// then check the current state using query task
 	task = createQueryTask([]*historypb.HistoryEvent{}, 6, "HelloWorld_Workflow", queryType)
@@ -900,10 +900,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// Verify there's at least 1 decision
 	// and the last last decision is to fail workflow
 	// and contains proper justification.(i.e. nondeterminism).
-	t.True(len(response.Decisions) > 0)
-	closeDecision := response.Decisions[len(response.Decisions)-1]
-	t.Equal(closeDecision.DecisionType, enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION)
-	t.Contains(closeDecision.GetFailWorkflowExecutionDecisionAttributes().GetFailure().GetMessage(), "FailWorkflow")
+	t.True(len(response.Commands) > 0)
+	closeDecision := response.Commands[len(response.Commands)-1]
+	t.Equal(closeDecision.CommandType, enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
+	t.Contains(closeDecision.GetFailWorkflowExecutionCommandAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
@@ -935,8 +935,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
-	t.EqualValues(enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
-	attr := r.Decisions[0].GetFailWorkflowExecutionDecisionAttributes()
+	t.EqualValues(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
+	attr := r.Commands[0].GetFailWorkflowExecutionCommandAttributes()
 	t.EqualValues("panicError", attr.GetFailure().GetMessage())
 	t.NotNil(attr.GetFailure().GetApplicationFailureInfo())
 	t.EqualValues("PanicError", attr.GetFailure().GetApplicationFailureInfo().GetType())
@@ -1017,8 +1017,8 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.NotNil(request)
 	r, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
-	t.EqualValues(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Decisions[0].GetDecisionType())
-	attr := r.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes()
+	t.EqualValues(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
+	attr := r.Commands[0].GetCompleteWorkflowExecutionCommandAttributes()
 	var result WorkflowInfo
 	t.NoError(getDefaultDataConverter().FromPayloads(attr.Result, &result))
 	t.EqualValues(taskQueue, result.TaskQueueName)
@@ -1103,7 +1103,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Len(response.Decisions, 0)
+	t.Len(response.Commands, 0)
 	answer, _ := DefaultDataConverter.ToPayloads(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
@@ -1123,7 +1123,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	response = request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Len(response.Decisions, 1)
+	t.Len(response.Commands, 1)
 	answer, _ = DefaultDataConverter.ToPayloads("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
@@ -1170,9 +1170,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Decisions))
-	t.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Decisions[0].GetDecisionType())
-	t.NotNil(response.Decisions[0].GetCompleteWorkflowExecutionDecisionAttributes())
+	t.Equal(1, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[0].GetCommandType())
+	t.NotNil(response.Commands[0].GetCompleteWorkflowExecutionCommandAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
@@ -1502,12 +1502,12 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {
-	decisionTypes := enumspb.DecisionType_name
-	delete(decisionTypes, 0) // Ignore "Unspecified".
+	commandTypes := enumspb.CommandType_name
+	delete(commandTypes, 0) // Ignore "Unspecified".
 
-	require.Equal(t, 13, len(decisionTypes), "If you see this error, you are adding new decision type. "+
+	require.Equal(t, 13, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
-		"to check the new decision type. Otherwise the replay will fail on the new decision event.")
+		"to check the new command type. Otherwise the replay will fail on the new decision event.")
 
 	eventTypes := enumspb.EventType_value
 	decisionEventTypeCount := 0
@@ -1517,26 +1517,26 @@ func Test_NonDeterministicCheck(t *testing.T) {
 		}
 	}
 	// CancelTimer has 2 corresponding events.
-	require.Equal(t, len(decisionTypes)+1, decisionEventTypeCount, "Every decision type must have one matching event type. "+
-		"If you add new decision type, you need to update isDecisionEvent() method to include that new event type as well.")
+	require.Equal(t, len(commandTypes)+1, decisionEventTypeCount, "Every command type must have one matching event type. "+
+		"If you add new command type, you need to update isDecisionEvent() method to include that new event type as well.")
 }
 
 func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
-	diType := enumspb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
+	diType := enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	eType := enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	strictMode := false
 
 	testCases := []struct {
 		name     string
-		decision *decisionpb.Decision
+		decision *commandpb.Command
 		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
 			name: "event type not match",
-			decision: &decisionpb.Decision{
-				DecisionType: diType,
-				Attributes: &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: &decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes{
+			decision: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
@@ -1545,9 +1545,9 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 		},
 		{
 			name: "attributes not match",
-			decision: &decisionpb.Decision{
-				DecisionType: diType,
-				Attributes: &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: &decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes{
+			decision: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
@@ -1558,9 +1558,9 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 		},
 		{
 			name: "attributes match",
-			decision: &decisionpb.Decision{
-				DecisionType: diType,
-				Attributes: &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: &decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes{
+			decision: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
@@ -1584,15 +1584,15 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	testCases = []struct {
 		name     string
-		decision *decisionpb.Decision
+		decision *commandpb.Command
 		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
 			name: "attributes not match",
-			decision: &decisionpb.Decision{
-				DecisionType: diType,
-				Attributes: &decisionpb.Decision_UpsertWorkflowSearchAttributesDecisionAttributes{UpsertWorkflowSearchAttributesDecisionAttributes: &decisionpb.UpsertWorkflowSearchAttributesDecisionAttributes{
+			decision: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
 				}},
 			},
