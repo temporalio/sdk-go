@@ -672,9 +672,9 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	// now change the history event so it does not match to command produced via replay
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
-	// newWorkflowWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
-	newWorkflowWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 	t.Error(err)
@@ -706,9 +706,9 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 	for _, startEventID := range []int64{0, 3} {
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
-		// newWorkflowWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in getWorkflowCache().
-		newWorkflowWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 		t.Error(err)
@@ -761,9 +761,9 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		// Cut the workflow task scheduled ans started events
 		task.History.Events = task.History.Events[:len(task.History.Events)-2]
 		task.StartedEventId = tc.startedEventID
-		// newWorkflowWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in getWorkflowCache().
-		newWorkflowWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 		if tc.isResultErr {
@@ -877,9 +877,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// now change the history event so it does not match to command produced via replay
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
-	// newWorkflowWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
+	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in getWorkflowCache().
-	newWorkflowWorkerInternal(taskHandler, t.service, params, stopC)
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, stopC)
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Error(err)
 	t.Nil(request)
@@ -1052,7 +1052,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
 	task.Queries = map[string]*querypb.WorkflowQuery{"query_id": {}}
-	newWorkflowWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 	// query and queries are both specified so this is an invalid task
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
