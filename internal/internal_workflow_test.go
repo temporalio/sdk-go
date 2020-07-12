@@ -469,7 +469,7 @@ func (s *WorkflowUnitTest) Test_CancelWorkflow() {
 
 func cancelWorkflowAfterActivityTest(ctx Context) ([]byte, error) {
 	// The workflow cancellation should handle activity and timer cancellation
-	// not to propagate those command.
+	// not to propagate those commands.
 
 	// schedule an activity.
 	ao := ActivityOptions{

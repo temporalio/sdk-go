@@ -277,10 +277,10 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel)
+	return newWorkflowWorkerInternal(taskHandler, service, params, workerStopChannel)
 }
 
-func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters, stopC chan struct{}) *workflowWorker {
+func newWorkflowWorkerInternal(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters, stopC chan struct{}) *workflowWorker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
@@ -290,7 +290,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 		maxTaskPerSecond:  params.WorkerWorkflowTasksPerSecond,
 		taskWorker:        poller,
 		identity:          params.Identity,
-		workerType:        "WorkflowTaskWorker",
+		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
@@ -1022,7 +1022,7 @@ var binaryChecksumLock sync.Mutex
 // workflow task completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
 // mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
 // by the binary.
-// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow task and make any progress any more.
+// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()

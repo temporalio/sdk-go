@@ -404,7 +404,7 @@ func (w *Workflows) CancelActivity(ctx workflow.Context) ([]string, error) {
 	})
 
 	_ = workflow.ExecuteActivity(activityCtx1, "Prefix_ToUpperWithDelay", "hello", 2*time.Second)
-	// Sleep to send workflow tasks to the server.
+	// Sleep to send commands to the server.
 	_ = workflow.Sleep(ctx, 1*time.Second)
 	cancelFunc1()
 
@@ -421,7 +421,7 @@ func (w *Workflows) CancelTimer(ctx workflow.Context) ([]string, error) {
 	timerCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 
 	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
-	// Sleep to send workflow tasks to the server.
+	// Sleep to send commands to the server.
 	_ = workflow.Sleep(ctx, 1*time.Second)
 	cancelFunc1()
 
@@ -442,7 +442,7 @@ func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) 
 	}
 	childCtx1 = workflow.WithChildOptions(childCtx1, opts)
 	_ = workflow.ExecuteChildWorkflow(childCtx1, w.sleep, 3*time.Second)
-	// Sleep to send workflow tasks to the server.
+	// Sleep to send commands to the server.
 	_ = workflow.Sleep(ctx, 1*time.Second)
 	cancelFunc1()
 

@@ -226,7 +226,7 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 // workflow task completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
 // mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
 // by the binary.
-// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow task and make any progress any more.
+// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
 }

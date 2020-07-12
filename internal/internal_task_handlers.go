@@ -470,7 +470,7 @@ func (w *workflowExecutionContextImpl) Lock() {
 func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
-		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
+		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
@@ -835,7 +835,7 @@ ProcessEvents:
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
-		// Markers are from the events that are produced from the current command
+		// Markers are from the events that are produced from the current workflow task.
 		for _, m := range markers {
 			if m.GetMarkerRecordedEventAttributes().GetMarkerName() != localActivityMarkerName {
 				// local activity marker needs to be applied after workflow task started event

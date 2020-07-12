@@ -911,7 +911,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 
 	// When replaying histories to get stack trace or current state the last event might be not
-	// command started. So always call OnWorkflowTaskStarted on the last event.
+	// workflow task started. So always call OnWorkflowTaskStarted on the last event.
 	// Don't call for EventType_WorkflowTaskStarted as it was already called when handling it.
 	if isLast && event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
 		weh.workflowDefinition.OnWorkflowTaskStarted()

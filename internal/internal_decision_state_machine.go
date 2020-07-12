@@ -871,9 +871,9 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
 		panicIllegalState(panicMsg)
 	}
 
-	// During processing of a command we reorder all GetVersion markers and process them first
-	// Keep track of all GetVersion marker events during the processing of command so we can
-	// generate correct eventIDs for other events during replay
+	// During processing of a workflow task we reorder all GetVersion markers and process them first.
+	// Keep track of all GetVersion marker events during the processing of workflow task so we can
+	// generate correct eventIDs for other events during replay.
 	h.versionMarkerLookup[eventID] = changeID
 }
 
