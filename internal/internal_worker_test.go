@@ -1703,34 +1703,34 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
-	decisionWorker := aggWorker.workflowWorker
-	require.True(t, decisionWorker.executionParameters.Identity != "")
-	require.NotNil(t, decisionWorker.executionParameters.Logger)
-	require.NotNil(t, decisionWorker.executionParameters.MetricsScope)
-	require.Nil(t, decisionWorker.executionParameters.ContextPropagators)
+	workflowWorker := aggWorker.workflowWorker
+	require.True(t, workflowWorker.executionParameters.Identity != "")
+	require.NotNil(t, workflowWorker.executionParameters.Logger)
+	require.NotNil(t, workflowWorker.executionParameters.MetricsScope)
+	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
-		Namespace:                            DefaultNamespace,
-		TaskQueue:                            taskQueue,
-		MaxConcurrentActivityPollers:         defaultConcurrentPollRoutineSize,
-		MaxConcurrentDecisionPollers:         defaultConcurrentPollRoutineSize,
-		ConcurrentLocalActivityExecutionSize: defaultMaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:      defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:  defaultMaxConcurrentTaskExecutionSize,
-		WorkerActivitiesPerSecond:            defaultTaskQueueActivitiesPerSecond,
-		WorkerWorkflowTasksPerSecond:         defaultWorkerTaskExecutionRate,
-		TaskQueueActivitiesPerSecond:         defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:       defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:         stickyDecisionScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                        getDefaultDataConverter(),
-		Tracer:                               opentracing.NoopTracer{},
-		Logger:                               decisionWorker.executionParameters.Logger,
-		MetricsScope:                         decisionWorker.executionParameters.MetricsScope,
-		Identity:                             decisionWorker.executionParameters.Identity,
-		UserContext:                          decisionWorker.executionParameters.UserContext,
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             taskQueue,
+		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
+		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
+		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
+		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
+		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
+		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
+		WorkerWorkflowTasksPerSecond:          defaultWorkerTaskExecutionRate,
+		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                         getDefaultDataConverter(),
+		Tracer:                                opentracing.NoopTracer{},
+		Logger:                                workflowWorker.executionParameters.Logger,
+		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
+		Identity:                              workflowWorker.executionParameters.Identity,
+		UserContext:                           workflowWorker.executionParameters.UserContext,
 	}
 
-	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
 
 	activityWorker := aggWorker.activityWorker
 	require.True(t, activityWorker.executionParameters.Identity != "")
@@ -1772,29 +1772,29 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
 
-	decisionWorker := aggWorker.workflowWorker
-	require.Len(t, decisionWorker.executionParameters.ContextPropagators, 0)
+	workflowWorker := aggWorker.workflowWorker
+	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
 	expected := workerExecutionParameters{
-		TaskQueue:                            taskQueue,
-		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
-		MaxConcurrentDecisionPollers:         options.MaxConcurrentWorkflowTaskPollers,
-		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:  options.MaxConcurrentWorkflowTaskExecutionSize,
-		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
-		WorkerWorkflowTasksPerSecond:         options.WorkerWorkflowTasksPerSecond,
-		TaskQueueActivitiesPerSecond:         options.TaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
-		DataConverter:                        client.dataConverter,
-		Tracer:                               client.tracer,
-		Logger:                               client.logger,
-		MetricsScope:                         client.metricsScope,
-		Identity:                             client.identity,
+		TaskQueue:                             taskQueue,
+		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
+		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
+		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
+		ConcurrentActivityExecutionSize:       options.MaxConcurrentActivityExecutionSize,
+		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
+		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
+		WorkerWorkflowTasksPerSecond:          options.WorkerWorkflowTasksPerSecond,
+		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
+		DataConverter:                         client.dataConverter,
+		Tracer:                                client.tracer,
+		Logger:                                client.logger,
+		MetricsScope:                          client.metricsScope,
+		Identity:                              client.identity,
 	}
 
-	assertWorkerExecutionParamsEqual(t, expected, decisionWorker.executionParameters)
+	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
 
 	activityWorker := aggWorker.activityWorker
 	require.Len(t, activityWorker.executionParameters.ContextPropagators, 0)
@@ -1813,8 +1813,8 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.WorkerWorkflowTasksPerSecond, paramsB.WorkerWorkflowTasksPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
-	require.Equal(t, paramsA.MaxConcurrentDecisionPollers, paramsB.MaxConcurrentDecisionPollers)
-	require.Equal(t, paramsA.MaxConcurrentActivityPollers, paramsB.MaxConcurrentActivityPollers)
+	require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)
+	require.Equal(t, paramsA.MaxConcurrentActivityTaskQueuePollers, paramsB.MaxConcurrentActivityTaskQueuePollers)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
 	require.Equal(t, paramsA.DisableStickyExecution, paramsB.DisableStickyExecution)

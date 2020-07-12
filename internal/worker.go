@@ -129,7 +129,7 @@ type (
 		// like common logger for all activities.
 		BackgroundActivityContext context.Context
 
-		// Optional: Sets how decision worker deals with non-deterministic history events
+		// Optional: Sets how workflow worker deals with non-deterministic history events
 		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow definition changes).
 		// default: BlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy WorkflowPanicPolicy

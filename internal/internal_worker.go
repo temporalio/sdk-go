@@ -139,8 +139,8 @@ type (
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
 
-		// MaxConcurrentActivityPollers is the max number of pollers for activity task queue
-		MaxConcurrentActivityPollers int
+		// MaxConcurrentActivityTaskQueuePollers is the max number of pollers for activity task queue.
+		MaxConcurrentActivityTaskQueuePollers int
 
 		// Defines how many concurrent workflow task executions by this worker.
 		ConcurrentWorkflowTaskExecutionSize int
@@ -148,8 +148,8 @@ type (
 		// Defines rate limiting on number of workflow tasks that can be executed per second per worker.
 		WorkerWorkflowTasksPerSecond float64
 
-		// MaxConcurrentDecisionPollers is the max number of pollers for workflow task queue
-		MaxConcurrentDecisionPollers int
+		// MaxConcurrentWorkflowTaskQueuePollers is the max number of pollers for workflow task queue.
+		MaxConcurrentWorkflowTaskQueuePollers int
 
 		// Defines how many concurrent local activity executions by this worker.
 		ConcurrentLocalActivityExecutionSize int
@@ -157,7 +157,7 @@ type (
 		// Defines rate limiting on number of local activities that can be executed per second per worker.
 		WorkerLocalActivitiesPerSecond float64
 
-		// TaskQueueActivitiesPerSecond is the throttling limit for activity tasks controlled by the server
+		// TaskQueueActivitiesPerSecond is the throttling limit for activity tasks controlled by the server.
 		TaskQueueActivitiesPerSecond float64
 
 		// User can provide an identity for the debuggability. If not provided the framework has
@@ -284,13 +284,13 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
-		pollerCount:       params.MaxConcurrentDecisionPollers,
+		pollerCount:       params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:        defaultPollerRate,
 		maxConcurrentTask: params.ConcurrentWorkflowTaskExecutionSize,
 		maxTaskPerSecond:  params.WorkerWorkflowTasksPerSecond,
 		taskWorker:        poller,
 		identity:          params.Identity,
-		workerType:        "DecisionWorker",
+		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsScope,
@@ -378,7 +378,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
 	activityWorker := newActivityWorker(service, params, overrides, env, nil)
 
-	params.MaxConcurrentActivityPollers = 1
+	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
@@ -437,7 +437,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:       workerParams.MaxConcurrentActivityPollers,
+			pollerCount:       workerParams.MaxConcurrentActivityTaskQueuePollers,
 			pollerRate:        defaultPollerRate,
 			maxConcurrentTask: workerParams.ConcurrentActivityExecutionSize,
 			maxTaskPerSecond:  workerParams.WorkerActivitiesPerSecond,
@@ -1019,10 +1019,10 @@ var binaryChecksumLock sync.Mutex
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
 // The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
-// decision completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
+// workflow task completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
 // mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
 // by the binary.
-// On another hand, once the binary is marked as bad, the bad binary cannot poll decision and make any progress any more.
+// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	binaryChecksumLock.Lock()
 	defer binaryChecksumLock.Unlock()
@@ -1271,20 +1271,20 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	if resp != nil {
 		completeReq, ok := resp.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 		if ok {
-			for _, d := range completeReq.Decisions {
-				if d.GetDecisionType() == enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
+			for _, d := range completeReq.Commands {
+				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
-						inputA := d.GetContinueAsNewWorkflowExecutionDecisionAttributes().GetInput()
+						inputA := d.GetContinueAsNewWorkflowExecutionCommandAttributes().GetInput()
 						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
 						if proto.Equal(inputA, inputB) {
 							return nil
 						}
 					}
 				}
-				if d.GetDecisionType() == enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION {
+				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
-						resultB := d.GetCompleteWorkflowExecutionDecisionAttributes().GetResult()
+						resultB := d.GetCompleteWorkflowExecutionCommandAttributes().GetResult()
 						if proto.Equal(resultA, resultB) {
 							return nil
 						}
@@ -1327,7 +1327,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 	return history, nil
 }
 
-// NewAggregatedWorker returns an instance to manage both activity and decision workers
+// NewAggregatedWorker returns an instance to manage both activity and workflow workers
 func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
@@ -1338,30 +1338,30 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
 	workerParams := workerExecutionParameters{
-		Namespace:                            client.namespace,
-		TaskQueue:                            taskQueue,
-		ConcurrentActivityExecutionSize:      options.MaxConcurrentActivityExecutionSize,
-		WorkerActivitiesPerSecond:            options.WorkerActivitiesPerSecond,
-		MaxConcurrentActivityPollers:         options.MaxConcurrentActivityTaskPollers,
-		ConcurrentLocalActivityExecutionSize: options.MaxConcurrentLocalActivityExecutionSize,
-		WorkerLocalActivitiesPerSecond:       options.WorkerLocalActivitiesPerSecond,
-		ConcurrentWorkflowTaskExecutionSize:  options.MaxConcurrentWorkflowTaskExecutionSize,
-		WorkerWorkflowTasksPerSecond:         options.WorkerWorkflowTasksPerSecond,
-		MaxConcurrentDecisionPollers:         options.MaxConcurrentWorkflowTaskPollers,
-		Identity:                             client.identity,
-		MetricsScope:                         client.metricsScope,
-		Logger:                               client.logger,
-		EnableLoggingInReplay:                options.EnableLoggingInReplay,
-		UserContext:                          backgroundActivityContext,
-		UserContextCancel:                    backgroundActivityContextCancel,
-		DisableStickyExecution:               options.DisableStickyExecution,
-		StickyScheduleToStartTimeout:         options.StickyScheduleToStartTimeout,
-		TaskQueueActivitiesPerSecond:         options.TaskQueueActivitiesPerSecond,
-		WorkflowPanicPolicy:                  options.NonDeterministicWorkflowPolicy,
-		DataConverter:                        client.dataConverter,
-		WorkerStopTimeout:                    options.WorkerStopTimeout,
-		ContextPropagators:                   client.contextPropagators,
-		Tracer:                               client.tracer,
+		Namespace:                             client.namespace,
+		TaskQueue:                             taskQueue,
+		ConcurrentActivityExecutionSize:       options.MaxConcurrentActivityExecutionSize,
+		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
+		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
+		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
+		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
+		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
+		WorkerWorkflowTasksPerSecond:          options.WorkerWorkflowTasksPerSecond,
+		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
+		Identity:                              client.identity,
+		MetricsScope:                          client.metricsScope,
+		Logger:                                client.logger,
+		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
+		UserContext:                           backgroundActivityContext,
+		UserContextCancel:                     backgroundActivityContextCancel,
+		DisableStickyExecution:                options.DisableStickyExecution,
+		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
+		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
+		WorkflowPanicPolicy:                   options.NonDeterministicWorkflowPolicy,
+		DataConverter:                         client.dataConverter,
+		WorkerStopTimeout:                     options.WorkerStopTimeout,
+		ContextPropagators:                    client.contextPropagators,
+		Tracer:                                client.tracer,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1441,8 +1441,8 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 				switch key {
 				case workerOptionsConfigConcurrentPollRoutineSize:
 					if size, err := strconv.Atoi(val); err == nil {
-						ep.MaxConcurrentActivityPollers = size
-						ep.MaxConcurrentDecisionPollers = size
+						ep.MaxConcurrentActivityTaskQueuePollers = size
+						ep.MaxConcurrentWorkflowTaskQueuePollers = size
 					}
 				}
 			}
@@ -1541,7 +1541,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.TaskQueueActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
-		options.StickyScheduleToStartTimeout = stickyDecisionScheduleToStartTimeoutSeconds * time.Second
+		options.StickyScheduleToStartTimeout = stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize

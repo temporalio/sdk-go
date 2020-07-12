@@ -39,8 +39,8 @@ import (
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -529,7 +529,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		Header:       env.header,
 	}
 
-	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	if parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
 	} else {
@@ -978,7 +978,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
-	scheduleTaskAttr := &decisionpb.ScheduleActivityTaskDecisionAttributes{}
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 
 	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
@@ -1047,9 +1047,9 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	return activityInfo
 }
 
-// Copy of the server function func (v *decisionAttrValidator) validateActivityScheduleAttributes
+// Copy of the server function func (v *commandAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
-	attributes *decisionpb.ScheduleActivityTaskDecisionAttributes,
+	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	runTimeout int32,
 ) error {
 
@@ -1061,7 +1061,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	// }
 
 	if attributes == nil {
-		return serviceerror.NewInvalidArgument("ScheduleActivityTaskDecisionAttributes is not set on decision.")
+		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on command.")
 	}
 
 	defaultTaskQueueName := ""
@@ -1070,11 +1070,11 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 
 	if attributes.GetActivityId() == "" {
-		return serviceerror.NewInvalidArgument("ActivityId is not set on decision.")
+		return serviceerror.NewInvalidArgument("ActivityId is not set on command.")
 	}
 
 	if attributes.ActivityType == nil || attributes.ActivityType.GetName() == "" {
-		return serviceerror.NewInvalidArgument("ActivityType is not set on decision.")
+		return serviceerror.NewInvalidArgument("ActivityType is not set on command.")
 	}
 
 	if err := env.validateRetryPolicy(attributes.RetryPolicy); err != nil {
@@ -1124,7 +1124,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
-		return serviceerror.NewInvalidArgument("A valid StartToClose or ScheduleToCloseTimeout is not set on decision.")
+		return serviceerror.NewInvalidArgument("A valid StartToClose or ScheduleToCloseTimeout is not set on command.")
 	}
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
@@ -1147,7 +1147,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	return nil
 }
 
-// Copy of the service func (v *decisionAttrValidator) validatedTaskQueue
+// Copy of the service func (v *commandAttrValidator) validatedTaskQueue
 func (env *testWorkflowEnvironmentImpl) validatedTaskQueue(
 	taskQueue *taskqueuepb.TaskQueue,
 	defaultVal string,
@@ -1826,7 +1826,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 }
 
 func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
-	attr *decisionpb.ScheduleActivityTaskDecisionAttributes) *workflowservice.PollActivityTaskQueueResponse {
+	attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollActivityTaskQueueResponse{
 		WorkflowExecution: &commonpb.WorkflowExecution{

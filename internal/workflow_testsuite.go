@@ -675,10 +675,10 @@ func (e *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{})
 	e.impl.signalWorkflow(name, input, true)
 }
 
-// SignalWorkflowSkippingDecision sends signal to the currently running test workflow without invoking workflow code.
+// SignalWorkflowSkippingWorkflowTask sends signal to the currently running test workflow without invoking workflow code.
 // Used to test processing of multiple buffered signals before completing workflow.
-// It must be followed by SignalWorkflow, CancelWorkflow or CompleteActivity to force a decision.
-func (e *TestWorkflowEnvironment) SignalWorkflowSkippingDecision(name string, input interface{}) {
+// It must be followed by SignalWorkflow, CancelWorkflow or CompleteActivity to force a workflow task.
+func (e *TestWorkflowEnvironment) SignalWorkflowSkippingWorkflowTask(name string, input interface{}) {
 	e.impl.signalWorkflow(name, input, false)
 }
 

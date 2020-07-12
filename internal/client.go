@@ -391,9 +391,9 @@ type (
 		// Optional: defaulted to a uuid.
 		ID string
 
-		// TaskQueue - The decisions of the workflow are scheduled on this queue.
-		// This is also the default task queue on which activities are scheduled. The workflow author can choose
-		// to override this using activity options.
+		// TaskQueue - The workflow tasks of the workflow are scheduled on the queue with this name.
+		// This is also the name of the activity task queue on which activities are scheduled.
+		// The workflow author can choose to override this using activity options.
 		// Mandatory: No default.
 		TaskQueue string
 
