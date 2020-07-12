@@ -106,7 +106,7 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 		// update queryResult when signal is received
 		ch.Receive(ctx, &queryResult)
 
-		// schedule activity to verify decisions are produced
+		// schedule activity to verify commands are produced
 		ao := ActivityOptions{
 			TaskQueue:              "taskQueue",
 			ActivityID:             "0",
@@ -182,11 +182,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentActivityPollers: 4,
-		MaxConcurrentDecisionPollers: 4,
-		Logger:                       logger,
-		Tracer:                       opentracing.NoopTracer{},
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 4,
+		MaxConcurrentWorkflowTaskQueuePollers: 4,
+		Logger:                                logger,
+		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -213,11 +213,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentActivityPollers: 10,
-		MaxConcurrentDecisionPollers: 10,
-		Logger:                       logger,
-		Tracer:                       opentracing.NoopTracer{},
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 10,
+		MaxConcurrentWorkflowTaskQueuePollers: 10,
+		Logger:                                logger,
+		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	// Register activity instances and launch the worker.

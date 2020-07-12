@@ -156,8 +156,8 @@ func HistoryEventToString(e *historypb.HistoryEvent) string {
 	return e.GetEventType().String() + ": " + anyToString(data)
 }
 
-// DecisionToString convert Decision to string
-func DecisionToString(d *commandpb.Command) string {
+// CommandToString convert Command to string
+func CommandToString(d *commandpb.Command) string {
 	var data interface{}
 	switch d.GetCommandType() {
 	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:

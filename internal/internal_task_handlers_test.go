@@ -276,7 +276,7 @@ func createTestEventChildWorkflowExecutionCanceled(eventID int64, attr *historyp
 		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionCanceledEventAttributes{ChildWorkflowExecutionCanceledEventAttributes: attr}}
 }
 
-func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
+func createTestEventVersionMarker(eventID int64, workflowTaskCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
 	changeIDPayload, err := DefaultDataConverter.ToPayloads(changeID)
 	if err != nil {
 		panic(err)
@@ -297,13 +297,13 @@ func createTestEventVersionMarker(eventID int64, decisionCompletedID int64, chan
 					versionMarkerChangeIDName: changeIDPayload,
 					versionMarkerDataName:     versionPayload,
 				},
-				WorkflowTaskCompletedEventId: decisionCompletedID,
+				WorkflowTaskCompletedEventId: workflowTaskCompletedID,
 			},
 		},
 	}
 }
 
-func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, decisionCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
+func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, workflowTaskCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
 	searchAttributes, _ := validateAndSerializeSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, nil))
 
 	return &historypb.HistoryEvent{
@@ -312,7 +312,7 @@ func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, dec
 		Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{
 			UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{
 				SearchAttributes:             searchAttributes,
-				WorkflowTaskCompletedEventId: decisionCompletedID,
+				WorkflowTaskCompletedEventId: workflowTaskCompletedID,
 			},
 		},
 	}
@@ -516,7 +516,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
 	t.NotNil(response.Commands[0].GetScheduleActivityTaskCommandAttributes())
 
-	// Schedule an activity and see if we complete workflow, Having only one last decision.
+	// Schedule an activity and see if we complete workflow, Having only one last command.
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response = request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
@@ -669,7 +669,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	// now change the history event so it does not match to decision produced via replay
+	// now change the history event so it does not match to command produced via replay
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
@@ -870,11 +870,11 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-	// there should be no error as the history events matched the decisions.
+	// there should be no error as the history events matched the commands.
 	t.NoError(err)
 	t.NotNil(response)
 
-	// now change the history event so it does not match to decision produced via replay
+	// now change the history event so it does not match to command produced via replay
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
@@ -897,13 +897,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// Verify that request is a RespondWorkflowTaskCompleteRequest
 	response, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
-	// Verify there's at least 1 decision
-	// and the last last decision is to fail workflow
+	// Verify there's at least 1 command
+	// and the last last command is to fail workflow
 	// and contains proper justification.(i.e. nondeterminism).
 	t.True(len(response.Commands) > 0)
-	closeDecision := response.Commands[len(response.Commands)-1]
-	t.Equal(closeDecision.CommandType, enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
-	t.Contains(closeDecision.GetFailWorkflowExecutionCommandAttributes().GetFailure().GetMessage(), "FailWorkflow")
+	closeCommand := response.Commands[len(response.Commands)-1]
+	t.Equal(closeCommand.CommandType, enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
+	t.Contains(closeCommand.GetFailWorkflowExecutionCommandAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
@@ -1176,7 +1176,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
-	// Schedule a decision activity and see if we complete workflow.
+	// Schedule a command activity and see if we complete workflow.
 	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
@@ -1208,7 +1208,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	t.NotNil(response)
 }
 
-func (t *TaskHandlersTestSuite) TestLocalActivityRetry_DecisionHeartbeatFail() {
+func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
 	backoffIntervalInSeconds := int32(1)
 	backoffDuration := time.Second * time.Duration(backoffIntervalInSeconds)
 	workflowComplete := false
@@ -1506,35 +1506,35 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	delete(commandTypes, 0) // Ignore "Unspecified".
 
 	require.Equal(t, 13, len(commandTypes), "If you see this error, you are adding new command type. "+
-		"Before updating the number to make this test pass, please make sure you update isDecisionMatchEvent() method "+
-		"to check the new command type. Otherwise the replay will fail on the new decision event.")
+		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
+		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
 	eventTypes := enumspb.EventType_value
-	decisionEventTypeCount := 0
+	commandEventTypeCount := 0
 	for _, et := range eventTypes {
-		if isDecisionEvent(enumspb.EventType(et)) {
-			decisionEventTypeCount++
+		if isCommandEvent(enumspb.EventType(et)) {
+			commandEventTypeCount++
 		}
 	}
 	// CancelTimer has 2 corresponding events.
-	require.Equal(t, len(commandTypes)+1, decisionEventTypeCount, "Every command type must have one matching event type. "+
-		"If you add new command type, you need to update isDecisionEvent() method to include that new event type as well.")
+	require.Equal(t, len(commandTypes)+1, commandEventTypeCount, "Every command type must have one matching event type. "+
+		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 
-func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
+func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 	diType := enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	eType := enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	strictMode := false
 
 	testCases := []struct {
 		name     string
-		decision *commandpb.Command
+		command  *commandpb.Command
 		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
 			name: "event type not match",
-			decision: &commandpb.Command{
+			command: &commandpb.Command{
 				CommandType: diType,
 				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
@@ -1545,7 +1545,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 		},
 		{
 			name: "attributes not match",
-			decision: &commandpb.Command{
+			command: &commandpb.Command{
 				CommandType: diType,
 				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
@@ -1558,7 +1558,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 		},
 		{
 			name: "attributes match",
-			decision: &commandpb.Command{
+			command: &commandpb.Command{
 				CommandType: diType,
 				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
@@ -1576,7 +1576,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, strictMode))
+			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, strictMode))
 		})
 	}
 
@@ -1584,13 +1584,13 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	testCases = []struct {
 		name     string
-		decision *commandpb.Command
+		command  *commandpb.Command
 		event    *historypb.HistoryEvent
 		expected bool
 	}{
 		{
 			name: "attributes not match",
-			decision: &commandpb.Command{
+			command: &commandpb.Command{
 				CommandType: diType,
 				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 					SearchAttributes: &commonpb.SearchAttributes{},
@@ -1605,7 +1605,7 @@ func Test_IsDecisionMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isDecisionMatchEvent(testCase.decision, testCase.event, strictMode))
+			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, strictMode))
 		})
 	}
 }

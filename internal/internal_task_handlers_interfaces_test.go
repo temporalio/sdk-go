@@ -52,7 +52,7 @@ type sampleWorkflowTaskHandler struct {
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-	_ decisionHeartbeatFunc,
+	_ workflowTaskHeartbeatFunc,
 ) (interface{}, error) {
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
@@ -147,7 +147,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 	}
 }
 
-func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
+func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 	// Schedule an activity and see if we complete workflow.
 	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
@@ -180,7 +180,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextDecisions() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, err := eh.NextDecisionEvents()
+	events, _, _, err := eh.NextCommandEvents()
 
 	s.NoError(err)
 	s.Equal(3, len(events))

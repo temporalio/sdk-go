@@ -53,7 +53,7 @@ import (
 const (
 	pollTaskServiceTimeOut = 150 * time.Second // Server long poll is 2 * Minutes + delta
 
-	stickyDecisionScheduleToStartTimeoutSeconds = 5
+	stickyWorkflowTaskScheduleToStartTimeoutSeconds = 5
 
 	ratioToForceCompleteWorkflowTaskComplete = 0.8
 )
@@ -302,7 +302,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		if completedRequest == nil && err == nil {
 			return nil
 		}
-		if _, ok := err.(decisionHeartbeatError); ok {
+		if _, ok := err.(workflowTaskHeartbeatError); ok {
 			return err
 		}
 		response, err = wtp.RespondTaskCompletedWithMetrics(completedRequest, err, task.task, startTime)
@@ -337,7 +337,7 @@ func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTa
 func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest interface{}, taskErr error, task *workflowservice.PollWorkflowTaskQueueResponse, startTime time.Time) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 
 	if taskErr != nil {
-		wtp.metricsScope.Counter(metrics.DecisionExecutionFailedCounter).Inc(1)
+		wtp.metricsScope.Counter(metrics.WorkflowTaskExecutionFailedCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
 			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
@@ -349,14 +349,14 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 		wtp.metricsScope.Counter(metrics.WorkflowTaskCompletedCounter).Inc(1)
 	}
 
-	wtp.metricsScope.Timer(metrics.DecisionExecutionLatency).Record(time.Since(startTime))
+	wtp.metricsScope.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
 
 	responseStartTime := time.Now()
 	if response, err = wtp.RespondTaskCompleted(completedRequest, task); err != nil {
-		wtp.metricsScope.Counter(metrics.DecisionResponseFailedCounter).Inc(1)
+		wtp.metricsScope.Counter(metrics.WorkflowTaskResponseFailedCounter).Inc(1)
 		return
 	}
-	wtp.metricsScope.Timer(metrics.DecisionResponseLatency).Record(time.Since(responseStartTime))
+	wtp.metricsScope.Timer(metrics.WorkflowTaskResponseLatency).Record(time.Since(responseStartTime))
 
 	return
 }
@@ -371,7 +371,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			var err1 error
 			switch request := completedRequest.(type) {
 			case *workflowservice.RespondWorkflowTaskFailedRequest:
-				// Only fail decision on first attempt, subsequent failure on the same workflow task will timeout.
+				// Only fail workflow task on first attempt, subsequent failure on the same workflow task will timeout.
 				// This is to avoid spin on the failed workflow task. Checking Attempt not nil for older server.
 				if task.GetAttempt() == 0 {
 					_, err1 = wtp.service.RespondWorkflowTaskFailed(tchCtx, request)
@@ -655,7 +655,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	startTime := time.Now()
-	wtp.metricsScope.Counter(metrics.DecisionPollCounter).Inc(1)
+	wtp.metricsScope.Counter(metrics.PollWorkflowQueueCounter).Inc(1)
 
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
@@ -667,16 +667,16 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	response, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
 	if err != nil {
 		if isServiceTransientError(err) {
-			wtp.metricsScope.Counter(metrics.DecisionPollTransientFailedCounter).Inc(1)
+			wtp.metricsScope.Counter(metrics.PollWorkflowQueueTransientFailedCounter).Inc(1)
 		} else {
-			wtp.metricsScope.Counter(metrics.DecisionPollFailedCounter).Inc(1)
+			wtp.metricsScope.Counter(metrics.PollWorkflowQueueFailedCounter).Inc(1)
 		}
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
 	}
 
 	if response == nil || len(response.TaskToken) == 0 {
-		wtp.metricsScope.Counter(metrics.DecisionPollNoTaskCounter).Inc(1)
+		wtp.metricsScope.Counter(metrics.PollWorkflowQueueNoTaskCounter).Inc(1)
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return &workflowTask{}, nil
 	}
@@ -696,11 +696,11 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 			zap.Bool("IsQueryTask", response.Query != nil))
 	})
 
-	wtp.metricsScope.Counter(metrics.DecisionPollSucceedCounter).Inc(1)
-	wtp.metricsScope.Timer(metrics.DecisionPollLatency).Record(time.Since(startTime))
+	wtp.metricsScope.Counter(metrics.PollWorkflowQueueSucceedCounter).Inc(1)
+	wtp.metricsScope.Timer(metrics.PollWorkflowQueueLatency).Record(time.Since(startTime))
 
 	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestamp())
-	wtp.metricsScope.Timer(metrics.DecisionScheduledToStartLatency).Record(scheduledToStartLatency)
+	wtp.metricsScope.Timer(metrics.WorkflowTaskScheduledToStartLatency).Record(scheduledToStartLatency)
 	return task, nil
 }
 

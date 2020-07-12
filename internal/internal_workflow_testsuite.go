@@ -1047,7 +1047,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	return activityInfo
 }
 
-// Copy of the server function func (v *decisionAttrValidator) validateActivityScheduleAttributes
+// Copy of the server function func (v *commandAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	runTimeout int32,
@@ -1061,7 +1061,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	// }
 
 	if attributes == nil {
-		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on decision.")
+		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on command.")
 	}
 
 	defaultTaskQueueName := ""
@@ -1070,11 +1070,11 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 
 	if attributes.GetActivityId() == "" {
-		return serviceerror.NewInvalidArgument("ActivityId is not set on decision.")
+		return serviceerror.NewInvalidArgument("ActivityId is not set on command.")
 	}
 
 	if attributes.ActivityType == nil || attributes.ActivityType.GetName() == "" {
-		return serviceerror.NewInvalidArgument("ActivityType is not set on decision.")
+		return serviceerror.NewInvalidArgument("ActivityType is not set on command.")
 	}
 
 	if err := env.validateRetryPolicy(attributes.RetryPolicy); err != nil {
@@ -1124,7 +1124,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
-		return serviceerror.NewInvalidArgument("A valid StartToClose or ScheduleToCloseTimeout is not set on decision.")
+		return serviceerror.NewInvalidArgument("A valid StartToClose or ScheduleToCloseTimeout is not set on command.")
 	}
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
@@ -1147,7 +1147,7 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	return nil
 }
 
-// Copy of the service func (v *decisionAttrValidator) validatedTaskQueue
+// Copy of the service func (v *commandAttrValidator) validatedTaskQueue
 func (env *testWorkflowEnvironmentImpl) validatedTaskQueue(
 	taskQueue *taskqueuepb.TaskQueue,
 	defaultVal string,

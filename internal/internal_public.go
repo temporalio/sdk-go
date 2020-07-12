@@ -39,7 +39,7 @@ import (
 )
 
 type (
-	decisionHeartbeatFunc func(response interface{}, startTime time.Time) (*workflowTask, error)
+	workflowTaskHeartbeatFunc func(response interface{}, startTime time.Time) (*workflowTask, error)
 
 	// HistoryIterator iterator through history events
 	HistoryIterator interface {
@@ -68,7 +68,7 @@ type (
 		// If waitLocalActivity is true, and there is outstanding local activities, this call will return nil.
 		CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
 		// GetWorkflowTaskTimeout returns the WorkflowTaskTimeout
-		GetDecisionTimeout() time.Duration
+		GetWorkflowTaskTimeout() time.Duration
 		GetCurrentWorkflowTask() *workflowservice.PollWorkflowTaskQueueResponse
 		IsDestroyed() bool
 		StackTrace() string
@@ -83,7 +83,7 @@ type (
 		// - RespondQueryTaskCompletedRequest
 		ProcessWorkflowTask(
 			task *workflowTask,
-			f decisionHeartbeatFunc,
+			f workflowTaskHeartbeatFunc,
 		) (response interface{}, err error)
 	}
 

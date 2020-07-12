@@ -133,23 +133,23 @@ func Test_TimeoutError_WithDetails(t *testing.T) {
 
 func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
-		dataConverter:   getDefaultDataConverter(),
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  getDefaultDataConverter(),
 	}
-	h := newDecisionsHelper()
+	h := newCommandsHelper()
 	var actualErr error
 	activityID := "activityID"
-	context.decisionsHelper.scheduledEventIDToActivityID[5] = activityID
-	di := h.newActivityDecisionStateMachine(
+	context.commandsHelper.scheduledEventIDToActivityID[5] = activityID
+	di := h.newActivityCommandStateMachine(
 		5,
 		&commandpb.ScheduleActivityTaskCommandAttributes{ActivityId: activityID})
-	di.state = decisionStateInitiated
+	di.state = commandStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
-	context.decisionsHelper.addDecision(di)
+	context.commandsHelper.addCommand(di)
 	encodedDetails1, _ := context.dataConverter.ToPayloads(testErrorDetails1)
 	event := createTestEventActivityTaskTimedOut(7, &historypb.ActivityTaskTimedOutEventAttributes{
 		Failure: &failurepb.Failure{
@@ -453,25 +453,25 @@ func TestErrorDetailsValues(t *testing.T) {
 
 func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 	context := &workflowEnvironmentImpl{
-		decisionsHelper: newDecisionsHelper(),
-		dataConverter:   getDefaultDataConverter(),
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  getDefaultDataConverter(),
 	}
-	h := newDecisionsHelper()
+	h := newCommandsHelper()
 	var actualErr error
 	var initiatedEventID int64 = 101
 	signalID := "signalID"
-	context.decisionsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
+	context.commandsHelper.scheduledEventIDToSignalID[initiatedEventID] = signalID
 	di := h.newSignalExternalWorkflowStateMachine(
 		&commandpb.SignalExternalWorkflowExecutionCommandAttributes{},
 		signalID,
 	)
-	di.state = decisionStateInitiated
+	di.state = commandStateInitiated
 	di.setData(&scheduledSignal{
 		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
 	})
-	context.decisionsHelper.addDecision(di)
+	context.commandsHelper.addCommand(di)
 	weh := &workflowExecutionEventHandlerImpl{context, nil}
 	event := createTestEventSignalExternalWorkflowExecutionFailed(1, &historypb.SignalExternalWorkflowExecutionFailedEventAttributes{
 		InitiatedEventId: initiatedEventID,

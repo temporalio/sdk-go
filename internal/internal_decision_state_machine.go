@@ -38,19 +38,19 @@ import (
 )
 
 type (
-	decisionState int32
-	commandType   int32
+	commandState int32
+	commandType  int32
 
-	decisionID struct {
+	commandID struct {
 		commandType commandType
 		id          string
 	}
 
-	decisionStateMachine interface {
-		getState() decisionState
-		getID() decisionID
+	commandStateMachine interface {
+		getState() commandState
+		getID() commandID
 		isDone() bool
-		getDecision() *commandpb.Command // return nil if there is no decision in current state
+		getCommand() *commandpb.Command // return nil if there is no command in current state
 		cancel()
 
 		handleStartedEvent()
@@ -61,64 +61,64 @@ type (
 		handleInitiationFailedEvent()
 		handleInitiatedEvent()
 
-		handleDecisionSent()
+		handleCommandSent()
 
 		setData(data interface{})
 		getData() interface{}
 	}
 
-	decisionStateMachineBase struct {
-		id      decisionID
-		state   decisionState
+	commandStateMachineBase struct {
+		id      commandID
+		state   commandState
 		history []string
 		data    interface{}
-		helper  *decisionsHelper
+		helper  *commandsHelper
 	}
 
-	activityDecisionStateMachine struct {
-		*decisionStateMachineBase
+	activityCommandStateMachine struct {
+		*commandStateMachineBase
 		scheduleID int64
 		attributes *commandpb.ScheduleActivityTaskCommandAttributes
 	}
 
-	timerDecisionStateMachine struct {
-		*decisionStateMachineBase
+	timerCommandStateMachine struct {
+		*commandStateMachineBase
 		attributes *commandpb.StartTimerCommandAttributes
 		canceled   bool
 	}
 
-	childWorkflowDecisionStateMachine struct {
-		*decisionStateMachineBase
+	childWorkflowCommandStateMachine struct {
+		*commandStateMachineBase
 		attributes *commandpb.StartChildWorkflowExecutionCommandAttributes
 	}
 
-	naiveDecisionStateMachine struct {
-		*decisionStateMachineBase
-		decision *commandpb.Command
+	naiveCommandStateMachine struct {
+		*commandStateMachineBase
+		command *commandpb.Command
 	}
 
 	// only possible state transition is: CREATED->SENT->INITIATED->COMPLETED
-	cancelExternalWorkflowDecisionStateMachine struct {
-		*naiveDecisionStateMachine
+	cancelExternalWorkflowCommandStateMachine struct {
+		*naiveCommandStateMachine
 	}
 
-	signalExternalWorkflowDecisionStateMachine struct {
-		*naiveDecisionStateMachine
+	signalExternalWorkflowCommandStateMachine struct {
+		*naiveCommandStateMachine
 	}
 
 	// only possible state transition is: CREATED->SENT->COMPLETED
-	markerDecisionStateMachine struct {
-		*naiveDecisionStateMachine
+	markerCommandStateMachine struct {
+		*naiveCommandStateMachine
 	}
 
-	upsertSearchAttributesDecisionStateMachine struct {
-		*naiveDecisionStateMachine
+	upsertSearchAttributesCommandStateMachine struct {
+		*naiveCommandStateMachine
 	}
 
-	decisionsHelper struct {
-		nextDecisionEventID int64
-		orderedDecisions    *list.List
-		decisions           map[decisionID]*list.Element
+	commandsHelper struct {
+		nextCommandEventID int64
+		orderedCommands    *list.List
+		commands           map[commandID]*list.Element
 
 		scheduledEventIDToActivityID     map[int64]string
 		scheduledEventIDToCancellationID map[int64]string
@@ -126,23 +126,23 @@ type (
 		versionMarkerLookup              map[int64]string
 	}
 
-	// panic when decision state machine is in illegal state
+	// panic when command state machine is in illegal state
 	stateMachineIllegalStatePanic struct {
 		message string
 	}
 )
 
 const (
-	decisionStateCreated                                decisionState = 0
-	decisionStateDecisionSent                           decisionState = 1
-	decisionStateCanceledBeforeInitiated                decisionState = 2
-	decisionStateInitiated                              decisionState = 3
-	decisionStateStarted                                decisionState = 4
-	decisionStateCanceledAfterInitiated                 decisionState = 5
-	decisionStateCanceledAfterStarted                   decisionState = 6
-	decisionStateCancellationDecisionSent               decisionState = 7
-	decisionStateCompletedAfterCancellationDecisionSent decisionState = 8
-	decisionStateCompleted                              decisionState = 9
+	commandStateCreated                               commandState = 0
+	commandStateCommandSent                           commandState = 1
+	commandStateCanceledBeforeInitiated               commandState = 2
+	commandStateInitiated                             commandState = 3
+	commandStateStarted                               commandState = 4
+	commandStateCanceledAfterInitiated                commandState = 5
+	commandStateCanceledAfterStarted                  commandState = 6
+	commandStateCancellationCommandSent               commandState = 7
+	commandStateCompletedAfterCancellationCommandSent commandState = 8
+	commandStateCompleted                             commandState = 9
 )
 
 const (
@@ -157,7 +157,7 @@ const (
 
 const (
 	eventCancel           = "cancel"
-	eventDecisionSent     = "handleDecisionSent"
+	eventCommandSent      = "handleCommandSent"
 	eventInitiated        = "handleInitiatedEvent"
 	eventInitiationFailed = "handleInitiationFailedEvent"
 	eventStarted          = "handleStartedEvent"
@@ -181,27 +181,27 @@ const (
 	localActivityMarkerResultDetailsName = "result"
 )
 
-func (d decisionState) String() string {
+func (d commandState) String() string {
 	switch d {
-	case decisionStateCreated:
+	case commandStateCreated:
 		return "Created"
-	case decisionStateDecisionSent:
-		return "DecisionSent"
-	case decisionStateCanceledBeforeInitiated:
+	case commandStateCommandSent:
+		return "CommandSent"
+	case commandStateCanceledBeforeInitiated:
 		return "CanceledBeforeInitiated"
-	case decisionStateInitiated:
+	case commandStateInitiated:
 		return "Initiated"
-	case decisionStateStarted:
+	case commandStateStarted:
 		return "Started"
-	case decisionStateCanceledAfterInitiated:
+	case commandStateCanceledAfterInitiated:
 		return "CanceledAfterInitiated"
-	case decisionStateCanceledAfterStarted:
+	case commandStateCanceledAfterStarted:
 		return "CanceledAfterStarted"
-	case decisionStateCancellationDecisionSent:
-		return "CancellationDecisionSent"
-	case decisionStateCompletedAfterCancellationDecisionSent:
-		return "CompletedAfterCancellationDecisionSent"
-	case decisionStateCompleted:
+	case commandStateCancellationCommandSent:
+		return "CancellationCommandSent"
+	case commandStateCompletedAfterCancellationCommandSent:
+		return "CompletedAfterCancellationCommandSent"
+	case commandStateCompleted:
 		return "Completed"
 	default:
 		return "Unknown"
@@ -227,120 +227,120 @@ func (d commandType) String() string {
 	}
 }
 
-func (d decisionID) String() string {
+func (d commandID) String() string {
 	return fmt.Sprintf("CommandType: %v, ID: %v", d.commandType, d.id)
 }
 
-func makeDecisionID(commandType commandType, id string) decisionID {
-	return decisionID{commandType: commandType, id: id}
+func makeCommandID(commandType commandType, id string) commandID {
+	return commandID{commandType: commandType, id: id}
 }
 
-func (h *decisionsHelper) newDecisionStateMachineBase(commandType commandType, id string) *decisionStateMachineBase {
-	return &decisionStateMachineBase{
-		id:      makeDecisionID(commandType, id),
-		state:   decisionStateCreated,
-		history: []string{decisionStateCreated.String()},
+func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id string) *commandStateMachineBase {
+	return &commandStateMachineBase{
+		id:      makeCommandID(commandType, id),
+		state:   commandStateCreated,
+		history: []string{commandStateCreated.String()},
 		helper:  h,
 	}
 }
 
-func (h *decisionsHelper) newActivityDecisionStateMachine(
+func (h *commandsHelper) newActivityCommandStateMachine(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
-) *activityDecisionStateMachine {
-	base := h.newDecisionStateMachineBase(commandTypeActivity, attributes.GetActivityId())
-	return &activityDecisionStateMachine{
-		decisionStateMachineBase: base,
-		scheduleID:               scheduleID,
-		attributes:               attributes,
+) *activityCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeActivity, attributes.GetActivityId())
+	return &activityCommandStateMachine{
+		commandStateMachineBase: base,
+		scheduleID:              scheduleID,
+		attributes:              attributes,
 	}
 }
 
-func (h *decisionsHelper) newTimerDecisionStateMachine(attributes *commandpb.StartTimerCommandAttributes) *timerDecisionStateMachine {
-	base := h.newDecisionStateMachineBase(commandTypeTimer, attributes.GetTimerId())
-	return &timerDecisionStateMachine{
-		decisionStateMachineBase: base,
-		attributes:               attributes,
+func (h *commandsHelper) newTimerCommandStateMachine(attributes *commandpb.StartTimerCommandAttributes) *timerCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeTimer, attributes.GetTimerId())
+	return &timerCommandStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
 	}
 }
 
-func (h *decisionsHelper) newChildWorkflowDecisionStateMachine(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) *childWorkflowDecisionStateMachine {
-	base := h.newDecisionStateMachineBase(commandTypeChildWorkflow, attributes.GetWorkflowId())
-	return &childWorkflowDecisionStateMachine{
-		decisionStateMachineBase: base,
-		attributes:               attributes,
+func (h *commandsHelper) newChildWorkflowCommandStateMachine(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) *childWorkflowCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeChildWorkflow, attributes.GetWorkflowId())
+	return &childWorkflowCommandStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
 	}
 }
 
-func (h *decisionsHelper) newNaiveDecisionStateMachine(commandType commandType, id string, decision *commandpb.Command) *naiveDecisionStateMachine {
-	base := h.newDecisionStateMachineBase(commandType, id)
-	return &naiveDecisionStateMachine{
-		decisionStateMachineBase: base,
-		decision:                 decision,
+func (h *commandsHelper) newNaiveCommandStateMachine(commandType commandType, id string, command *commandpb.Command) *naiveCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandType, id)
+	return &naiveCommandStateMachine{
+		commandStateMachineBase: base,
+		command:                 command,
 	}
 }
 
-func (h *decisionsHelper) newMarkerDecisionStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes) *markerDecisionStateMachine {
-	d := createNewDecision(enumspb.COMMAND_TYPE_RECORD_MARKER)
+func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes) *markerCommandStateMachine {
+	d := createNewCommand(enumspb.COMMAND_TYPE_RECORD_MARKER)
 	d.Attributes = &commandpb.Command_RecordMarkerCommandAttributes{RecordMarkerCommandAttributes: attributes}
-	return &markerDecisionStateMachine{
-		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(commandTypeMarker, id, d),
+	return &markerCommandStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeMarker, id, d),
 	}
 }
 
-func (h *decisionsHelper) newCancelExternalWorkflowStateMachine(attributes *commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes, cancellationID string) *cancelExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
+func (h *commandsHelper) newCancelExternalWorkflowStateMachine(attributes *commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes, cancellationID string) *cancelExternalWorkflowCommandStateMachine {
+	d := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
 	d.Attributes = &commandpb.Command_RequestCancelExternalWorkflowExecutionCommandAttributes{RequestCancelExternalWorkflowExecutionCommandAttributes: attributes}
-	return &cancelExternalWorkflowDecisionStateMachine{
-		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(commandTypeCancellation, cancellationID, d),
+	return &cancelExternalWorkflowCommandStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeCancellation, cancellationID, d),
 	}
 }
 
-func (h *decisionsHelper) newSignalExternalWorkflowStateMachine(attributes *commandpb.SignalExternalWorkflowExecutionCommandAttributes, signalID string) *signalExternalWorkflowDecisionStateMachine {
-	d := createNewDecision(enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION)
+func (h *commandsHelper) newSignalExternalWorkflowStateMachine(attributes *commandpb.SignalExternalWorkflowExecutionCommandAttributes, signalID string) *signalExternalWorkflowCommandStateMachine {
+	d := createNewCommand(enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION)
 	d.Attributes = &commandpb.Command_SignalExternalWorkflowExecutionCommandAttributes{SignalExternalWorkflowExecutionCommandAttributes: attributes}
-	return &signalExternalWorkflowDecisionStateMachine{
-		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(commandTypeSignal, signalID, d),
+	return &signalExternalWorkflowCommandStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeSignal, signalID, d),
 	}
 }
 
-func (h *decisionsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *upsertSearchAttributesDecisionStateMachine {
-	d := createNewDecision(enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES)
+func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *upsertSearchAttributesCommandStateMachine {
+	d := createNewCommand(enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES)
 	d.Attributes = &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: attributes}
-	return &upsertSearchAttributesDecisionStateMachine{
-		naiveDecisionStateMachine: h.newNaiveDecisionStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
+	return &upsertSearchAttributesCommandStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
 	}
 }
 
-func (d *decisionStateMachineBase) getState() decisionState {
+func (d *commandStateMachineBase) getState() commandState {
 	return d.state
 }
 
-func (d *decisionStateMachineBase) getID() decisionID {
+func (d *commandStateMachineBase) getID() commandID {
 	return d.id
 }
 
-func (d *decisionStateMachineBase) isDone() bool {
-	return d.state == decisionStateCompleted || d.state == decisionStateCompletedAfterCancellationDecisionSent
+func (d *commandStateMachineBase) isDone() bool {
+	return d.state == commandStateCompleted || d.state == commandStateCompletedAfterCancellationCommandSent
 }
 
-func (d *decisionStateMachineBase) setData(data interface{}) {
+func (d *commandStateMachineBase) setData(data interface{}) {
 	d.data = data
 }
 
-func (d *decisionStateMachineBase) getData() interface{} {
+func (d *commandStateMachineBase) getData() interface{} {
 	return d.data
 }
 
-func (d *decisionStateMachineBase) moveState(newState decisionState, event string) {
+func (d *commandStateMachineBase) moveState(newState commandState, event string) {
 	d.history = append(d.history, event)
 	d.state = newState
 	d.history = append(d.history, newState.String())
 
-	if newState == decisionStateCompleted {
-		if elem, ok := d.helper.decisions[d.getID()]; ok {
-			d.helper.orderedDecisions.Remove(elem)
-			delete(d.helper.decisions, d.getID())
+	if newState == commandStateCompleted {
+		if elem, ok := d.helper.commands[d.getID()]; ok {
+			d.helper.orderedCommands.Remove(elem)
+			delete(d.helper.commands, d.getID())
 		}
 	}
 }
@@ -353,358 +353,358 @@ func panicIllegalState(message string) {
 	panic(stateMachineIllegalStatePanic{message: message})
 }
 
-func (d *decisionStateMachineBase) failStateTransition(event string) {
-	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic decider code
+func (d *commandStateMachineBase) failStateTransition(event string) {
+	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic workflow code
 	panicIllegalState(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
 }
 
-func (d *decisionStateMachineBase) handleDecisionSent() {
+func (d *commandStateMachineBase) handleCommandSent() {
 	switch d.state {
-	case decisionStateCreated:
-		d.moveState(decisionStateDecisionSent, eventDecisionSent)
+	case commandStateCreated:
+		d.moveState(commandStateCommandSent, eventCommandSent)
 	}
 }
 
-func (d *decisionStateMachineBase) cancel() {
+func (d *commandStateMachineBase) cancel() {
 	switch d.state {
-	case decisionStateCompleted, decisionStateCompletedAfterCancellationDecisionSent:
+	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
-	case decisionStateCreated:
-		d.moveState(decisionStateCompleted, eventCancel)
-	case decisionStateDecisionSent:
-		d.moveState(decisionStateCanceledBeforeInitiated, eventCancel)
-	case decisionStateInitiated:
-		d.moveState(decisionStateCanceledAfterInitiated, eventCancel)
-		// cancel doesn't add new decision, therefore addDecision is not called.
+	case commandStateCreated:
+		d.moveState(commandStateCompleted, eventCancel)
+	case commandStateCommandSent:
+		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
+	case commandStateInitiated:
+		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
+		// cancel doesn't add new command, therefore addCommand is not called.
 		// But *CancelRequested event is still being added to the history, therefore counter needs to be incremented.
-		d.helper.incrementNextDecisionEventID()
+		d.helper.incrementNextCommandEventID()
 	default:
 		d.failStateTransition(eventCancel)
 	}
 }
 
-func (d *decisionStateMachineBase) handleInitiatedEvent() {
+func (d *commandStateMachineBase) handleInitiatedEvent() {
 	switch d.state {
-	case decisionStateDecisionSent:
-		d.moveState(decisionStateInitiated, eventInitiated)
-	case decisionStateCanceledBeforeInitiated:
-		d.moveState(decisionStateCanceledAfterInitiated, eventInitiated)
+	case commandStateCommandSent:
+		d.moveState(commandStateInitiated, eventInitiated)
+	case commandStateCanceledBeforeInitiated:
+		d.moveState(commandStateCanceledAfterInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
 	}
 }
 
-func (d *decisionStateMachineBase) handleInitiationFailedEvent() {
+func (d *commandStateMachineBase) handleInitiationFailedEvent() {
 	switch d.state {
-	case decisionStateInitiated, decisionStateDecisionSent, decisionStateCanceledBeforeInitiated:
-		d.moveState(decisionStateCompleted, eventInitiationFailed)
+	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated:
+		d.moveState(commandStateCompleted, eventInitiationFailed)
 	default:
 		d.failStateTransition(eventInitiationFailed)
 	}
 }
 
-func (d *decisionStateMachineBase) handleStartedEvent() {
+func (d *commandStateMachineBase) handleStartedEvent() {
 	d.history = append(d.history, eventStarted)
 }
 
-func (d *decisionStateMachineBase) handleCompletionEvent() {
+func (d *commandStateMachineBase) handleCompletionEvent() {
 	switch d.state {
-	case decisionStateCanceledAfterInitiated, decisionStateInitiated:
-		d.moveState(decisionStateCompleted, eventCompletion)
-	case decisionStateCancellationDecisionSent:
-		d.moveState(decisionStateCompletedAfterCancellationDecisionSent, eventCompletion)
+	case commandStateCanceledAfterInitiated, commandStateInitiated:
+		d.moveState(commandStateCompleted, eventCompletion)
+	case commandStateCancellationCommandSent:
+		d.moveState(commandStateCompletedAfterCancellationCommandSent, eventCompletion)
 	default:
 		d.failStateTransition(eventCompletion)
 	}
 }
 
-func (d *decisionStateMachineBase) handleCancelInitiatedEvent() {
+func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
-	case decisionStateCancellationDecisionSent:
+	case commandStateCancellationCommandSent:
 	// No state change
 	default:
 		d.failStateTransition(eventCancelInitiated)
 	}
 }
 
-func (d *decisionStateMachineBase) handleCancelFailedEvent() {
+func (d *commandStateMachineBase) handleCancelFailedEvent() {
 	switch d.state {
-	case decisionStateCompletedAfterCancellationDecisionSent:
-		d.moveState(decisionStateCompleted, eventCancelFailed)
+	case commandStateCompletedAfterCancellationCommandSent:
+		d.moveState(commandStateCompleted, eventCancelFailed)
 	default:
 		d.failStateTransition(eventCancelFailed)
 	}
 }
 
-func (d *decisionStateMachineBase) handleCanceledEvent() {
+func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case decisionStateCancellationDecisionSent:
-		d.moveState(decisionStateCompleted, eventCanceled)
+	case commandStateCancellationCommandSent:
+		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
 	}
 }
 
-func (d *decisionStateMachineBase) String() string {
+func (d *commandStateMachineBase) String() string {
 	return fmt.Sprintf("%v, state=%v, isDone()=%v, history=%v",
 		d.id, d.state, d.isDone(), d.history)
 }
 
-func (d *activityDecisionStateMachine) getDecision() *commandpb.Command {
+func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case decisionStateCreated:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
-		decision.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
-		return decision
-	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
-		decision.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
+		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
+		return command
+	case commandStateCanceledAfterInitiated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
+		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
 			ScheduledEventId: d.scheduleID,
 		}}
-		return decision
+		return command
 	default:
 		return nil
 	}
 }
 
-func (d *activityDecisionStateMachine) handleDecisionSent() {
+func (d *activityCommandStateMachine) handleCommandSent() {
 	switch d.state {
-	case decisionStateCanceledAfterInitiated:
-		d.moveState(decisionStateCancellationDecisionSent, eventDecisionSent)
+	case commandStateCanceledAfterInitiated:
+		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
-		d.decisionStateMachineBase.handleDecisionSent()
+		d.commandStateMachineBase.handleCommandSent()
 	}
 }
 
-func (d *activityDecisionStateMachine) handleCancelFailedEvent() {
+func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 	// Request to cancel activity now results in either activity completion, failed, timedout, or canceled
-	// Request to cancel itself can never fail and invalid RequestCancelActivity decisions results in the
-	// entire decision being failed.
+	// Request to cancel itself can never fail and invalid RequestCancelActivity commands results in the
+	// entire command being failed.
 	d.failStateTransition(eventCancelFailed)
 }
 
-func (d *timerDecisionStateMachine) cancel() {
+func (d *timerCommandStateMachine) cancel() {
 	d.canceled = true
-	d.decisionStateMachineBase.cancel()
+	d.commandStateMachineBase.cancel()
 }
 
-func (d *timerDecisionStateMachine) isDone() bool {
-	return d.state == decisionStateCompleted || d.canceled
+func (d *timerCommandStateMachine) isDone() bool {
+	return d.state == commandStateCompleted || d.canceled
 }
 
-func (d *timerDecisionStateMachine) handleDecisionSent() {
+func (d *timerCommandStateMachine) handleCommandSent() {
 	switch d.state {
-	case decisionStateCanceledAfterInitiated:
-		d.moveState(decisionStateCancellationDecisionSent, eventDecisionSent)
+	case commandStateCanceledAfterInitiated:
+		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
-		d.decisionStateMachineBase.handleDecisionSent()
+		d.commandStateMachineBase.handleCommandSent()
 	}
 }
 
-func (d *timerDecisionStateMachine) handleCancelFailedEvent() {
+func (d *timerCommandStateMachine) handleCancelFailedEvent() {
 	switch d.state {
-	case decisionStateCancellationDecisionSent:
-		d.moveState(decisionStateInitiated, eventCancelFailed)
+	case commandStateCancellationCommandSent:
+		d.moveState(commandStateInitiated, eventCancelFailed)
 	default:
-		d.decisionStateMachineBase.handleCancelFailedEvent()
+		d.commandStateMachineBase.handleCancelFailedEvent()
 	}
 }
 
-func (d *timerDecisionStateMachine) getDecision() *commandpb.Command {
+func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case decisionStateCreated:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_START_TIMER)
-		decision.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
-		return decision
-	case decisionStateCanceledAfterInitiated:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_CANCEL_TIMER)
-		decision.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
+		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
+		return command
+	case commandStateCanceledAfterInitiated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
+		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
 			TimerId: d.attributes.TimerId,
 		}}
-		return decision
+		return command
 	default:
 		return nil
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) getDecision() *commandpb.Command {
+func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case decisionStateCreated:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
-		decision.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
-		return decision
-	case decisionStateCanceledAfterStarted:
-		decision := createNewDecision(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
-		decision.Attributes = &commandpb.Command_RequestCancelExternalWorkflowExecutionCommandAttributes{RequestCancelExternalWorkflowExecutionCommandAttributes: &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
+		command.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
+		return command
+	case commandStateCanceledAfterStarted:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
+		command.Attributes = &commandpb.Command_RequestCancelExternalWorkflowExecutionCommandAttributes{RequestCancelExternalWorkflowExecutionCommandAttributes: &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
 			Namespace:         d.attributes.Namespace,
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
 		}}
-		return decision
+		return command
 	default:
 		return nil
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) handleDecisionSent() {
+func (d *childWorkflowCommandStateMachine) handleCommandSent() {
 	switch d.state {
-	case decisionStateCanceledAfterStarted:
-		d.moveState(decisionStateCancellationDecisionSent, eventDecisionSent)
+	case commandStateCanceledAfterStarted:
+		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
-		d.decisionStateMachineBase.handleDecisionSent()
+		d.commandStateMachineBase.handleCommandSent()
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) handleStartedEvent() {
+func (d *childWorkflowCommandStateMachine) handleStartedEvent() {
 	switch d.state {
-	case decisionStateInitiated:
-		d.moveState(decisionStateStarted, eventStarted)
-	case decisionStateCanceledAfterInitiated:
-		d.moveState(decisionStateCanceledAfterStarted, eventStarted)
+	case commandStateInitiated:
+		d.moveState(commandStateStarted, eventStarted)
+	case commandStateCanceledAfterInitiated:
+		d.moveState(commandStateCanceledAfterStarted, eventStarted)
 	default:
-		d.decisionStateMachineBase.handleStartedEvent()
+		d.commandStateMachineBase.handleStartedEvent()
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) handleCancelFailedEvent() {
+func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 	switch d.state {
-	case decisionStateCancellationDecisionSent:
-		d.moveState(decisionStateStarted, eventCancelFailed)
+	case commandStateCancellationCommandSent:
+		d.moveState(commandStateStarted, eventCancelFailed)
 	default:
-		d.decisionStateMachineBase.handleCancelFailedEvent()
+		d.commandStateMachineBase.handleCancelFailedEvent()
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) cancel() {
+func (d *childWorkflowCommandStateMachine) cancel() {
 	switch d.state {
-	case decisionStateStarted:
-		d.moveState(decisionStateCanceledAfterStarted, eventCancel)
-		d.helper.incrementNextDecisionEventID()
+	case commandStateStarted:
+		d.moveState(commandStateCanceledAfterStarted, eventCancel)
+		d.helper.incrementNextCommandEventID()
 	default:
-		d.decisionStateMachineBase.cancel()
+		d.commandStateMachineBase.cancel()
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) handleCanceledEvent() {
+func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 	switch d.state {
-	case decisionStateStarted:
-		d.moveState(decisionStateCompleted, eventCanceled)
+	case commandStateStarted:
+		d.moveState(commandStateCompleted, eventCanceled)
 	default:
-		d.decisionStateMachineBase.handleCanceledEvent()
+		d.commandStateMachineBase.handleCanceledEvent()
 	}
 }
 
-func (d *childWorkflowDecisionStateMachine) handleCompletionEvent() {
+func (d *childWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case decisionStateStarted, decisionStateCanceledAfterStarted:
-		d.moveState(decisionStateCompleted, eventCompletion)
+	case commandStateStarted, commandStateCanceledAfterStarted:
+		d.moveState(commandStateCompleted, eventCompletion)
 	default:
-		d.decisionStateMachineBase.handleCompletionEvent()
+		d.commandStateMachineBase.handleCompletionEvent()
 	}
 }
 
-func (d *naiveDecisionStateMachine) getDecision() *commandpb.Command {
+func (d *naiveCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case decisionStateCreated:
-		return d.decision
+	case commandStateCreated:
+		return d.command
 	default:
 		return nil
 	}
 }
 
-func (d *naiveDecisionStateMachine) cancel() {
+func (d *naiveCommandStateMachine) cancel() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleCompletionEvent() {
+func (d *naiveCommandStateMachine) handleCompletionEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleInitiatedEvent() {
+func (d *naiveCommandStateMachine) handleInitiatedEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleInitiationFailedEvent() {
+func (d *naiveCommandStateMachine) handleInitiationFailedEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleStartedEvent() {
+func (d *naiveCommandStateMachine) handleStartedEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleCanceledEvent() {
+func (d *naiveCommandStateMachine) handleCanceledEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleCancelFailedEvent() {
+func (d *naiveCommandStateMachine) handleCancelFailedEvent() {
 	panic("unsupported operation")
 }
 
-func (d *naiveDecisionStateMachine) handleCancelInitiatedEvent() {
+func (d *naiveCommandStateMachine) handleCancelInitiatedEvent() {
 	panic("unsupported operation")
 }
 
-func (d *cancelExternalWorkflowDecisionStateMachine) handleInitiatedEvent() {
+func (d *cancelExternalWorkflowCommandStateMachine) handleInitiatedEvent() {
 	switch d.state {
-	case decisionStateDecisionSent:
-		d.moveState(decisionStateInitiated, eventInitiated)
+	case commandStateCommandSent:
+		d.moveState(commandStateInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
 	}
 }
 
-func (d *cancelExternalWorkflowDecisionStateMachine) handleCompletionEvent() {
+func (d *cancelExternalWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case decisionStateInitiated:
-		d.moveState(decisionStateCompleted, eventCompletion)
+	case commandStateInitiated:
+		d.moveState(commandStateCompleted, eventCompletion)
 	default:
 		d.failStateTransition(eventCompletion)
 	}
 }
 
-func (d *signalExternalWorkflowDecisionStateMachine) handleInitiatedEvent() {
+func (d *signalExternalWorkflowCommandStateMachine) handleInitiatedEvent() {
 	switch d.state {
-	case decisionStateDecisionSent:
-		d.moveState(decisionStateInitiated, eventInitiated)
+	case commandStateCommandSent:
+		d.moveState(commandStateInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
 	}
 }
 
-func (d *signalExternalWorkflowDecisionStateMachine) handleCompletionEvent() {
+func (d *signalExternalWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case decisionStateInitiated:
-		d.moveState(decisionStateCompleted, eventCompletion)
+	case commandStateInitiated:
+		d.moveState(commandStateCompleted, eventCompletion)
 	default:
 		d.failStateTransition(eventCompletion)
 	}
 }
 
-func (d *markerDecisionStateMachine) handleDecisionSent() {
-	// Marker decision state machine is considered as completed once decision is sent.
-	// For SideEffect/Version markers, when the history event is applied, there is no marker decision state machine yet
+func (d *markerCommandStateMachine) handleCommandSent() {
+	// Marker command state machine is considered as completed once command is sent.
+	// For SideEffect/Version markers, when the history event is applied, there is no marker command state machine yet
 	// because we preload those marker events.
 	// For local activity, when we apply the history event, we use it to create the marker state machine, there is no
 	// other event to drive it to completed state.
 	switch d.state {
-	case decisionStateCreated:
-		d.moveState(decisionStateCompleted, eventDecisionSent)
+	case commandStateCreated:
+		d.moveState(commandStateCompleted, eventCommandSent)
 	}
 }
 
-func (d *upsertSearchAttributesDecisionStateMachine) handleDecisionSent() {
-	// This decision is considered as completed once decision is sent.
+func (d *upsertSearchAttributesCommandStateMachine) handleCommandSent() {
+	// This command is considered as completed once command is sent.
 	switch d.state {
-	case decisionStateCreated:
-		d.moveState(decisionStateCompleted, eventDecisionSent)
+	case commandStateCreated:
+		d.moveState(commandStateCompleted, eventCommandSent)
 	}
 }
 
-func newDecisionsHelper() *decisionsHelper {
-	return &decisionsHelper{
-		orderedDecisions: list.New(),
-		decisions:        make(map[decisionID]*list.Element),
+func newCommandsHelper() *commandsHelper {
+	return &commandsHelper{
+		orderedCommands: list.New(),
+		commands:        make(map[commandID]*list.Element),
 
 		scheduledEventIDToActivityID:     make(map[int64]string),
 		scheduledEventIDToCancellationID: make(map[int64]string),
@@ -713,109 +713,110 @@ func newDecisionsHelper() *decisionsHelper {
 	}
 }
 
-func (h *decisionsHelper) incrementNextDecisionEventID() {
-	h.nextDecisionEventID++
+func (h *commandsHelper) incrementNextCommandEventID() {
+	h.nextCommandEventID++
 }
 
-func (h *decisionsHelper) setCurrentDecisionStartedEventID(workflowTaskStartedEventID int64) {
-	// Server always processes the decisions in the same order it is generated by client and each decision results
-	// in coresponding history event after procesing.  So we can use decision started event id + 2 as the offset as
-	// decision completed event is always the first event in the decision followed by decisions.  This allows
-	// client sdk to deterministically predict history event ids generated by processing of the decision.
-	h.nextDecisionEventID = workflowTaskStartedEventID + 2
+func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStartedEventID int64) {
+	// Server always processes the commands in the same order it is generated by client and each command results
+	// in coresponding history event after procesing. So we can use workflow task started event id + 2
+	// as the offset as workflow task completed event is always the first event in the workflow task followed by
+	// events generated from commands. This allows client sdk to deterministically predict history event ids
+	// generated by processing of the command.
+	h.nextCommandEventID = workflowTaskStartedEventID + 2
 }
 
-func (h *decisionsHelper) getNextID() int64 {
+func (h *commandsHelper) getNextID() int64 {
 	// First check if we have a GetVersion marker in the lookup map
-	if _, ok := h.versionMarkerLookup[h.nextDecisionEventID]; ok {
-		// Remove the marker from the lookup map and increment nextDecisionEventID by 2 because call to GetVersion
+	if _, ok := h.versionMarkerLookup[h.nextCommandEventID]; ok {
+		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
 		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
-		delete(h.versionMarkerLookup, h.nextDecisionEventID)
-		h.incrementNextDecisionEventID()
-		h.incrementNextDecisionEventID()
+		delete(h.versionMarkerLookup, h.nextCommandEventID)
+		h.incrementNextCommandEventID()
+		h.incrementNextCommandEventID()
 	}
-	if h.nextDecisionEventID == 0 {
-		panic("Attempt to generate a decision before processing WorkflowTaskStarted event")
+	if h.nextCommandEventID == 0 {
+		panic("Attempt to generate a command before processing WorkflowTaskStarted event")
 	}
-	return h.nextDecisionEventID
+	return h.nextCommandEventID
 }
 
-func (h *decisionsHelper) getDecision(id decisionID) decisionStateMachine {
-	decision, ok := h.decisions[id]
+func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
+	command, ok := h.commands[id]
 	if !ok {
-		panicMsg := fmt.Sprintf("unknown decision %v, possible causes are nondeterministic workflow definition code"+
+		panicMsg := fmt.Sprintf("unknown command %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}
-	// Move the last update decision state machine to the back of the list.
-	// Otherwise decisions (like timer cancellations) can end up out of order.
-	h.orderedDecisions.MoveToBack(decision)
-	return decision.Value.(decisionStateMachine)
+	// Move the last update command state machine to the back of the list.
+	// Otherwise commands (like timer cancellations) can end up out of order.
+	h.orderedCommands.MoveToBack(command)
+	return command.Value.(commandStateMachine)
 }
 
-func (h *decisionsHelper) addDecision(decision decisionStateMachine) {
-	if _, ok := h.decisions[decision.getID()]; ok {
-		panicMsg := fmt.Sprintf("adding duplicate decision %v", decision)
+func (h *commandsHelper) addCommand(command commandStateMachine) {
+	if _, ok := h.commands[command.getID()]; ok {
+		panicMsg := fmt.Sprintf("adding duplicate command %v", command)
 		panicIllegalState(panicMsg)
 	}
-	element := h.orderedDecisions.PushBack(decision)
-	h.decisions[decision.getID()] = element
+	element := h.orderedCommands.PushBack(command)
+	h.commands[command.getID()] = element
 
-	// Every time new decision is added increment the counter used for generating ID
-	h.incrementNextDecisionEventID()
+	// Every time new command is added increment the counter used for generating ID
+	h.incrementNextCommandEventID()
 }
 
-func (h *decisionsHelper) scheduleActivityTask(
+func (h *commandsHelper) scheduleActivityTask(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
-) decisionStateMachine {
+) commandStateMachine {
 	h.scheduledEventIDToActivityID[scheduleID] = attributes.GetActivityId()
-	decision := h.newActivityDecisionStateMachine(scheduleID, attributes)
-	h.addDecision(decision)
-	return decision
+	command := h.newActivityCommandStateMachine(scheduleID, attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) requestCancelActivityTask(activityID string) decisionStateMachine {
-	id := makeDecisionID(commandTypeActivity, activityID)
-	decision := h.getDecision(id)
-	decision.cancel()
-	return decision
+func (h *commandsHelper) requestCancelActivityTask(activityID string) commandStateMachine {
+	id := makeCommandID(commandTypeActivity, activityID)
+	command := h.getCommand(id)
+	command.cancel()
+	return command
 }
 
-func (h *decisionsHelper) handleActivityTaskClosed(activityID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeActivity, activityID))
-	decision.handleCompletionEvent()
-	return decision
+func (h *commandsHelper) handleActivityTaskClosed(activityID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	command.handleCompletionEvent()
+	return command
 }
 
-func (h *decisionsHelper) handleActivityTaskScheduled(scheduledEventID int64, activityID string) {
+func (h *commandsHelper) handleActivityTaskScheduled(scheduledEventID int64, activityID string) {
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
 		panicMsg := fmt.Sprintf("lookup failed for scheduledEventID to activityID: scheduleEvenyID: %v, activityID: %v",
 			scheduledEventID, activityID)
 		panicIllegalState(panicMsg)
 	}
 
-	decision := h.getDecision(makeDecisionID(commandTypeActivity, activityID))
-	decision.handleInitiatedEvent()
+	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	command.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
+func (h *commandsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
 		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID: %v", scheduledEventID))
 	}
-	decision := h.getDecision(makeDecisionID(commandTypeActivity, activityID))
-	decision.handleCancelInitiatedEvent()
+	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	command.handleCancelInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleActivityTaskCanceled(activityID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeActivity, activityID))
-	decision.handleCanceledEvent()
-	return decision
+func (h *commandsHelper) handleActivityTaskCanceled(activityID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	command.handleCanceledEvent()
+	return command
 }
 
-func (h *decisionsHelper) getActivityID(event *historypb.HistoryEvent) string {
+func (h *commandsHelper) getActivityID(event *historypb.HistoryEvent) string {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
@@ -837,7 +838,7 @@ func (h *decisionsHelper) getActivityID(event *historypb.HistoryEvent) string {
 	return activityID
 }
 
-func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, dc DataConverter) decisionStateMachine {
+func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
 	changeIDPayload, err := dc.ToPayloads(changeID)
@@ -858,25 +859,25 @@ func (h *decisionsHelper) recordVersionMarker(changeID string, version Version, 
 		},
 	}
 
-	decision := h.newMarkerDecisionStateMachine(markerID, recordMarker)
-	h.addDecision(decision)
-	return decision
+	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) handleVersionMarker(eventID int64, changeID string) {
+func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
 		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
 			eventID, changeID)
 		panicIllegalState(panicMsg)
 	}
 
-	// During processing of a decision we reorder all GetVersion markers and process them first
-	// Keep track of all GetVersion marker events during the processing of decision so we can
+	// During processing of a command we reorder all GetVersion markers and process them first
+	// Keep track of all GetVersion marker events during the processing of command so we can
 	// generate correct eventIDs for other events during replay
 	h.versionMarkerLookup[eventID] = changeID
 }
 
-func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc DataConverter) decisionStateMachine {
+func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
@@ -890,24 +891,24 @@ func (h *decisionsHelper) recordSideEffectMarker(sideEffectID int64, data *commo
 			sideEffectMarkerDataName: data,
 		},
 	}
-	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
-	h.addDecision(decision)
-	return decision
+	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure) decisionStateMachine {
+func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: localActivityMarkerName,
 		Failure:    failure,
 		Details:    details,
 	}
-	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
-	h.addDecision(decision)
-	return decision
+	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc DataConverter) decisionStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 
 	mutableSideEffectIDPayload, err := dc.ToPayloads(mutableSideEffectID)
@@ -922,29 +923,29 @@ func (h *decisionsHelper) recordMutableSideEffectMarker(mutableSideEffectID stri
 			sideEffectMarkerDataName: data,
 		},
 	}
-	decision := h.newMarkerDecisionStateMachine(markerID, attributes)
-	h.addDecision(decision)
-	return decision
+	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) decisionStateMachine {
-	decision := h.newChildWorkflowDecisionStateMachine(attributes)
-	h.addDecision(decision)
-	return decision
+func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) commandStateMachine {
+	command := h.newChildWorkflowCommandStateMachine(attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) handleStartChildWorkflowExecutionInitiated(workflowID string) {
-	decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-	decision.handleInitiatedEvent()
+func (h *commandsHelper) handleStartChildWorkflowExecutionInitiated(workflowID string) {
+	command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+	command.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleStartChildWorkflowExecutionFailed(workflowID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-	decision.handleInitiationFailedEvent()
-	return decision
+func (h *commandsHelper) handleStartChildWorkflowExecutionFailed(workflowID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+	command.handleInitiationFailedEvent()
+	return command
 }
 
-func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool) decisionStateMachine {
+func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool) commandStateMachine {
 	if childWorkflowOnly {
 		// For cancellation of child workflow only, we do not use cancellation ID
 		// since the child workflow cancellation go through the existing child workflow
@@ -962,13 +963,13 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, work
 			panic("cancellation on child workflow should not use run ID")
 		}
 		// targeting child workflow
-		decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-		decision.cancel()
-		return decision
+		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		command.cancel()
+		return command
 	}
 
 	// For cancellation of external workflow, we have to use cancellation ID
-	// to identify different cancellation request (decision) / response (history event)
+	// to identify different cancellation request (command) / response (history event)
 	// client can also use this code path to cancel its own child workflow, however, there will
 	// be no server side validation that target workflow is the child
 
@@ -983,55 +984,55 @@ func (h *decisionsHelper) requestCancelExternalWorkflowExecution(namespace, work
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
 	}
-	decision := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
-	h.addDecision(decision)
+	command := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
+	h.addCommand(command)
 
-	return decision
+	return command
 }
 
-func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionInitiated(initiatedeventID int64, workflowID, cancellationID string) {
+func (h *commandsHelper) handleRequestCancelExternalWorkflowExecutionInitiated(initiatedeventID int64, workflowID, cancellationID string) {
 	if h.isCancelExternalWorkflowEventForChildWorkflow(cancellationID) {
 		// this is cancellation for child workflow only
-		decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-		decision.handleCancelInitiatedEvent()
+		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		command.handleCancelInitiatedEvent()
 	} else {
 		// this is cancellation for external workflow
 		h.scheduledEventIDToCancellationID[initiatedeventID] = cancellationID
-		decision := h.getDecision(makeDecisionID(commandTypeCancellation, cancellationID))
-		decision.handleInitiatedEvent()
+		command := h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
+		command.handleInitiatedEvent()
 	}
 }
 
-func (h *decisionsHelper) handleExternalWorkflowExecutionCancelRequested(initiatedeventID int64, workflowID string) (bool, decisionStateMachine) {
-	var decision decisionStateMachine
+func (h *commandsHelper) handleExternalWorkflowExecutionCancelRequested(initiatedeventID int64, workflowID string) (bool, commandStateMachine) {
+	var command commandStateMachine
 	cancellationID, isExternal := h.scheduledEventIDToCancellationID[initiatedeventID]
 	if !isExternal {
-		decision = h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-		// no state change for child workflow, it is still in CancellationDecisionSent
+		command = h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		// no state change for child workflow, it is still in CancellationCommandSent
 	} else {
 		// this is cancellation for external workflow
-		decision = h.getDecision(makeDecisionID(commandTypeCancellation, cancellationID))
-		decision.handleCompletionEvent()
+		command = h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
+		command.handleCompletionEvent()
 	}
-	return isExternal, decision
+	return isExternal, command
 }
 
-func (h *decisionsHelper) handleRequestCancelExternalWorkflowExecutionFailed(initiatedeventID int64, workflowID string) (bool, decisionStateMachine) {
-	var decision decisionStateMachine
+func (h *commandsHelper) handleRequestCancelExternalWorkflowExecutionFailed(initiatedeventID int64, workflowID string) (bool, commandStateMachine) {
+	var command commandStateMachine
 	cancellationID, isExternal := h.scheduledEventIDToCancellationID[initiatedeventID]
 	if !isExternal {
 		// this is cancellation for child workflow only
-		decision = h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-		decision.handleCancelFailedEvent()
+		command = h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		command.handleCancelFailedEvent()
 	} else {
 		// this is cancellation for external workflow
-		decision = h.getDecision(makeDecisionID(commandTypeCancellation, cancellationID))
-		decision.handleCompletionEvent()
+		command = h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
+		command.handleCompletionEvent()
 	}
-	return isExternal, decision
+	return isExternal, command
 }
 
-func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, signalID string, childWorkflowOnly bool) decisionStateMachine {
+func (h *commandsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, signalID string, childWorkflowOnly bool) commandStateMachine {
 	attributes := &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
 		Namespace: namespace,
 		Execution: &commonpb.WorkflowExecution{
@@ -1043,39 +1044,39 @@ func (h *decisionsHelper) signalExternalWorkflowExecution(namespace, workflowID,
 		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
 	}
-	decision := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
-	h.addDecision(decision)
-	return decision
+	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) decisionStateMachine {
+func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) commandStateMachine {
 	attributes := &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
 		SearchAttributes: searchAttr,
 	}
-	decision := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
-	h.addDecision(decision)
-	return decision
+	command := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionInitiated(initiatedEventID int64, signalID string) {
+func (h *commandsHelper) handleSignalExternalWorkflowExecutionInitiated(initiatedEventID int64, signalID string) {
 	h.scheduledEventIDToSignalID[initiatedEventID] = signalID
-	decision := h.getDecision(makeDecisionID(commandTypeSignal, signalID))
-	decision.handleInitiatedEvent()
+	command := h.getCommand(makeCommandID(commandTypeSignal, signalID))
+	command.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionCompleted(initiatedEventID int64) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeSignal, h.getSignalID(initiatedEventID)))
-	decision.handleCompletionEvent()
-	return decision
+func (h *commandsHelper) handleSignalExternalWorkflowExecutionCompleted(initiatedEventID int64) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeSignal, h.getSignalID(initiatedEventID)))
+	command.handleCompletionEvent()
+	return command
 }
 
-func (h *decisionsHelper) handleSignalExternalWorkflowExecutionFailed(initiatedEventID int64) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeSignal, h.getSignalID(initiatedEventID)))
-	decision.handleCompletionEvent()
-	return decision
+func (h *commandsHelper) handleSignalExternalWorkflowExecutionFailed(initiatedEventID int64) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeSignal, h.getSignalID(initiatedEventID)))
+	command.handleCompletionEvent()
+	return command
 }
 
-func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
+func (h *commandsHelper) getSignalID(initiatedEventID int64) string {
 	signalID, ok := h.scheduledEventIDToSignalID[initiatedEventID]
 	if !ok {
 		panic(fmt.Sprintf("unable to find signalID for initiatedEventID: %v", initiatedEventID))
@@ -1083,75 +1084,75 @@ func (h *decisionsHelper) getSignalID(initiatedEventID int64) string {
 	return signalID
 }
 
-func (h *decisionsHelper) startTimer(attributes *commandpb.StartTimerCommandAttributes) decisionStateMachine {
-	decision := h.newTimerDecisionStateMachine(attributes)
-	h.addDecision(decision)
-	return decision
+func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttributes) commandStateMachine {
+	command := h.newTimerCommandStateMachine(attributes)
+	h.addCommand(command)
+	return command
 }
 
-func (h *decisionsHelper) cancelTimer(timerID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeTimer, timerID))
-	decision.cancel()
-	return decision
+func (h *commandsHelper) cancelTimer(timerID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	command.cancel()
+	return command
 }
 
-func (h *decisionsHelper) handleTimerClosed(timerID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeTimer, timerID))
-	decision.handleCompletionEvent()
-	return decision
+func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	command.handleCompletionEvent()
+	return command
 }
 
-func (h *decisionsHelper) handleTimerStarted(timerID string) {
-	decision := h.getDecision(makeDecisionID(commandTypeTimer, timerID))
-	decision.handleInitiatedEvent()
+func (h *commandsHelper) handleTimerStarted(timerID string) {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	command.handleInitiatedEvent()
 }
 
-func (h *decisionsHelper) handleTimerCanceled(timerID string) {
-	decision := h.getDecision(makeDecisionID(commandTypeTimer, timerID))
-	decision.handleCanceledEvent()
+func (h *commandsHelper) handleTimerCanceled(timerID string) {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	command.handleCanceledEvent()
 }
 
-func (h *decisionsHelper) handleCancelTimerFailed(timerID string) {
-	decision := h.getDecision(makeDecisionID(commandTypeTimer, timerID))
-	decision.handleCancelFailedEvent()
+func (h *commandsHelper) handleCancelTimerFailed(timerID string) {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	command.handleCancelFailedEvent()
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionStarted(workflowID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-	decision.handleStartedEvent()
-	return decision
+func (h *commandsHelper) handleChildWorkflowExecutionStarted(workflowID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+	command.handleStartedEvent()
+	return command
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionClosed(workflowID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-	decision.handleCompletionEvent()
-	return decision
+func (h *commandsHelper) handleChildWorkflowExecutionClosed(workflowID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+	command.handleCompletionEvent()
+	return command
 }
 
-func (h *decisionsHelper) handleChildWorkflowExecutionCanceled(workflowID string) decisionStateMachine {
-	decision := h.getDecision(makeDecisionID(commandTypeChildWorkflow, workflowID))
-	decision.handleCanceledEvent()
-	return decision
+func (h *commandsHelper) handleChildWorkflowExecutionCanceled(workflowID string) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+	command.handleCanceledEvent()
+	return command
 }
 
-func (h *decisionsHelper) getDecisions(markAsSent bool) []*commandpb.Command {
+func (h *commandsHelper) getCommands(markAsSent bool) []*commandpb.Command {
 	var result []*commandpb.Command
-	for curr := h.orderedDecisions.Front(); curr != nil; {
+	for curr := h.orderedCommands.Front(); curr != nil; {
 		next := curr.Next() // get next item here as we might need to remove curr in the loop
-		d := curr.Value.(decisionStateMachine)
-		decision := d.getDecision()
-		if decision != nil {
-			result = append(result, decision)
+		d := curr.Value.(commandStateMachine)
+		command := d.getCommand()
+		if command != nil {
+			result = append(result, command)
 		}
 
 		if markAsSent {
-			d.handleDecisionSent()
+			d.handleCommandSent()
 		}
 
-		// remove completed decision state machines
-		if d.getState() == decisionStateCompleted {
-			h.orderedDecisions.Remove(curr)
-			delete(h.decisions, d.getID())
+		// remove completed command state machines
+		if d.getState() == commandStateCompleted {
+			h.orderedCommands.Remove(curr)
+			delete(h.commands, d.getID())
 		}
 
 		curr = next
@@ -1160,7 +1161,7 @@ func (h *decisionsHelper) getDecisions(markAsSent bool) []*commandpb.Command {
 	return result
 }
 
-func (h *decisionsHelper) isCancelExternalWorkflowEventForChildWorkflow(cancellationID string) bool {
+func (h *commandsHelper) isCancelExternalWorkflowEventForChildWorkflow(cancellationID string) bool {
 	// the cancellationID, i.e. Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 	// will be empty if the event is for child workflow.
 	// for cancellation external workflow, Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes

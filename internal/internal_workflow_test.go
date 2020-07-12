@@ -375,7 +375,7 @@ func sayGreetingActivity(input *sayGreetingActivityRequest) (string, error) {
 	return fmt.Sprintf("%v %v!", input.Greeting, input.Name), nil
 }
 
-// Greetings Workflow Decider.
+// Greetings Workflow.
 func greetingsWorkflow(ctx Context) (result string, err error) {
 	// Get Greeting.
 	ao := ActivityOptions{
@@ -469,7 +469,7 @@ func (s *WorkflowUnitTest) Test_CancelWorkflow() {
 
 func cancelWorkflowAfterActivityTest(ctx Context) ([]byte, error) {
 	// The workflow cancellation should handle activity and timer cancellation
-	// not to propagate those decisions.
+	// not to propagate those command.
 
 	// schedule an activity.
 	ao := ActivityOptions{

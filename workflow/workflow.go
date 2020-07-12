@@ -371,7 +371,7 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 
 // IsReplaying returns whether the current workflow code is replaying.
 //
-// Warning! Never make decisions, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
+// Warning! Never make commands, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
 // this flag as it is going to break workflow determinism requirement.
 // The only reasonable use case for this flag is to avoid some external actions during replay, like custom logging or
 // metric reporting. Please note that Temporal already provide standard logging/metric via workflow.GetLogger(ctx) and
