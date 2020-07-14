@@ -150,7 +150,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return internal.NewFuture(ctx)
 }
 
-// Now returns the current time when the decision is started or replayed.
+// Now returns the current time when the workflow task is started or replayed.
 // The workflow needs to use this Now() to get the wall clock time instead of the Go lang library one.
 func Now(ctx Context) time.Time {
 	return internal.Now(ctx)

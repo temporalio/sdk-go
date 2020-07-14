@@ -57,9 +57,9 @@ func TestMetricsInterceptor(t *testing.T) {
 		},
 		{
 			name:                 "GenericError",
-			grpcMethod:           "/workflowservice.WorkflowService/PollForActivityTask",
+			grpcMethod:           "/workflowservice.WorkflowService/PollActivityTaskQueue",
 			err:                  serviceerror.NewInternal("internal error"),
-			expectedMetricName:   "PollForActivityTask",
+			expectedMetricName:   "PollActivityTaskQueue",
 			expectedCounterNames: []string{TemporalRequest, TemporalError},
 		},
 		{

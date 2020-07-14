@@ -106,7 +106,7 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 		// update queryResult when signal is received
 		ch.Receive(ctx, &queryResult)
 
-		// schedule activity to verify decisions are produced
+		// schedule activity to verify commands are produced
 		ao := ActivityOptions{
 			TaskQueue:              "taskQueue",
 			ActivityID:             "0",
@@ -182,11 +182,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentActivityPollers: 4,
-		MaxConcurrentDecisionPollers: 4,
-		Logger:                       logger,
-		Tracer:                       opentracing.NoopTracer{},
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 4,
+		MaxConcurrentWorkflowTaskQueuePollers: 4,
+		Logger:                                logger,
+		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -199,10 +199,10 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// mocks
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
 
 	registry := newRegistry()
@@ -213,11 +213,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentActivityPollers: 10,
-		MaxConcurrentDecisionPollers: 10,
-		Logger:                       logger,
-		Tracer:                       opentracing.NoopTracer{},
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 10,
+		MaxConcurrentWorkflowTaskQueuePollers: 10,
+		Logger:                                logger,
+		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	// Register activity instances and launch the worker.

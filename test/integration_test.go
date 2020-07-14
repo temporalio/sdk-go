@@ -250,10 +250,10 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.ConsistentQueryWorkflow, 3*time.Second)
 	ts.Nil(err)
-	// Wait for a second to ensure that first decision task gets started and completed before we send signal.
-	// Query cannot be run until first decision task has been completed.
+	// Wait for a second to ensure that first workflow task gets started and completed before we send signal.
+	// Query cannot be run until first workflow task has been completed.
 	// If signal occurs right after workflow start then WorkflowStarted and Signal events will both be part of the same
-	// decision task. So query will be blocked waiting for signal to complete, this is not what we want because it
+	// workflow task. So query will be blocked waiting for signal to complete, this is not what we want because it
 	// will not exercise the consistent query code path.
 	<-time.After(time.Second)
 	err = ts.client.SignalWorkflow(ctx, "test-consistent-query", run.GetRunID(), consistentQuerySignalCh, "signal-input")
@@ -433,7 +433,7 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
-	ts.T().Skip(`Currently fails with "PanicError": "unknown decision internal.decisionID{decisionType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
+	ts.T().Skip(`Currently fails with "PanicError": "unknown command internal.commandID{commandType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
 	ts.NoError(err)

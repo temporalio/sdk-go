@@ -27,7 +27,7 @@
         "workflowExecutionTimeoutSeconds": 315360000,
         "workflowRunTimeoutSeconds": 315360000,
         "workflowTaskTimeoutSeconds": 10,
-        "initiator": "Decider",
+        "initiator": "Workflow",
         "originalExecutionRunId": "7a971df0-94f4-416d-ab2b-d7de0571b75c",
         "identity": "24014@ShtinUbuntu2@",
         "firstExecutionRunId": "7a971df0-94f4-416d-ab2b-d7de0571b75c",
@@ -37,10 +37,10 @@
     {
       "eventId": "2",
       "timestamp": "1593300497764016736",
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097153",
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "replay-test"
         },
@@ -50,10 +50,10 @@
     {
       "eventId": "3",
       "timestamp": "1593300497780333506",
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097158",
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "2",
         "identity": "24014@ShtinUbuntu2@",
         "requestId": "8e49179d-f49a-4168-94d0-ed871bdedd96"
@@ -62,10 +62,10 @@
     {
       "eventId": "4",
       "timestamp": "1593300497788670410",
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097161",
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "2",
         "startedEventId": "3",
         "identity": "24014@ShtinUbuntu2@",
@@ -102,7 +102,7 @@
             ]
           }
         },
-        "decisionTaskCompletedEventId": "4"
+        "workflowTaskCompletedEventId": "4"
       }
     },
     {
@@ -112,7 +112,7 @@
       "version": "-24",
       "taskId": "2097163",
       "upsertWorkflowSearchAttributesEventAttributes": {
-        "decisionTaskCompletedEventId": "4",
+        "workflowTaskCompletedEventId": "4",
         "searchAttributes": {
           "indexedFields": {
             "TemporalChangeVersion": {
@@ -154,7 +154,7 @@
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
         "heartbeatTimeoutSeconds": 20,
-        "decisionTaskCompletedEventId": "4"
+        "workflowTaskCompletedEventId": "4"
       }
     },
     {
@@ -194,10 +194,10 @@
     {
       "eventId": "10",
       "timestamp": "1593300497800802685",
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097174",
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "ShtinUbuntu2:9c39d661-3067-4390-b580-5f8f5b4a8dd9"
         },
@@ -207,10 +207,10 @@
     {
       "eventId": "11",
       "timestamp": "1593300497805216488",
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097178",
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "10",
         "identity": "24014@ShtinUbuntu2@",
         "requestId": "36b139d6-0426-42de-ac7c-f4282c604067"
@@ -219,10 +219,10 @@
     {
       "eventId": "12",
       "timestamp": "1593300497814060561",
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097181",
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "10",
         "startedEventId": "11",
         "identity": "24014@ShtinUbuntu2@",
@@ -258,7 +258,7 @@
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
         "heartbeatTimeoutSeconds": 20,
-        "decisionTaskCompletedEventId": "12"
+        "workflowTaskCompletedEventId": "12"
       }
     },
     {
@@ -298,10 +298,10 @@
     {
       "eventId": "16",
       "timestamp": "1593300497822728093",
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097191",
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "ShtinUbuntu2:9c39d661-3067-4390-b580-5f8f5b4a8dd9"
         },
@@ -311,10 +311,10 @@
     {
       "eventId": "17",
       "timestamp": "1593300497828541635",
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097195",
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "16",
         "identity": "24014@ShtinUbuntu2@",
         "requestId": "ccfd7571-aaa3-4395-92a0-14027d40ef35"
@@ -323,10 +323,10 @@
     {
       "eventId": "18",
       "timestamp": "1593300497835662081",
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097198",
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "16",
         "startedEventId": "17",
         "identity": "24014@ShtinUbuntu2@",
@@ -362,7 +362,7 @@
         "scheduleToStartTimeoutSeconds": 60,
         "startToCloseTimeoutSeconds": 60,
         "heartbeatTimeoutSeconds": 20,
-        "decisionTaskCompletedEventId": "18"
+        "workflowTaskCompletedEventId": "18"
       }
     },
     {
@@ -402,10 +402,10 @@
     {
       "eventId": "22",
       "timestamp": "1593300497851101031",
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097208",
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "ShtinUbuntu2:9c39d661-3067-4390-b580-5f8f5b4a8dd9"
         },
@@ -415,10 +415,10 @@
     {
       "eventId": "23",
       "timestamp": "1593300497856593771",
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097212",
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "22",
         "identity": "24014@ShtinUbuntu2@",
         "requestId": "bce7a7e4-95fe-4c54-96e5-8d7543052fdb"
@@ -427,10 +427,10 @@
     {
       "eventId": "24",
       "timestamp": "1593300497862364593",
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097215",
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "22",
         "startedEventId": "23",
         "identity": "24014@ShtinUbuntu2@",
@@ -444,7 +444,7 @@
       "version": "-24",
       "taskId": "2097216",
       "workflowExecutionCompletedEventAttributes": {
-        "decisionTaskCompletedEventId": "24"
+        "workflowTaskCompletedEventId": "24"
       }
     }
   ]

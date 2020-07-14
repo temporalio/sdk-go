@@ -136,19 +136,19 @@ type (
 		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
 
-		// ReplayWorkflowHistory executes a single decision task for the given json history file.
+		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error
 
-		// ReplayWorkflowHistoryFromJSONFile executes a single decision task for the json history file downloaded from the cli.
+		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error
 
-		// ReplayPartialWorkflowHistoryFromJSONFile executes a single decision task for the json history file upto provided
+		// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the json history file upto provided
 		// lastEventID(inclusive), downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
@@ -156,7 +156,7 @@ type (
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error
 
-		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single decision task for it.
+		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single workflow task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is the only optional parameter. Defaults to the noop logger.
 		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution workflow.Execution) error
@@ -211,7 +211,7 @@ func EnableVerboseLogging(enable bool) {
 }
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between decision tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
+// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
 // is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
 // is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
 // is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
@@ -222,11 +222,11 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 }
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
-// The identifier is mainly used in recording reset points when respondDecisionTaskCompleted. For each workflow, the very first
-// decision completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
+// The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
+// workflow task completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
 // mark the binary as bad, the workflow will be reset to that point -- which means workflow will forget all progress generated
 // by the binary.
-// On another hand, once the binary is marked as bad, the bad binary cannot poll decision and make any progress any more.
+// On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
 }

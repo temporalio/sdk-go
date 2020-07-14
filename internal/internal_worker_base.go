@@ -71,8 +71,8 @@ type (
 		Backoff time.Duration
 	}
 
-	// WorkflowEnvironment Represents the environment for workflow/decider.
-	// Should only be used within the scope of workflow definition
+	// WorkflowEnvironment Represents the environment for workflow.
+	// Should only be used within the scope of workflow definition.
 	WorkflowEnvironment interface {
 		AsyncActivityClient
 		LocalActivityClient
@@ -103,21 +103,22 @@ type (
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.
 	WorkflowDefinitionFactory interface {
-		// NewWorkflowDefinition must return a new instance of WorkflowDefinition on each call
+		// NewWorkflowDefinition must return a new instance of WorkflowDefinition on each call.
 		NewWorkflowDefinition() WorkflowDefinition
 	}
 
 	// WorkflowDefinition wraps the code that can execute a workflow.
 	WorkflowDefinition interface {
-		// Implementation must be asynchronous
+		// Execute implementation must be asynchronous.
 		Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads)
-		// Called for each non timed out startDecision event.
-		// Executed after all history events since the previous decision are applied to WorkflowDefinition
+		// OnWorkflowTaskStarted is called for each non timed out startWorkflowTask event.
+		// Executed after all history events since the previous commands are applied to WorkflowDefinition
 		// Application level code must be executed from this function only.
 		// Execute call as well as callbacks called from WorkflowEnvironment functions can only schedule callbacks
-		// which can be executed from OnDecisionTaskStarted()
-		OnDecisionTaskStarted()
-		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
+		// which can be executed from OnWorkflowTaskStarted().
+		OnWorkflowTaskStarted()
+		// StackTrace of all coroutines owned by the Dispatcher instance.
+		StackTrace() string
 		Close()
 	}
 

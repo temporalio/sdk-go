@@ -33,6 +33,7 @@ import (
 	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
+
 	enumspb "go.temporal.io/api/enums/v1"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -54,7 +55,7 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollForActivityTaskResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
@@ -99,17 +100,17 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		Namespace:                    DefaultNamespace,
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentDecisionPollers: 5,
-		Logger:                       logger,
-		UserContext:                  ctx,
-		UserContextCancel:            cancel,
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentWorkflowTaskQueuePollers: 5,
+		Logger:                                logger,
+		UserContext:                           ctx,
+		UserContextCancel:                     cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
@@ -123,14 +124,14 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	logger, _ := zap.NewDevelopment()
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForActivityTaskResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		Namespace:                    DefaultNamespace,
-		TaskQueue:                    "testTaskQueue",
-		MaxConcurrentActivityPollers: 5,
-		Logger:                       logger,
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 5,
+		Logger:                                logger,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -144,7 +145,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	logger, _ := zap.NewDevelopment()
 
-	pats := &workflowservice.PollForActivityTaskResponse{
+	pats := &workflowservice.PollActivityTaskQueueResponse{
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
@@ -162,21 +163,21 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	}
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForActivityTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
-		Namespace:                       DefaultNamespace,
-		TaskQueue:                       "testTaskQueue",
-		MaxConcurrentActivityPollers:    5,
-		ConcurrentActivityExecutionSize: 2,
-		Logger:                          logger,
-		UserContext:                     ctx,
-		UserContextCancel:               cancel,
-		WorkerStopTimeout:               time.Second * 2,
-		WorkerStopChannel:               stopC,
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 5,
+		ConcurrentActivityExecutionSize:       2,
+		Logger:                                logger,
+		UserContext:                           ctx,
+		UserContextCancel:                     cancel,
+		WorkerStopTimeout:                     time.Second * 2,
+		WorkerStopChannel:                     stopC,
 	}
 	activityTaskHandler := newNoResponseActivityTaskHandler()
 	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
@@ -197,15 +198,15 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	s.Error(err)
 }
 
-func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
+func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		Namespace:                    DefaultNamespace,
-		TaskQueue:                    "testDecisionTaskQueue",
-		MaxConcurrentDecisionPollers: 5,
-		Logger:                       zap.NewNop(),
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             "testWorkflowTaskQueue",
+		MaxConcurrentWorkflowTaskQueuePollers: 5,
+		Logger:                                zap.NewNop(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
@@ -213,7 +214,7 @@ func (s *WorkersTestSuite) TestPollForDecisionTask_InternalServiceError() {
 	workflowWorker.Stop()
 }
 
-func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
+func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 	localActivityCalledCount := 0
 	localActivitySleep := func(duration time.Duration) error {
 		time.Sleep(duration)
@@ -224,7 +225,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	doneCh := make(chan struct{})
 
 	isWorkflowCompleted := false
-	longDecisionWorkflowFn := func(ctx Context, input []byte) error {
+	longWorkflowTaskWorkflowFn := func(ctx Context, input []byte) error {
 		lao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Second * 2,
 		}
@@ -240,7 +241,7 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 		return err
 	}
 
-	taskQueue := "long-running-decision-tq"
+	taskQueue := "long-running-workflow-task-tq"
 	testEvents := []*historypb.HistoryEvent{
 		{
 			EventId:   1,
@@ -250,78 +251,78 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 				WorkflowExecutionTimeoutSeconds: 10,
 				WorkflowRunTimeoutSeconds:       10,
 				WorkflowTaskTimeoutSeconds:      2,
-				WorkflowType:                    &commonpb.WorkflowType{Name: "long-running-decision-workflow-type"},
+				WorkflowType:                    &commonpb.WorkflowType{Name: "long-running-workflow-task-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
 			EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 			Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
-				DecisionTaskCompletedEventId: 4,
+				WorkflowTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(7),
+		createTestEventWorkflowTaskCompleted(8, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
 			EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 			Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
-				DecisionTaskCompletedEventId: 8,
+				WorkflowTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(11),
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	task := &workflowservice.PollForDecisionTaskResponse{
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
-			WorkflowId: "long-running-decision-workflow-id",
-			RunId:      "long-running-decision-workflow-run-id",
+			WorkflowId: "long-running-workflow-task-workflow-id",
+			RunId:      "long-running-workflow-task-workflow-run-id",
 		},
 		WorkflowType: &commonpb.WorkflowType{
-			Name: "long-running-decision-workflow-type",
+			Name: "long-running-workflow-task-workflow-type",
 		},
 		PreviousStartedEventId: 0,
 		StartedEventId:         3,
 		History:                &historypb.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,
-	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondWorkflowTaskCompletedRequest, opts ...grpc.CallOption,
+	) (success *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {
 		case 1:
-			s.Equal(1, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
+			s.Equal(1, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:7]
-			return &workflowservice.RespondDecisionTaskCompletedResponse{DecisionTask: task}, nil
+			return &workflowservice.RespondWorkflowTaskCompletedResponse{WorkflowTask: task}, nil
 		case 2:
-			s.Equal(2, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
-			s.Equal(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION, request.Decisions[1].GetDecisionType())
+			s.Equal(2, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
+			s.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, request.Commands[1].GetCommandType())
 			task.PreviousStartedEventId = 7
 			task.StartedEventId = 11
 			task.History.Events = testEvents[7:11]
 			close(doneCh)
 			return nil, nil
 		default:
-			panic("unexpected RespondDecisionTaskCompleted")
+			panic("unexpected RespondWorkflowTaskCompleted")
 		}
 	}).Times(2)
 
@@ -336,8 +337,8 @@ func (s *WorkersTestSuite) TestLongRunningDecisionTask() {
 	client := NewServiceClient(s.service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, taskQueue, options)
 	worker.RegisterWorkflowWithOptions(
-		longDecisionWorkflowFn,
-		RegisterWorkflowOptions{Name: "long-running-decision-workflow-type"},
+		longWorkflowTaskWorkflowFn,
+		RegisterWorkflowOptions{Name: "long-running-workflow-task-workflow-type"},
 	)
 	worker.RegisterActivity(localActivitySleep)
 
@@ -365,7 +366,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	doneCh := make(chan struct{})
 
 	isWorkflowCompleted := false
-	longDecisionWorkflowFn := func(ctx Context, input []byte) error {
+	longWorkflowTaskWorkflowFn := func(ctx Context, input []byte) error {
 		lao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Second * 2,
 		}
@@ -394,36 +395,36 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 				WorkflowType:                    &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
-		createTestEventDecisionTaskScheduled(2, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(3),
-		createTestEventDecisionTaskCompleted(4, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   5,
 			EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 			Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("0"),
-				DecisionTaskCompletedEventId: 4,
+				WorkflowTaskCompletedEventId: 4,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(6, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(7),
-		createTestEventDecisionTaskCompleted(8, &historypb.DecisionTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(7),
+		createTestEventWorkflowTaskCompleted(8, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		{
 			EventId:   9,
 			EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 			Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 				MarkerName:                   localActivityMarkerName,
 				Details:                      s.createLocalActivityMarkerDataForTest("1"),
-				DecisionTaskCompletedEventId: 8,
+				WorkflowTaskCompletedEventId: 8,
 			}},
 		},
-		createTestEventDecisionTaskScheduled(10, &historypb.DecisionTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventDecisionTaskStarted(11),
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(11),
 	}
 
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	task := &workflowservice.PollForDecisionTaskResponse{
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		TaskToken: []byte("test-token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "multiple-local-activities-workflow-id",
@@ -437,24 +438,24 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		History:                &historypb.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
-	s.service.EXPECT().PollForDecisionTask(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollForDecisionTaskResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	respondCounter := 0
-	s.service.EXPECT().RespondDecisionTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondDecisionTaskCompletedRequest, opts ...grpc.CallOption,
-	) (success *workflowservice.RespondDecisionTaskCompletedResponse, err error) {
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondWorkflowTaskCompletedRequest, opts ...grpc.CallOption,
+	) (success *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 		respondCounter++
 		switch respondCounter {
 		case 1:
-			s.Equal(3, len(request.Decisions))
-			s.Equal(enumspb.DECISION_TYPE_RECORD_MARKER, request.Decisions[0].GetDecisionType())
+			s.Equal(3, len(request.Commands))
+			s.Equal(enumspb.COMMAND_TYPE_RECORD_MARKER, request.Commands[0].GetCommandType())
 			task.PreviousStartedEventId = 3
 			task.StartedEventId = 7
 			task.History.Events = testEvents[3:11]
 			close(doneCh)
 			return nil, nil
 		default:
-			panic("unexpected RespondDecisionTaskCompleted")
+			panic("unexpected RespondWorkflowTaskCompleted")
 		}
 	}).Times(1)
 
@@ -469,7 +470,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	client := NewServiceClient(s.service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, taskQueue, options)
 	worker.RegisterWorkflowWithOptions(
-		longDecisionWorkflowFn,
+		longWorkflowTaskWorkflowFn,
 		RegisterWorkflowOptions{Name: "multiple-local-activities-workflow-type"},
 	)
 	worker.RegisterActivity(localActivitySleep)

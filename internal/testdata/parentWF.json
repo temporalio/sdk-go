@@ -19,17 +19,17 @@
         "identity": "10773@longer-C02V60N3HTDG@",
         "attempt": 0,
         "cronSchedule": "",
-        "firstDecisionTaskBackoffSeconds": 0,
+        "firstWorkflowTaskBackoffSeconds": 0,
         "header": {}
       }
     },
     {
       "eventId": 2,
       "timestamp": 1561506494525315000,
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331649,
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "childWorkflowGroup"
         },
@@ -40,10 +40,10 @@
     {
       "eventId": 3,
       "timestamp": 1561506524119673000,
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331654,
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 2,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
         "requestId": "0a2af0a8-333d-43f2-8a52-716effaf9a5c"
@@ -52,10 +52,10 @@
     {
       "eventId": 4,
       "timestamp": 1561506524134556000,
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331657,
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
         "startedEventId": 3,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
@@ -80,7 +80,7 @@
         "input": null,
         "workflowRunTimeoutSeconds": 60,
         "workflowTaskTimeoutSeconds": 10,
-        "decisionTaskCompletedEventId": 4,
+        "workflowTaskCompletedEventId": 4,
         "workflowIdReusePolicy": "AllowDuplicateFailedOnly",
         "header": {}
       }
@@ -107,10 +107,10 @@
     {
       "eventId": 7,
       "timestamp": 1561506524150637000,
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331663,
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
@@ -121,10 +121,10 @@
     {
       "eventId": 8,
       "timestamp": 1561506524166038000,
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331667,
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 7,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
         "requestId": "66b33286-99e6-4ec4-be2c-2aa15b6e3a42"
@@ -133,10 +133,10 @@
     {
       "eventId": 9,
       "timestamp": 1561506524177688000,
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331670,
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 7,
         "startedEventId": 8,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
@@ -150,7 +150,7 @@
       "version": -24,
       "taskId": 50331671,
       "signalExternalWorkflowExecutionInitiatedEventAttributes": {
-        "decisionTaskCompletedEventId": 9,
+        "workflowTaskCompletedEventId": 9,
         "namespace": "samples-namespace",
         "workflowExecution": {
           "workflowId": "child_workflow:0ea65eda-a0db-4a59-bef3-dce48e8484f8",
@@ -181,10 +181,10 @@
     {
       "eventId": 12,
       "timestamp": 1561506524254689000,
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331676,
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
@@ -195,10 +195,10 @@
     {
       "eventId": 13,
       "timestamp": 1561506524259702000,
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331680,
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 12,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
         "requestId": "e8162676-7d86-4cea-ba21-2f5ea97835ef"
@@ -207,10 +207,10 @@
     {
       "eventId": 14,
       "timestamp": 1561506524264877000,
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331683,
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 12,
         "startedEventId": 13,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
@@ -240,10 +240,10 @@
     {
       "eventId": 16,
       "timestamp": 1561506524402364000,
-      "eventType": "DecisionTaskScheduled",
+      "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331687,
-      "decisionTaskScheduledEventAttributes": {
+      "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
@@ -254,10 +254,10 @@
     {
       "eventId": 17,
       "timestamp": 1561506524410406000,
-      "eventType": "DecisionTaskStarted",
+      "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331691,
-      "decisionTaskStartedEventAttributes": {
+      "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 16,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
         "requestId": "06c6589a-29e6-405c-a28d-9d6466998b69"
@@ -266,10 +266,10 @@
     {
       "eventId": 18,
       "timestamp": 1561506524417332000,
-      "eventType": "DecisionTaskCompleted",
+      "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331694,
-      "decisionTaskCompletedEventAttributes": {
+      "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 16,
         "startedEventId": 17,
         "identity": "10816@longer-C02V60N3HTDG@childWorkflowGroup",
@@ -283,7 +283,7 @@
       "version": -24,
       "taskId": 50331695,
       "workflowExecutionCompletedEventAttributes": {
-        "decisionTaskCompletedEventId": 18
+        "workflowTaskCompletedEventId": 18
       }
     }
   ]

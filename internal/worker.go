@@ -78,22 +78,22 @@ type (
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
 
-		// Optional: To set the maximum concurrent decision task executions this worker can have.
+		// Optional: To set the maximum concurrent workflow task executions this worker can have.
 		// The zero value of this uses the default value.
 		// default: defaultMaxConcurrentTaskExecutionSize(1k)
-		MaxConcurrentDecisionTaskExecutionSize int
+		MaxConcurrentWorkflowTaskExecutionSize int
 
-		// Optional: Sets the rate limiting on number of decision tasks that can be executed per second per
+		// Optional: Sets the rate limiting on number of workflow tasks that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
 		// The zero value of this uses the default value.
 		// default: 100k
-		WorkerDecisionTasksPerSecond float64
+		WorkerWorkflowTasksPerSecond float64
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
-		// temporal-server to retrieve decision tasks. Changing this value will affect the
+		// temporal-server to retrieve workflow tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
 		// default: 2
-		MaxConcurrentDecisionTaskPollers int
+		MaxConcurrentWorkflowTaskPollers int
 
 		// Optional: Enable logging in replay.
 		// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
@@ -111,11 +111,11 @@ type (
 		DisableActivityWorker bool
 
 		// Optional: Disable sticky execution.
-		// Sticky Execution is to run the decision tasks for one workflow execution on same worker host. This is an
+		// Sticky Execution is to run the workflow tasks for one workflow execution on same worker host. This is an
 		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
-		// memory. New decision task contains the new history events will be dispatched to the same worker. If this
-		// worker crashes, the sticky decision task will timeout after StickyScheduleToStartTimeout, and temporal server
-		// will clear the stickiness for that workflow execution and automatically reschedule a new decision task that
+		// memory. New workflow task contains the new history events will be dispatched to the same worker. If this
+		// worker crashes, the sticky workflow task will timeout after StickyScheduleToStartTimeout, and temporal server
+		// will clear the stickiness for that workflow execution and automatically reschedule a new workflow task that
 		// is available for any worker to pick up and resume the progress.
 		// default: false
 		DisableStickyExecution bool
@@ -129,7 +129,7 @@ type (
 		// like common logger for all activities.
 		BackgroundActivityContext context.Context
 
-		// Optional: Sets how decision worker deals with non-deterministic history events
+		// Optional: Sets how workflow worker deals with non-deterministic history events
 		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow definition changes).
 		// default: BlockWorkflow, which just logs error but reply nothing back to server
 		NonDeterministicWorkflowPolicy WorkflowPanicPolicy

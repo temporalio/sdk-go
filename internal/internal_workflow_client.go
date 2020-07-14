@@ -940,7 +940,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 // DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 // pollers which polled this taskqueue in last few minutes.
 // - taskqueue name of taskqueue
-// - taskqueueType type of taskqueue, can be decision or activity
+// - taskqueueType type of taskqueue, can be workflow or activity
 // The errors it can return:
 //  - BadRequestError
 //  - InternalServiceError

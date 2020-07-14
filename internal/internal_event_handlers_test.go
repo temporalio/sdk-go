@@ -166,13 +166,13 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 
 func Test_UpsertSearchAttributes(t *testing.T) {
 	t.Parallel()
-	helper := newDecisionsHelper()
+	helper := newCommandsHelper()
 	_, ctx := createRootTestContext()
 	env := &workflowEnvironmentImpl{
-		decisionsHelper: helper,
-		workflowInfo:    GetWorkflowInfo(ctx),
+		commandsHelper: helper,
+		workflowInfo:   GetWorkflowInfo(ctx),
 	}
-	helper.setCurrentDecisionStartedEventID(4)
+	helper.setCurrentWorkflowTaskStartedEventID(4)
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
@@ -180,7 +180,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
 	)
 	require.NoError(t, err)
-	_, ok := env.decisionsHelper.decisions[makeDecisionID(decisionTypeUpsertSearchAttributes, "change2-1")]
+	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeUpsertSearchAttributes, "change2-1")]
 	require.True(t, ok)
 	require.Equal(t, int64(7), env.GenerateSequence())
 

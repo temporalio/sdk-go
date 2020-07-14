@@ -2319,7 +2319,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_DrainSignalChannel() {
 	env.RegisterWorkflow(workflowFn)
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflowSkippingDecision("test-signal", "s1")
+		env.SignalWorkflowSkippingWorkflowTask("test-signal", "s1")
 		env.SignalWorkflow("test-signal", "s2")
 	}, time.Minute)
 

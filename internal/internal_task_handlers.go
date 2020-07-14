@@ -39,8 +39,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
+	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	decisionpb "go.temporal.io/api/decision/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
@@ -66,8 +66,8 @@ const (
 type (
 	// workflowExecutionEventHandler process a single event.
 	workflowExecutionEventHandler interface {
-		// Process a single event and return the assosciated decisions.
-		// Return List of decisions made, any error.
+		// Process a single event and return the assosciated commands.
+		// Return List of commands made, any error.
 		ProcessEvent(event *historypb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
@@ -76,9 +76,9 @@ type (
 		Close()
 	}
 
-	// workflowTask wraps a decision task.
+	// workflowTask wraps a workflow task.
 	workflowTask struct {
-		task            *workflowservice.PollForDecisionTaskResponse
+		task            *workflowservice.PollWorkflowTaskQueueResponse
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
@@ -86,7 +86,7 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task          *workflowservice.PollForActivityTaskResponse
+		task          *workflowservice.PollActivityTaskQueueResponse
 		pollStartTime time.Time
 	}
 
@@ -113,10 +113,9 @@ type (
 
 		previousStartedEventID int64
 
-		newDecisions        []*decisionpb.Decision
-		currentDecisionTask *workflowservice.PollForDecisionTaskResponse
+		newCommands         []*commandpb.Command
+		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
-		decisionStartTime   time.Time
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
@@ -166,7 +165,7 @@ type (
 		binaryChecksum string
 	}
 
-	decisionHeartbeatError struct {
+	workflowTaskHeartbeatError struct {
 		Message string
 	}
 )
@@ -185,7 +184,7 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 	return result
 }
 
-func (e decisionHeartbeatError) Error() string {
+func (e workflowTaskHeartbeatError) Error() string {
 	return e.Message
 }
 
@@ -199,10 +198,10 @@ func (eh *history) GetWorkflowStartedEvent() (*historypb.HistoryEvent, error) {
 }
 
 func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
-	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isDecisionEvent(event.GetEventType())
+	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
-func (eh *history) IsNextDecisionFailed() (isFailed bool, binaryChecksum string, err error) {
+func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, err error) {
 
 	nextIndex := eh.currentIndex + 1
 	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
@@ -214,10 +213,10 @@ func (eh *history) IsNextDecisionFailed() (isFailed bool, binaryChecksum string,
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
-		isFailed := nextEventType == enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_DECISION_TASK_FAILED
+		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
 		var binaryChecksum string
-		if nextEventType == enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED {
-			binaryChecksum = nextEvent.GetDecisionTaskCompletedEventAttributes().BinaryChecksum
+		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
 		}
 		return isFailed, binaryChecksum, nil
 	}
@@ -236,7 +235,7 @@ func (eh *history) loadMoreEvents() error {
 	return nil
 }
 
-func isDecisionEvent(eventType enumspb.EventType) bool {
+func isCommandEvent(eventType enumspb.EventType) bool {
 	switch eventType {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED,
@@ -258,11 +257,11 @@ func isDecisionEvent(eventType enumspb.EventType) bool {
 	}
 }
 
-// NextDecisionEvents returns events that there processed as new by the next decision.
+// NextCommandEvents returns events that there processed as new by the next command.
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextDecisionEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, err error) {
+func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, err error) {
 	if eh.next == nil {
-		eh.next, _, err = eh.nextDecisionEvents()
+		eh.next, _, err = eh.nextCommandEvents()
 		if err != nil {
 			return result, markers, eh.binaryChecksum, err
 		}
@@ -271,7 +270,7 @@ func (eh *history) NextDecisionEvents() (result []*historypb.HistoryEvent, marke
 	result = eh.next
 	checksum := eh.binaryChecksum
 	if len(result) > 0 {
-		eh.next, markers, err = eh.nextDecisionEvents()
+		eh.next, markers, err = eh.nextCommandEvents()
 	}
 	return result, markers, checksum, err
 }
@@ -301,7 +300,7 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextDecisionEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, err error) {
+func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
 			return nil, nil, err
@@ -338,8 +337,8 @@ OrderEvents:
 		eh.nextEventID++
 
 		switch event.GetEventType() {
-		case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
-			isFailed, binaryChecksum, err1 := eh.IsNextDecisionFailed()
+		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+			isFailed, binaryChecksum, err1 := eh.IsNextWorkflowTaskFailed()
 			if err1 != nil {
 				err = err1
 				return
@@ -350,9 +349,9 @@ OrderEvents:
 				nextEvents = append(nextEvents, event)
 				break OrderEvents
 			}
-		case enumspb.EVENT_TYPE_DECISION_TASK_SCHEDULED,
-			enumspb.EVENT_TYPE_DECISION_TASK_TIMED_OUT,
-			enumspb.EVENT_TYPE_DECISION_TASK_FAILED:
+		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
 			// Skip
 		default:
 			if isPreloadMarkerEvent(event) {
@@ -400,7 +399,7 @@ var initCacheOnce sync.Once
 var stickyCacheLock sync.Mutex
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between decision tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
+// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
 // is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
 // is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
 // is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
@@ -470,9 +469,9 @@ func (w *workflowExecutionContextImpl) Lock() {
 
 func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
-		// TODO: in case of closed, it asumes the close decision always succeed. need server side change to return
-		// error to indicate the close failure case. This should be rear case. For now, always remove the cache, and
-		// if the close decision failed, the next decision will have to rebuild the state.
+		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
+		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
+		// if the close command failed, the next command will have to rebuild the state.
 		if getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 		} else {
@@ -553,7 +552,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.result = nil
 	w.err = nil
 	w.previousStartedEventID = 0
-	w.newDecisions = nil
+	w.newCommands = nil
 
 	eventHandler := w.getEventHandler()
 	if eventHandler != nil {
@@ -580,7 +579,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 	w.eventHandler.Store(eventHandler)
 }
 
-func resetHistory(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) (*historypb.History, error) {
+func resetHistory(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) (*historypb.History, error) {
 	historyIterator.Reset()
 	firstPageHistory, err := historyIterator.GetNextPage()
 	if err != nil {
@@ -590,7 +589,7 @@ func resetHistory(task *workflowservice.PollForDecisionTaskResponse, historyIter
 	return firstPageHistory, nil
 }
 
-func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.PollForDecisionTaskResponse) (*workflowExecutionContextImpl, error) {
+func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.PollWorkflowTaskQueueResponse) (*workflowExecutionContextImpl, error) {
 	h := task.History
 	attributes := h.Events[0].GetWorkflowExecutionStartedEventAttributes()
 	if attributes == nil {
@@ -638,7 +637,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 }
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
-	task *workflowservice.PollForDecisionTaskResponse,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
 	historyIterator HistoryIterator,
 ) (workflowContext *workflowExecutionContextImpl, err error) {
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
@@ -706,8 +705,8 @@ func isFullHistory(history *historypb.History) bool {
 	return true
 }
 
-func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
-	// It is possible that 2 threads (one for decision task and one for query task) that both are getting this same
+func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
+	// It is possible that 2 threads (one for workflow task and one for query task) that both are getting this same
 	// cached workflowContext. If one task finished with err, it would destroy the cached state. In that case, the
 	// second task needs to reset the cache state and start from beginning of the history.
 	if w.IsDestroyed() {
@@ -725,7 +724,7 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
-	heartbeatFunc decisionHeartbeatFunc,
+	heartbeatFunc workflowTaskHeartbeatFunc,
 ) (completeRequest interface{}, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
 		return nil, errors.New("nil workflow task provided")
@@ -741,7 +740,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}
 
 	if task.Query != nil && len(task.Queries) != 0 {
-		return nil, errors.New("invalid query decision task")
+		return nil, errors.New("invalid query workflow task")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -771,18 +770,18 @@ processWorkflowLoop:
 		if err == nil && response == nil {
 		waitLocalActivityLoop:
 			for {
-				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteDecisionTaskComplete) *
+				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteWorkflowTaskComplete) *
 					float32(workflowContext.GetWorkflowTaskTimeout()))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
 				select {
 				case <-time.After(delayDuration):
-					// force complete, call the decision heartbeat function
+					// force complete, call the workflow task heartbeat function
 					workflowTask, err = heartbeatFunc(
-						workflowContext.CompleteDecisionTask(workflowTask, false),
+						workflowContext.CompleteWorkflowTask(workflowTask, false),
 						startTime,
 					)
 					if err != nil {
-						return nil, &decisionHeartbeatError{Message: fmt.Sprintf("error sending decision heartbeat %v", err)}
+						return nil, &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
 					}
 					if workflowTask == nil {
 						return nil, nil
@@ -793,7 +792,7 @@ processWorkflowLoop:
 					// local activity result ready
 					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
 					if err == nil && response == nil {
-						// decision task is not done yet, still waiting for more local activities
+						// workflow task is not done yet, still waiting for more local activities
 						continue waitLocalActivityLoop
 					}
 					break processWorkflowLoop
@@ -816,14 +815,14 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
-	var replayDecisions []*decisionpb.Decision
+	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
 	skipReplayCheck := w.skipReplayCheck()
 	// Process events
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, err := reorderedHistory.NextDecisionEvents()
+		reorderedEvents, markers, binaryChecksum, err := reorderedHistory.NextCommandEvents()
 		if err != nil {
 			return nil, err
 		}
@@ -836,10 +835,10 @@ ProcessEvents:
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
-		// Markers are from the events that are produced from the current decision
+		// Markers are from the events that are produced from the current workflow task.
 		for _, m := range markers {
 			if m.GetMarkerRecordedEventAttributes().GetMarkerName() != localActivityMarkerName {
-				// local activity marker needs to be applied after decision task started event
+				// local activity marker needs to be applied after workflow task started event
 				err := eventHandler.ProcessEvent(m, true, false)
 				if err != nil {
 					return nil, err
@@ -853,7 +852,7 @@ ProcessEvents:
 		for i, event := range reorderedEvents {
 			isInReplay := reorderedHistory.IsReplayEvent(event)
 			isLast := !isInReplay && i == len(reorderedEvents)-1
-			if !skipReplayCheck && isDecisionEvent(event.GetEventType()) {
+			if !skipReplayCheck && isCommandEvent(event.GetEventType()) {
 				respondEvents = append(respondEvents, event)
 			}
 
@@ -891,24 +890,24 @@ ProcessEvents:
 		}
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
-			eventDecisions := eventHandler.decisionsHelper.getDecisions(true)
-			if len(eventDecisions) > 0 && !skipReplayCheck {
-				replayDecisions = append(replayDecisions, eventDecisions...)
+			eventCommands := eventHandler.commandsHelper.getCommands(true)
+			if len(eventCommands) > 0 && !skipReplayCheck {
+				replayCommands = append(replayCommands, eventCommands...)
 			}
 		}
 	}
 
 	// Non-deterministic error could happen in 2 different places:
-	//   1) the replay decisions does not match to history events. This is usually due to non backwards compatible code
-	// change to decider logic. For example, change calling one activity to a different activity.
-	//   2) the decision state machine is trying to make illegal state transition while replay a history event (like
-	// activity task completed), but the corresponding decider code that start the event has been removed. In that case
-	// the replay of that event will panic on the decision state machine and the workflow will be marked as completed
+	//   1) the replay commands does not match to history events. This is usually due to non backwards compatible code
+	// change to workflow logic. For example, change calling one activity to a different activity.
+	//   2) the command state machine is trying to make illegal state transition while replay a history event (like
+	// activity task completed), but the corresponding workflow code that start the event has been removed. In that case
+	// the replay of that event will panic on the command state machine and the workflow will be marked as completed
 	// with the panic error.
 	var nonDeterministicErr error
 	if !skipReplayCheck && !w.isWorkflowCompleted {
-		// check if decisions from reply matches to the history events
-		if err := matchReplayWithHistory(replayDecisions, respondEvents); err != nil {
+		// check if commands from reply matches to the history events
+		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
 			nonDeterministicErr = err
 		}
 	}
@@ -933,8 +932,8 @@ ProcessEvents:
 			// complete workflow with custom error will fail the workflow
 			eventHandler.Complete(nil, NewApplicationError("Non-determimistic error cause workflow to fail due to FailWorkflow workflow panic policy.", "", false, nonDeterministicErr))
 		case BlockWorkflow:
-			// return error here will be convert to DecisionTaskFailed for the first time, and ignored for subsequent
-			// attempts which will cause DecisionTaskTimeout and server will retry forever until issue got fixed or
+			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
+			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or
 			// workflow timeout.
 			return nil, nonDeterministicErr
 		default:
@@ -942,7 +941,7 @@ ProcessEvents:
 		}
 	}
 
-	return w.CompleteDecisionTask(workflowTask, true), nil
+	return w.CompleteWorkflowTask(workflowTask, true), nil
 }
 
 func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error) {
@@ -955,7 +954,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 		return nil, err
 	}
 
-	return w.CompleteDecisionTask(workflowTask, true), nil
+	return w.CompleteWorkflowTask(workflowTask, true), nil
 }
 
 func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
@@ -972,7 +971,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 			// part of the event loop for processing the workflow task.
 			eventHandler := w.getEventHandler()
 
-			// if decision heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
+			// if workflow task heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
 			if eventHandler == nil {
 				return
 			}
@@ -989,9 +988,9 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		})
 		return true
 	}
-	// Backoff could be large and potentially much larger than DecisionTaskTimeout. We cannot just sleep locally for
-	// retry. Because it will delay the local activity from complete which keeps the decision task open. In order to
-	// keep decision task open, we have to keep "heartbeating" current decision task.
+	// Backoff could be large and potentially much larger than WorkflowTaskTimeout. We cannot just sleep locally for
+	// retry. Because it will delay the local activity from complete which keeps the workflow task open. In order to
+	// keep workflow task open, we have to keep "heartbeating" current workflow task.
 	// In that case, it is more efficient to create a server timer with backoff duration and retry when that backoff
 	// timer fires. So here we will return false to indicate we don't need local retry anymore. However, we have to
 	// store the current attempt and backoff to the same LocalActivityResultMarker so the replay can do the right thing.
@@ -1037,8 +1036,8 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 	return backoffInterval
 }
 
-func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workflowTask, waitLocalActivities bool) interface{} {
-	if w.currentDecisionTask == nil {
+func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivities bool) interface{} {
+	if w.currentWorkflowTask == nil {
 		return nil
 	}
 	eventHandler := w.getEventHandler()
@@ -1061,18 +1060,18 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workfl
 			}
 			eventHandler.unstartedLaTasks = unstartedLaTasks
 		}
-		// cannot complete decision task as there are pending local activities
+		// cannot complete workflow task as there are pending local activities
 		if waitLocalActivities {
 			return nil
 		}
 	}
 
-	eventDecisions := eventHandler.decisionsHelper.getDecisions(true)
-	if len(eventDecisions) > 0 {
-		w.newDecisions = append(w.newDecisions, eventDecisions...)
+	eventCommands := eventHandler.commandsHelper.getCommands(true)
+	if len(eventCommands) > 0 {
+		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentDecisionTask, w, w.newDecisions, !waitLocalActivities)
+	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, !waitLocalActivities)
 	w.clearCurrentTask()
 
 	return completeRequest
@@ -1081,31 +1080,30 @@ func (w *workflowExecutionContextImpl) CompleteDecisionTask(workflowTask *workfl
 func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
 	eventHandler := w.getEventHandler()
 	return !w.isWorkflowCompleted &&
-		w.currentDecisionTask != nil &&
-		w.currentDecisionTask.Query == nil && // don't run local activity for query task
+		w.currentWorkflowTask != nil &&
+		w.currentWorkflowTask.Query == nil && // don't run local activity for query task
 		eventHandler != nil &&
 		len(eventHandler.pendingLaTasks) > 0
 }
 
 func (w *workflowExecutionContextImpl) clearCurrentTask() {
-	w.newDecisions = nil
-	w.currentDecisionTask = nil
+	w.newCommands = nil
+	w.currentWorkflowTask = nil
 }
 
 func (w *workflowExecutionContextImpl) skipReplayCheck() bool {
-	return w.currentDecisionTask.Query != nil || !isFullHistory(w.currentDecisionTask.History)
+	return w.currentWorkflowTask.Query != nil || !isFullHistory(w.currentWorkflowTask.History)
 }
 
-func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.PollForDecisionTaskResponse) {
-	w.currentDecisionTask = task
+func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.PollWorkflowTaskQueueResponse) {
+	w.currentWorkflowTask = task
 	// do not update the previousStartedEventID for query task
 	if task.Query == nil {
 		w.previousStartedEventID = task.GetStartedEventId()
 	}
-	w.decisionStartTime = time.Now()
 }
 
-func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollForDecisionTaskResponse, historyIterator HistoryIterator) error {
+func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
 		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
@@ -1129,9 +1127,9 @@ func (w *workflowExecutionContextImpl) GetWorkflowTaskTimeout() time.Duration {
 	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
 }
 
-func skipDeterministicCheckForDecision(d *decisionpb.Decision) bool {
-	if d.GetDecisionType() == enumspb.DECISION_TYPE_RECORD_MARKER {
-		markerName := d.GetRecordMarkerDecisionAttributes().GetMarkerName()
+func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
+	if d.GetCommandType() == enumspb.COMMAND_TYPE_RECORD_MARKER {
+		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
@@ -1163,11 +1161,11 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayDecisions []*decisionpb.Decision, historyEvents []*historypb.HistoryEvent) error {
+func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
-	dSize := len(replayDecisions)
+	dSize := len(replayCommands)
 matchLoop:
 	for hi < hSize || di < dSize {
 		var e *historypb.HistoryEvent
@@ -1183,26 +1181,26 @@ matchLoop:
 			}
 		}
 
-		var d *decisionpb.Decision
+		var d *commandpb.Command
 		if di < dSize {
-			d = replayDecisions[di]
-			if skipDeterministicCheckForDecision(d) {
+			d = replayCommands[di]
+			if skipDeterministicCheckForCommand(d) {
 				di++
 				continue matchLoop
 			}
 		}
 
 		if d == nil {
-			return fmt.Errorf("nondeterministic workflow: missing replay decision for %s", util.HistoryEventToString(e))
+			return fmt.Errorf("nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
 		}
 
 		if e == nil {
-			return fmt.Errorf("nondeterministic workflow: extra replay decision for %s", util.DecisionToString(d))
+			return fmt.Errorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
-		if !isDecisionMatchEvent(d, e, false) {
-			return fmt.Errorf("nondeterministic workflow: history event is %s, replay decision is %s",
-				util.HistoryEventToString(e), util.DecisionToString(d))
+		if !isCommandMatchEvent(d, e, false) {
+			return fmt.Errorf("nondeterministic workflow: history event is %s, replay command is %s",
+				util.HistoryEventToString(e), util.CommandToString(d))
 		}
 
 		di++
@@ -1219,179 +1217,179 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isDecisionMatchEvent(d *decisionpb.Decision, e *historypb.HistoryEvent, strictMode bool) bool {
-	switch d.GetDecisionType() {
-	case enumspb.DECISION_TYPE_SCHEDULE_ACTIVITY_TASK:
+func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strictMode bool) bool {
+	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
 			return false
 		}
 		eventAttributes := e.GetActivityTaskScheduledEventAttributes()
-		decisionAttributes := d.GetScheduleActivityTaskDecisionAttributes()
+		commandAttributes := d.GetScheduleActivityTaskCommandAttributes()
 
-		if eventAttributes.GetActivityId() != decisionAttributes.GetActivityId() ||
-			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(decisionAttributes.ActivityType.GetName()) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) ||
-			(strictMode && !proto.Equal(eventAttributes.GetInput(), decisionAttributes.GetInput())) {
+		if eventAttributes.GetActivityId() != commandAttributes.GetActivityId() ||
+			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(commandAttributes.ActivityType.GetName()) ||
+			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) ||
+			(strictMode && !proto.Equal(eventAttributes.GetInput(), commandAttributes.GetInput())) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED {
 			return false
 		}
-		decisionAttributes := d.GetRequestCancelActivityTaskDecisionAttributes()
+		commandAttributes := d.GetRequestCancelActivityTaskCommandAttributes()
 		eventAttributes := e.GetActivityTaskCancelRequestedEventAttributes()
-		if eventAttributes.GetScheduledEventId() != decisionAttributes.GetScheduledEventId() {
+		if eventAttributes.GetScheduledEventId() != commandAttributes.GetScheduledEventId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_START_TIMER:
+	case enumspb.COMMAND_TYPE_START_TIMER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_STARTED {
 			return false
 		}
 		eventAttributes := e.GetTimerStartedEventAttributes()
-		decisionAttributes := d.GetStartTimerDecisionAttributes()
+		commandAttributes := d.GetStartTimerCommandAttributes()
 
-		if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() ||
-			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != decisionAttributes.GetStartToFireTimeoutSeconds()) {
+		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() ||
+			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != commandAttributes.GetStartToFireTimeoutSeconds()) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_CANCEL_TIMER:
+	case enumspb.COMMAND_TYPE_CANCEL_TIMER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_CANCELED && e.GetEventType() != enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
 			return false
 		}
-		decisionAttributes := d.GetCancelTimerDecisionAttributes()
+		commandAttributes := d.GetCancelTimerCommandAttributes()
 		if e.GetEventType() == enumspb.EVENT_TYPE_TIMER_CANCELED {
 			eventAttributes := e.GetTimerCanceledEventAttributes()
-			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 				return false
 			}
 		} else if e.GetEventType() == enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
 			eventAttributes := e.GetCancelTimerFailedEventAttributes()
-			if eventAttributes.GetTimerId() != decisionAttributes.GetTimerId() {
+			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
-			decisionAttributes := d.GetCompleteWorkflowExecutionDecisionAttributes()
+			commandAttributes := d.GetCompleteWorkflowExecutionCommandAttributes()
 
-			if !proto.Equal(eventAttributes.GetResult(), decisionAttributes.GetResult()) {
+			if !proto.Equal(eventAttributes.GetResult(), commandAttributes.GetResult()) {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
-			decisionAttributes := d.GetFailWorkflowExecutionDecisionAttributes()
+			commandAttributes := d.GetFailWorkflowExecutionCommandAttributes()
 
-			if !proto.Equal(eventAttributes.GetFailure(), decisionAttributes.GetFailure()) {
+			if !proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
 				return false
 			}
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_RECORD_MARKER:
+	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		if e.GetEventType() != enumspb.EVENT_TYPE_MARKER_RECORDED {
 			return false
 		}
 		eventAttributes := e.GetMarkerRecordedEventAttributes()
-		decisionAttributes := d.GetRecordMarkerDecisionAttributes()
-		if eventAttributes.GetMarkerName() != decisionAttributes.GetMarkerName() {
+		commandAttributes := d.GetRecordMarkerCommandAttributes()
+		if eventAttributes.GetMarkerName() != commandAttributes.GetMarkerName() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetRequestCancelExternalWorkflowExecutionDecisionAttributes()
-		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
-			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.GetWorkflowId() {
+		commandAttributes := d.GetRequestCancelExternalWorkflowExecutionCommandAttributes()
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetSignalExternalWorkflowExecutionDecisionAttributes()
-		if checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace()) ||
-			eventAttributes.GetSignalName() != decisionAttributes.GetSignalName() ||
-			eventAttributes.WorkflowExecution.GetWorkflowId() != decisionAttributes.Execution.GetWorkflowId() {
+		commandAttributes := d.GetSignalExternalWorkflowExecutionCommandAttributes()
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+			eventAttributes.GetSignalName() != commandAttributes.GetSignalName() ||
+			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.Execution.GetWorkflowId() {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_CANCEL_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED {
 			return false
 		}
 		if strictMode {
 			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
-			decisionAttributes := d.GetCancelWorkflowExecutionDecisionAttributes()
-			if !proto.Equal(eventAttributes.GetDetails(), decisionAttributes.GetDetails()) {
+			commandAttributes := d.GetCancelWorkflowExecutionCommandAttributes()
+			if !proto.Equal(eventAttributes.GetDetails(), commandAttributes.GetDetails()) {
 				return false
 			}
 		}
 		return true
 
-	case enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_START_CHILD_WORKFLOW_EXECUTION:
+	case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
 			return false
 		}
 		eventAttributes := e.GetStartChildWorkflowExecutionInitiatedEventAttributes()
-		decisionAttributes := d.GetStartChildWorkflowExecutionDecisionAttributes()
-		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(decisionAttributes.WorkflowType.GetName()) ||
-			(strictMode && checkNamespacesInDecisionAndEvent(eventAttributes.GetNamespace(), decisionAttributes.GetNamespace())) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != decisionAttributes.TaskQueue.GetName()) {
+		commandAttributes := d.GetStartChildWorkflowExecutionCommandAttributes()
+		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(commandAttributes.WorkflowType.GetName()) ||
+			(strictMode && checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace())) ||
+			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) {
 			return false
 		}
 
 		return true
 
-	case enumspb.DECISION_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
+	case enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		if e.GetEventType() != enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES {
 			return false
 		}
 		eventAttributes := e.GetUpsertWorkflowSearchAttributesEventAttributes()
-		decisionAttributes := d.GetUpsertWorkflowSearchAttributesDecisionAttributes()
-		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, decisionAttributes.SearchAttributes) {
+		commandAttributes := d.GetUpsertWorkflowSearchAttributesCommandAttributes()
+		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, commandAttributes.SearchAttributes) {
 			return false
 		}
 		return true
@@ -1400,30 +1398,30 @@ func isDecisionMatchEvent(d *decisionpb.Decision, e *historypb.HistoryEvent, str
 	return false
 }
 
-func isSearchAttributesMatched(attrFromEvent, attrFromDecision *commonpb.SearchAttributes) bool {
-	if attrFromEvent != nil && attrFromDecision != nil {
-		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromDecision.IndexedFields)
+func isSearchAttributesMatched(attrFromEvent, attrFromCommand *commonpb.SearchAttributes) bool {
+	if attrFromEvent != nil && attrFromCommand != nil {
+		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromCommand.IndexedFields)
 	}
-	return attrFromEvent == nil && attrFromDecision == nil
+	return attrFromEvent == nil && attrFromCommand == nil
 }
 
 // return true if the check fails:
-//    namespace is not empty in decision
+//    namespace is not empty in command
 //    and namespace is not replayNamespace
-//    and namespaces unmatch in decision and events
-func checkNamespacesInDecisionAndEvent(eventNamespace, decisionNamespace string) bool {
-	if decisionNamespace == "" || IsReplayNamespace(decisionNamespace) {
+//    and namespaces unmatch in command and events
+func checkNamespacesInCommandAndEvent(eventNamespace, commandNamespace string) bool {
+	if commandNamespace == "" || IsReplayNamespace(commandNamespace) {
 		return false
 	}
-	return eventNamespace != decisionNamespace
+	return eventNamespace != commandNamespace
 }
 
 func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	eventHandler *workflowExecutionEventHandlerImpl,
-	task *workflowservice.PollForDecisionTaskResponse,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
 	workflowContext *workflowExecutionContextImpl,
-	decisions []*decisionpb.Decision,
-	forceNewDecision bool) interface{} {
+	commands []*commandpb.Command,
+	forceNewWorkflowTask bool) interface{} {
 
 	// for query task
 	if task.Query != nil {
@@ -1448,36 +1446,36 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
 
-	// fail decision task on decider panic
+	// fail workflow task on workflow panic
 	var workflowPanicErr *workflowPanicError
 	if errors.As(workflowContext.err, &workflowPanicErr) {
 		// Workflow panic
-		metricsScope.Counter(metrics.DecisionTaskPanicCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
 			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
 			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
 			zap.String("PanicError", workflowPanicErr.Error()),
 			zap.String("PanicStack", workflowPanicErr.StackTrace()))
-		return errorToFailDecisionTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
+		return errorToFailWorkflowTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
 	}
 
-	// complete decision task
-	var closeDecision *decisionpb.Decision
+	// complete workflow task
+	var closeCommand *commandpb.Command
 	var canceledErr *CanceledError
 	var contErr *ContinueAsNewError
 
 	if errors.As(workflowContext.err, &canceledErr) {
 		// Workflow cancelled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_CANCEL_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_CancelWorkflowExecutionDecisionAttributes{CancelWorkflowExecutionDecisionAttributes: &decisionpb.CancelWorkflowExecutionDecisionAttributes{
+		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION)
+		closeCommand.Attributes = &commandpb.Command_CancelWorkflowExecutionCommandAttributes{CancelWorkflowExecutionCommandAttributes: &commandpb.CancelWorkflowExecutionCommandAttributes{
 			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
 		}}
 	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes{ContinueAsNewWorkflowExecutionDecisionAttributes: &decisionpb.ContinueAsNewWorkflowExecutionDecisionAttributes{
+		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
+		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
 			Input:                      contErr.params.Input,
 			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName},
@@ -1490,25 +1488,25 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_FAIL_WORKFLOW_EXECUTION)
+		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := convertErrorToFailure(workflowContext.err, wth.dataConverter)
-		closeDecision.Attributes = &decisionpb.Decision_FailWorkflowExecutionDecisionAttributes{FailWorkflowExecutionDecisionAttributes: &decisionpb.FailWorkflowExecutionDecisionAttributes{
+		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
 		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
 		metricsScope.Counter(metrics.WorkflowCompletedCounter).Inc(1)
-		closeDecision = createNewDecision(enumspb.DECISION_TYPE_COMPLETE_WORKFLOW_EXECUTION)
-		closeDecision.Attributes = &decisionpb.Decision_CompleteWorkflowExecutionDecisionAttributes{CompleteWorkflowExecutionDecisionAttributes: &decisionpb.CompleteWorkflowExecutionDecisionAttributes{
+		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION)
+		closeCommand.Attributes = &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
 			Result: workflowContext.result,
 		}}
 	}
 
-	if closeDecision != nil {
-		decisions = append(decisions, closeDecision)
+	if closeCommand != nil {
+		commands = append(commands, closeCommand)
 		elapsed := time.Since(workflowContext.workflowStartTime)
 		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
-		forceNewDecision = false
+		forceNewWorkflowTask = false
 	}
 
 	var queryResults map[string]*querypb.WorkflowQueryResult
@@ -1530,21 +1528,21 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	}
 
-	return &workflowservice.RespondDecisionTaskCompletedRequest{
+	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
-		Decisions:                  decisions,
+		Commands:                   commands,
 		Identity:                   wth.identity,
-		ReturnNewDecisionTask:      true,
-		ForceCreateNewDecisionTask: forceNewDecision,
+		ReturnNewWorkflowTask:      true,
+		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
 		BinaryChecksum:             getBinaryChecksum(),
 		QueryResults:               queryResults,
 	}
 }
 
-func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondDecisionTaskFailedRequest {
-	return &workflowservice.RespondDecisionTaskFailedRequest{
+func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondWorkflowTaskFailedRequest {
+	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
-		Cause:          enumspb.DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
 		Failure:        convertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
@@ -1554,14 +1552,14 @@ func errorToFailDecisionTask(taskToken []byte, err error, identity string, dataC
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
 	if wth.ppMgr != nil && !reflect.ValueOf(wth.ppMgr).IsNil() && !isInReplay {
 		switch event.GetEventType() {
-		case enumspb.EVENT_TYPE_DECISION_TASK_STARTED:
-			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskStartTimeout)
+		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+			return wth.ppMgr.Execute(pressurePointTypeWorkflowTaskStartTimeout)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 			return wth.ppMgr.Execute(pressurePointTypeActivityTaskScheduleTimeout)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 			return wth.ppMgr.Execute(pressurePointTypeActivityTaskStartTimeout)
-		case enumspb.EVENT_TYPE_DECISION_TASK_COMPLETED:
-			return wth.ppMgr.Execute(pressurePointTypeDecisionTaskCompleted)
+		case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
+			return wth.ppMgr.Execute(pressurePointTypeWorkflowTaskCompleted)
 		}
 	}
 	return nil
@@ -1738,7 +1736,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollForActivityTaskResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
 			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
@@ -1845,9 +1843,9 @@ func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames 
 	return
 }
 
-func createNewDecision(decisionType enumspb.DecisionType) *decisionpb.Decision {
-	return &decisionpb.Decision{
-		DecisionType: decisionType,
+func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
+	return &commandpb.Command{
+		CommandType: commandType,
 	}
 }
 
