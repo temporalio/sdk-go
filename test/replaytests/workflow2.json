@@ -27,7 +27,7 @@
         "workflowExecutionTimeoutSeconds": 315360000,
         "workflowRunTimeoutSeconds": 315360000,
         "workflowTaskTimeoutSeconds": 10,
-        "initiator": "Decider",
+        "initiator": "Workflow",
         "originalExecutionRunId": "e89d43ee-088c-4ae0-9a6f-e732b0fe4e2d",
         "identity": "24014@ShtinUbuntu2@",
         "firstExecutionRunId": "e89d43ee-088c-4ae0-9a6f-e732b0fe4e2d",
