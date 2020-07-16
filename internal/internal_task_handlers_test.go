@@ -1516,8 +1516,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 			commandEventTypeCount++
 		}
 	}
-	// CancelTimer has 2 corresponding events.
-	require.Equal(t, len(commandTypes)+1, commandEventTypeCount, "Every command type must have one matching event type. "+
+	require.Equal(t, len(commandTypes), commandEventTypeCount, "Every command type must have one matching event type. "+
 		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 

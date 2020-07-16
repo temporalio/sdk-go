@@ -502,15 +502,6 @@ func (d *timerCommandStateMachine) handleCommandSent() {
 	}
 }
 
-func (d *timerCommandStateMachine) handleCancelFailedEvent() {
-	switch d.state {
-	case commandStateCancellationCommandSent:
-		d.moveState(commandStateInitiated, eventCancelFailed)
-	default:
-		d.commandStateMachineBase.handleCancelFailedEvent()
-	}
-}
-
 func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
 	case commandStateCreated:
@@ -1110,11 +1101,6 @@ func (h *commandsHelper) handleTimerStarted(timerID string) {
 func (h *commandsHelper) handleTimerCanceled(timerID string) {
 	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
 	command.handleCanceledEvent()
-}
-
-func (h *commandsHelper) handleCancelTimerFailed(timerID string) {
-	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
-	command.handleCancelFailedEvent()
 }
 
 func (h *commandsHelper) handleChildWorkflowExecutionStarted(workflowID string) commandStateMachine {

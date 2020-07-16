@@ -137,9 +137,6 @@ func HistoryEventToString(e *historypb.HistoryEvent) string {
 	case enumspb.EVENT_TYPE_TIMER_FIRED:
 		data = e.GetTimerFiredEventAttributes()
 
-	case enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED:
-		data = e.GetCancelTimerFailedEventAttributes()
-
 	case enumspb.EVENT_TYPE_TIMER_CANCELED:
 		data = e.GetTimerCanceledEventAttributes()
 
