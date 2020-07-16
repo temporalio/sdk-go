@@ -1196,8 +1196,8 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 	if policy.GetMaximumIntervalInSeconds() > 0 && policy.GetMaximumIntervalInSeconds() < policy.GetInitialIntervalInSeconds() {
 		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
 	}
-	if policy.GetMaximumAttempts() < 1 {
-		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 1 on retry policy.")
+	if policy.GetMaximumAttempts() < 0 {
+		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
 	}
 	return nil
 }
