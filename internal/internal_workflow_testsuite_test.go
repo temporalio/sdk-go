@@ -2621,7 +2621,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 
@@ -3033,6 +3033,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
+		fmt.Println("!!!!!!!!COUNT:", count)
 		return NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
 	}
 

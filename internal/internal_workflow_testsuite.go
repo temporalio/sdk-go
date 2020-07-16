@@ -604,6 +604,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		params:     &params,
 		callback: func(lar *LocalActivityResultWrapper) {
 		},
+		attempt: 1,
 	}
 	taskHandler := localActivityTaskHandler{
 		userContext:  env.workerOptions.BackgroundActivityContext,
@@ -1831,6 +1832,7 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt: 1,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,

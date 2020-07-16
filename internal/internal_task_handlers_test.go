@@ -1422,6 +1422,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollActivityTaskQueueResponse{
+			Attempt:   1,
 			TaskToken: []byte("token"),
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
@@ -1481,6 +1482,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	}
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
