@@ -531,7 +531,7 @@ func testActivityContext(ctx context.Context) (string, error) {
 
 func testActivityCanceled(ctx context.Context) (int32, error) {
 	info := GetActivityInfo(ctx)
-	if info.Attempt < 2 {
+	if info.Attempt < 3 {
 		return int32(-1), NewCanceledError("details")
 	}
 	return info.Attempt, nil
@@ -2343,7 +2343,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	activityFn := func(ctx context.Context) (string, error) {
 		attempt2Count++
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 		return "retry-done", nil
@@ -2461,7 +2461,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return int32(-1), NewApplicationError("bad-luck", "", false, nil)
 		}
 		return info.Attempt, nil
@@ -2496,7 +2496,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	s.NoError(env.GetWorkflowError())
 	var result int32
 	s.NoError(env.GetWorkflowResult(&result))
-	s.Equal(int32(2), result)
+	s.Equal(int32(3), result)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
@@ -2504,7 +2504,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		attempts++
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return int32(-1), NewCanceledError("details")
 		}
 		return info.Attempt, nil
@@ -2579,7 +2579,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 		return "retry-done", nil
@@ -3033,7 +3033,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		fmt.Println("!!!!!!!!COUNT:", count)
 		return NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
 	}
 
