@@ -121,25 +121,6 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 	require.Equal(t, commandStateCompleted, d.getState())
 }
 
-func Test_TimerStateMachine_PanicInvalidStateTransition(t *testing.T) {
-	t.Parallel()
-	timerID := "test-timer-1"
-	attributes := &commandpb.StartTimerCommandAttributes{
-		TimerId: timerID,
-	}
-	h := newCommandsHelper()
-	h.startTimer(attributes)
-	h.getCommands(true)
-	h.handleTimerStarted(timerID)
-	h.handleTimerClosed(timerID)
-
-	panicErr := runAndCatchPanic(func() {
-		h.handleCancelTimerFailed(timerID)
-	})
-
-	require.NotNil(t, panicErr)
-}
-
 func Test_TimerCancelEventOrdering(t *testing.T) {
 	t.Parallel()
 	timerID := "test-timer-1"

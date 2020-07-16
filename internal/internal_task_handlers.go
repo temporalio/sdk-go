@@ -245,7 +245,6 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED,
 		enumspb.EVENT_TYPE_TIMER_STARTED,
 		enumspb.EVENT_TYPE_TIMER_CANCELED,
-		enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED,
 		enumspb.EVENT_TYPE_MARKER_RECORDED,
 		enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
@@ -1262,17 +1261,12 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		return true
 
 	case enumspb.COMMAND_TYPE_CANCEL_TIMER:
-		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_CANCELED && e.GetEventType() != enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
+		if e.GetEventType() != enumspb.EVENT_TYPE_TIMER_CANCELED {
 			return false
 		}
 		commandAttributes := d.GetCancelTimerCommandAttributes()
 		if e.GetEventType() == enumspb.EVENT_TYPE_TIMER_CANCELED {
 			eventAttributes := e.GetTimerCanceledEventAttributes()
-			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
-				return false
-			}
-		} else if e.GetEventType() == enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED {
-			eventAttributes := e.GetCancelTimerFailedEventAttributes()
 			if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 				return false
 			}
