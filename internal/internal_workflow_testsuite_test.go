@@ -2931,7 +2931,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 	err := env.GetWorkflowError()
 	s.NoError(err)
 
-	s.Equal(3, failedCount)
+	s.Equal(4, failedCount)
 	s.Equal(4, successCount)
 	s.Equal(4, lastCompletionResult)
 }

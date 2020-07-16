@@ -676,6 +676,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		WorkflowType:    wfType,
 		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
 		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
+		attempt:         1,
 	}
 
 	var childWorkflowExecution *WorkflowExecution

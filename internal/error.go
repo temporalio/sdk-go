@@ -399,6 +399,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		WorkflowType:    workflowType,
 		Input:           input,
 		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
+		attempt:         1,
 	}
 	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
