@@ -17,7 +17,7 @@
         "workflowTaskTimeoutSeconds": 60,
         "originalExecutionRunId": "0ea65eda-a0db-4a59-bef3-dce48e8484f8",
         "identity": "10773@longer-C02V60N3HTDG@",
-        "attempt": 0,
+        "attempt": 1,
         "cronSchedule": "",
         "firstWorkflowTaskBackoffSeconds": 0,
         "header": {}
@@ -34,7 +34,7 @@
           "name": "childWorkflowGroup"
         },
         "startToCloseTimeoutSeconds": 60,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -115,7 +115,7 @@
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -189,7 +189,7 @@
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -248,7 +248,7 @@
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
         "startToCloseTimeoutSeconds": 60,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {

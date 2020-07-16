@@ -34,13 +34,13 @@ const (
 	// NoInterval represents Maximim interval
 	NoInterval                      = 0
 	done              time.Duration = -1
-	noMaximumAttempts               = 0
+	oneMaximumAttempt               = 1
 
 	// DefaultBackoffCoefficient is default backOffCoefficient for retryPolicy
 	DefaultBackoffCoefficient = 2.0
 	defaultMaximumInterval    = 10 * time.Second
 	defaultExpirationInterval = time.Minute
-	defaultMaximumAttempts    = noMaximumAttempts
+	defaultMaximumAttempts    = oneMaximumAttempt
 )
 
 type (
@@ -138,7 +138,7 @@ func (p *ExponentialRetryPolicy) SetMaximumAttempts(maximumAttempts int) {
 // ComputeNextDelay returns the next delay interval.  This is used by Retrier to delay calling the operation again
 func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, numAttempts int) time.Duration {
 	// Check to see if we ran out of maximum number of attempts
-	if p.maximumAttempts != noMaximumAttempts && numAttempts >= p.maximumAttempts {
+	if p.maximumAttempts != oneMaximumAttempt && numAttempts >= p.maximumAttempts {
 		return done
 	}
 
@@ -147,7 +147,7 @@ func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, num
 		return done
 	}
 
-	nextInterval := float64(p.initialInterval) * math.Pow(p.backoffCoefficient, float64(numAttempts))
+	nextInterval := float64(p.initialInterval) * math.Pow(p.backoffCoefficient, float64(numAttempts-1))
 	// Disallow retries if initialInterval is negative or nextInterval overflows
 	if nextInterval <= 0 {
 		return done
@@ -186,7 +186,7 @@ func (t systemClock) Now() time.Time {
 // Reset will set the Retrier into initial state
 func (r *retrierImpl) Reset() {
 	r.startTime = r.clock.Now()
-	r.currentAttempt = 0
+	r.currentAttempt = 1
 }
 
 // NextBackOff returns the next delay interval.  This is used by Retry to delay calling the operation again

@@ -652,6 +652,7 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 2.0,
 				MaximumInterval:    time.Minute,
+				MaximumAttempts:    1,
 			},
 		}
 		ctx = WithActivityOptions(ctx, ao)

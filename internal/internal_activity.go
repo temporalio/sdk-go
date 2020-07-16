@@ -135,7 +135,7 @@ type (
 		startedTimestamp   time.Time
 		taskQueue          string
 		dataConverter      DataConverter
-		attempt            int32 // starts from 0.
+		attempt            int32 // starts from 1.
 		heartbeatDetails   *commonpb.Payloads
 		workflowType       *WorkflowType
 		workflowNamespace  string

@@ -1228,7 +1228,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 	}
 
 	task := &workflowservice.PollWorkflowTaskQueueResponse{
-		Attempt:                0,
+		Attempt:                1,
 		TaskToken:              []byte("ReplayTaskToken"),
 		WorkflowType:           workflowType,
 		WorkflowExecution:      execution,

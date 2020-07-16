@@ -1220,6 +1220,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 				InitialInterval:    backoffDuration,
 				BackoffCoefficient: 1.1,
 				MaximumInterval:    time.Minute,
+				MaximumAttempts:    1,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, ao)

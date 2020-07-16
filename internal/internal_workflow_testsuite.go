@@ -244,6 +244,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
 			WorkflowTaskTimeoutSeconds:      1,
+			Attempt:                         1,
 		},
 		registry: r,
 
@@ -923,7 +924,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		backoff := schedule.Next(workflowNow).Sub(workflowNow)
 		if backoff > 0 {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
-			params.attempt = 0
+			params.attempt = 1
 			params.scheduledTime = env.Now()
 			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
@@ -1195,8 +1196,8 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 	if policy.GetMaximumIntervalInSeconds() > 0 && policy.GetMaximumIntervalInSeconds() < policy.GetInitialIntervalInSeconds() {
 		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
 	}
-	if policy.GetMaximumAttempts() < 0 {
-		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
+	if policy.GetMaximumAttempts() < 1 {
+		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 1 on retry policy.")
 	}
 	return nil
 }
