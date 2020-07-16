@@ -834,9 +834,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_TIMER_CANCELED:
 		weh.commandsHelper.handleTimerCanceled(event.GetTimerCanceledEventAttributes().GetTimerId())
 
-	case enumspb.EVENT_TYPE_CANCEL_TIMER_FAILED:
-		weh.commandsHelper.handleCancelTimerFailed(event.GetCancelTimerFailedEventAttributes().GetTimerId())
-
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
 		weh.handleWorkflowExecutionCancelRequested()
 
