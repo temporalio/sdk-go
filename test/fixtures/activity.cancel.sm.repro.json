@@ -27,7 +27,7 @@
           "name": "tq-1"
         },
         "startToCloseTimeoutSeconds": 1,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -135,7 +135,7 @@
         "scheduledEventId": 6,
         "identity": "97228@samar-C02XG22GJGH6@tl-1",
         "requestId": "8b1ab5fd-5f15-4867-af33-97a7b00da341",
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -160,7 +160,7 @@
           "name": "tq-1"
         },
         "startToCloseTimeoutSeconds": 1,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {

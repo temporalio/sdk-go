@@ -137,7 +137,7 @@ type (
 		wc           *workflowExecutionContextImpl
 		canceled     bool
 		cancelFunc   func()
-		attempt      int32 // attempt starting from 0
+		attempt      int32 // attempt starting from 1
 		retryPolicy  *RetryPolicy
 		expireTime   time.Time
 		header       *commonpb.Header
@@ -147,7 +147,7 @@ type (
 		ActivityID   string
 		ActivityType string
 		ReplayTime   time.Time
-		Attempt      int32         // record attempt, starting from 0.
+		Attempt      int32         // record attempt, starting from 1.
 		Backoff      time.Duration // retry backoff duration.
 	}
 

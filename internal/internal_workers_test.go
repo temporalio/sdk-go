@@ -146,6 +146,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	logger, _ := zap.NewDevelopment()
 
 	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",

@@ -531,7 +531,7 @@ func testActivityContext(ctx context.Context) (string, error) {
 
 func testActivityCanceled(ctx context.Context) (int32, error) {
 	info := GetActivityInfo(ctx)
-	if info.Attempt < 2 {
+	if info.Attempt < 3 {
 		return int32(-1), NewCanceledError("details")
 	}
 	return info.Attempt, nil
@@ -2333,17 +2333,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_DrainSignalChannel() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
-	attempt1Count := 0
+	attempt1Count := 1
 	activityFailedFn := func(ctx context.Context) (string, error) {
 		attempt1Count++
 		return "", NewApplicationError("bad-bug", "", true, nil)
 	}
 
-	attempt2Count := 0
+	attempt2Count := 1
 	activityFn := func(ctx context.Context) (string, error) {
 		attempt2Count++
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 		return "retry-done", nil
@@ -2396,8 +2396,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	var result string
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal("retry-done", result)
-	s.Equal(1, attempt1Count)
-	s.Equal(3, attempt2Count)
+	s.Equal(2, attempt1Count)
+	s.Equal(4, attempt2Count)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
@@ -2461,7 +2461,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return int32(-1), NewApplicationError("bad-luck", "", false, nil)
 		}
 		return info.Attempt, nil
@@ -2496,15 +2496,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	s.NoError(env.GetWorkflowError())
 	var result int32
 	s.NoError(env.GetWorkflowResult(&result))
-	s.Equal(int32(2), result)
+	s.Equal(int32(3), result)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
-	attempts := 0
+	attempts := 1
 	localActivityFn := func(ctx context.Context) (int32, error) {
 		attempts++
 		info := GetActivityInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return int32(-1), NewCanceledError("details")
 		}
 		return info.Attempt, nil
@@ -2538,7 +2538,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 	s.True(env.IsWorkflowCompleted())
 	s.Error(env.GetWorkflowError())
 	s.True(IsCanceledError(env.GetWorkflowError()))
-	s.Equal(1, attempts)
+	s.Equal(2, attempts)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetryOnCancel() {
@@ -2579,7 +2579,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 		return "retry-done", nil
@@ -2621,7 +2621,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
-		if info.Attempt < 2 {
+		if info.Attempt < 3 {
 			return "", NewApplicationError("bad-luck", "", false, nil)
 		}
 
@@ -2882,7 +2882,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 			_ = GetLastCompletionResult(ctx, &result)
 		}
 		_ = Sleep(ctx, time.Second*3)
-		if info.Attempt == 0 {
+		if info.Attempt == 1 {
 			failedCount++
 			return 0, errors.New("please-retry")
 		}

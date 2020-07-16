@@ -56,7 +56,7 @@ type (
 		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
 		StartedTimestamp   time.Time     // Time of activity start
 		Deadline           time.Time     // Time of activity timeout
-		Attempt            int32         // Attempt starts from 0, and increased by 1 for every retry if retry policy is specified.
+		Attempt            int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity

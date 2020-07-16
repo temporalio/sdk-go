@@ -25,7 +25,7 @@
           "name": "taskQueue1"
         },
         "startToCloseTimeoutSeconds": 60,
-        "attempt": 0
+        "attempt": 1
       }
     },
     {
@@ -78,7 +78,7 @@
         "scheduledEventId":5,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
         "requestId":"45c4006a-ae7c-4392-baa6-c090857f884b",
-        "attempt":0
+        "attempt":1
       }
     },
     {
@@ -105,7 +105,7 @@
           "name":"longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
         },
         "startToCloseTimeoutSeconds":10,
-        "attempt":0
+        "attempt":1
       }
     },
     {

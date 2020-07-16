@@ -244,6 +244,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
 			WorkflowTaskTimeoutSeconds:      1,
+			Attempt:                         1,
 		},
 		registry: r,
 
@@ -603,6 +604,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		params:     &params,
 		callback: func(lar *LocalActivityResultWrapper) {
 		},
+		attempt: 1,
 	}
 	taskHandler := localActivityTaskHandler{
 		userContext:  env.workerOptions.BackgroundActivityContext,
@@ -923,7 +925,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		backoff := schedule.Next(workflowNow).Sub(workflowNow)
 		if backoff > 0 {
 			delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
-			params.attempt = 0
+			params.attempt = 1
 			params.scheduledTime = env.Now()
 			env.parentEnv.executeChildWorkflowWithDelay(backoff, *params, h.callback, nil /* child workflow already started */)
 			return true
@@ -1459,6 +1461,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		Err:     env.wrapActivityError(activityID, activityType, enumspb.RETRY_STATE_UNSPECIFIED, result.err),
 		Result:  result.result,
 		Backoff: noRetryBackoff,
+		Attempt: 1,
 	}
 	if result.task.retryPolicy != nil && result.err != nil {
 		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
@@ -1829,6 +1832,7 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	activityID := attr.GetActivityId()
 	task := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt: 1,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
@@ -2156,6 +2160,7 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType
 		ActivityType:      ActivityType{Name: activityType},
 		TaskToken:         []byte(activityID),
 		WorkflowExecution: env.workflowInfo.WorkflowExecution,
+		Attempt:           1,
 	}
 }
 

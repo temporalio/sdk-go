@@ -294,6 +294,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		InitialInterval:    time.Second,
 		BackoffCoefficient: 1.1,
 		MaximumInterval:    time.Second * 10,
+		MaximumAttempts:    0,
 	}
 
 	heartbeatTimeout := defaultSessionHeartbeatTimeout

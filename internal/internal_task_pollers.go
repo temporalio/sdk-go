@@ -373,7 +373,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			case *workflowservice.RespondWorkflowTaskFailedRequest:
 				// Only fail workflow task on first attempt, subsequent failure on the same workflow task will timeout.
 				// This is to avoid spin on the failed workflow task. Checking Attempt not nil for older server.
-				if task.GetAttempt() == 0 {
+				if task.GetAttempt() == 1 {
 					_, err1 = wtp.service.RespondWorkflowTaskFailed(tchCtx, request)
 					if err1 != nil {
 						traceLog(func() {
@@ -528,7 +528,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	}
 	timeoutDuration := time.Duration(timeout) * time.Second
 	deadline := time.Now().Add(timeoutDuration)
-	if task.attempt > 0 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
+	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
 		deadline = task.expireTime
 	}

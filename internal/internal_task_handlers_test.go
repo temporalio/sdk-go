@@ -1220,6 +1220,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 				InitialInterval:    backoffDuration,
 				BackoffCoefficient: 1.1,
 				MaximumInterval:    time.Minute,
+				MaximumAttempts:    0,
 			},
 		}
 		ctx = WithLocalActivityOptions(ctx, ao)
@@ -1421,6 +1422,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollActivityTaskQueueResponse{
+			Attempt:   1,
 			TaskToken: []byte("token"),
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
@@ -1480,6 +1482,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	}
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
