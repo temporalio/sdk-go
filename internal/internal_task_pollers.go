@@ -384,7 +384,10 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 			case *workflowservice.RespondWorkflowTaskCompletedRequest:
 				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
 					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
-						WorkerTaskQueue:               &taskqueuepb.TaskQueue{Name: getWorkerTaskQueue(wtp.stickyUUID)},
+						WorkerTaskQueue: &taskqueuepb.TaskQueue{
+							Name: getWorkerTaskQueue(wtp.stickyUUID),
+							Kind: enumspb.TASK_QUEUE_KIND_STICKY,
+						},
 						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
 					}
 				} else {
