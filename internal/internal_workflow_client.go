@@ -207,7 +207,7 @@ func (wc *WorkflowClient) StartWorkflow(
 		RequestId:                       uuid.New(),
 		WorkflowId:                      workflowID,
 		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue},
+		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Input:                           input,
 		WorkflowExecutionTimeoutSeconds: executionTimeout,
 		WorkflowRunTimeoutSeconds:       runTimeout,
@@ -385,7 +385,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		RequestId:                       uuid.New(),
 		WorkflowId:                      workflowID,
 		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue},
+		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Input:                           input,
 		WorkflowExecutionTimeoutSeconds: executionTimeout,
 		WorkflowRunTimeoutSeconds:       runTimeout,
@@ -948,7 +948,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue string, taskQueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
 	request := &workflowservice.DescribeTaskQueueRequest{
 		Namespace:     wc.namespace,
-		TaskQueue:     &taskqueuepb.TaskQueue{Name: taskQueue},
+		TaskQueue:     &taskqueuepb.TaskQueue{Name: taskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		TaskQueueType: taskQueueType,
 	}
 

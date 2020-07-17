@@ -1472,7 +1472,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
 			Input:                      contErr.params.Input,
-			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName},
+			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 			WorkflowRunTimeoutSeconds:  contErr.params.WorkflowRunTimeoutSeconds,
 			WorkflowTaskTimeoutSeconds: contErr.params.WorkflowTaskTimeoutSeconds,
 			Header:                     contErr.params.Header,

@@ -379,7 +379,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{}
 
 	attributes.Namespace = params.Namespace
-	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName}
+	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	attributes.WorkflowId = params.WorkflowID
 	attributes.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
 	attributes.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
@@ -460,7 +460,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	}
 	activityID := scheduleTaskAttr.GetActivityId()
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
-	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName}
+	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
 	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
 	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds

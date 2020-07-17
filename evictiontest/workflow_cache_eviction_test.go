@@ -110,7 +110,7 @@ func createTestEventWorkflowTaskScheduled(eventID int64, attr *historypb.Workflo
 func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			TaskQueue: &taskqueuepb.TaskQueue{Name: "taskqueue"},
+			TaskQueue: &taskqueuepb.TaskQueue{Name: "taskqueue", Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 	}
