@@ -835,7 +835,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	})
 	request := &workflowservice.PollActivityTaskQueueRequest{
 		Namespace:         atp.namespace,
-		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName},
+		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
