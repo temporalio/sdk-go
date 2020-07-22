@@ -24,9 +24,43 @@
 
 package log
 
-type Logger interface {
-	Debug(msg string, keyvals ...interface{})
-	Info(msg string, keyvals ...interface{})
-	Warn(msg string, keyvals ...interface{})
-	Error(msg string, keyvals ...interface{})
+type WithLogger interface {
+	With(keyvals ...interface{}) Logger
+}
+
+func With(logger Logger, keyvals ...interface{}) Logger {
+	if wl, ok := logger.(WithLogger); ok {
+		return wl.With(keyvals...)
+	}
+
+	return newWithLogger(logger, keyvals...)
+}
+
+type withLogger struct {
+	logger  Logger
+	keyvals []interface{}
+}
+
+func newWithLogger(logger Logger, keyvals ...interface{}) *withLogger {
+	return &withLogger{logger: logger, keyvals: keyvals}
+}
+
+func (l *withLogger) preppendKeyvals(keyvals []interface{}) []interface{} {
+	return append(l.keyvals, keyvals...)
+}
+
+func (l *withLogger) Debug(msg string, keyvals ...interface{}) {
+	l.logger.Debug(msg, l.preppendKeyvals(keyvals)...)
+}
+
+func (l *withLogger) Info(msg string, keyvals ...interface{}) {
+	l.logger.Info(msg, l.preppendKeyvals(keyvals)...)
+}
+
+func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
+	l.logger.Warn(msg, l.preppendKeyvals(keyvals)...)
+}
+
+func (l *withLogger) Error(msg string, keyvals ...interface{}) {
+	l.logger.Error(msg, l.preppendKeyvals(keyvals)...)
 }

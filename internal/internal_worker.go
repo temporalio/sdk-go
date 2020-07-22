@@ -1357,7 +1357,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = workerParams.Logger.With(
+	workerParams.Logger = log.With(workerParams.Logger,
 		tagNamespace, client.namespace,
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,

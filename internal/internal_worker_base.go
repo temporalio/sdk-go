@@ -176,7 +176,7 @@ func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope ta
 		stopCh:          make(chan struct{}),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          logger.With(tagWorkerType, options.workerType),
+		logger:          log.With(logger, tagWorkerType, options.workerType),
 		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.

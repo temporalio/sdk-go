@@ -259,7 +259,7 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = logger.With(
+	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
 		tagActivityType, task.ActivityType.Name,
 		tagWorkflowType, task.WorkflowType.Name,

@@ -27,37 +27,9 @@ package internal
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
-
-	"go.temporal.io/sdk/internal/log"
 )
-
-func TestReplayLogger(t *testing.T) {
-	t.Parallel()
-	logger := log.NewMockLogger()
-
-	isReplay, enableLoggingInReplay := false, false
-	replayLogger := log.NewReplayLogger(logger, &isReplay, &enableLoggingInReplay)
-
-	replayLogger.Info("normal info")
-
-	isReplay = true
-	replayLogger.Info("replay info") // this log should be suppressed
-
-	isReplay, enableLoggingInReplay = false, true
-	replayLogger.Info("normal2 info")
-
-	isReplay = true
-	replayLogger.Info("replay2 info")
-
-	assert.Len(t, logger.Lines(), 3) // ensures "replay info" wasn't just misspelled
-	assert.Contains(t, logger.Lines(), "INFO normal info\n")
-	assert.NotContains(t, logger.Lines(), "INFO replay info\n")
-	assert.Contains(t, logger.Lines(), "INFO normal2 info\n")
-	assert.Contains(t, logger.Lines(), "INFO replay2 info\n")
-}
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 	equals := func(a, b interface{}) bool {

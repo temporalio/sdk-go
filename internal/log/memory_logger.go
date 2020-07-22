@@ -26,54 +26,60 @@ package log
 
 import (
 	"fmt"
+	"strings"
 )
 
-type MockLogger struct {
-	lines         []string
+type MemoryLogger struct {
+	lines         *[]string
 	globalKeyvals string
 }
 
-func NewMockLogger() *MockLogger {
-	return &MockLogger{}
-}
-
-func (l *MockLogger) println(level, msg string, keyvals []interface{}) {
-	// To avoid extra space when globalKeyvals is not specified.
-	if l.globalKeyvals == "" {
-		l.lines = append(l.lines, fmt.Sprintln(append([]interface{}{level, msg}, keyvals...)...))
-	} else {
-		l.lines = append(l.lines, fmt.Sprintln(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...))
+func NewMemoryLogger() *MemoryLogger {
+	var lines []string
+	return &MemoryLogger{
+		lines: &lines,
 	}
 }
 
-func (l *MockLogger) Debug(msg string, keyvals ...interface{}) {
+func (l *MemoryLogger) println(level, msg string, keyvals []interface{}) {
+	// To avoid extra space when globalKeyvals is not specified.
+	if l.globalKeyvals == "" {
+		*l.lines = append(*l.lines, fmt.Sprintln(append([]interface{}{level, msg}, keyvals...)...))
+	} else {
+		*l.lines = append(*l.lines, fmt.Sprintln(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...))
+	}
+}
+
+func (l *MemoryLogger) Debug(msg string, keyvals ...interface{}) {
 	l.println("DEBUG", msg, keyvals)
 }
 
-func (l *MockLogger) Info(msg string, keyvals ...interface{}) {
+func (l *MemoryLogger) Info(msg string, keyvals ...interface{}) {
 	l.println("INFO ", msg, keyvals)
 }
 
-func (l *MockLogger) Warn(msg string, keyvals ...interface{}) {
+func (l *MemoryLogger) Warn(msg string, keyvals ...interface{}) {
 	l.println("WARN ", msg, keyvals)
 }
 
-func (l *MockLogger) Error(msg string, keyvals ...interface{}) {
+func (l *MemoryLogger) Error(msg string, keyvals ...interface{}) {
 	l.println("ERROR", msg, keyvals)
 }
 
-func (l *MockLogger) With(keyvals ...interface{}) Logger {
-	logger := &MockLogger{}
-
-	if l.globalKeyvals == "" {
-		logger.globalKeyvals = fmt.Sprint(keyvals...)
-	} else {
-		logger.globalKeyvals = fmt.Sprint(l.globalKeyvals, fmt.Sprint(keyvals...))
+func (l *MemoryLogger) With(keyvals ...interface{}) Logger {
+	logger := &MemoryLogger{
+		lines: l.lines,
 	}
+
+	if l.globalKeyvals != "" {
+		logger.globalKeyvals = l.globalKeyvals + " "
+	}
+
+	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")
 
 	return logger
 }
 
-func (l *MockLogger) Lines() []string {
-	return l.lines
+func (l *MemoryLogger) Lines() []string {
+	return *l.lines
 }

@@ -70,5 +70,5 @@ func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
 }
 
 func (l *ReplayLogger) With(keyvals ...interface{}) Logger {
-	return NewReplayLogger(l.logger.With(keyvals), l.isReplay, l.enableLoggingInReplay)
+	return NewReplayLogger(With(l.logger, keyvals), l.isReplay, l.enableLoggingInReplay)
 }

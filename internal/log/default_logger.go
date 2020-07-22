@@ -71,7 +71,7 @@ func (l *DefaultLogger) With(keyvals ...interface{}) Logger {
 	}
 
 	if l.globalKeyvals != "" {
-		l.globalKeyvals += " "
+		logger.globalKeyvals = l.globalKeyvals + " "
 	}
 
 	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")

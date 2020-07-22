@@ -188,7 +188,7 @@ func newWorkflowExecutionEventHandler(
 		tracer:                tracer,
 	}
 	context.logger = log.NewReplayLogger(
-		logger.With(
+		log.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,
