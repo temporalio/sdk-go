@@ -53,11 +53,11 @@ func (l *DefaultLogger) Debug(msg string, keyvals ...interface{}) {
 }
 
 func (l *DefaultLogger) Info(msg string, keyvals ...interface{}) {
-	l.println("INFO", msg, keyvals)
+	l.println("INFO ", msg, keyvals)
 }
 
 func (l *DefaultLogger) Warn(msg string, keyvals ...interface{}) {
-	l.println("WARN", msg, keyvals)
+	l.println("WARN ", msg, keyvals)
 }
 
 func (l *DefaultLogger) Error(msg string, keyvals ...interface{}) {

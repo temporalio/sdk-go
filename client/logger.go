@@ -30,6 +30,4 @@ import (
 
 type (
 	Logger = log.Logger
-
-	ZapAdapter = log.ZapAdapter
 )

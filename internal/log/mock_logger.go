@@ -51,11 +51,11 @@ func (l *MockLogger) Debug(msg string, keyvals ...interface{}) {
 }
 
 func (l *MockLogger) Info(msg string, keyvals ...interface{}) {
-	l.println("INFO", msg, keyvals)
+	l.println("INFO ", msg, keyvals)
 }
 
 func (l *MockLogger) Warn(msg string, keyvals ...interface{}) {
-	l.println("WARN", msg, keyvals)
+	l.println("WARN ", msg, keyvals)
 }
 
 func (l *MockLogger) Error(msg string, keyvals ...interface{}) {
