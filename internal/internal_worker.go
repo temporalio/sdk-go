@@ -54,8 +54,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -215,13 +213,8 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
 	if params.Logger == nil {
-		// create default logger if user does not supply one.
-		config := zap.NewProductionConfig()
-		// set default time formatter to "2006-01-02T15:04:05.000Z0700"
-		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		// config.Level.SetLevel(zapcore.DebugLevel)
-		zl, _ := config.Build()
-		params.Logger = log.NewZapAdapter(zl)
+		// create default logger if user does not supply one (should happen in tests only).
+		params.Logger = log.NewDefaultLogger()
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsScope == nil {
@@ -1133,7 +1126,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
 	if logger == nil {
-		logger = log.NewZapAdapter(zap.NewNop())
+		logger = log.NewNopLogger()
 	}
 
 	controller := gomock.NewController(log.NewTestReporter(logger))
@@ -1161,7 +1154,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 	}
 
 	if loger == nil {
-		loger = log.NewZapAdapter(zap.NewNop())
+		loger = log.NewNopLogger()
 	}
 
 	controller := gomock.NewController(log.NewTestReporter(loger))
@@ -1173,7 +1166,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
 func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution WorkflowExecution) error {
 	if logger == nil {
-		logger = log.NewZapAdapter(zap.NewNop())
+		logger = log.NewNopLogger()
 	}
 
 	sharedExecution := &commonpb.WorkflowExecution{

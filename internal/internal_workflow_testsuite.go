@@ -46,7 +46,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/common"
@@ -265,8 +264,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result *commonpb.Payloads, err error) {}}
 
 	if env.logger == nil {
-		zl, _ := zap.NewDevelopment()
-		env.logger = log.NewZapAdapter(zl)
+		env.logger = log.NewDefaultLogger()
 	}
 	if env.metricsScope == nil {
 		env.metricsScope = metrics.NewTaggedScope(s.scope)

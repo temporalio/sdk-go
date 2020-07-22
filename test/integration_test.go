@@ -40,7 +40,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
@@ -80,12 +79,11 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	zl, err := zap.NewDevelopment()
-	ts.NoError(err)
+	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:           ts.config.ServiceAddr,
 		Namespace:          namespace,
-		Logger:             log.NewZapAdapter(zl),
+		Logger:             log.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
 	})
 	ts.NoError(err)
@@ -397,11 +395,9 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
-	zl, err := zap.NewDevelopment()
-	ts.NoError(err)
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err = replayer.ReplayPartialWorkflowHistoryFromJSONFile(log.NewZapAdapter(zl), "fixtures/activity.cancel.sm.repro.json", 12)
+	err := replayer.ReplayPartialWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 

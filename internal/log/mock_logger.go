@@ -40,9 +40,9 @@ func NewMockLogger() *MockLogger {
 func (l *MockLogger) println(level, msg string, keyvals []interface{}) {
 	// To avoid extra space when globalKeyvals is not specified.
 	if l.globalKeyvals == "" {
-		l.lines = append(l.lines, fmt.Sprint(append([]interface{}{level, msg}, keyvals...)...))
+		l.lines = append(l.lines, fmt.Sprintln(append([]interface{}{level, msg}, keyvals...)...))
 	} else {
-		l.lines = append(l.lines, fmt.Sprint(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...))
+		l.lines = append(l.lines, fmt.Sprintln(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...))
 	}
 }
 
@@ -72,4 +72,8 @@ func (l *MockLogger) With(keyvals ...interface{}) Logger {
 	}
 
 	return logger
+}
+
+func (l *MockLogger) Lines() []string {
+	return l.lines
 }

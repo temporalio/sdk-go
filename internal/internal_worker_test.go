@@ -48,7 +48,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/log"
@@ -163,8 +162,7 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 }
 
 func getLogger() log.Logger {
-	zl, _ := zap.NewDevelopment()
-	return log.NewZapAdapter(zl)
+	return log.NewDefaultLogger()
 }
 
 func testReplayWorkflow(ctx Context) error {
@@ -1754,7 +1752,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		dataConverter:      &defaultDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
-		logger:             log.NewZapAdapter(zap.NewNop()),
+		logger:             log.NewNopLogger(),
 	}
 
 	options := WorkerOptions{

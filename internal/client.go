@@ -34,7 +34,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -527,7 +526,8 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	if options.Logger == nil {
-		options.Logger = log.NewZapAdapter(zap.NewNop())
+		options.Logger = log.NewDefaultLogger()
+		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
 	connection, err := dial(newDialParameters(&options))

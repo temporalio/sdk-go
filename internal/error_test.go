@@ -31,13 +31,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	enumspb "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
-
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal/log"
 )
@@ -106,7 +104,7 @@ func Test_GenericGoError(t *testing.T) {
 func Test_ActivityNotRegistered(t *testing.T) {
 	registeredActivityFn, unregisteredActivitFn := "RegisteredActivity", "UnregisteredActivityFn"
 	s := &WorkflowTestSuite{}
-	s.SetLogger(log.NewZapAdapter(zap.NewNop()))
+	s.SetLogger(log.NewNopLogger())
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivityWithOptions(func() error { return nil }, RegisterActivityOptions{Name: registeredActivityFn})
 	_, err := env.ExecuteActivity(unregisteredActivitFn)

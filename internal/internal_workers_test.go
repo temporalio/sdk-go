@@ -39,7 +39,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/log"
@@ -91,8 +90,6 @@ func TestWorkersTestSuite(t *testing.T) {
 }
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
-	zl, _ := zap.NewDevelopment()
-
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
@@ -102,7 +99,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                log.NewZapAdapter(zl),
+		Logger:                                log.NewDefaultLogger(),
 		UserContext:                           ctx,
 		UserContextCancel:                     cancel,
 	}
@@ -115,8 +112,6 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
-	zl, _ := zap.NewDevelopment()
-
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
@@ -125,7 +120,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
-		Logger:                                log.NewZapAdapter(zl),
+		Logger:                                log.NewDefaultLogger(),
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -137,8 +132,6 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 }
 
 func (s *WorkersTestSuite) TestActivityWorkerStop() {
-	zl, _ := zap.NewDevelopment()
-
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
 		TaskToken: []byte("token"),
@@ -168,7 +161,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
 		ConcurrentActivityExecutionSize:       2,
-		Logger:                                log.NewZapAdapter(zl),
+		Logger:                                log.NewDefaultLogger(),
 		UserContext:                           ctx,
 		UserContextCancel:                     cancel,
 		WorkerStopTimeout:                     time.Second * 2,
@@ -201,7 +194,7 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testWorkflowTaskQueue",
 		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                log.NewZapAdapter(zap.NewNop()),
+		Logger:                                log.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())

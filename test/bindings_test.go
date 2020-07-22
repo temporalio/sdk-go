@@ -35,7 +35,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/log"
@@ -65,12 +64,11 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = NewConfig()
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	zl, err := zap.NewDevelopment()
-	ts.NoError(err)
+	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
-		Logger:    log.NewZapAdapter(zl),
+		Logger:    log.NewDefaultLogger(),
 	})
 	ts.NoError(err)
 	ts.registerNamespace()

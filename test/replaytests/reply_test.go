@@ -33,7 +33,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/log"
@@ -62,9 +61,8 @@ func (s *replayTestSuite) TearDownTest() {
 
 func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	s.T().Skip("Remove this Skip to regenerate the history.")
-	zl, _ := zap.NewDevelopment()
 	c, _ := client.NewClient(client.Options{
-		Logger: log.NewZapAdapter(zl),
+		Logger: log.NewDefaultLogger(),
 	})
 	defer c.Close()
 
@@ -99,7 +97,6 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
-	zl, _ := zap.NewDevelopment()
 	testFiles := []string{"workflow1.json", "workflow2.json"}
 	var err error
 
@@ -108,18 +105,16 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 		replayer.RegisterWorkflow(Workflow1)
 		replayer.RegisterWorkflow(Workflow2)
 
-		err = replayer.ReplayWorkflowHistoryFromJSONFile(log.NewZapAdapter(zl), testFile)
+		err = replayer.ReplayWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), testFile)
 		require.NoError(s.T(), err, "file: %s", testFile)
 	}
 }
 
 func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
-	zl, _ := zap.NewDevelopment()
-
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(Workflow1)
 
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(log.NewZapAdapter(zl), "bad-history.json")
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), "bad-history.json")
 	require.Error(s.T(), err)
 	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow failed with failure"))
 }

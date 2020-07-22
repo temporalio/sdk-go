@@ -44,8 +44,6 @@ import (
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.uber.org/zap"
-
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -126,8 +124,7 @@ func (t *TaskHandlersTestSuite) SetupTest() {
 }
 
 func (t *TaskHandlersTestSuite) SetupSuite() {
-	zl, _ := zap.NewDevelopment()
-	t.logger = log.NewZapAdapter(zl)
+	t.logger = log.NewDefaultLogger()
 	registerWorkflows(t.registry)
 }
 
@@ -666,7 +663,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -701,7 +698,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -742,7 +739,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -821,7 +818,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		Namespace:              testNamespace,
 		TaskQueue:              taskQueue,
 		Identity:               "test-id-1",
-		Logger:                 log.NewZapAdapter(zap.NewNop()),
+		Logger:                 log.NewNopLogger(),
 		DisableStickyExecution: disableSticky,
 	}
 
@@ -864,7 +861,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 		WorkerStopChannel:   stopC,
 	}
@@ -927,7 +924,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -954,7 +951,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -1009,7 +1006,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -1043,7 +1040,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewZapAdapter(zap.NewNop()),
+		Logger:              log.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
