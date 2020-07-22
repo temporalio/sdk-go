@@ -22,25 +22,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package log
 
-const (
-	tagActivityID        = "ActivityID"
-	tagActivityType      = "ActivityType"
-	tagNamespace         = "Namespace"
-	tagEventID           = "EventID"
-	tagEventType         = "EventType"
-	tagRunID             = "RunID"
-	tagTaskQueue         = "TaskQueue"
-	tagTimerID           = "TimerID"
-	tagWorkflowID        = "WorkflowID"
-	tagWorkflowType      = "WorkflowType"
-	tagWorkerID          = "WorkerID"
-	tagWorkerType        = "WorkerType"
-	tagSideEffectID      = "SideEffectID"
-	tagChildWorkflowID   = "ChildWorkflowID"
-	tagLocalActivityType = "LocalActivityType"
-	tagQueryType         = "QueryType"
-	tagResult            = "Result"
-	tagError             = "Error"
-)
+type NopLogger struct {
+}
+
+func NewNopLogger() *NopLogger {
+	return &NopLogger{}
+}
+
+func (l *NopLogger) Debug(msg string, keyvals ...interface{}) {
+}
+
+func (l *NopLogger) Info(msg string, keyvals ...interface{}) {
+}
+
+func (l *NopLogger) Warn(msg string, keyvals ...interface{}) {
+}
+
+func (l *NopLogger) Error(msg string, keyvals ...interface{}) {
+}
+
+func (l *NopLogger) With(keyvals ...interface{}) Logger {
+	return NewNopLogger()
+}

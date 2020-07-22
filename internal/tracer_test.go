@@ -31,17 +31,19 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	jaeger_config "github.com/uber/jaeger-client-go/config"
+	"github.com/uber/jaeger-client-go/config"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.uber.org/zap"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 func TestTracingContextPropagator(t *testing.T) {
 	t.Parallel()
-	tracer, closer, err := jaeger_config.Configuration{ServiceName: "test-service"}.NewTracer()
+	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
+	ctxProp := NewTracingContextPropagator(log.NewZapAdapter(zap.NewNop()), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	ctx := context.Background()
@@ -63,7 +65,7 @@ func TestTracingContextPropagator(t *testing.T) {
 
 func TestTracingContextPropagatorNoSpan(t *testing.T) {
 	t.Parallel()
-	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(log.NewZapAdapter(zap.NewNop()), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{},
@@ -78,10 +80,10 @@ func TestTracingContextPropagatorNoSpan(t *testing.T) {
 
 func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	t.Parallel()
-	tracer, closer, err := jaeger_config.Configuration{ServiceName: "test-service"}.NewTracer()
+	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
+	ctxProp := NewTracingContextPropagator(log.NewZapAdapter(zap.NewNop()), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	assert.NotNil(t, span.Context())
@@ -108,7 +110,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 
 func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	t.Parallel()
-	ctxProp := NewTracingContextPropagator(zap.NewNop(), opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(log.NewZapAdapter(zap.NewNop()), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{},
@@ -123,10 +125,10 @@ func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 
 func TestConsistentInjectionExtraction(t *testing.T) {
 	t.Parallel()
-	tracer, closer, err := jaeger_config.Configuration{ServiceName: "test-service"}.NewTracer()
+	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(zap.NewNop(), tracer)
+	ctxProp := NewTracingContextPropagator(log.NewZapAdapter(zap.NewNop()), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	// base64 encoded string '{}'

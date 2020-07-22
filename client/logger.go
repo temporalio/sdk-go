@@ -22,25 +22,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package client
 
-const (
-	tagActivityID        = "ActivityID"
-	tagActivityType      = "ActivityType"
-	tagNamespace         = "Namespace"
-	tagEventID           = "EventID"
-	tagEventType         = "EventType"
-	tagRunID             = "RunID"
-	tagTaskQueue         = "TaskQueue"
-	tagTimerID           = "TimerID"
-	tagWorkflowID        = "WorkflowID"
-	tagWorkflowType      = "WorkflowType"
-	tagWorkerID          = "WorkerID"
-	tagWorkerType        = "WorkerType"
-	tagSideEffectID      = "SideEffectID"
-	tagChildWorkflowID   = "ChildWorkflowID"
-	tagLocalActivityType = "LocalActivityType"
-	tagQueryType         = "QueryType"
-	tagResult            = "Result"
-	tagError             = "Error"
+import (
+	"go.temporal.io/sdk/internal/log"
+)
+
+type (
+	Logger = log.Logger
+
+	ZapAdapter = log.ZapAdapter
 )

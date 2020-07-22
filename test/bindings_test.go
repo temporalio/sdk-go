@@ -38,6 +38,7 @@ import (
 	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -64,12 +65,12 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = NewConfig()
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	logger, err := zap.NewDevelopment()
+	zl, err := zap.NewDevelopment()
 	ts.NoError(err)
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
-		Logger:    logger,
+		Logger:    log.NewZapAdapter(zl),
 	})
 	ts.NoError(err)
 	ts.registerNamespace()

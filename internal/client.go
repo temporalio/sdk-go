@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -326,7 +327,7 @@ type (
 
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
-		Logger *zap.Logger
+		Logger log.Logger
 
 		// Optional: Metrics to be reported.
 		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
@@ -525,6 +526,10 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.HostPort = LocalHostPort
 	}
 
+	if options.Logger == nil {
+		options.Logger = log.NewZapAdapter(zap.NewNop())
+	}
+
 	connection, err := dial(newDialParameters(&options))
 
 	if err != nil {
@@ -559,7 +564,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.Tracer != nil {
-		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(zap.NewNop(), options.Tracer))
+		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Logger, options.Tracer))
 	} else {
 		options.Tracer = opentracing.NoopTracer{}
 	}

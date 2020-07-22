@@ -28,7 +28,8 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 // WorkflowInterceptor is used to create a single link in the interceptor chain
@@ -68,7 +69,7 @@ type WorkflowOutboundCallsInterceptor interface {
 	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
 	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture
 	GetWorkflowInfo(ctx Context) *WorkflowInfo
-	GetLogger(ctx Context) *zap.Logger
+	GetLogger(ctx Context) log.Logger
 	GetMetricsScope(ctx Context) tally.Scope
 	Now(ctx Context) time.Time
 	NewTimer(ctx Context, d time.Duration) Future
@@ -137,7 +138,7 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetWorkflowInfo(ctx Context) *Wor
 }
 
 // GetLogger forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) GetLogger(ctx Context) *zap.Logger {
+func (t *WorkflowOutboundCallsInterceptorBase) GetLogger(ctx Context) log.Logger {
 	return t.Next.GetLogger(ctx)
 }
 

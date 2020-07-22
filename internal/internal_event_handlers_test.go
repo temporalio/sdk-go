@@ -33,15 +33,18 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
-func TestReplayAwareLogger(t *testing.T) {
+func TestReplayLogger(t *testing.T) {
 	t.Parallel()
 	core, observed := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core, zap.Development())
+	var logger log.Logger
+	logger = log.NewZapAdapter(zap.New(core, zap.Development()))
 
 	isReplay, enableLoggingInReplay := false, false
-	logger = logger.WithOptions(zap.WrapCore(wrapLogger(&isReplay, &enableLoggingInReplay)))
+	logger = log.NewReplayLogger(logger, &isReplay, &enableLoggingInReplay)
 
 	logger.Info("normal info")
 

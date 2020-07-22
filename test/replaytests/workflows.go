@@ -28,8 +28,6 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/zap"
-
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
@@ -50,30 +48,30 @@ func Workflow1(ctx workflow.Context, name string) error {
 	if v == workflow.DefaultVersion {
 		err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 		if err != nil {
-			logger.Error("Activity failed.", zap.Error(err))
+			logger.Error("Activity failed.", "Error", err)
 			return err
 		}
 	} else {
 		err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 		if err != nil {
-			logger.Error("Activity failed.", zap.Error(err))
+			logger.Error("Activity failed.", "Error", err)
 			return err
 		}
 
 		err = workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 		if err != nil {
-			logger.Error("Activity failed.", zap.Error(err))
+			logger.Error("Activity failed.", "Error", err)
 			return err
 		}
 	}
 
 	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 	if err != nil {
-		logger.Error("Activity failed.", zap.Error(err))
+		logger.Error("Activity failed.", "Error", err)
 		return err
 	}
 
-	logger.Info("Workflow completed.", zap.String("Result", helloworldResult))
+	logger.Info("Workflow completed.", "Result", helloworldResult)
 
 	return nil
 }
@@ -97,11 +95,11 @@ func Workflow2(ctx workflow.Context, name string) error {
 
 	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 	if err != nil {
-		logger.Error("Activity failed.", zap.Error(err))
+		logger.Error("Activity failed.", "Error", err)
 		return err
 	}
 
-	logger.Info("Workflow completed.", zap.String("Result", helloworldResult))
+	logger.Info("Workflow completed.", "Result", helloworldResult)
 
 	return nil
 }

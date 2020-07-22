@@ -43,11 +43,10 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -117,7 +116,7 @@ type (
 		signalHandler   func(name string, input *commonpb.Payloads) // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
 
-		logger                *zap.Logger
+		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
@@ -150,13 +149,6 @@ type (
 		Attempt      int32         // record attempt, starting from 1.
 		Backoff      time.Duration // retry backoff duration.
 	}
-
-	// wrapper around zapcore.Core that will be aware of replay
-	replayAwareZapCore struct {
-		zapcore.Core
-		isReplay              *bool // pointer to bool that indicate if it is in replay mode
-		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
-	}
 )
 
 var (
@@ -168,28 +160,10 @@ var (
 	ErrMissingMarkerDataKey = errors.New("marker key is missing in details")
 )
 
-func wrapLogger(isReplay *bool, enableLoggingInReplay *bool) func(zapcore.Core) zapcore.Core {
-	return func(c zapcore.Core) zapcore.Core {
-		return &replayAwareZapCore{c, isReplay, enableLoggingInReplay}
-	}
-}
-
-func (c *replayAwareZapCore) Check(entry zapcore.Entry, checkedEntry *zapcore.CheckedEntry) *zapcore.CheckedEntry {
-	if *c.isReplay && !*c.enableLoggingInReplay {
-		return checkedEntry
-	}
-	return c.Core.Check(entry, checkedEntry)
-}
-
-func (c *replayAwareZapCore) With(fields []zapcore.Field) zapcore.Core {
-	coreWithFields := c.Core.With(fields)
-	return &replayAwareZapCore{coreWithFields, c.isReplay, c.enableLoggingInReplay}
-}
-
 func newWorkflowExecutionEventHandler(
 	workflowInfo *WorkflowInfo,
 	completeHandler completionHandler,
-	logger *zap.Logger,
+	logger log.Logger,
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	registry *registry,
@@ -213,11 +187,14 @@ func newWorkflowExecutionEventHandler(
 		contextPropagators:    contextPropagators,
 		tracer:                tracer,
 	}
-	context.logger = logger.With(
-		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: workflowInfo.WorkflowType.Name},
-		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.ID},
-		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: workflowInfo.WorkflowExecution.RunID},
-	).WithOptions(zap.WrapCore(wrapLogger(&context.isReplay, &context.enableLoggingInReplay)))
+	context.logger = log.NewReplayLogger(
+		logger.With(
+			tagWorkflowType, workflowInfo.WorkflowType.Name,
+			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
+			tagRunID, workflowInfo.WorkflowExecution.RunID,
+		),
+		&context.isReplay,
+		&context.enableLoggingInReplay)
 
 	if scope != nil {
 		context.metricsScope = tagScope(metrics.WrapScope(&context.isReplay, scope, context),
@@ -404,8 +381,8 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
-		zap.String(tagChildWorkflowID, params.WorkflowID),
-		zap.String(tagWorkflowType, params.WorkflowType.Name))
+		tagChildWorkflowID, params.WorkflowID,
+		tagWorkflowType, params.WorkflowType.Name)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads)) {
@@ -416,7 +393,7 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *co
 	wc.queryHandler = handler
 }
 
-func (wc *workflowEnvironmentImpl) GetLogger() *zap.Logger {
+func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
 	return wc.logger
 }
 
@@ -477,8 +454,8 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	})
 
 	wc.logger.Debug("ExecuteActivity",
-		zap.String(tagActivityID, activityID),
-		zap.String(tagActivityType, scheduleTaskAttr.ActivityType.GetName()))
+		tagActivityID, activityID,
+		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
 	return &ActivityID{
 		scheduleID: wc.GenerateSequence(),
@@ -497,7 +474,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 		activity.handle(nil, ErrCanceled)
 	}
 
-	wc.logger.Debug("RequestCancelActivity", zap.String(tagActivityID, activityID))
+	wc.logger.Debug("RequestCancelActivity", tagActivityID, activityID)
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
@@ -562,8 +539,8 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	command.setData(&scheduledTimer{callback: callback})
 
 	wc.logger.Debug("NewTimer",
-		zap.String(tagTimerID, startTimerAttr.GetTimerId()),
-		zap.Duration("Duration", d))
+		tagTimerID, startTimerAttr.GetTimerId(),
+		"Duration", d)
 
 	return &TimerInfo{timerID: timerID}
 }
@@ -575,7 +552,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 		return
 	}
 	timer.handle(nil, ErrCanceled)
-	wc.logger.Debug("RequestCancelTimer", zap.String(tagTimerID, timerID))
+	wc.logger.Debug("RequestCancelTimer", tagTimerID, timerID)
 }
 
 func validateVersion(changeID string, version, minSupported, maxSupported Version) {
@@ -647,7 +624,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 				sideEffectID, keys))
 		}
 		wc.logger.Debug("SideEffect returning already calculated result.",
-			zap.Int64(tagSideEffectID, sideEffectID))
+			tagSideEffectID, sideEffectID)
 	} else {
 		var err error
 		result, err = f()
@@ -660,7 +637,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
 
 	callback(result, nil)
-	wc.logger.Debug("SideEffect Marker added", zap.Int64(tagSideEffectID, sideEffectID))
+	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
 }
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
@@ -763,8 +740,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.logger.Error("ProcessEvent panic.",
-				zap.String("PanicError", fmt.Sprintf("%v", p)),
-				zap.String("PanicStack", st))
+				"PanicError", fmt.Sprintf("%v", p),
+				"PanicStack", st)
 
 			weh.Complete(nil, newWorkflowPanicError(p, st))
 		}
@@ -773,8 +750,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	weh.isReplay = isReplay
 	traceLog(func() {
 		weh.logger.Debug("ProcessEvent",
-			zap.Int64(tagEventID, event.GetEventId()),
-			zap.String(tagEventType, event.GetEventType().String()))
+			tagEventID, event.GetEventId(),
+			tagEventType, event.GetEventType().String())
 	})
 
 	switch event.GetEventType() {
@@ -898,8 +875,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	default:
 		weh.logger.Error("unknown event type",
-			zap.Int64(tagEventID, event.GetEventId()),
-			zap.String(tagEventType, event.GetEventType().String()))
+			tagEventID, event.GetEventId(),
+			tagEventType, event.GetEventType().String())
 		// Do not fail to be forward compatible with new events
 	}
 
@@ -931,9 +908,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, que
 
 		if result.Size() > queryResultSizeLimit {
 			weh.logger.Error("Query result size exceeds limit.",
-				zap.String(tagQueryType, queryType),
-				zap.String(tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID),
-				zap.String(tagRunID, weh.workflowInfo.WorkflowExecution.RunID))
+				tagQueryType, queryType,
+				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
+				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
 			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 

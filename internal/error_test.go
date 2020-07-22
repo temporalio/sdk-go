@@ -38,6 +38,8 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.uber.org/zap"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -104,7 +106,7 @@ func Test_GenericGoError(t *testing.T) {
 func Test_ActivityNotRegistered(t *testing.T) {
 	registeredActivityFn, unregisteredActivitFn := "RegisteredActivity", "UnregisteredActivityFn"
 	s := &WorkflowTestSuite{}
-	s.SetLogger(zap.NewNop())
+	s.SetLogger(log.NewZapAdapter(zap.NewNop()))
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivityWithOptions(func() error { return nil }, RegisterActivityOptions{Name: registeredActivityFn})
 	_, err := env.ExecuteActivity(unregisteredActivitFn)
