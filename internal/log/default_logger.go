@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 type DefaultLogger struct {
@@ -69,11 +70,11 @@ func (l *DefaultLogger) With(keyvals ...interface{}) Logger {
 		logger: l.logger,
 	}
 
-	if l.globalKeyvals == "" {
-		logger.globalKeyvals = fmt.Sprint(keyvals...)
-	} else {
-		logger.globalKeyvals = fmt.Sprint(l.globalKeyvals, fmt.Sprint(keyvals...))
+	if l.globalKeyvals != "" {
+		l.globalKeyvals += " "
 	}
+
+	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")
 
 	return logger
 }
