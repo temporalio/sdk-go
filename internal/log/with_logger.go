@@ -45,22 +45,22 @@ func newWithLogger(logger Logger, keyvals ...interface{}) *withLogger {
 	return &withLogger{logger: logger, keyvals: keyvals}
 }
 
-func (l *withLogger) preppendKeyvals(keyvals []interface{}) []interface{} {
+func (l *withLogger) prependKeyvals(keyvals []interface{}) []interface{} {
 	return append(l.keyvals, keyvals...)
 }
 
 func (l *withLogger) Debug(msg string, keyvals ...interface{}) {
-	l.logger.Debug(msg, l.preppendKeyvals(keyvals)...)
+	l.logger.Debug(msg, l.prependKeyvals(keyvals)...)
 }
 
 func (l *withLogger) Info(msg string, keyvals ...interface{}) {
-	l.logger.Info(msg, l.preppendKeyvals(keyvals)...)
+	l.logger.Info(msg, l.prependKeyvals(keyvals)...)
 }
 
 func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
-	l.logger.Warn(msg, l.preppendKeyvals(keyvals)...)
+	l.logger.Warn(msg, l.prependKeyvals(keyvals)...)
 }
 
 func (l *withLogger) Error(msg string, keyvals ...interface{}) {
-	l.logger.Error(msg, l.preppendKeyvals(keyvals)...)
+	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
 }
