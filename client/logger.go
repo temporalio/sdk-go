@@ -29,5 +29,6 @@ import (
 )
 
 type (
+	// Logger is an interface that can be passed to ClientOptions.Logger.
 	Logger = log.Logger
 )

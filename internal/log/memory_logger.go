@@ -29,11 +29,13 @@ import (
 	"strings"
 )
 
+// MemoryLogger is Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
 type MemoryLogger struct {
 	lines         *[]string
 	globalKeyvals string
 }
 
+// NewMemoryLogger creates new instance of MemoryLogger.
 func NewMemoryLogger() *MemoryLogger {
 	var lines []string
 	return &MemoryLogger{
@@ -50,22 +52,27 @@ func (l *MemoryLogger) println(level, msg string, keyvals []interface{}) {
 	}
 }
 
+// Debug appends message to the log.
 func (l *MemoryLogger) Debug(msg string, keyvals ...interface{}) {
 	l.println("DEBUG", msg, keyvals)
 }
 
+// Info appends message to the log.
 func (l *MemoryLogger) Info(msg string, keyvals ...interface{}) {
 	l.println("INFO ", msg, keyvals)
 }
 
+// Warn appends message to the log.
 func (l *MemoryLogger) Warn(msg string, keyvals ...interface{}) {
 	l.println("WARN ", msg, keyvals)
 }
 
+// Error appends message to the log.
 func (l *MemoryLogger) Error(msg string, keyvals ...interface{}) {
 	l.println("ERROR", msg, keyvals)
 }
 
+// With returns new logger the prepend every log entry with keyvals.
 func (l *MemoryLogger) With(keyvals ...interface{}) Logger {
 	logger := &MemoryLogger{
 		lines: l.lines,
@@ -80,6 +87,7 @@ func (l *MemoryLogger) With(keyvals ...interface{}) Logger {
 	return logger
 }
 
+// Lines returns written log lines.
 func (l *MemoryLogger) Lines() []string {
 	return *l.lines
 }

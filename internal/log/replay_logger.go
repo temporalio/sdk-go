@@ -24,15 +24,14 @@
 
 package log
 
-type (
-	// ReplayLogger is a wrapper around Logger that will be aware of replay
-	ReplayLogger struct {
-		logger                Logger
-		isReplay              *bool // pointer to bool that indicate if it is in replay mode
-		enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
-	}
-)
+// ReplayLogger is Logger implementation that is aware of replay.
+type ReplayLogger struct {
+	logger                Logger
+	isReplay              *bool // pointer to bool that indicate if it is in replay mode
+	enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
+}
 
+// NewReplayLogger crates new instance of ReplayLogger.
 func NewReplayLogger(logger Logger, isReplay *bool, enableLoggingInReplay *bool) Logger {
 	return &ReplayLogger{
 		logger:                logger,
@@ -45,30 +44,35 @@ func (l *ReplayLogger) check() bool {
 	return !*l.isReplay || *l.enableLoggingInReplay
 }
 
+// Debug writes message to the log if it is not a replay.
 func (l *ReplayLogger) Debug(msg string, keyvals ...interface{}) {
 	if l.check() {
 		l.logger.Debug(msg, keyvals...)
 	}
 }
 
+// Info writes message to the log if it is not a replay.
 func (l *ReplayLogger) Info(msg string, keyvals ...interface{}) {
 	if l.check() {
 		l.logger.Info(msg, keyvals...)
 	}
 }
 
+// Warn writes message to the log if it is not a replay.
 func (l *ReplayLogger) Warn(msg string, keyvals ...interface{}) {
 	if l.check() {
 		l.logger.Warn(msg, keyvals...)
 	}
 }
 
+// Error writes message to the log if it is not a replay.
 func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
 	if l.check() {
 		l.logger.Error(msg, keyvals...)
 	}
 }
 
+// With returns new logger the prepend every log entry with keyvals.
 func (l *ReplayLogger) With(keyvals ...interface{}) Logger {
 	return NewReplayLogger(With(l.logger, keyvals), l.isReplay, l.enableLoggingInReplay)
 }

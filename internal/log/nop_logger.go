@@ -24,25 +24,32 @@
 
 package log
 
+// NopLogger is Logger implementation that doesn't produce any logs.
 type NopLogger struct {
 }
 
+// NewNopLogger creates new instance of NopLogger.
 func NewNopLogger() *NopLogger {
 	return &NopLogger{}
 }
 
+// Debug does nothing.
 func (l *NopLogger) Debug(msg string, keyvals ...interface{}) {
 }
 
+// Info does nothing.
 func (l *NopLogger) Info(msg string, keyvals ...interface{}) {
 }
 
+// Warn does nothing.
 func (l *NopLogger) Warn(msg string, keyvals ...interface{}) {
 }
 
+// Error does nothing.
 func (l *NopLogger) Error(msg string, keyvals ...interface{}) {
 }
 
+// With returns new NopLogger.
 func (l *NopLogger) With(keyvals ...interface{}) Logger {
 	return NewNopLogger()
 }

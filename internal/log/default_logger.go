@@ -31,11 +31,13 @@ import (
 	"strings"
 )
 
+// DefaultLogger is Logger implementation on top of standart log.Logger. It is used if logger is not specified.
 type DefaultLogger struct {
 	logger        *log.Logger
 	globalKeyvals string
 }
 
+// NewDefaultLogger creates new instance of DefaultLogger.
 func NewDefaultLogger() *DefaultLogger {
 	return &DefaultLogger{logger: log.New(os.Stdout, "", log.LstdFlags)}
 }
@@ -49,22 +51,27 @@ func (l *DefaultLogger) println(level, msg string, keyvals []interface{}) {
 	}
 }
 
+// Debug writes message to the log.
 func (l *DefaultLogger) Debug(msg string, keyvals ...interface{}) {
 	l.println("DEBUG", msg, keyvals)
 }
 
+// Info writes message to the log.
 func (l *DefaultLogger) Info(msg string, keyvals ...interface{}) {
 	l.println("INFO ", msg, keyvals)
 }
 
+// Warn writes message to the log.
 func (l *DefaultLogger) Warn(msg string, keyvals ...interface{}) {
 	l.println("WARN ", msg, keyvals)
 }
 
+// Error writes message to the log.
 func (l *DefaultLogger) Error(msg string, keyvals ...interface{}) {
 	l.println("ERROR", msg, keyvals)
 }
 
+// With returns new logger the prepend every log entry with keyvals.
 func (l *DefaultLogger) With(keyvals ...interface{}) Logger {
 	logger := &DefaultLogger{
 		logger: l.logger,
