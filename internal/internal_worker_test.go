@@ -958,17 +958,27 @@ func testActivityMultipleArgsWithStruct(_ context.Context, i int, s testActivity
 
 func (s *internalWorkerTestSuite) TestCreateWorker() {
 	worker := createWorkerWithThrottle(s.service, 500.0, nil)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)
+	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	worker.Stop()
+	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker := createWorkerWithDataConverter(s.service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)
+	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	worker.Stop()
 }
 
@@ -978,6 +988,8 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	worker := createWorker(service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -989,6 +1001,8 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	assert.NoError(s.T(), err)
 	assert.NoError(s.T(), p.Signal(os.Interrupt))
 	wg.Wait()
+	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
@@ -1024,6 +1038,8 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 			}).Times(2)
 
 		worker := createWorker(service)
+		worker.RegisterActivity(testActivityNoResult)
+		worker.RegisterWorkflow(testWorkflowReturnStruct)
 		if tc.isErrFatal {
 			err := worker.Start()
 			assert.Error(t, err, "worker.start() MUST fail when namespace is invalid")
@@ -1035,11 +1051,17 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 			case <-time.After(time.Second):
 				assert.Fail(t, "worker.Run() MUST fail when namespace is invalid")
 			}
+			assert.False(t, worker.activityWorker.worker.isWorkerStarted)
+			assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
 			continue
 		}
 		err := worker.Start()
 		assert.NoError(t, err, "worker.Start() failed unexpectedly")
+		assert.True(t, worker.activityWorker.worker.isWorkerStarted)
+		assert.True(t, worker.workflowWorker.worker.isWorkerStarted)
 		worker.Stop()
+		assert.False(t, worker.activityWorker.worker.isWorkerStarted)
+		assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
 	}
 }
 

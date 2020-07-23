@@ -363,4 +363,6 @@ func (bw *baseWorker) Stop() {
 	if bw.options.userContextCancel != nil {
 		bw.options.userContextCancel()
 	}
+
+	bw.isWorkerStarted = false
 }
