@@ -30,9 +30,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -159,12 +157,6 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
-}
-
-func getKillSignal() <-chan os.Signal {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	return c
 }
 
 // getMetricsScopeForActivity return properly tagged tally scope for activity

@@ -116,9 +116,11 @@ type (
 		Start() error
 		// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
 		// Returns error only if worker fails to start.
-		Run() error
+		Run(ch <-chan interface{}) error
 		// Stop the worker.
 		Stop()
+
+		StopSignal() <-chan interface{}
 	}
 
 	// WorkflowReplayer supports replaying a workflow from its event history.
