@@ -1380,21 +1380,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
-	if !options.DisableWorkflowWorker {
-		testTags := getTestTags(options.BackgroundActivityContext)
-		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
-		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
-		}
+	testTags := getTestTags(options.BackgroundActivityContext)
+	if len(testTags) > 0 {
+		workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+	} else {
+		workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 	}
 
 	// activity types.
-	var activityWorker *activityWorker
-
-	if !options.DisableActivityWorker {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
-	}
+	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker {
@@ -1405,7 +1399,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
 			Name: sessionCompletionActivityName,
 		})
-
 	}
 
 	return &AggregatedWorker{

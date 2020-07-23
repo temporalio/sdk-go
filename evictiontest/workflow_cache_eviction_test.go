@@ -165,7 +165,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 
 	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
 
-	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{DisableActivityWorker: true})
+	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{})
 	// this is an arbitrary workflow we use for this test
 	// NOTE: a simple helloworld that doesn't execute an activity
 	// won't work because the workflow will simply just complete

@@ -300,6 +300,7 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 	}
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondWorkflowTaskCompletedRequest, opts ...grpc.CallOption,
@@ -327,16 +328,13 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 		}
 	}).Times(2)
 
-	options := WorkerOptions{
-		DisableActivityWorker: true,
-	}
 	clientOptions := ClientOptions{
 		Logger:   zap.NewNop(),
 		Identity: "test-worker-identity",
 	}
 
 	client := NewServiceClient(s.service, nil, clientOptions)
-	worker := NewAggregatedWorker(client, taskQueue, options)
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 	worker.RegisterWorkflowWithOptions(
 		longWorkflowTaskWorkflowFn,
 		RegisterWorkflowOptions{Name: "long-running-workflow-task-workflow-type"},
@@ -441,6 +439,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	}
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 
 	respondCounter := 0
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, request *workflowservice.RespondWorkflowTaskCompletedRequest, opts ...grpc.CallOption,
@@ -460,16 +459,13 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		}
 	}).Times(1)
 
-	options := WorkerOptions{
-		DisableActivityWorker: true,
-	}
 	clientOptions := ClientOptions{
 		Logger:   zap.NewNop(),
 		Identity: "test-worker-identity",
 	}
 
 	client := NewServiceClient(s.service, nil, clientOptions)
-	worker := NewAggregatedWorker(client, taskQueue, options)
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 	worker.RegisterWorkflowWithOptions(
 		longWorkflowTaskWorkflowFn,
 		RegisterWorkflowOptions{Name: "multiple-local-activities-workflow-type"},

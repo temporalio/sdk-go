@@ -102,14 +102,6 @@ type (
 		// default: false
 		EnableLoggingInReplay bool
 
-		// Optional: Disable running workflow workers.
-		// default: false
-		DisableWorkflowWorker bool
-
-		// Optional: Disable running activity workers.
-		// default: false
-		DisableActivityWorker bool
-
 		// Optional: Disable sticky execution.
 		// Sticky Execution is to run the workflow tasks for one workflow execution on same worker host. This is an
 		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
