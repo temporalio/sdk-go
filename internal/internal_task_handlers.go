@@ -47,12 +47,12 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -123,7 +123,7 @@ type (
 		namespace              string
 		metricsScope           *metrics.TaggedScope
 		ppMgr                  pressurePointMgr
-		logger                 *zap.Logger
+		logger                 log.Logger
 		identity               string
 		enableLoggingInReplay  bool
 		disableStickyExecution bool
@@ -143,7 +143,7 @@ type (
 		identity           string
 		service            workflowservice.WorkflowServiceClient
 		metricsScope       *metrics.TaggedScope
-		logger             *zap.Logger
+		logger             log.Logger
 		userContext        context.Context
 		registry           *registry
 		activityProvider   activityProvider
@@ -293,8 +293,8 @@ func (eh *history) verifyAllEventsProcessed() error {
 	if eh.lastEventID > 0 && eh.nextEventID != (eh.lastEventID+1) {
 		eh.eventsHandler.logger.Warn(
 			"history_events: processed events past the expected lastEventID",
-			zap.Int64("expectedLastEventID", eh.lastEventID),
-			zap.Int64("processedLastEventID", eh.nextEventID-1))
+			"expectedLastEventID", eh.lastEventID,
+			"processedLastEventID", eh.nextEventID-1)
 	}
 	return nil
 }
@@ -746,10 +746,10 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowID := task.WorkflowExecution.GetWorkflowId()
 	traceLog(func() {
 		wth.logger.Debug("Processing new workflow task.",
-			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
-			zap.String(tagWorkflowID, workflowID),
-			zap.String(tagRunID, runID),
-			zap.Int64("PreviousStartedEventId", task.GetPreviousStartedEventId()))
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, workflowID,
+			tagRunID, runID,
+			"PreviousStartedEventId", task.GetPreviousStartedEventId())
 	})
 
 	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
@@ -921,10 +921,10 @@ ProcessEvents:
 	if nonDeterministicErr != nil {
 		w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
 		w.wth.logger.Error("non-deterministic-error",
-			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
-			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.Error(nonDeterministicErr))
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagError, nonDeterministicErr)
 
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
@@ -1105,12 +1105,12 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
 		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
-			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.Int64("CachedPreviousStartedEventID", w.previousStartedEventID),
-			zap.Int64("TaskFirstEventID", task.History.Events[0].GetEventId()),
-			zap.Int64("TaskStartedEventID", task.GetStartedEventId()),
-			zap.Int64("TaskPreviousStartedEventID", task.GetPreviousStartedEventId()))
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			"CachedPreviousStartedEventID", w.previousStartedEventID,
+			"TaskFirstEventID", task.History.Events[0].GetEventId(),
+			"TaskStartedEventID", task.GetStartedEventId(),
+			"TaskPreviousStartedEventID", task.GetPreviousStartedEventId())
 
 		w.wth.metricsScope.
 			GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).
@@ -1446,10 +1446,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow panic
 		metricsScope.Counter(metrics.WorkflowTaskPanicCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
-			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.String("PanicError", workflowPanicErr.Error()),
-			zap.String("PanicStack", workflowPanicErr.StackTrace()))
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			"PanicError", workflowPanicErr.Error(),
+			"PanicStack", workflowPanicErr.StackTrace())
 		return errorToFailWorkflowTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
 	}
 
@@ -1733,9 +1733,9 @@ func newServiceInvoker(
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
-			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
-			zap.String(tagActivityType, t.ActivityType.GetName()))
+			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			tagRunID, t.WorkflowExecution.GetRunId(),
+			tagActivityType, t.ActivityType.GetName())
 	})
 
 	rootCtx := ath.userContext
@@ -1769,11 +1769,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			ath.logger.Error("Activity panic.",
-				zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
-				zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
-				zap.String(tagActivityType, activityType),
-				zap.String("PanicError", fmt.Sprintf("%v", p)),
-				zap.String("PanicStack", st))
+				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+				tagRunID, t.WorkflowExecution.GetRunId(),
+				tagActivityType, activityType,
+				"PanicError", fmt.Sprintf("%v", p),
+				"PanicStack", st)
 			metricsScope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
@@ -1799,20 +1799,20 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		ath.logger.Info("Activity complete after timeout.",
-			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
-			zap.String(tagActivityType, activityType),
-			zap.Any(tagResult, output),
-			zap.Error(err),
+			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			tagRunID, t.WorkflowExecution.GetRunId(),
+			tagActivityType, activityType,
+			tagResult, output,
+			tagError, err,
 		)
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
 		ath.logger.Error("Activity error.",
-			zap.String(tagWorkflowID, t.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, t.WorkflowExecution.GetRunId()),
-			zap.String(tagActivityType, activityType),
-			zap.Error(err),
+			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			tagRunID, t.WorkflowExecution.GetRunId(),
+			tagActivityType, activityType,
+			tagError, err,
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil

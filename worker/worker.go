@@ -30,11 +30,11 @@ import (
 
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -143,14 +143,14 @@ type (
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error
+		ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error
+		ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error
 
 		// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the json history file upto provided
 		// lastEventID(inclusive), downloaded from the cli.
@@ -158,12 +158,12 @@ type (
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error
+		ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error
 
 		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single workflow task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is the only optional parameter. Defaults to the noop logger.
-		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution workflow.Execution) error
+		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution workflow.Execution) error
 	}
 
 	// Options is used to configure a worker instance.

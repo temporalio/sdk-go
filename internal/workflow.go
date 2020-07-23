@@ -34,10 +34,10 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
+	"go.temporal.io/sdk/internal/log"
 )
 
 var (
@@ -763,12 +763,12 @@ func (wc *workflowEnvironmentInterceptor) GetWorkflowInfo(ctx Context) *Workflow
 }
 
 // GetLogger returns a logger to be used in workflow's context
-func GetLogger(ctx Context) *zap.Logger {
+func GetLogger(ctx Context) log.Logger {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.GetLogger(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) *zap.Logger {
+func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) log.Logger {
 	return wc.env.GetLogger()
 }
 
