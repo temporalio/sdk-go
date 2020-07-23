@@ -1106,7 +1106,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = log.NewDefaultLogger()
 	}
 
 	controller := gomock.NewController(log.NewTestReporter(logger))
@@ -1134,7 +1134,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 	}
 
 	if loger == nil {
-		loger = log.NewNopLogger()
+		loger = log.NewDefaultLogger()
 	}
 
 	controller := gomock.NewController(log.NewTestReporter(loger))
@@ -1146,7 +1146,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
 func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution WorkflowExecution) error {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = log.NewDefaultLogger()
 	}
 
 	sharedExecution := &commonpb.WorkflowExecution{
