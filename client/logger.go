@@ -34,7 +34,4 @@ type (
 
 	// WithLogger is an interface that prepend every log entry with keyvals.
 	WithLogger = log.WithLogger
-
-	// DefaultLogger is Logger implementation on top of standart log.Logger. It is used if logger is not specified.
-	DefaultLogger = log.DefaultLogger
 )
