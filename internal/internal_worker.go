@@ -954,7 +954,7 @@ func (aw *AggregatedWorker) Start() error {
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.
-				if !isInterfaceNil(aw.workflowWorker) && len(aw.registry.getRegisteredWorkflowTypes()) > 0 {
+				if aw.workflowWorker.worker.isWorkerStarted {
 					aw.workflowWorker.Stop()
 				}
 				return err
@@ -966,10 +966,10 @@ func (aw *AggregatedWorker) Start() error {
 		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
-			if !isInterfaceNil(aw.workflowWorker) {
+			if aw.workflowWorker.worker.isWorkerStarted {
 				aw.workflowWorker.Stop()
 			}
-			if !isInterfaceNil(aw.activityWorker) {
+			if aw.activityWorker.worker.isWorkerStarted {
 				aw.activityWorker.Stop()
 			}
 			return err
