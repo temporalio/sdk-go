@@ -1053,15 +1053,18 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
-// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+// Pass nil to stop the worker with external Stop() call.
+// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 // Returns error only if worker fails to start.
-func (aw *AggregatedWorker) Run(ch <-chan interface{}) error {
+func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
 	select {
-	case s := <-ch:
-		aw.logger.Info("Worker has been killed", zap.String("Signal", fmt.Sprintf("%v", s)))
+	case s := <-interruptCh:
+		aw.logger.Info("Worker has been stopped.", zap.String("Signal", fmt.Sprintf("%v", s)))
 		aw.Stop()
 	case <-aw.stopC:
 	}
