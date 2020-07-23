@@ -29,7 +29,8 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.uber.org/zap"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 type tracingReader struct {
@@ -75,12 +76,12 @@ func (t tracingWriter) Set(key, val string) {
 //		the header and puts it in the Context object. Does not start a new span
 //		as that is started outside when the workflow is actually executed
 type tracingContextPropagator struct {
-	logger *zap.Logger
+	logger log.Logger
 	tracer opentracing.Tracer
 }
 
 // NewTracingContextPropagator returns new tracing context propagator object
-func NewTracingContextPropagator(logger *zap.Logger, tracer opentracing.Tracer) ContextPropagator {
+func NewTracingContextPropagator(logger log.Logger, tracer opentracing.Tracer) ContextPropagator {
 	return &tracingContextPropagator{logger, tracer}
 }
 

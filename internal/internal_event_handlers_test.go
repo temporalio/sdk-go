@@ -27,43 +27,9 @@ package internal
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
-
-func TestReplayAwareLogger(t *testing.T) {
-	t.Parallel()
-	core, observed := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core, zap.Development())
-
-	isReplay, enableLoggingInReplay := false, false
-	logger = logger.WithOptions(zap.WrapCore(wrapLogger(&isReplay, &enableLoggingInReplay)))
-
-	logger.Info("normal info")
-
-	isReplay = true
-	logger.Info("replay info") // this log should be suppressed
-
-	isReplay, enableLoggingInReplay = false, true
-	logger.Info("normal2 info")
-
-	isReplay = true
-	logger.Info("replay2 info")
-
-	var messages []string
-	for _, log := range observed.AllUntimed() {
-		messages = append(messages, log.Message)
-	}
-	assert.Len(t, messages, 3) // ensures "replay info" wasn't just misspelled
-	assert.Contains(t, messages, "normal info")
-	assert.NotContains(t, messages, "replay info")
-	assert.Contains(t, messages, "normal2 info")
-	assert.Contains(t, messages, "replay2 info")
-}
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 	equals := func(a, b interface{}) bool {

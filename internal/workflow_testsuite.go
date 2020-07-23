@@ -35,10 +35,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally"
-	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/zap"
-
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 type (
@@ -53,7 +53,7 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger             *zap.Logger
+		logger             log.Logger
 		scope              tally.Scope
 		contextPropagators []ContextPropagator
 		header             *commonpb.Header
@@ -133,12 +133,12 @@ func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnvironmen
 
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
 // with Debug level logging enabled.
-func (s *WorkflowTestSuite) SetLogger(logger *zap.Logger) {
+func (s *WorkflowTestSuite) SetLogger(logger log.Logger) {
 	s.logger = logger
 }
 
 // GetLogger gets the logger for this WorkflowTestSuite.
-func (s *WorkflowTestSuite) GetLogger() *zap.Logger {
+func (s *WorkflowTestSuite) GetLogger() log.Logger {
 	return s.logger
 }
 

@@ -39,7 +39,8 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
-	"go.uber.org/zap"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -554,8 +555,7 @@ func testWorkflowHeartbeat(ctx Context, msg string, waitTime time.Duration) (str
 }
 
 func testActivityHeartbeat(ctx context.Context, msg string, waitTime time.Duration) (string, error) {
-	GetActivityLogger(ctx).Info("testActivityHeartbeat start",
-		zap.String("msg", msg), zap.Duration("waitTime", waitTime))
+	GetActivityLogger(ctx).Info("testActivityHeartbeat start", "msg", msg, "waitTime", waitTime)
 
 	currWaitTime := time.Duration(0)
 	for currWaitTime < waitTime {
@@ -1133,7 +1133,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
 func (s *WorkflowTestSuiteUnitTest) Test_MockPanic() {
 	// mock panic, verify that the panic won't be swallowed by our panic handler to detect unexpected mock call.
 	oldLogger := s.GetLogger()
-	s.SetLogger(zap.NewNop()) // use no-op logger to avoid noisy logging by panic
+	s.SetLogger(log.NewNopLogger()) // use no-op logger to avoid noisy logging by panic
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).
 		Return("hello_mock_panic", nil).

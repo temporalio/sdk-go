@@ -35,10 +35,8 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/zap"
-
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
@@ -49,6 +47,7 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/log"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -70,7 +69,7 @@ type (
 		connectionCloser   io.Closer
 		namespace          string
 		registry           *registry
-		logger             *zap.Logger
+		logger             log.Logger
 		metricsScope       *metrics.TaggedScope
 		identity           string
 		dataConverter      DataConverter
@@ -83,7 +82,7 @@ type (
 		workflowService  workflowservice.WorkflowServiceClient
 		connectionCloser io.Closer
 		metricsScope     tally.Scope
-		logger           *zap.Logger
+		logger           log.Logger
 		identity         string
 	}
 
@@ -974,7 +973,7 @@ func (wc *WorkflowClient) Close() {
 		return
 	}
 	if err := wc.connectionCloser.Close(); err != nil {
-		wc.logger.Warn("unable to close connection", zap.Error(err))
+		wc.logger.Warn("unable to close connection", tagError, err)
 	}
 }
 
@@ -1054,7 +1053,7 @@ func (nc *namespaceClient) Close() {
 		return
 	}
 	if err := nc.connectionCloser.Close(); err != nil {
-		nc.logger.Warn("unable to close connection", zap.Error(err))
+		nc.logger.Warn("unable to close connection", tagError, err)
 	}
 }
 

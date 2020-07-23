@@ -35,11 +35,11 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/zap"
-
 	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -178,14 +178,13 @@ func (s *InterfacesTestSuite) TearDownTest() {
 }
 
 func (s *InterfacesTestSuite) TestInterface() {
-	logger, _ := zap.NewDevelopment()
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 4,
 		MaxConcurrentWorkflowTaskQueuePollers: 4,
-		Logger:                                logger,
+		Logger:                                log.NewDefaultLogger(),
 		Tracer:                                opentracing.NoopTracer{},
 	}
 
@@ -216,7 +215,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 10,
 		MaxConcurrentWorkflowTaskQueuePollers: 10,
-		Logger:                                logger,
+		Logger:                                log.NewDefaultLogger(),
 		Tracer:                                opentracing.NoopTracer{},
 	}
 

@@ -22,25 +22,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package log
 
-const (
-	tagActivityID        = "ActivityID"
-	tagActivityType      = "ActivityType"
-	tagNamespace         = "Namespace"
-	tagEventID           = "EventID"
-	tagEventType         = "EventType"
-	tagRunID             = "RunID"
-	tagTaskQueue         = "TaskQueue"
-	tagTimerID           = "TimerID"
-	tagWorkflowID        = "WorkflowID"
-	tagWorkflowType      = "WorkflowType"
-	tagWorkerID          = "WorkerID"
-	tagWorkerType        = "WorkerType"
-	tagSideEffectID      = "SideEffectID"
-	tagChildWorkflowID   = "ChildWorkflowID"
-	tagLocalActivityType = "LocalActivityType"
-	tagQueryType         = "QueryType"
-	tagResult            = "Result"
-	tagError             = "Error"
+import (
+	"fmt"
+	"os"
 )
+
+// TestReporter is a log adapter for gomock.
+type TestReporter struct {
+	logger Logger
+}
+
+// NewTestReporter creates new instance of TestReporter.
+func NewTestReporter(logger Logger) *TestReporter {
+	return &TestReporter{logger: logger}
+}
+
+// Errorf writes error to the log.
+func (t *TestReporter) Errorf(format string, args ...interface{}) {
+	t.logger.Error(fmt.Sprintf(format, args...))
+}
+
+// Fatalf writes error to the log and exits.
+func (t *TestReporter) Fatalf(format string, args ...interface{}) {
+	t.logger.Error(fmt.Sprintf(format, args...))
+	os.Exit(1)
+}

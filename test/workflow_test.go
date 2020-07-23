@@ -348,7 +348,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Sugar().Infof("Activity Failed: Err: %v", err)
+			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
 			return
 		}
 
@@ -369,7 +369,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Sugar().Infof("Activity Failed: Err: %v", err)
+			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
 		}
 	})
 
@@ -386,7 +386,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Sugar().Infof("Activity Failed: Err: %v", err)
+			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
 		}
 	})
 

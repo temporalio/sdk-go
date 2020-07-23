@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 )
@@ -235,12 +234,12 @@ func CompleteSession(ctx Context) {
 	// the taskqueue will be overrided to use the one stored in sessionInfo.
 	err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
 	if err != nil {
-		GetLogger(completionCtx).Warn("Complete session activity failed", zap.Error(err))
+		GetLogger(completionCtx).Warn("Complete session activity failed", tagError, err)
 	}
 
 	sessionInfo.sessionState = sessionStateClosed
 	getWorkflowEnvironment(ctx).RemoveSession(sessionInfo.SessionID)
-	GetLogger(ctx).Debug("Completed session", zap.String("sessionID", sessionInfo.SessionID))
+	GetLogger(ctx).Debug("Completed session", "sessionID", sessionInfo.SessionID)
 }
 
 // GetSessionInfo returns the sessionInfo stored in the context. If there are multiple sessions in the context,
@@ -335,7 +334,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	s.AddFuture(creationFuture, func(f Future) {
 		// activity stoped before signal is received, must be creation timeout.
 		creationErr = f.Get(creationCtx, nil)
-		GetLogger(creationCtx).Debug("Failed to create session", zap.String("sessionID", sessionID), zap.Error(creationErr))
+		GetLogger(creationCtx).Debug("Failed to create session", "sessionID", sessionID, tagError, creationErr)
 	})
 	s.Select(creationCtx)
 
@@ -357,13 +356,13 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		var canceledErr *CanceledError
 		if !errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
-			GetLogger(creationCtx).Debug("Session failed", zap.String("sessionID", sessionID), zap.Error(err))
+			GetLogger(creationCtx).Debug("Session failed", "sessionID", sessionID, tagError, err)
 			sessionInfo.sessionState = sessionStateFailed
 			sessionCancelFunc()
 		}
 	})
 
-	logger.Debug("Created session", zap.String("sessionID", sessionID))
+	logger.Debug("Created session", "sessionID", sessionID)
 	getWorkflowEnvironment(ctx).AddSession(sessionInfo)
 	return sessionCtx, nil
 }
@@ -443,7 +442,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			}
 			err := backoff.Retry(ctx, heartbeatOp, heartbeatRetryPolicy, isRetryable)
 			if err != nil {
-				GetActivityLogger(ctx).Info("session heartbeat failed", zap.Error(err), zap.String("sessionID", sessionID))
+				GetActivityLogger(ctx).Info("session heartbeat failed", tagError, err, "sessionID", sessionID)
 			}
 		case <-doneCh:
 			return nil

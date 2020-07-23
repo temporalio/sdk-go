@@ -69,7 +69,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 		if err := future.Get(ctx, &result); err != nil {
 			return err
 		}
-		workflow.GetLogger(ctx).Info(“Done”, zap.String(“result”, result))
+		workflow.GetLogger(ctx).Info(“Done”, “result”, result)
 		return nil
 	}
 
@@ -233,7 +233,7 @@ for an activity it invoked.
 	var result string
 	future := workflow.ExecuteChildWorkflow(ctx, SimpleChildWorkflow, value)
 	if err := future.Get(ctx, &result); err != nil {
-		workflow.GetLogger(ctx).Error("SimpleChildWorkflow failed.", zap.Error(err))
+		workflow.GetLogger(ctx).Error("SimpleChildWorkflow failed.", "Error", err)
 		return err
 	}
 
@@ -358,7 +358,7 @@ workflow also has the option to stop execution by blocking on a signal channel.
 	s := workflow.NewSelector(ctx)
 	s.AddReceive(signalChan, func(c workflow.Channel, more bool) {
 		c.Receive(ctx, &signalVal)
-		workflow.GetLogger(ctx).Info("Received signal!", zap.String("signal", signalName), zap.String("value", signalVal))
+		workflow.GetLogger(ctx).Info("Received signal!", "signal", signalName, "value", signalVal)
 	})
 	s.Select(ctx)
 
