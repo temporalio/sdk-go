@@ -954,7 +954,7 @@ func (aw *AggregatedWorker) Start() error {
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.
-				if !isInterfaceNil(aw.workflowWorker) && len(aw.registry.getRegisteredWorkflowTypes()) > 0 {
+				if aw.workflowWorker.worker.isWorkerStarted {
 					aw.workflowWorker.Stop()
 				}
 				return err
@@ -966,10 +966,10 @@ func (aw *AggregatedWorker) Start() error {
 		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
-			if !isInterfaceNil(aw.workflowWorker) {
+			if aw.workflowWorker.worker.isWorkerStarted {
 				aw.workflowWorker.Stop()
 			}
-			if !isInterfaceNil(aw.activityWorker) {
+			if aw.activityWorker.worker.isWorkerStarted {
 				aw.activityWorker.Stop()
 			}
 			return err
@@ -1351,21 +1351,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
-	if !options.DisableWorkflowWorker {
-		testTags := getTestTags(options.BackgroundActivityContext)
-		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
-		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
-		}
+	testTags := getTestTags(options.BackgroundActivityContext)
+	if len(testTags) > 0 {
+		workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+	} else {
+		workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 	}
 
 	// activity types.
-	var activityWorker *activityWorker
-
-	if !options.DisableActivityWorker {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
-	}
+	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker {
@@ -1376,7 +1370,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
 			Name: sessionCompletionActivityName,
 		})
-
 	}
 
 	return &AggregatedWorker{
