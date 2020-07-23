@@ -31,4 +31,7 @@ import (
 type (
 	// Logger is an interface that can be passed to ClientOptions.Logger.
 	Logger = log.Logger
+
+	// WithLogger is an interface that prepend every log entry with keyvals.
+	WithLogger = log.WithLogger
 )
