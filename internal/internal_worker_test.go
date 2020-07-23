@@ -982,7 +982,7 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Run(worker.StopSignal())
+		_ = worker.Run(InterruptCh())
 	}()
 	time.Sleep(time.Millisecond * 200)
 	p, err := os.FindProcess(os.Getpid())
@@ -1026,7 +1026,7 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 			err := worker.Start()
 			assert.Error(t, err, "worker.start() MUST fail when namespace is invalid")
 			errC := make(chan error)
-			go func() { errC <- worker.Run(worker.StopSignal()) }()
+			go func() { errC <- worker.Run(InterruptCh()) }()
 			select {
 			case e := <-errC:
 				assert.Error(t, e, "worker.Run() MUST fail when namespace is invalid")

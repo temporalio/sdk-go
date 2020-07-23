@@ -119,8 +119,6 @@ type (
 		Run(ch <-chan interface{}) error
 		// Stop the worker.
 		Stop()
-
-		StopSignal() <-chan interface{}
 	}
 
 	// WorkflowReplayer supports replaying a workflow from its event history.
@@ -231,4 +229,8 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 // On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
+}
+
+func InterruptCh() <-chan interface{} {
+	return internal.InterruptCh()
 }

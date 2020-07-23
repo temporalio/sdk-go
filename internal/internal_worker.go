@@ -35,13 +35,11 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/signal"
 	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
@@ -1069,20 +1067,6 @@ func (aw *AggregatedWorker) Run(ch <-chan interface{}) error {
 	}
 
 	return nil
-}
-
-func (aw *AggregatedWorker) StopSignal() <-chan interface{} {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	ret := make(chan interface{}, 1)
-	go func() {
-		s := <-c
-		ret <- s
-		close(ret)
-	}()
-
-	return ret
 }
 
 // Stop the worker.
