@@ -345,16 +345,6 @@ func (ww *workflowWorker) Start() error {
 	return nil // TODO: propagate error
 }
 
-func (ww *workflowWorker) Run() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
-	if err != nil {
-		return err
-	}
-	ww.localActivityWorker.Start()
-	ww.worker.Run()
-	return nil
-}
-
 // Stop the worker.
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
@@ -400,14 +390,6 @@ func (sw *sessionWorker) Start() error {
 		return err
 	}
 	return nil
-}
-
-func (sw *sessionWorker) Run() error {
-	err := sw.creationWorker.Start()
-	if err != nil {
-		return err
-	}
-	return sw.activityWorker.Run()
 }
 
 func (sw *sessionWorker) Stop() {
@@ -469,16 +451,6 @@ func (aw *activityWorker) Start() error {
 	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
-}
-
-// Run the worker.
-func (aw *activityWorker) Run() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
-	if err != nil {
-		return err
-	}
-	aw.worker.Run()
-	return nil
 }
 
 // Stop the worker.
@@ -945,6 +917,7 @@ type AggregatedWorker struct {
 	sessionWorker  *sessionWorker
 	logger         *zap.Logger
 	registry       *registry
+	stopC          chan struct{}
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1009,7 +982,6 @@ func (aw *AggregatedWorker) Start() error {
 			return err
 		}
 	}
-
 	aw.logger.Info("Started Worker")
 	return nil
 }
@@ -1081,20 +1053,29 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
-// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+// Pass nil to stop the worker with external Stop() call.
+// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 // Returns error only if worker fails to start.
-func (aw *AggregatedWorker) Run() error {
+func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
-	d := <-getKillSignal()
-	aw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
-	aw.Stop()
+	select {
+	case s := <-interruptCh:
+		aw.logger.Info("Worker has been stopped.", zap.String("Signal", fmt.Sprintf("%v", s)))
+		aw.Stop()
+	case <-aw.stopC:
+	}
+
 	return nil
 }
 
 // Stop the worker.
 func (aw *AggregatedWorker) Stop() {
+	close(aw.stopC)
+
 	if !isInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()
 	}
@@ -1414,6 +1395,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		sessionWorker:  sessionWorker,
 		logger:         logger,
 		registry:       registry,
+		stopC:          make(chan struct{}),
 	}
 }
 
