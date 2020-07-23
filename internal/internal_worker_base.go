@@ -345,15 +345,6 @@ func (bw *baseWorker) processTask(task interface{}) {
 	}
 }
 
-func (bw *baseWorker) Run() {
-	bw.Start()
-	d := <-getKillSignal()
-	traceLog(func() {
-		bw.logger.Info("Worker has been killed", "Signal", d.String())
-	})
-	bw.Stop()
-}
-
 // Stop is a blocking call and cleans up all the resources associated with worker.
 func (bw *baseWorker) Stop() {
 	if !bw.isWorkerStarted {

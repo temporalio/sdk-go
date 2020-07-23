@@ -161,10 +161,19 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 	}
 }
 
-func getKillSignal() <-chan os.Signal {
+// InterruptCh returns channel which will get data when system receives interrupt signal. Pass it to worker.Run() func to stop worker with Ctrl+C.
+func InterruptCh() <-chan interface{} {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	return c
+
+	ret := make(chan interface{}, 1)
+	go func() {
+		s := <-c
+		ret <- s
+		close(ret)
+	}()
+
+	return ret
 }
 
 // getMetricsScopeForActivity return properly tagged tally scope for activity

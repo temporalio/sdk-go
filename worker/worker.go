@@ -114,9 +114,14 @@ type (
 
 		// Start the worker in a non-blocking fashion.
 		Start() error
-		// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+
+		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+		// Pass nil to stop the worker with external Stop() call.
+		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error only if worker fails to start.
-		Run() error
+		Run(interruptCh <-chan interface{}) error
+
 		// Stop the worker.
 		Stop()
 	}
@@ -129,7 +134,6 @@ type (
 	// It is important to maintain backwards compatibility through use of workflow.GetVersion
 	// to ensure that new deployments are not going to break open workflows.
 	WorkflowReplayer interface {
-
 		// RegisterWorkflow registers workflow that is going to be replayed
 		RegisterWorkflow(w interface{})
 
@@ -229,4 +233,9 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 // On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
+}
+
+// InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
+func InterruptCh() <-chan interface{} {
+	return internal.InterruptCh()
 }
