@@ -114,7 +114,10 @@ type (
 
 		// Start the worker in a non-blocking fashion.
 		Start() error
-		// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+		// Run the worker in a blocking fashion. Stop the worker when ch receives data.
+		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+		// Pass nil to stop the worker with external Stop() call.
+		// Pass any other `<-chan interface{}` and Run will wait for data from that channel.
 		// Returns error only if worker fails to start.
 		Run(ch <-chan interface{}) error
 		// Stop the worker.
@@ -231,6 +234,7 @@ func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
 }
 
+// InterruptCh returns channel which will get data when system receives interrupt signal. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
 }
