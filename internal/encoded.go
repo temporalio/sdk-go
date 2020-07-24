@@ -192,8 +192,8 @@ func (dc *CompositeDataConverter) FromPayloads(payloads *commonpb.Payloads, valu
 
 // ToPayload converts single value to payload.
 func (dc *CompositeDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	for _, encoding := range dc.orderedEncodings {
-		payloadConverter := dc.payloadConverters[encoding]
+	for _, enc := range dc.orderedEncodings {
+		payloadConverter := dc.payloadConverters[enc]
 		payload, err := payloadConverter.ToPayload(value)
 		if err != nil {
 			return nil, err
@@ -212,14 +212,14 @@ func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePt
 		return nil
 	}
 
-	encoding, err := encoding(payload)
+	enc, err := encoding(payload)
 	if err != nil {
 		return err
 	}
 
-	payloadConverter, ok := dc.payloadConverters[encoding]
+	payloadConverter, ok := dc.payloadConverters[enc]
 	if !ok {
-		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+		return fmt.Errorf("encoding %s: %w", enc, ErrEncodingIsNotSupported)
 	}
 
 	return payloadConverter.FromPayload(payload, valuePtr)
@@ -227,20 +227,18 @@ func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePt
 
 // ToString converts payload object into human readable string.
 func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) string {
-	result := ""
-
 	if payload == nil {
-		return result
+		return ""
 	}
 
-	encoding, err := encoding(payload)
+	enc, err := encoding(payload)
 	if err != nil {
 		return err.Error()
 	}
 
-	payloadConverter, ok := dc.payloadConverters[encoding]
+	payloadConverter, ok := dc.payloadConverters[enc]
 	if !ok {
-		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported).Error()
+		return fmt.Errorf("encoding %s: %w", enc, ErrEncodingIsNotSupported).Error()
 	}
 
 	return payloadConverter.ToString(payload)
@@ -483,6 +481,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 // ToString converts payload object into human readable string.
 func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
+	// We can't do anything beter here.
 	return string(payload.GetData())
 }
 
@@ -543,6 +542,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 // ToString converts payload object into human readable string.
 func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
+	// We can't do anything beter here.
 	return base64.RawStdEncoding.EncodeToString(payload.GetData())
 }
 
