@@ -105,12 +105,14 @@ var (
 				marshaler:   jsonpb.Marshaler{},
 				unmarshaler: jsonpb.Unmarshaler{},
 			},
-			metadataEncodingJSON: &JsonPayloadConverter{},
+			metadataEncodingProto: &ProtoPayloadConverter{},
+			metadataEncodingJSON:  &JsonPayloadConverter{},
 		},
 		orderedEncodings: []string{
 			metadataEncodingNil,
 			metadataEncodingRaw,
 			metadataEncodingProtoJSON,
+			// metadataEncodingProto,
 			metadataEncodingJSON,
 		},
 	}
@@ -121,16 +123,18 @@ var (
 	ErrEncodingIsNotSet = errors.New("payload encoding metadata is not set")
 	// ErrEncodingIsNotSupported is returned when payload encoding is not supported.
 	ErrEncodingIsNotSupported = errors.New("payload encoding is not supported")
-	// ErrUnableToEncodeJSON is returned when "unable to encode to JSON.
-	ErrUnableToEncodeJSON = errors.New("unable to encode to JSON")
-	// ErrUnableToDecodeJSON is returned when unable to decode JSON.
-	ErrUnableToDecodeJSON = errors.New("unable to decode JSON")
+	// ErrUnableToEncode is returned when unable to encode.
+	ErrUnableToEncode = errors.New("unable to encode")
+	// ErrUnableToDecode is returned when unable to decode.
+	ErrUnableToDecode = errors.New("unable to decode")
 	// ErrUnableToSetValue is returned when unable to set value.
 	ErrUnableToSetValue = errors.New("unable to set value")
 	// ErrUnableToFindConverter is returned when unable to find converter.
 	ErrUnableToFindConverter = errors.New("unable to find converter")
 	// ErrValueDoesntImplementProtoMessage is returned when value doesn't implement proto.Message.
 	ErrValueDoesntImplementProtoMessage = errors.New("value doesn't implement proto.Message")
+	// ErrValueDoesntImplementProtoMessage is returned when value doesn't implement proto.Unmarshaler.
+	ErrValueDoesntImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
 )
 
 // getDefaultDataConverter return default data converter used by Temporal worker.
@@ -309,7 +313,7 @@ type JsonPayloadConverter struct {
 func (c *JsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnableToEncodeJSON, err)
+		return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 	}
 	payload := &commonpb.Payload{
 		Metadata: map[string][]byte{
@@ -323,7 +327,7 @@ func (c *JsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 func (c *JsonPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	err := json.Unmarshal(payload.GetData(), valuePtr)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
 	}
 	return nil
 }
@@ -376,7 +380,7 @@ func (c *ProtoJsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 		var buf bytes.Buffer
 		err := c.marshaler.Marshal(&buf, valueProto)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncodeJSON, err)
+			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 		}
 		payload := &commonpb.Payload{
 			Metadata: map[string][]byte{
@@ -410,7 +414,7 @@ func (c *ProtoJsonPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	err := c.unmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), protoMessage)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnableToDecodeJSON, err)
+		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
 	}
 
 	value.Set(reflect.ValueOf(protoMessage))
@@ -418,10 +422,57 @@ func (c *ProtoJsonPayloadConverter) FromPayload(payload *commonpb.Payload, value
 }
 
 func (c *ProtoJsonPayloadConverter) ToString(payload *commonpb.Payload) string {
-	var value interface{}
-	err := c.FromPayload(payload, &value)
-	if err != nil {
-		return err.Error()
+	return string(payload.GetData())
+}
+
+type ProtoPayloadConverter struct {
+}
+
+func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+	if valueProto, ok := value.(proto.Marshaler); ok {
+		data, err := valueProto.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+		}
+		payload := &commonpb.Payload{
+			Metadata: map[string][]byte{
+				metadataEncoding: []byte(metadataEncodingProto),
+			},
+			Data: data,
+		}
+		return payload, nil
 	}
-	return fmt.Sprintf("%+v", value)
+	return nil, nil
+}
+
+func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+	value := reflect.ValueOf(valuePtr).Elem()
+	if !value.CanSet() {
+		return ErrUnableToSetValue
+	}
+
+	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
+	protoUnmarshaler, ok := protoValue.(proto.Unmarshaler)
+	if !ok {
+		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueDoesntImplementProtoUnmarshaler)
+	}
+
+	// If nil is passed create new instance
+	if isInterfaceNil(protoValue) {
+		protoType := value.Type().Elem()                                 // i.e. commonpb.WorkflowType
+		newProtoValue := reflect.New(protoType)                          // is of type i.e. *commonpb.WorkflowType
+		protoUnmarshaler = newProtoValue.Interface().(proto.Unmarshaler) // type assertion will always succeed
+	}
+
+	err := protoUnmarshaler.Unmarshal(payload.GetData())
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
+	}
+
+	value.Set(reflect.ValueOf(protoUnmarshaler))
+	return nil
+}
+
+func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
+	return base64.RawStdEncoding.EncodeToString(payload.GetData())
 }
