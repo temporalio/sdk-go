@@ -37,7 +37,7 @@ type (
 	// but also slices of concrete objects.
 	JSONPBEncoder struct {
 		marshaler   jsonpb.Marshaler
-		ubmarshaler jsonpb.Unmarshaler
+		unmarshaler jsonpb.Unmarshaler
 	}
 )
 
@@ -45,7 +45,7 @@ type (
 func NewJSONPBEncoder() *JSONPBEncoder {
 	return &JSONPBEncoder{
 		marshaler:   jsonpb.Marshaler{},
-		ubmarshaler: jsonpb.Unmarshaler{},
+		unmarshaler: jsonpb.Unmarshaler{},
 	}
 }
 
@@ -53,7 +53,7 @@ func NewJSONPBEncoder() *JSONPBEncoder {
 func NewJSONPBIndentEncoder(indent string) *JSONPBEncoder {
 	return &JSONPBEncoder{
 		marshaler:   jsonpb.Marshaler{Indent: indent},
-		ubmarshaler: jsonpb.Unmarshaler{},
+		unmarshaler: jsonpb.Unmarshaler{},
 	}
 }
 
@@ -66,5 +66,5 @@ func (e *JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
 
 // Decode bytes to protobuf struct.
 func (e *JSONPBEncoder) Decode(data []byte, pb proto.Message) error {
-	return e.ubmarshaler.Unmarshal(bytes.NewReader(data), pb)
+	return e.unmarshaler.Unmarshal(bytes.NewReader(data), pb)
 }

@@ -1470,7 +1470,8 @@ func getWorkflowFunctionName(r *registry, i interface{}) string {
 }
 
 func isInterfaceNil(i interface{}) bool {
-	return i == nil || reflect.ValueOf(i).IsNil()
+	v := reflect.ValueOf(i)
+	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {

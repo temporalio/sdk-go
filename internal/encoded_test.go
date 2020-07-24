@@ -32,6 +32,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 )
@@ -215,7 +217,7 @@ func (dc *testDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
 	var result []string
 	for i, payload := range payloads.GetPayloads() {
-		payloadAsStr, err := toStringTestHelper(payload)
+		payloadAsStr, err := dc.ToString(payload)
 
 		if err != nil {
 			return result, fmt.Errorf("args[%d]: %w", i, err)
@@ -227,7 +229,7 @@ func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, e
 	return result, nil
 }
 
-func toStringTestHelper(payload *commonpb.Payload) (string, error) {
+func (dc *testDataConverter) ToString(payload *commonpb.Payload) (string, error) {
 	encoding, ok := payload.GetMetadata()[metadataEncoding]
 
 	if !ok {
@@ -263,4 +265,19 @@ func TestDecodeArg(t *testing.T) {
 	b, err = encodeArgs(dc, []interface{}{testErrorDetails1, testErrorDetails2})
 	require.NoError(t, err)
 	require.Error(t, decodeArg(dc, b, &r))
+}
+
+func TestProtoJsonPayloadConverter(t *testing.T) {
+	pc := ProtoJsonPayloadConverter{
+		marshaler:   jsonpb.Marshaler{},
+		unmarshaler: jsonpb.Unmarshaler{},
+	}
+
+	wt := &commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	assert.NoError(t, err)
+	wt2 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
 }
