@@ -83,9 +83,9 @@ type (
 		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error
 
 		// ToString converts payload object into human readable string.
-		ToString(input *commonpb.Payload) (string, error)
+		ToString(input *commonpb.Payload) string
 		// ToStrings converts payloads object into human readable strings.
-		ToStrings(input *commonpb.Payloads) ([]string, error)
+		ToStrings(input *commonpb.Payloads) []string
 	}
 
 	// CompositeDataConverter applies PayloadConverters in specified order.
@@ -226,42 +226,38 @@ func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePt
 }
 
 // ToString converts payload object into human readable string.
-func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) (string, error) {
+func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) string {
 	result := ""
 
 	if payload == nil {
-		return result, nil
+		return result
 	}
 
 	encoding, err := encoding(payload)
 	if err != nil {
-		return result, err
+		return err.Error()
 	}
 
 	payloadConverter, ok := dc.payloadConverters[encoding]
 	if !ok {
-		return "", fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported).Error()
 	}
 
-	return payloadConverter.ToString(payload), nil
+	return payloadConverter.ToString(payload)
 }
 
 // ToStrings converts payloads object into human readable strings.
-func (dc *CompositeDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (dc *CompositeDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	if payloads == nil {
-		return nil, nil
+		return nil
 	}
 
 	var result []string
-	for i, payload := range payloads.GetPayloads() {
-		payloadStr, err := dc.ToString(payload)
-		if err != nil {
-			return result, fmt.Errorf("payload item %d: %w", i, err)
-		}
-		result = append(result, payloadStr)
+	for _, payload := range payloads.GetPayloads() {
+		result = append(result, dc.ToString(payload))
 	}
 
-	return result, nil
+	return result
 }
 
 func encoding(payload *commonpb.Payload) (string, error) {
