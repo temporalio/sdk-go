@@ -37,18 +37,33 @@ type (
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in two places:
-	//   1. Workflow worker, through worker.Options
-	//   2. Client, through client.Options
-	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
-	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
+	// To encode/decode workflow arguments, one should set DataConverter in client, through client.Options.
+	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter
+	// inside workflow code, use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
-	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter = internal.DataConverter
+
+	// PayloadConverter is an interface to convert a single payload.
+	PayloadConverter = internal.PayloadConverter
+	// ByteSlicePayloadConverter pass through []byte to Data field in payload.
+	ByteSlicePayloadConverter = internal.ByteSlicePayloadConverter
+	// JSONPayloadConverter converts to/from JSON.
+	JSONPayloadConverter = internal.JSONPayloadConverter
+	// ProtoJSONPayloadConverter converts proto objects to/from JSON.
+	ProtoJSONPayloadConverter = internal.ProtoJSONPayloadConverter
+	// ProtoPayloadConverter converts proto objects to binary format.
+	ProtoPayloadConverter = internal.ProtoPayloadConverter
+	// NilPayloadConverter doesn't set Data field in payload.
+	NilPayloadConverter = internal.NilPayloadConverter
 )
 
-// GetDefaultDataConverter return default data converter used by Temporal worker
+// GetDefaultDataConverter return default data converter used by Temporal worker.
 func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
+}
+
+// NewDataConverter creates new instance of DataConverter.
+func NewDataConverter(payloadConverters ...PayloadConverter) DataConverter {
+	return internal.NewDataConverter(payloadConverters...)
 }

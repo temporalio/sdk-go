@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
@@ -39,11 +40,11 @@ import (
 
 const (
 	metadataEncoding          = "encoding"
-	metadataEncodingRaw       = "raw"
-	metadataEncodingJSON      = "json"
-	metadataEncodingNil       = "null"
-	metadataEncodingProtoJSON = "protobuf-json"
-	metadataEncodingProto     = "protobuf"
+	metadataEncodingRaw       = "binary/raw"
+	metadataEncodingJSON      = "json/plain"
+	metadataEncodingNil       = "binary/null"
+	metadataEncodingProtoJSON = "json/protobuf"
+	metadataEncodingProto     = "binary/protobuf"
 )
 
 type (
@@ -95,27 +96,17 @@ type (
 	}
 )
 
+//golint:ignore
+
 var (
 	// DefaultDataConverter is default data converter used by Temporal worker.
-	DefaultDataConverter = &defaultDataConverter{
-		payloadConverters: map[string]PayloadConverter{
-			metadataEncodingNil: &NilPayloadConverter{},
-			metadataEncodingRaw: &ByteSlicePayloadConverter{},
-			metadataEncodingProtoJSON: &ProtoJsonPayloadConverter{
-				marshaler:   jsonpb.Marshaler{},
-				unmarshaler: jsonpb.Unmarshaler{},
-			},
-			metadataEncodingProto: &ProtoPayloadConverter{},
-			metadataEncodingJSON:  &JsonPayloadConverter{},
-		},
-		orderedEncodings: []string{
-			metadataEncodingNil,
-			metadataEncodingRaw,
-			metadataEncodingProtoJSON,
-			// metadataEncodingProto,
-			metadataEncodingJSON,
-		},
-	}
+	DefaultDataConverter = NewDataConverter(
+		NewNilPayloadConverter(),
+		NewByteSlicePayloadConverter(),
+		NewProtoJsonPayloadConverter(),
+		// NewProtoPayloadConverter(),
+		NewJsonPayloadConverter(),
+	)
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
 	ErrMetadataIsNotSet = errors.New("metadata is not set")
@@ -133,13 +124,29 @@ var (
 	ErrUnableToFindConverter = errors.New("unable to find converter")
 	// ErrValueDoesntImplementProtoMessage is returned when value doesn't implement proto.Message.
 	ErrValueDoesntImplementProtoMessage = errors.New("value doesn't implement proto.Message")
-	// ErrValueDoesntImplementProtoMessage is returned when value doesn't implement proto.Unmarshaler.
+	// ErrValueDoesntImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
 	ErrValueDoesntImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
 )
 
 // getDefaultDataConverter return default data converter used by Temporal worker.
+// TODO: remove this func
 func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
+}
+
+// NewDataConverter creates new instance of DataConverter.
+func NewDataConverter(payloadConverters ...PayloadConverter) *defaultDataConverter {
+	dc := &defaultDataConverter{
+		payloadConverters: make(map[string]PayloadConverter, len(payloadConverters)),
+		orderedEncodings:  make([]string, len(payloadConverters)),
+	}
+
+	for i, payloadConverter := range payloadConverters {
+		dc.payloadConverters[payloadConverter.Encoding()] = payloadConverter
+		dc.orderedEncodings[i] = payloadConverter.Encoding()
+	}
+
+	return dc
 }
 
 func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
@@ -199,7 +206,7 @@ func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 		return nil
 	}
 
-	encoding, err := getEncoding(payload)
+	encoding, err := encoding(payload)
 	if err != nil {
 		return err
 	}
@@ -219,7 +226,7 @@ func (dc *defaultDataConverter) ToString(payload *commonpb.Payload) (string, err
 		return result, nil
 	}
 
-	encoding, err := getEncoding(payload)
+	encoding, err := encoding(payload)
 	if err != nil {
 		return result, err
 	}
@@ -249,7 +256,7 @@ func (dc *defaultDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string
 	return result, nil
 }
 
-func getEncoding(payload *commonpb.Payload) (string, error) {
+func encoding(payload *commonpb.Payload) (string, error) {
 	metadata := payload.GetMetadata()
 	if metadata == nil {
 		return "", ErrMetadataIsNotSet
@@ -269,9 +276,16 @@ type PayloadConverter interface {
 	FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
 	// ToString converts payloads object into human readable string.
 	ToString(*commonpb.Payload) string
+
+	// Encoding returns encoding supported by PayloadConverter.
+	Encoding() string
 }
 
 type ByteSlicePayloadConverter struct {
+}
+
+func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
+	return &ByteSlicePayloadConverter{}
 }
 
 func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
@@ -292,7 +306,7 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	valueBytes := reflect.ValueOf(valuePtr).Elem()
 	if !valueBytes.CanSet() {
-		return ErrUnableToSetValue
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 	valueBytes.SetBytes(payload.GetData())
 	return nil
@@ -307,10 +321,18 @@ func (c *ByteSlicePayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(byteSlice)
 }
 
-type JsonPayloadConverter struct {
+func (c *ByteSlicePayloadConverter) Encoding() string {
+	return metadataEncodingRaw
 }
 
-func (c *JsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+type JSONPayloadConverter struct {
+}
+
+func NewJsonPayloadConverter() *JSONPayloadConverter {
+	return &JSONPayloadConverter{}
+}
+
+func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
@@ -324,7 +346,7 @@ func (c *JsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 	return payload, nil
 }
 
-func (c *JsonPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	err := json.Unmarshal(payload.GetData(), valuePtr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
@@ -332,16 +354,31 @@ func (c *JsonPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr i
 	return nil
 }
 
-func (c *JsonPayloadConverter) ToString(payload *commonpb.Payload) string {
+func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	var value interface{}
 	err := c.FromPayload(payload, &value)
 	if err != nil {
 		return err.Error()
 	}
-	return fmt.Sprintf("%+v", value)
+	s := fmt.Sprintf("%+v", value)
+	if strings.HasPrefix(s, "map[") {
+		s = strings.TrimPrefix(s, "map[")
+		s = strings.TrimSuffix(s, "]")
+		s = fmt.Sprintf("{%s}", s)
+	}
+
+	return s
+}
+
+func (c *JSONPayloadConverter) Encoding() string {
+	return metadataEncodingJSON
 }
 
 type NilPayloadConverter struct {
+}
+
+func NewNilPayloadConverter() *NilPayloadConverter {
+	return &NilPayloadConverter{}
 }
 
 func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
@@ -360,7 +397,7 @@ func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, e
 func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
-		return ErrUnableToSetValue
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 	value.Set(reflect.Zero(value.Type()))
 	return nil
@@ -370,12 +407,23 @@ func (c *NilPayloadConverter) ToString(*commonpb.Payload) string {
 	return "nil"
 }
 
-type ProtoJsonPayloadConverter struct {
+func (c *NilPayloadConverter) Encoding() string {
+	return metadataEncodingNil
+}
+
+type ProtoJSONPayloadConverter struct {
 	marshaler   jsonpb.Marshaler
 	unmarshaler jsonpb.Unmarshaler
 }
 
-func (c *ProtoJsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func NewProtoJsonPayloadConverter() *ProtoJSONPayloadConverter {
+	return &ProtoJSONPayloadConverter{
+		marshaler:   jsonpb.Marshaler{},
+		unmarshaler: jsonpb.Unmarshaler{},
+	}
+}
+
+func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if valueProto, ok := value.(proto.Message); ok {
 		var buf bytes.Buffer
 		err := c.marshaler.Marshal(&buf, valueProto)
@@ -393,10 +441,10 @@ func (c *ProtoJsonPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	return nil, nil
 }
 
-func (c *ProtoJsonPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
-		return ErrUnableToSetValue
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
 	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
@@ -421,11 +469,19 @@ func (c *ProtoJsonPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	return nil
 }
 
-func (c *ProtoJsonPayloadConverter) ToString(payload *commonpb.Payload) string {
+func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return string(payload.GetData())
 }
 
+func (c *ProtoJSONPayloadConverter) Encoding() string {
+	return metadataEncodingProtoJSON
+}
+
 type ProtoPayloadConverter struct {
+}
+
+func NewProtoPayloadConverter() *ProtoPayloadConverter {
+	return &ProtoPayloadConverter{}
 }
 
 func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
@@ -448,7 +504,7 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
-		return ErrUnableToSetValue
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
 	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
@@ -475,4 +531,8 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(payload.GetData())
+}
+
+func (c *ProtoPayloadConverter) Encoding() string {
+	return metadataEncodingProto
 }

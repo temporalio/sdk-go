@@ -32,7 +32,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gogo/protobuf/jsonpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
@@ -115,7 +114,6 @@ func testToStringsFunction(
 
 func TestToStrings(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
 
 	testStruct := struct {
 		A string
@@ -125,7 +123,7 @@ func TestToStrings(t *testing.T) {
 		B: 3,
 	}
 
-	got := testToStringsFunction(t, dc,
+	got := testToStringsFunction(t, DefaultDataConverter,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",
@@ -137,7 +135,7 @@ func TestToStrings(t *testing.T) {
 		"[hello world]",
 		"hello world",
 		"42",
-		"map[A:hi B:3]",
+		"{A:hi B:3}",
 	}
 
 	require.Equal(t, want, got)
@@ -268,16 +266,61 @@ func TestDecodeArg(t *testing.T) {
 }
 
 func TestProtoJsonPayloadConverter(t *testing.T) {
-	pc := ProtoJsonPayloadConverter{
-		marshaler:   jsonpb.Marshaler{},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
+	pc := NewProtoJsonPayloadConverter()
 
 	wt := &commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	wt2 := &commonpb.WorkflowType{}
 	err = pc.FromPayload(payload, &wt2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"name":"qwe"}`, s)
+}
+
+func TestProtoPayloadConverter(t *testing.T) {
+	pc := NewProtoPayloadConverter()
+
+	wt := &commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "CgNxd2U", s)
+}
+
+func TestJsonPayloadConverter(t *testing.T) {
+	pc := NewJsonPayloadConverter()
+
+	wt := WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "{Name:qwe}", s)
 }
