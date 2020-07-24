@@ -18,7 +18,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IldvcmtmbG93MSI="
             }
@@ -85,7 +85,7 @@
             "payloads": [
               {
                 "metadata": {
-                  "encoding": "anNvbg=="
+                  "encoding": "anNvbi9wbGFpbg=="
                 },
                 "data": "InRlc3QtY2hhbmdlIg=="
               }
@@ -95,7 +95,7 @@
             "payloads": [
               {
                 "metadata": {
-                  "encoding": "anNvbg=="
+                  "encoding": "anNvbi9wbGFpbg=="
                 },
                 "data": "MQ=="
               }
@@ -117,7 +117,7 @@
           "indexedFields": {
             "TemporalChangeVersion": {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "WyJ0ZXN0LWNoYW5nZS0xIl0="
             }
@@ -144,7 +144,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IldvcmtmbG93MSI="
             }
@@ -180,7 +180,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IkhlbGxvIFdvcmtmbG93MSEi"
             }
@@ -248,7 +248,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IldvcmtmbG93MSI="
             }
@@ -284,7 +284,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IkhlbGxvIFdvcmtmbG93MSEi"
             }
@@ -352,7 +352,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IldvcmtmbG93MSI="
             }
@@ -388,7 +388,7 @@
           "payloads": [
             {
               "metadata": {
-                "encoding": "anNvbg=="
+                "encoding": "anNvbi9wbGFpbg=="
               },
               "data": "IkhlbGxvIFdvcmtmbG93MSEi"
             }

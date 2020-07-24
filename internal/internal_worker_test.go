@@ -1702,19 +1702,21 @@ func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 
 func TestActivityNilArgs(t *testing.T) {
 	nilErr := errors.New("nils")
-	activityFn := func(name string, idx int, strptr *string) error {
-		if name == "" && idx == 0 && strptr == nil {
+	activityFn := func(name string, idx int, strptr *string, wt *commonpb.WorkflowType) error {
+		if name == "" && idx == 0 && strptr == nil && wt == nil {
 			return nilErr
 		}
 		return nil
 	}
 
-	args := []interface{}{nil, nil, nil}
+	args := []interface{}{nil, nil, nil, nil}
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
 	dataConverter := getDefaultDataConverter()
-	data, _ := encodeArgs(dataConverter, args)
+	data, err := encodeArgs(dataConverter, args)
+	require.NoError(t, err)
+
 	reflectArgs, err := decodeArgs(dataConverter, reflect.TypeOf(activityFn), data)
 	require.NoError(t, err)
 
@@ -1773,7 +1775,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &defaultDataConverter{},
+		dataConverter:      &CompositeDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
 		logger:             log.NewNopLogger(),

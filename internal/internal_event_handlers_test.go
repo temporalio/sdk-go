@@ -117,7 +117,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeSearchAttributes(attr)
-	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode to JSON: json: unsupported type: chan int")
+	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode: json: unsupported type: chan int")
 
 	attr = map[string]interface{}{
 		"key": 1,

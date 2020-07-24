@@ -1468,7 +1468,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()[metadataEncoding]))
 		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
 
-		// If return type is *commonpb.Payloads it will be automatically unwrpped (this is side effect of internal impementation).
+		// If return type is *commonpb.Payloads it will be automatically unwrapped (this is side effect of internal impementation).
 		// commonpb.Payloads type is returned as is.
 		return commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, nil
 	}
