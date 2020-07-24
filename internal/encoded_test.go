@@ -266,7 +266,7 @@ func TestDecodeArg(t *testing.T) {
 }
 
 func TestProtoJsonPayloadConverter(t *testing.T) {
-	pc := NewProtoJsonPayloadConverter()
+	pc := NewProtoJSONPayloadConverter()
 
 	wt := &commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)

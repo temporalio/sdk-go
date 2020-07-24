@@ -43,6 +43,9 @@ type (
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	DataConverter = internal.DataConverter
 
+	// CompositeDataConverter applies PayloadConverters in specified order.
+	CompositeDataConverter = internal.CompositeDataConverter
+
 	// PayloadConverter is an interface to convert a single payload.
 	PayloadConverter = internal.PayloadConverter
 	// ByteSlicePayloadConverter pass through []byte to Data field in payload.
@@ -51,7 +54,7 @@ type (
 	JSONPayloadConverter = internal.JSONPayloadConverter
 	// ProtoJSONPayloadConverter converts proto objects to/from JSON.
 	ProtoJSONPayloadConverter = internal.ProtoJSONPayloadConverter
-	// ProtoPayloadConverter converts proto objects to binary format.
+	// ProtoPayloadConverter converts proto objects to protobuf binary format.
 	ProtoPayloadConverter = internal.ProtoPayloadConverter
 	// NilPayloadConverter doesn't set Data field in payload.
 	NilPayloadConverter = internal.NilPayloadConverter
@@ -62,10 +65,35 @@ func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
 }
 
-// NewDataConverter creates new instance of DataConverter from ordered list of PayloadConverters.
+// NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
 // Order is important here because during serialization DataConverter will try PayloadsConverters in
 // that order until PayloadConverter returns non nil payload.
 // Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
-func NewDataConverter(payloadConverters ...PayloadConverter) DataConverter {
-	return internal.NewDataConverter(payloadConverters...)
+func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
+	return internal.NewCompositeDataConverter(payloadConverters...)
+}
+
+// NewByteSlicePayloadConverter creates new instance of ByteSlicePayloadConverter.
+func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
+	return internal.NewByteSlicePayloadConverter()
+}
+
+// NewJSONPayloadConverter creates new instance of JSONPayloadConverter.
+func NewJSONPayloadConverter() *JSONPayloadConverter {
+	return internal.NewJSONPayloadConverter()
+}
+
+// NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
+func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
+	return internal.NewProtoJSONPayloadConverter()
+}
+
+// NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
+func NewProtoPayloadConverter() *ProtoPayloadConverter {
+	return internal.NewProtoPayloadConverter()
+}
+
+// NewNilPayloadConverter creates new instance of NilPayloadConverter.
+func NewNilPayloadConverter() *NilPayloadConverter {
+	return internal.NewNilPayloadConverter()
 }

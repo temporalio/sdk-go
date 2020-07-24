@@ -71,14 +71,14 @@ type (
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	DataConverter interface {
-		// ToPayload single value to payload.
+		// ToPayload converts single value to payload.
 		ToPayload(value interface{}) (*commonpb.Payload, error)
-		// FromPayload single value from payload.
+		// FromPayload converts single value from payload.
 		FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
 
-		// ToPayloads implements conversion of a list of values.
+		// ToPayloads converts a list of values.
 		ToPayloads(value ...interface{}) (*commonpb.Payloads, error)
-		// FromPayloads implements conversion of an array of values of different types.
+		// FromPayloads converts to a list of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error
 
@@ -88,7 +88,8 @@ type (
 		ToStrings(input *commonpb.Payloads) ([]string, error)
 	}
 
-	defaultDataConverter struct {
+	// CompositeDataConverter applies PayloadConverters in specified order.
+	CompositeDataConverter struct {
 		payloadConverters map[string]PayloadConverter
 		orderedEncodings  []string
 	}
@@ -96,12 +97,12 @@ type (
 
 var (
 	// DefaultDataConverter is default data converter used by Temporal worker.
-	DefaultDataConverter = NewDataConverter(
+	DefaultDataConverter = NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 		// Only one proto converter should be used.
 		// Although they check for different interfaces (proto.Message and proto.Marshaler) all proto messages implements both interfaces.
-		NewProtoJsonPayloadConverter(),
+		NewProtoJSONPayloadConverter(),
 		// NewProtoPayloadConverter(),
 		NewJSONPayloadConverter(),
 	)
@@ -132,12 +133,12 @@ func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-// NewDataConverter creates new instance of DataConverter from ordered list of PayloadConverters.
+// NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
 // Order is important here because during serialization DataConverter will try PayloadsConverters in
 // that order until PayloadConverter returns non nil payload.
 // Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
-func NewDataConverter(payloadConverters ...PayloadConverter) *defaultDataConverter {
-	dc := &defaultDataConverter{
+func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
+	dc := &CompositeDataConverter{
 		payloadConverters: make(map[string]PayloadConverter, len(payloadConverters)),
 		orderedEncodings:  make([]string, len(payloadConverters)),
 	}
@@ -150,7 +151,8 @@ func NewDataConverter(payloadConverters ...PayloadConverter) *defaultDataConvert
 	return dc
 }
 
-func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+// ToPayloads converts a list of values.
+func (dc *CompositeDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -168,7 +170,8 @@ func (dc *defaultDataConverter) ToPayloads(values ...interface{}) (*commonpb.Pay
 	return result, nil
 }
 
-func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+// FromPayloads converts to a list of values of different types.
+func (dc *CompositeDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
 	if payloads == nil {
 		return nil
 	}
@@ -187,7 +190,8 @@ func (dc *defaultDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 	return nil
 }
 
-func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+// ToPayload converts single value to payload.
+func (dc *CompositeDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	for _, encoding := range dc.orderedEncodings {
 		payloadConverter := dc.payloadConverters[encoding]
 		payload, err := payloadConverter.ToPayload(value)
@@ -202,7 +206,8 @@ func (dc *defaultDataConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	return nil, fmt.Errorf("value: %v of type: %T: %w", value, value, ErrUnableToFindConverter)
 }
 
-func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+// FromPayload converts single value from payload.
+func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	if payload == nil {
 		return nil
 	}
@@ -220,7 +225,8 @@ func (dc *defaultDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	return payloadConverter.FromPayload(payload, valuePtr)
 }
 
-func (dc *defaultDataConverter) ToString(payload *commonpb.Payload) (string, error) {
+// ToString converts payload object into human readable string.
+func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) (string, error) {
 	result := ""
 
 	if payload == nil {
@@ -240,7 +246,8 @@ func (dc *defaultDataConverter) ToString(payload *commonpb.Payload) (string, err
 	return payloadConverter.ToString(payload), nil
 }
 
-func (dc *defaultDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+// ToStrings converts payloads object into human readable strings.
+func (dc *CompositeDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
 	if payloads == nil {
 		return nil, nil
 	}
@@ -279,10 +286,11 @@ func newPayload(data []byte, c PayloadConverter) *commonpb.Payload {
 	}
 }
 
+// PayloadConverter is an interface to convert a single payload.
 type PayloadConverter interface {
-	// ToPayload single value to payload. It should return nil if the PayloadConveter can not serialize passed value (i.e. type is unknown).
+	// ToPayload converts single value to payload. It should return nil if the PayloadConveter can not convert passed value (i.e. type is unknown).
 	ToPayload(value interface{}) (*commonpb.Payload, error)
-	// FromPayload single value from payload. valuePtr should be a reference to the variable of the type that is corresponding for payload encoding.
+	// FromPayload converts single value from payload. valuePtr should be a reference to the variable of the type that is corresponding for payload encoding.
 	// Otherwise it should return error.
 	FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
 	// ToString converts payload object into human readable string.
@@ -292,13 +300,16 @@ type PayloadConverter interface {
 	Encoding() string
 }
 
+// ByteSlicePayloadConverter pass through []byte to Data field in payload.
 type ByteSlicePayloadConverter struct {
 }
 
+// NewByteSlicePayloadConverter creates new instance of ByteSlicePayloadConverter.
 func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
 	return &ByteSlicePayloadConverter{}
 }
 
+// ToPayload converts single []byte value to payload.
 func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if valueBytes, isByteSlice := value.([]byte); isByteSlice {
 		return newPayload(valueBytes, c), nil
@@ -307,6 +318,7 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	return nil, nil
 }
 
+// FromPayload converts single []byte value from payload.
 func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	valueBytes := reflect.ValueOf(valuePtr).Elem()
 	if !valueBytes.CanSet() {
@@ -316,6 +328,7 @@ func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, value
 	return nil
 }
 
+// ToString converts payload object into human readable string.
 func (c *ByteSlicePayloadConverter) ToString(payload *commonpb.Payload) string {
 	var byteSlice []byte
 	err := c.FromPayload(payload, &byteSlice)
@@ -325,17 +338,21 @@ func (c *ByteSlicePayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(byteSlice)
 }
 
+// Encoding returns metadataEncodingRaw.
 func (c *ByteSlicePayloadConverter) Encoding() string {
 	return metadataEncodingRaw
 }
 
+// JSONPayloadConverter converts to/from JSON.
 type JSONPayloadConverter struct {
 }
 
+// NewJSONPayloadConverter creates new instance of JSONPayloadConverter.
 func NewJSONPayloadConverter() *JSONPayloadConverter {
 	return &JSONPayloadConverter{}
 }
 
+// ToPayload converts single value to payload.
 func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -344,6 +361,7 @@ func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 	return newPayload(data, c), nil
 }
 
+// FromPayload converts single value from payload.
 func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	err := json.Unmarshal(payload.GetData(), valuePtr)
 	if err != nil {
@@ -352,6 +370,7 @@ func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr i
 	return nil
 }
 
+// ToString converts payload object into human readable string.
 func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	var value interface{}
 	err := c.FromPayload(payload, &value)
@@ -368,17 +387,21 @@ func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return s
 }
 
+// Encoding returns metadataEncodingJSON.
 func (c *JSONPayloadConverter) Encoding() string {
 	return metadataEncodingJSON
 }
 
+// NilPayloadConverter doesn't set Data field in payload.
 type NilPayloadConverter struct {
 }
 
+// NewNilPayloadConverter creates new instance of NilPayloadConverter.
 func NewNilPayloadConverter() *NilPayloadConverter {
 	return &NilPayloadConverter{}
 }
 
+// ToPayload converts single nil value to payload.
 func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if isInterfaceNil(value) {
 		return newPayload(nil, c), nil
@@ -386,6 +409,7 @@ func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, e
 	return nil, nil
 }
 
+// FromPayload converts single nil value from payload.
 func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
@@ -395,26 +419,31 @@ func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr interfac
 	return nil
 }
 
+// ToString converts payload object into human readable string.
 func (c *NilPayloadConverter) ToString(*commonpb.Payload) string {
 	return "nil"
 }
 
+// Encoding returns metadataEncodingNil.
 func (c *NilPayloadConverter) Encoding() string {
 	return metadataEncodingNil
 }
 
+// ProtoJSONPayloadConverter converts proto objects to/from JSON.
 type ProtoJSONPayloadConverter struct {
 	marshaler   jsonpb.Marshaler
 	unmarshaler jsonpb.Unmarshaler
 }
 
-func NewProtoJsonPayloadConverter() *ProtoJSONPayloadConverter {
+// NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
+func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
 		marshaler:   jsonpb.Marshaler{},
 		unmarshaler: jsonpb.Unmarshaler{},
 	}
 }
 
+// ToPayload converts single proto value to payload.
 func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if valueProto, ok := value.(proto.Message); ok {
 		var buf bytes.Buffer
@@ -427,6 +456,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	return nil, nil
 }
 
+// FromPayload converts single proto value from payload.
 func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
@@ -455,21 +485,26 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	return nil
 }
 
+// ToString converts payload object into human readable string.
 func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return string(payload.GetData())
 }
 
+// Encoding returns metadataEncodingProtoJSON.
 func (c *ProtoJSONPayloadConverter) Encoding() string {
 	return metadataEncodingProtoJSON
 }
 
+// ProtoPayloadConverter converts proto objects to protobuf binary format.
 type ProtoPayloadConverter struct {
 }
 
+// NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
 func NewProtoPayloadConverter() *ProtoPayloadConverter {
 	return &ProtoPayloadConverter{}
 }
 
+// ToPayload converts single proto value to payload.
 func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if valueProto, ok := value.(proto.Marshaler); ok {
 		data, err := valueProto.Marshal()
@@ -481,6 +516,7 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	return nil, nil
 }
 
+// FromPayload converts single proto value from payload.
 func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	value := reflect.ValueOf(valuePtr).Elem()
 	if !value.CanSet() {
@@ -509,10 +545,12 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	return nil
 }
 
+// ToString converts payload object into human readable string.
 func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(payload.GetData())
 }
 
+// Encoding returns metadataEncodingProto.
 func (c *ProtoPayloadConverter) Encoding() string {
 	return metadataEncodingProto
 }

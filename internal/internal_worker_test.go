@@ -1775,7 +1775,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &defaultDataConverter{},
+		dataConverter:      &CompositeDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
 		logger:             log.NewNopLogger(),

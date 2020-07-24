@@ -115,4 +115,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: vet errcheck staticcheck copyright bins
+check: lint vet errcheck staticcheck copyright bins
