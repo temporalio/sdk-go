@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	metadataEncodingGob = "gob"
+	metadataEncodingGob = "binary/gob"
 )
 
 var (
@@ -228,16 +228,16 @@ func (dc *testDataConverter) ToString(payload *commonpb.Payload) string {
 	}
 
 	e := string(encoding)
-	if e == metadataEncodingGob {
-		var byteSlice []byte
-		dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
-		if err := dec.Decode(&byteSlice); err != nil {
-			return fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err).Error()
-		}
-		return string(byteSlice)
-	} else {
+	if e != metadataEncodingGob {
 		return fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported).Error()
 	}
+
+	var byteSlice []byte
+	dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
+	if err := dec.Decode(&byteSlice); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err).Error()
+	}
+	return string(byteSlice)
 }
 
 func TestDecodeArg(t *testing.T) {
