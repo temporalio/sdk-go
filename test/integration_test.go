@@ -491,6 +491,7 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 
 	// wait for both the activities to be started
 	describeResp, err := ts.client.DescribeWorkflowExecution(ctx, workflowID, workflowRun.GetRunID())
+	ts.Nil(err)
 	status := describeResp.WorkflowExecutionInfo.Status
 	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
 	var pendingActivities []*workflowpb.PendingActivityInfo
@@ -506,6 +507,7 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 
 		// check to see if workflow is still running
 		describeResp, err = ts.client.DescribeWorkflowExecution(ctx, workflowID, workflowRun.GetRunID())
+		ts.Nil(err)
 		status := describeResp.WorkflowExecutionInfo.Status
 		ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
 	}
@@ -518,12 +520,13 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	ts.Nil(err)
 
 	// Complete second activity using ID
+	err = ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), "B", "activityB completed", nil)
 	ts.Nil(err)
-	ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), pendingActivities[1].ActivityId, "activityB completed", nil)
 
 	// Now wait for workflow to complete
 	var result []string
 	err = workflowRun.Get(ctx, &result)
+	ts.Nil(err)
 	ts.EqualValues([]string{"activityA completed", "activityB completed"}, result)
 }
 
