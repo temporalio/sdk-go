@@ -66,12 +66,10 @@ type (
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in for Client, through client.Options.
-	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
-	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
+	// To encode/decode workflow arguments, set DataConverter in client, through client.Options.
+	// To override DataConverter for specific activity or child workflow use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
-	//   2. Activity/Workflow worker that run these activity/childWorkflow, through cleint.Options.
 	DataConverter interface {
 		// ToPayload single value to payload.
 		ToPayload(value interface{}) (*commonpb.Payload, error)
@@ -96,16 +94,16 @@ type (
 	}
 )
 
-//golint:ignore
-
 var (
 	// DefaultDataConverter is default data converter used by Temporal worker.
 	DefaultDataConverter = NewDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
+		// Only one proto converter should be used.
+		// Although they check for different interfaces (proto.Message and proto.Marshaler) all proto messages implements both interfaces.
 		NewProtoJsonPayloadConverter(),
 		// NewProtoPayloadConverter(),
-		NewJsonPayloadConverter(),
+		NewJSONPayloadConverter(),
 	)
 
 	// ErrMetadataIsNotSet is returned when metadata is not set.
@@ -134,7 +132,10 @@ func getDefaultDataConverter() DataConverter {
 	return DefaultDataConverter
 }
 
-// NewDataConverter creates new instance of DataConverter.
+// NewDataConverter creates new instance of DataConverter from ordered list of PayloadConverters.
+// Order is important here because during serialization DataConverter will try PayloadsConverters in
+// that order until PayloadConverter returns non nil payload.
+// Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
 func NewDataConverter(payloadConverters ...PayloadConverter) *defaultDataConverter {
 	dc := &defaultDataConverter{
 		payloadConverters: make(map[string]PayloadConverter, len(payloadConverters)),
@@ -269,12 +270,22 @@ func encoding(payload *commonpb.Payload) (string, error) {
 	return "", ErrEncodingIsNotSet
 }
 
+func newPayload(data []byte, c PayloadConverter) *commonpb.Payload {
+	return &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding: []byte(c.Encoding()),
+		},
+		Data: data,
+	}
+}
+
 type PayloadConverter interface {
-	// ToPayload single value to payload.
+	// ToPayload single value to payload. It should return nil if the PayloadConveter can not serialize passed value (i.e. type is unknown).
 	ToPayload(value interface{}) (*commonpb.Payload, error)
-	// FromPayload single value from payload.
+	// FromPayload single value from payload. valuePtr should be a reference to the variable of the type that is corresponding for payload encoding.
+	// Otherwise it should return error.
 	FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
-	// ToString converts payloads object into human readable string.
+	// ToString converts payload object into human readable string.
 	ToString(*commonpb.Payload) string
 
 	// Encoding returns encoding supported by PayloadConverter.
@@ -289,15 +300,8 @@ func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
 }
 
 func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	if bytes, isByteSlice := value.([]byte); isByteSlice {
-		payload := &commonpb.Payload{
-			Metadata: map[string][]byte{
-				metadataEncoding: []byte(metadataEncodingRaw),
-			},
-			Data: bytes,
-		}
-
-		return payload, nil
+	if valueBytes, isByteSlice := value.([]byte); isByteSlice {
+		return newPayload(valueBytes, c), nil
 	}
 
 	return nil, nil
@@ -328,7 +332,7 @@ func (c *ByteSlicePayloadConverter) Encoding() string {
 type JSONPayloadConverter struct {
 }
 
-func NewJsonPayloadConverter() *JSONPayloadConverter {
+func NewJSONPayloadConverter() *JSONPayloadConverter {
 	return &JSONPayloadConverter{}
 }
 
@@ -337,13 +341,7 @@ func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 	}
-	payload := &commonpb.Payload{
-		Metadata: map[string][]byte{
-			metadataEncoding: []byte(metadataEncodingJSON),
-		},
-		Data: data,
-	}
-	return payload, nil
+	return newPayload(data, c), nil
 }
 
 func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
@@ -383,13 +381,7 @@ func NewNilPayloadConverter() *NilPayloadConverter {
 
 func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	if isInterfaceNil(value) {
-		payload := &commonpb.Payload{
-			Metadata: map[string][]byte{
-				metadataEncoding: []byte(metadataEncodingNil),
-			},
-			Data: nil,
-		}
-		return payload, nil
+		return newPayload(nil, c), nil
 	}
 	return nil, nil
 }
@@ -430,13 +422,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 		}
-		payload := &commonpb.Payload{
-			Metadata: map[string][]byte{
-				metadataEncoding: []byte(metadataEncodingProtoJSON),
-			},
-			Data: buf.Bytes(),
-		}
-		return payload, nil
+		return newPayload(buf.Bytes(), c), nil
 	}
 	return nil, nil
 }
@@ -490,13 +476,7 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 		}
-		payload := &commonpb.Payload{
-			Metadata: map[string][]byte{
-				metadataEncoding: []byte(metadataEncodingProto),
-			},
-			Data: data,
-		}
-		return payload, nil
+		return newPayload(data, c), nil
 	}
 	return nil, nil
 }

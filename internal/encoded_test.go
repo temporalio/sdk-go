@@ -306,7 +306,7 @@ func TestProtoPayloadConverter(t *testing.T) {
 }
 
 func TestJsonPayloadConverter(t *testing.T) {
-	pc := NewJsonPayloadConverter()
+	pc := NewJSONPayloadConverter()
 
 	wt := WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)

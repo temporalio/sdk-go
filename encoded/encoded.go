@@ -37,9 +37,8 @@ type (
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in client, through client.Options.
-	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter
-	// inside workflow code, use workflow.WithDataConverter to create new Context,
+	// To encode/decode workflow arguments, set DataConverter in client, through client.Options.
+	// To override DataConverter for specific activity or child workflow use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
 	DataConverter = internal.DataConverter
@@ -63,7 +62,10 @@ func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
 }
 
-// NewDataConverter creates new instance of DataConverter.
+// NewDataConverter creates new instance of DataConverter from ordered list of PayloadConverters.
+// Order is important here because during serialization DataConverter will try PayloadsConverters in
+// that order until PayloadConverter returns non nil payload.
+// Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
 func NewDataConverter(payloadConverters ...PayloadConverter) DataConverter {
 	return internal.NewDataConverter(payloadConverters...)
 }
