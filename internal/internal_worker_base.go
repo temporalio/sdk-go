@@ -30,8 +30,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -282,7 +282,11 @@ func (bw *baseWorker) pollTask() {
 		if err != nil {
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
-				_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+				if p, err := os.FindProcess(os.Getpid()); err != nil {
+					bw.logger.Error("Unable to find current process.", "pid", os.Getpid(), tagError, err)
+				} else {
+					_ = p.Signal(os.Interrupt)
+				}
 				return
 			}
 			bw.retrier.Failed()
