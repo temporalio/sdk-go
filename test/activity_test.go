@@ -163,5 +163,4 @@ func (a *Activities) register(worker worker.Worker) {
 	// Check prefix
 	worker.RegisterActivityWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 	worker.RegisterActivityWithOptions(a.InspectActivityInfo, activity.RegisterOptions{Name: "inspectActivityInfo"})
-
 }
