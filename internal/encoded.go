@@ -83,9 +83,9 @@ type (
 		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error
 
 		// ToString converts payload object into human readable string.
-		ToString(input *commonpb.Payload) (string, error)
+		ToString(input *commonpb.Payload) string
 		// ToStrings converts payloads object into human readable strings.
-		ToStrings(input *commonpb.Payloads) ([]string, error)
+		ToStrings(input *commonpb.Payloads) []string
 	}
 
 	// CompositeDataConverter applies PayloadConverters in specified order.
@@ -192,8 +192,8 @@ func (dc *CompositeDataConverter) FromPayloads(payloads *commonpb.Payloads, valu
 
 // ToPayload converts single value to payload.
 func (dc *CompositeDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	for _, encoding := range dc.orderedEncodings {
-		payloadConverter := dc.payloadConverters[encoding]
+	for _, enc := range dc.orderedEncodings {
+		payloadConverter := dc.payloadConverters[enc]
 		payload, err := payloadConverter.ToPayload(value)
 		if err != nil {
 			return nil, err
@@ -212,56 +212,50 @@ func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePt
 		return nil
 	}
 
-	encoding, err := encoding(payload)
+	enc, err := encoding(payload)
 	if err != nil {
 		return err
 	}
 
-	payloadConverter, ok := dc.payloadConverters[encoding]
+	payloadConverter, ok := dc.payloadConverters[enc]
 	if !ok {
-		return fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+		return fmt.Errorf("encoding %s: %w", enc, ErrEncodingIsNotSupported)
 	}
 
 	return payloadConverter.FromPayload(payload, valuePtr)
 }
 
 // ToString converts payload object into human readable string.
-func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) (string, error) {
-	result := ""
-
+func (dc *CompositeDataConverter) ToString(payload *commonpb.Payload) string {
 	if payload == nil {
-		return result, nil
+		return ""
 	}
 
-	encoding, err := encoding(payload)
+	enc, err := encoding(payload)
 	if err != nil {
-		return result, err
+		return err.Error()
 	}
 
-	payloadConverter, ok := dc.payloadConverters[encoding]
+	payloadConverter, ok := dc.payloadConverters[enc]
 	if !ok {
-		return "", fmt.Errorf("encoding %s: %w", encoding, ErrEncodingIsNotSupported)
+		return fmt.Errorf("encoding %s: %w", enc, ErrEncodingIsNotSupported).Error()
 	}
 
-	return payloadConverter.ToString(payload), nil
+	return payloadConverter.ToString(payload)
 }
 
 // ToStrings converts payloads object into human readable strings.
-func (dc *CompositeDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (dc *CompositeDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	if payloads == nil {
-		return nil, nil
+		return nil
 	}
 
 	var result []string
-	for i, payload := range payloads.GetPayloads() {
-		payloadStr, err := dc.ToString(payload)
-		if err != nil {
-			return result, fmt.Errorf("payload item %d: %w", i, err)
-		}
-		result = append(result, payloadStr)
+	for _, payload := range payloads.GetPayloads() {
+		result = append(result, dc.ToString(payload))
 	}
 
-	return result, nil
+	return result
 }
 
 func encoding(payload *commonpb.Payload) (string, error) {
@@ -487,6 +481,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 // ToString converts payload object into human readable string.
 func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
+	// We can't do anything beter here.
 	return string(payload.GetData())
 }
 
@@ -547,6 +542,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 // ToString converts payload object into human readable string.
 func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
+	// We can't do anything beter here.
 	return base64.RawStdEncoding.EncodeToString(payload.GetData())
 }
 

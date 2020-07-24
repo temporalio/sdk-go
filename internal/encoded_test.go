@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	metadataEncodingGob = "gob"
+	metadataEncodingGob = "binary/gob"
 )
 
 var (
@@ -106,8 +106,7 @@ func testToStringsFunction(
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	strings, err := dc.ToStrings(input)
-	require.NoError(t, err, err)
+	strings := dc.ToStrings(input)
 
 	return strings
 }
@@ -212,40 +211,33 @@ func (dc *testDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 	return nil
 }
 
-func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	var result []string
-	for i, payload := range payloads.GetPayloads() {
-		payloadAsStr, err := dc.ToString(payload)
-
-		if err != nil {
-			return result, fmt.Errorf("args[%d]: %w", i, err)
-		}
-
-		result = append(result, payloadAsStr)
+	for _, payload := range payloads.GetPayloads() {
+		result = append(result, dc.ToString(payload))
 	}
 
-	return result, nil
+	return result
 }
 
-func (dc *testDataConverter) ToString(payload *commonpb.Payload) (string, error) {
+func (dc *testDataConverter) ToString(payload *commonpb.Payload) string {
 	encoding, ok := payload.GetMetadata()[metadataEncoding]
 
 	if !ok {
-		return "", ErrEncodingIsNotSet
+		return ErrEncodingIsNotSet.Error()
 	}
 
 	e := string(encoding)
-	if e == metadataEncodingGob {
-		var byteSlice []byte
-		dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
-		if err := dec.Decode(&byteSlice); err != nil {
-			return "", fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err)
-		}
-	} else {
-		return "", fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported)
+	if e != metadataEncodingGob {
+		return fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported).Error()
 	}
 
-	return "", nil
+	var byteSlice []byte
+	dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
+	if err := dec.Decode(&byteSlice); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err).Error()
+	}
+	return string(byteSlice)
 }
 
 func TestDecodeArg(t *testing.T) {
