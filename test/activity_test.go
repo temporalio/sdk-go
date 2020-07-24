@@ -151,6 +151,11 @@ func (a *Activities) GetMemoAndSearchAttr(_ context.Context, memo, searchAttr st
 	return memo + ", " + searchAttr, nil
 }
 
+func (a *Activities) AsyncComplete(ctx context.Context, input string) error {
+	a.append("asyncComplete")
+	return activity.ErrResultPending
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration
