@@ -40,7 +40,7 @@ import (
 
 const (
 	metadataEncoding          = "encoding"
-	metadataEncodingRaw       = "binary/raw"
+	metadataEncodingBinary    = "binary/plain"
 	metadataEncodingJSON      = "json/plain"
 	metadataEncodingNil       = "binary/null"
 	metadataEncodingProtoJSON = "json/protobuf"
@@ -338,9 +338,9 @@ func (c *ByteSlicePayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(byteSlice)
 }
 
-// Encoding returns metadataEncodingRaw.
+// Encoding returns metadataEncodingBinary.
 func (c *ByteSlicePayloadConverter) Encoding() string {
-	return metadataEncodingRaw
+	return metadataEncodingBinary
 }
 
 // JSONPayloadConverter converts to/from JSON.
