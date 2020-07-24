@@ -644,6 +644,38 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpper"}, nil
 }
 
+func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, error) {
+	activityAOptions := workflow.ActivityOptions{
+		ActivityID:             "A",
+		ScheduleToStartTimeout: 5 * time.Second,
+		ScheduleToCloseTimeout: 5 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	}
+	activityACtx := workflow.WithActivityOptions(ctx, activityAOptions)
+	activityAFuture := workflow.ExecuteActivity(activityACtx, "AsyncComplete", "activityA called")
+
+	activityBOptions := workflow.ActivityOptions{
+		ActivityID:             "B",
+		ScheduleToStartTimeout: 5 * time.Second,
+		ScheduleToCloseTimeout: 5 * time.Second,
+		StartToCloseTimeout:    9 * time.Second,
+	}
+	activityBCtx := workflow.WithActivityOptions(ctx, activityBOptions)
+	activityBFuture := workflow.ExecuteActivity(activityBCtx, "AsyncComplete", "activityB called")
+
+	var activityAResult string
+	if err := activityAFuture.Get(ctx, &activityAResult); err != nil {
+		return nil, err
+	}
+
+	var activityBResult string
+	if err := activityBFuture.Get(ctx, &activityBResult); err != nil {
+		return nil, err
+	}
+
+	return []string{activityAResult, activityBResult}, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
@@ -674,6 +706,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.BasicSession)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
+	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
