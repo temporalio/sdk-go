@@ -42,6 +42,7 @@ import (
 
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/converter"
 )
 
 const (
@@ -89,7 +90,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultDataConverter.ToPayload(value)
+		encodedValue, err := converter.DefaultDataConverter.ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -105,7 +106,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := DefaultDataConverter.ToPayload(value)
+		encodedValue, err := converter.DefaultDataConverter.ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -119,7 +120,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultDataConverter.FromPayload(value, &decodedValue)
+			err := converter.DefaultDataConverter.FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -137,7 +138,7 @@ func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := DefaultDataConverter.FromPayload(value, &decodedValue)
+			err := converter.DefaultDataConverter.FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -315,7 +316,7 @@ type (
 		mockCtrl              *gomock.Controller
 		workflowServiceClient *workflowservicemock.MockWorkflowServiceClient
 		workflowClient        Client
-		dataConverter         DataConverter
+		dataConverter         converter.DataConverter
 	}
 )
 
@@ -339,7 +340,7 @@ func (s *workflowRunSuite) SetupTest() {
 		Identity:     identity,
 	}
 	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
-	s.dataConverter = getDefaultDataConverter()
+	s.dataConverter = converter.DefaultDataConverter
 }
 
 func (s *workflowRunSuite) TearDownTest() {
@@ -355,7 +356,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(converter.DefaultDataConverter, workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &historypb.History{
@@ -400,7 +401,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(converter.DefaultDataConverter, workflowResult)
 	events := []*historypb.HistoryEvent{
 		{
 			EventType: eventType,
@@ -491,7 +492,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(converter.DefaultDataConverter, workflowResult)
 	events := []*historypb.HistoryEvent{
 		{
 			EventType: eventType,
@@ -647,7 +648,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
 	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED
 	details := "some details"
-	encodedDetails, _ := encodeArg(getDefaultDataConverter(), details)
+	encodedDetails, _ := encodeArg(converter.DefaultDataConverter, details)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &historypb.History{
@@ -699,7 +700,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	reason := "some reason"
 	details := "some details"
 	applicationError := NewApplicationError(reason, "", false, nil, details)
-	failure := convertErrorToFailure(applicationError, getDefaultDataConverter())
+	failure := convertErrorToFailure(applicationError, converter.DefaultDataConverter)
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -861,7 +862,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_ContinueAsNew() {
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), getRequest1, gomock.Any()).Return(getResponse1, nil).Times(1)
 
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(converter.DefaultDataConverter, workflowResult)
 	eventType2 := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	getRequest2 := getGetWorkflowExecutionHistoryRequest(filterType)
 	getRequest2.Execution.RunId = newRunID
@@ -903,7 +904,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
+	encodedResult, _ := encodeArg(converter.DefaultDataConverter, workflowResult)
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &historypb.History{
@@ -958,7 +959,7 @@ type (
 		mockCtrl      *gomock.Controller
 		service       *workflowservicemock.MockWorkflowServiceClient
 		client        Client
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 	}
 )
 
@@ -970,7 +971,7 @@ func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 	s.client = NewServiceClient(s.service, nil, ClientOptions{})
-	s.dataConverter = getDefaultDataConverter()
+	s.dataConverter = converter.DefaultDataConverter
 }
 
 func (s *workflowClientTestSuite) TearDownTest() {
@@ -1022,7 +1023,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(getDefaultDataConverter(), client.dataConverter)
+	s.Equal(converter.DefaultDataConverter, client.dataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1059,7 +1060,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
-	dc := newTestDataConverter()
+	dc := converter.NewTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
@@ -1088,7 +1089,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, input)
-	s.Equal(newTestDataConverter(), client.dataConverter)
+	s.Equal(converter.NewTestDataConverter(), client.dataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1116,11 +1117,11 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
+			err := converter.DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = converter.DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1151,11 +1152,11 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
-			err := DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
+			err := converter.DefaultDataConverter.FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
 			s.Equal("memo value", resultMemo)
 
-			err = DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			err = converter.DefaultDataConverter.FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
@@ -1181,7 +1182,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.Equal(1, len(result3.Fields))
 	var resultString string
 	// TODO (shtin): use s.DataConverter here???
-	_ = DefaultDataConverter.FromPayload(result3.Fields["t1"], &resultString)
+	_ = converter.DefaultDataConverter.FromPayload(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
@@ -1208,7 +1209,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
 
-	_ = DefaultDataConverter.FromPayload(result3.IndexedFields["t1"], &resultString)
+	_ = converter.DefaultDataConverter.FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)

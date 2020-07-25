@@ -58,6 +58,8 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -186,7 +188,7 @@ type (
 		// The default behavior is to block workflow execution until the problem is fixed.
 		WorkflowPanicPolicy WorkflowPanicPolicy
 
-		DataConverter DataConverter
+		DataConverter converter.DataConverter
 
 		// WorkerStopTimeout is the time delay before hard terminate worker
 		WorkerStopTimeout time.Duration
@@ -222,7 +224,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = getDefaultDataConverter()
+		params.DataConverter = converter.DefaultDataConverter
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 }
@@ -723,12 +725,12 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 }
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc DataConverter, args []interface{}) (*commonpb.Payloads, error) {
+func encodeArgs(dc converter.DataConverter, args []interface{}) (*commonpb.Payloads, error) {
 	return dc.ToPayloads(args...)
 }
 
 // decode multiple arguments(arguments to a function).
-func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
+func decodeArgs(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
 	r, err := decodeArgsToValues(dc, fnType, data)
 	if err != nil {
 		return
@@ -739,7 +741,7 @@ func decodeArgs(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) 
 	return
 }
 
-func decodeArgsToValues(dc DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
+func decodeArgsToValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -757,16 +759,16 @@ argsLoop:
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payloads, error) {
+func encodeArg(dc converter.DataConverter, arg interface{}) (*commonpb.Payloads, error) {
 	return dc.ToPayloads(arg)
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc DataConverter, data *commonpb.Payloads, valuePtr interface{}) error {
+func decodeArg(dc converter.DataConverter, data *commonpb.Payloads, valuePtr interface{}) error {
 	return dc.FromPayloads(data, valuePtr)
 }
 
-func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {
+func decodeAndAssignValue(dc converter.DataConverter, from interface{}, toValuePtr interface{}) error {
 	if toValuePtr == nil {
 		return nil
 	}
@@ -892,13 +894,13 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 	return retValues
 }
 
-func getDataConverterFromActivityCtx(ctx context.Context) DataConverter {
+func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return getDefaultDataConverter()
+		return converter.DefaultDataConverter
 	}
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	if info.dataConverter == nil {
-		return getDefaultDataConverter()
+		return converter.DefaultDataConverter
 	}
 	return info.dataConverter
 }
@@ -939,7 +941,7 @@ func (aw *AggregatedWorker) Start() error {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	}
 
-	if !isInterfaceNil(aw.workflowWorker) {
+	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if len(aw.registry.getRegisteredWorkflowTypes()) == 0 {
 			aw.logger.Info("No workflows registered. Skipping workflow worker start")
 		} else {
@@ -948,7 +950,7 @@ func (aw *AggregatedWorker) Start() error {
 			}
 		}
 	}
-	if !isInterfaceNil(aw.activityWorker) {
+	if !util.IsInterfaceNil(aw.activityWorker) {
 		if len(aw.registry.getRegisteredActivities()) == 0 {
 			aw.logger.Info("No activities registered. Skipping activity worker start")
 		} else {
@@ -962,7 +964,7 @@ func (aw *AggregatedWorker) Start() error {
 		}
 	}
 
-	if !isInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
+	if !util.IsInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
 		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
@@ -1068,13 +1070,13 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 func (aw *AggregatedWorker) Stop() {
 	close(aw.stopC)
 
-	if !isInterfaceNil(aw.workflowWorker) {
+	if !util.IsInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()
 	}
-	if !isInterfaceNil(aw.activityWorker) {
+	if !util.IsInterfaceNil(aw.activityWorker) {
 		aw.activityWorker.Stop()
 	}
-	if !isInterfaceNil(aw.sessionWorker) {
+	if !util.IsInterfaceNil(aw.sessionWorker) {
 		aw.sessionWorker.Stop()
 	}
 
@@ -1469,11 +1471,6 @@ func getWorkflowFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func isInterfaceNil(i interface{}) bool {
-	v := reflect.ValueOf(i)
-	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
-}
-
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
 }
@@ -1517,7 +1514,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 // setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
-		client.dataConverter = getDefaultDataConverter()
+		client.dataConverter = converter.DefaultDataConverter
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

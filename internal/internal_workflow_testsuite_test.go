@@ -40,6 +40,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -122,14 +123,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter()
 		ctx = WithActivityOptions(ctx, ao)
 
 		var result string
-		ctx = WithDataConverter(ctx, newTestDataConverter())
+		ctx = WithDataConverter(ctx, converter.NewTestDataConverter())
 		err := ExecuteActivity(ctx, testActivityHello, "world").Get(ctx, &result)
 		if err != nil {
 			return "", err
 		}
 
 		var result1 string
-		ctx1 := WithDataConverter(ctx, getDefaultDataConverter()) // use another converter to run activity
+		ctx1 := WithDataConverter(ctx, converter.DefaultDataConverter) // use another converter to run activity
 		err1 := ExecuteActivity(ctx1, testActivityHello, "world1").Get(ctx1, &result1)
 		if err1 != nil {
 			return "", err1
@@ -141,7 +142,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter()
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHello)
 
-	env.SetDataConverter(newTestDataConverter())
+	env.SetDataConverter(converter.NewTestDataConverter())
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Twice()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -189,7 +190,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 	env.RegisterActivity(testActivityHello)
 
 	var activityCalls []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
 		var input string
 		s.NoError(args.Get(&input))
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
@@ -352,12 +353,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	env.RegisterActivity(testActivityHeartbeat)
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, cancelledActivityID string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
 		var msg string
 		s.NoError(args.Get(&msg))
 		activityMap[msg] = activityInfo.ActivityID
 	})
-	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
+	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.Value, err error) {
 		completedActivityID = activityInfo.ActivityID
 	})
 	env.SetOnActivityCanceledListener(func(activityInfo *ActivityInfo) {
@@ -653,7 +654,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() 
 		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
-		ctx = WithDataConverter(ctx, newTestDataConverter())
+		ctx = WithDataConverter(ctx, converter.NewTestDataConverter())
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
 		if err != nil {
 			return "", err
@@ -847,10 +848,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 	env.RegisterActivity(testActivityHello)
 
 	var childWorkflowName, childWorkflowResult string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args Values) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values) {
 		childWorkflowName = workflowInfo.WorkflowType.Name
 	})
-	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result Value, err error) {
+	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result converter.Value, err error) {
 		s.NoError(err)
 		s.NoError(result.Get(&childWorkflowResult))
 	})
@@ -1275,7 +1276,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
+		err = converter.DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1335,7 +1336,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
+		err = converter.DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1401,7 +1402,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = DefaultDataConverter.FromPayload(valBytes, &result)
+		_ = converter.DefaultDataConverter.FromPayload(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1465,7 +1466,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetData()))
-		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()[metadataEncoding]))
+		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()["encoding"]))
 		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
 
 		// If return type is *commonpb.Payloads it will be automatically unwrapped (this is side effect of internal impementation).
@@ -1475,7 +1476,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	input1 := commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
 		Metadata: map[string][]byte{
-			metadataEncoding: []byte("someencoding"),
+			"encoding": []byte("someencoding"),
 		},
 		Data: []byte("input1")}}}
 	input2 := &commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("input2")}}}
@@ -1572,7 +1573,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "foo"})
 	var called []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
 		called = append(called, activityInfo.ActivityType.Name)
 	})
 
@@ -1604,7 +1605,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 	env.RegisterWorkflow(testWorkflowHello)
 	env.RegisterActivity(testActivityHello)
 	var called []string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args Values) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values) {
 		called = append(called, workflowInfo.WorkflowType.Name)
 	})
 
@@ -1693,7 +1694,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
 	}
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	testPayload, err := DefaultDataConverter.ToPayload("test-data")
+	testPayload, err := converter.DefaultDataConverter.ToPayload("test-data")
 	s.NoError(err)
 
 	s.SetHeader(&commonpb.Header{
@@ -1785,7 +1786,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 		env.SignalWorkflow("query-signal", "hello-query")
 	}, time.Hour)
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
 		verifyStateWithQuery(stateWaitActivity)
 	})
 	env.ExecuteWorkflow(workflowFn)
@@ -1879,7 +1880,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		startedCount.Inc()
 	})
 
-	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result Value, err error) {
+	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.Value, err error) {
 		s.NoError(err)
 		var resultValue string
 		err = result.Get(&resultValue)

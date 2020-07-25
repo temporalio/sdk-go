@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -957,7 +958,7 @@ func getMemoTest(ctx Context) (result string, err error) {
 	if !ok {
 		return "", errors.New("no memo found")
 	}
-	err = DefaultDataConverter.FromPayload(val, &result)
+	err = converter.DefaultDataConverter.FromPayload(val, &result)
 	return result, err
 }
 

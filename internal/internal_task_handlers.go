@@ -52,6 +52,7 @@ import (
 	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -130,7 +131,7 @@ type (
 		registry               *registry
 		laTunnel               *localActivityTunnel
 		workflowPanicPolicy    WorkflowPanicPolicy
-		dataConverter          DataConverter
+		dataConverter          converter.DataConverter
 		contextPropagators     []ContextPropagator
 		tracer                 opentracing.Tracer
 	}
@@ -147,7 +148,7 @@ type (
 		userContext        context.Context
 		registry           *registry
 		activityProvider   activityProvider
-		dataConverter      DataConverter
+		dataConverter      converter.DataConverter
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
@@ -999,7 +1000,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter DataConverter) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter converter.DataConverter) time.Duration {
 	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, lar.err, now, lar.task.expireTime)
 }
 
@@ -1533,7 +1534,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 }
 
-func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter DataConverter) *workflowservice.RespondWorkflowTaskFailedRequest {
+func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter) *workflowservice.RespondWorkflowTaskFailedRequest {
 	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,

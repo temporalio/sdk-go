@@ -33,6 +33,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -239,7 +240,7 @@ func WithActivityTask(
 	invoker ServiceInvoker,
 	logger log.Logger,
 	scope tally.Scope,
-	dataConverter DataConverter,
+	dataConverter converter.DataConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,

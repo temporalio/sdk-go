@@ -29,6 +29,7 @@ import (
 
 	"github.com/uber-go/tally"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -78,8 +79,8 @@ type WorkflowOutboundCallsInterceptor interface {
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
-	SideEffect(ctx Context, f func(ctx Context) interface{}) Value
-	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value
+	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value
+	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value
 	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
 	IsReplaying(ctx Context) bool
@@ -183,12 +184,12 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetSignalChannel(ctx Context, sig
 }
 
 // SideEffect forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) Value {
+func (t *WorkflowOutboundCallsInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
 	return t.Next.SideEffect(ctx, f)
 }
 
 // MutableSideEffect forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) Value {
+func (t *WorkflowOutboundCallsInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
 	return t.Next.MutableSideEffect(ctx, id, f, equals)
 }
 

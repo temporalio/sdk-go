@@ -25,15 +25,17 @@
 // Package encoded contains wrappers that are used for binary payloads deserialization.
 package encoded
 
-import "go.temporal.io/sdk/internal"
+import (
+	"go.temporal.io/sdk/internal/converter"
+)
 
 type (
 
 	// Value is used to encapsulate/extract encoded value from workflow/activity.
-	Value = internal.Value
+	Value = converter.Value
 
 	// Values is used to encapsulate/extract encoded one or more values from workflow/activity.
-	Values = internal.Values
+	Values = converter.Values
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
@@ -41,28 +43,28 @@ type (
 	// To override DataConverter for specific activity or child workflow use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
-	DataConverter = internal.DataConverter
+	DataConverter = converter.DataConverter
 
 	// CompositeDataConverter applies PayloadConverters in specified order.
-	CompositeDataConverter = internal.CompositeDataConverter
+	CompositeDataConverter = converter.CompositeDataConverter
 
 	// PayloadConverter is an interface to convert a single payload.
-	PayloadConverter = internal.PayloadConverter
+	PayloadConverter = converter.PayloadConverter
 	// ByteSlicePayloadConverter pass through []byte to Data field in payload.
-	ByteSlicePayloadConverter = internal.ByteSlicePayloadConverter
+	ByteSlicePayloadConverter = converter.ByteSlicePayloadConverter
 	// JSONPayloadConverter converts to/from JSON.
-	JSONPayloadConverter = internal.JSONPayloadConverter
+	JSONPayloadConverter = converter.JSONPayloadConverter
 	// ProtoJSONPayloadConverter converts proto objects to/from JSON.
-	ProtoJSONPayloadConverter = internal.ProtoJSONPayloadConverter
+	ProtoJSONPayloadConverter = converter.ProtoJSONPayloadConverter
 	// ProtoPayloadConverter converts proto objects to protobuf binary format.
-	ProtoPayloadConverter = internal.ProtoPayloadConverter
+	ProtoPayloadConverter = converter.ProtoPayloadConverter
 	// NilPayloadConverter doesn't set Data field in payload.
-	NilPayloadConverter = internal.NilPayloadConverter
+	NilPayloadConverter = converter.NilPayloadConverter
 )
 
 // GetDefaultDataConverter return default data converter used by Temporal worker.
 func GetDefaultDataConverter() DataConverter {
-	return internal.DefaultDataConverter
+	return converter.DefaultDataConverter
 }
 
 // NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
@@ -70,30 +72,30 @@ func GetDefaultDataConverter() DataConverter {
 // that order until PayloadConverter returns non nil payload.
 // Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
 func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
-	return internal.NewCompositeDataConverter(payloadConverters...)
+	return converter.NewCompositeDataConverter(payloadConverters...)
 }
 
 // NewByteSlicePayloadConverter creates new instance of ByteSlicePayloadConverter.
 func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
-	return internal.NewByteSlicePayloadConverter()
+	return converter.NewByteSlicePayloadConverter()
 }
 
 // NewJSONPayloadConverter creates new instance of JSONPayloadConverter.
 func NewJSONPayloadConverter() *JSONPayloadConverter {
-	return internal.NewJSONPayloadConverter()
+	return converter.NewJSONPayloadConverter()
 }
 
 // NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
-	return internal.NewProtoJSONPayloadConverter()
+	return converter.NewProtoJSONPayloadConverter()
 }
 
 // NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
 func NewProtoPayloadConverter() *ProtoPayloadConverter {
-	return internal.NewProtoPayloadConverter()
+	return converter.NewProtoPayloadConverter()
 }
 
 // NewNilPayloadConverter creates new instance of NilPayloadConverter.
 func NewNilPayloadConverter() *NilPayloadConverter {
-	return internal.NewNilPayloadConverter()
+	return converter.NewNilPayloadConverter()
 }

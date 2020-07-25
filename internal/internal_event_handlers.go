@@ -46,6 +46,7 @@ import (
 
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -122,7 +123,7 @@ type (
 
 		metricsScope       tally.Scope
 		registry           *registry
-		dataConverter      DataConverter
+		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -167,7 +168,7 @@ func newWorkflowExecutionEventHandler(
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	registry *registry,
-	dataConverter DataConverter,
+	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
 ) workflowExecutionEventHandler {
@@ -401,7 +402,7 @@ func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return wc.metricsScope
 }
 
-func (wc *workflowEnvironmentImpl) GetDataConverter() DataConverter {
+func (wc *workflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 	return wc.dataConverter
 }
 
@@ -640,7 +641,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.Value {
 	if result, ok := wc.mutableSideEffect[id]; ok {
 		encodedResult := newEncodedValue(result, wc.GetDataConverter())
 		if wc.isReplay {
@@ -674,7 +675,7 @@ func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOld
 	return equals(newValue, oldValue)
 }
 
-func decodeValue(encodedValue Value, value interface{}) interface{} {
+func decodeValue(encodedValue converter.Value, value interface{}) interface{} {
 	// We need to decode oldValue out of encodedValue, first we need to prepare valuePtr as the same type as value
 	valuePtr := reflect.New(reflect.TypeOf(value)).Interface()
 	if err := encodedValue.Get(valuePtr); err != nil {
@@ -696,7 +697,7 @@ func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payload
 	return wc.GetDataConverter().ToPayloads(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payloads) Value {
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, data *commonpb.Payloads) converter.Value {
 	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, data})
 	if err != nil {
 		panic(err)

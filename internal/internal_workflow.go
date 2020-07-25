@@ -41,6 +41,7 @@ import (
 	"go.uber.org/atomic"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 )
 
 const (
@@ -114,14 +115,14 @@ type (
 	}
 
 	channelImpl struct {
-		name            string             // human readable channel name
-		size            int                // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}      // buffered messages
-		blockedSends    []*sendCallback    // puts waiting when buffer is full.
-		blockedReceives []*receiveCallback // receives waiting when no messages are available.
-		closed          bool               // true if channel is closed.
-		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
-		dataConverter   DataConverter      // for decode data
+		name            string                  // human readable channel name
+		size            int                     // Channel buffer size. 0 for non buffered.
+		buffer          []interface{}           // buffered messages
+		blockedSends    []*sendCallback         // puts waiting when buffer is full.
+		blockedReceives []*receiveCallback      // receives waiting when no messages are available.
+		closed          bool                    // true if channel is closed.
+		recValue        *interface{}            // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		dataConverter   converter.DataConverter // for decode data
 		env             WorkflowEnvironment
 	}
 
@@ -182,7 +183,7 @@ type (
 		WorkflowID                      string
 		WaitForCancellation             bool
 		WorkflowIDReusePolicy           enumspb.WorkflowIdReusePolicy
-		DataConverter                   DataConverter
+		DataConverter                   converter.DataConverter
 		RetryPolicy                     *commonpb.RetryPolicy
 		CronSchedule                    string
 		ContextPropagators              []ContextPropagator
@@ -238,7 +239,7 @@ type (
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 	}
 )
 
@@ -1152,7 +1153,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter converter.DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1172,7 +1173,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	}
 
 	if dataConverter == nil {
-		dataConverter = getDefaultDataConverter()
+		dataConverter = converter.DefaultDataConverter
 	}
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1199,15 +1200,15 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
 	if newOptions.DataConverter == nil {
-		newOptions.DataConverter = getDefaultDataConverter()
+		newOptions.DataConverter = converter.DefaultDataConverter
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
+func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.DataConverter == nil {
-		return getDefaultDataConverter()
+		return converter.DefaultDataConverter
 	}
 	return options.DataConverter
 }

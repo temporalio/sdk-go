@@ -25,6 +25,7 @@
 package util
 
 import (
+	"reflect"
 	"sync"
 	"time"
 )
@@ -62,4 +63,9 @@ func AwaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+func IsInterfaceNil(i interface{}) bool {
+	v := reflect.ValueOf(i)
+	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }

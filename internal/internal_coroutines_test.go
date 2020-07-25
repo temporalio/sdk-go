@@ -34,6 +34,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.temporal.io/sdk/internal/converter"
 )
 
 func createRootTestContext() (interceptor *workflowEnvironmentInterceptor, ctx Context) {
@@ -1095,13 +1097,13 @@ func TestSelectDecodeFuture(t *testing.T) {
 		future2, settable2 := newDecodeFuture(ctx, "testFn2")
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
-			v, err := DefaultDataConverter.ToPayloads([]byte("one"))
+			v, err := converter.DefaultDataConverter.ToPayloads([]byte("one"))
 			require.NoError(t, err)
 			settable1.SetValue(v)
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			v, err := DefaultDataConverter.ToPayloads("two")
+			v, err := converter.DefaultDataConverter.ToPayloads("two")
 			require.NoError(t, err)
 			settable2.SetValue(v)
 		})
@@ -1200,7 +1202,7 @@ func TestDecodeFutureChain(t *testing.T) {
 	require.False(t, d.IsDone(), fmt.Sprintf("%v", d.StackTrace()))
 	history = append(history, "f2-set")
 	require.False(t, f2.IsReady())
-	v2, err := DefaultDataConverter.ToPayloads([]byte("value2"))
+	v2, err := converter.DefaultDataConverter.ToPayloads([]byte("value2"))
 	require.NoError(t, err)
 	cs2.Set(v2, nil)
 	assert.True(t, f2.IsReady())

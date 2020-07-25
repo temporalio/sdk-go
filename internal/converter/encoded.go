@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package converter
 
 import (
 	"bytes"
@@ -36,6 +36,8 @@ import (
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
+
+	"go.temporal.io/sdk/internal/common/util"
 )
 
 const (
@@ -126,12 +128,6 @@ var (
 	// ErrValueDoesntImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
 	ErrValueDoesntImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
 )
-
-// getDefaultDataConverter return default data converter used by Temporal worker.
-// TODO: remove this func
-func getDefaultDataConverter() DataConverter {
-	return DefaultDataConverter
-}
 
 // NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
 // Order is important here because during serialization DataConverter will try PayloadsConverters in
@@ -397,7 +393,7 @@ func NewNilPayloadConverter() *NilPayloadConverter {
 
 // ToPayload converts single nil value to payload.
 func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	if isInterfaceNil(value) {
+	if util.IsInterfaceNil(value) {
 		return newPayload(nil, c), nil
 	}
 	return nil, nil
@@ -464,7 +460,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	}
 
 	// If nil is passed create new instance
-	if isInterfaceNil(protoValue) {
+	if util.IsInterfaceNil(protoValue) {
 		protoType := value.Type().Elem()                         // i.e. commonpb.WorkflowType
 		newProtoValue := reflect.New(protoType)                  // is of type i.e. *commonpb.WorkflowType
 		protoMessage = newProtoValue.Interface().(proto.Message) // type assertion will always succeed
@@ -525,7 +521,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	}
 
 	// If nil is passed create new instance
-	if isInterfaceNil(protoValue) {
+	if util.IsInterfaceNil(protoValue) {
 		protoType := value.Type().Elem()                                 // i.e. commonpb.WorkflowType
 		newProtoValue := reflect.New(protoType)                          // is of type i.e. *commonpb.WorkflowType
 		protoUnmarshaler = newProtoValue.Interface().(proto.Unmarshaler) // type assertion will always succeed
