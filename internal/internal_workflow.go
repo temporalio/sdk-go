@@ -305,7 +305,7 @@ func getWorkflowOutboundCallsInterceptor(ctx Context) WorkflowOutboundCallsInter
 	return wc.(WorkflowOutboundCallsInterceptor)
 }
 
-func (f *futureImpl) Get(ctx Context, value interface{}) error {
+func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 	more := f.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -313,17 +313,17 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 	if !f.ready {
 		panic("not ready")
 	}
-	if f.err != nil || f.value == nil || value == nil {
+	if f.err != nil || f.value == nil || valuePtr == nil {
 		return f.err
 	}
-	rf := reflect.ValueOf(value)
+	rf := reflect.ValueOf(valuePtr)
 	if rf.Type().Kind() != reflect.Ptr {
-		return errors.New("value parameter is not a pointer")
+		return errors.New("valuePtr parameter is not a pointer")
 	}
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
-		if _, ok2 := value.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, value); err != nil {
+		if _, ok2 := valuePtr.(**commonpb.Payloads); !ok2 {
+			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
 				return err
 			}
 			return f.err
@@ -1257,7 +1257,7 @@ func (w *WorkflowOptions) getUnhandledSignals() []string {
 	return unhandledSignals
 }
 
-func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
+func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 	more := d.futureImpl.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -1265,15 +1265,15 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 	if !d.futureImpl.ready {
 		panic("not ready")
 	}
-	if d.futureImpl.err != nil || d.futureImpl.value == nil || value == nil {
+	if d.futureImpl.err != nil || d.futureImpl.value == nil || valuePtr == nil {
 		return d.futureImpl.err
 	}
-	rf := reflect.ValueOf(value)
+	rf := reflect.ValueOf(valuePtr)
 	if rf.Type().Kind() != reflect.Ptr {
-		return errors.New("value parameter is not a pointer")
+		return errors.New("valuePtr parameter is not a pointer")
 	}
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
-	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), value)
+	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
 		return err
 	}

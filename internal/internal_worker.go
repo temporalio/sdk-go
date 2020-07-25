@@ -762,8 +762,8 @@ func encodeArg(dc DataConverter, arg interface{}) (*commonpb.Payloads, error) {
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc DataConverter, data *commonpb.Payloads, to interface{}) error {
-	return dc.FromPayloads(data, to)
+func decodeArg(dc DataConverter, data *commonpb.Payloads, valuePtr interface{}) error {
+	return dc.FromPayloads(data, valuePtr)
 }
 
 func decodeAndAssignValue(dc DataConverter, from interface{}, toValuePtr interface{}) error {
