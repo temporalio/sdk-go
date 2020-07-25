@@ -31,10 +31,9 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
 	"go.temporal.io/api/workflowservice/v1"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 type (
@@ -171,7 +170,7 @@ func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 }
 
 // GetActivityLogger returns a logger that can be used in activity
-func GetActivityLogger(ctx context.Context) *zap.Logger {
+func GetActivityLogger(ctx context.Context) log.Logger {
 	env := getActivityEnv(ctx)
 	return env.logger
 }
@@ -218,7 +217,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	err = env.serviceInvoker.Heartbeat(data, false)
 	if err != nil {
 		log := GetActivityLogger(ctx)
-		log.Debug("RecordActivityHeartbeat With Error:", zap.Error(err))
+		log.Debug("RecordActivityHeartbeat with error", tagError, err)
 	}
 }
 
@@ -238,7 +237,7 @@ func WithActivityTask(
 	task *workflowservice.PollActivityTaskQueueResponse,
 	taskQueue string,
 	invoker ServiceInvoker,
-	logger *zap.Logger,
+	logger log.Logger,
 	scope tally.Scope,
 	dataConverter DataConverter,
 	workerStopChannel <-chan struct{},
@@ -260,12 +259,12 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = logger.With(
-		zapcore.Field{Key: tagActivityID, Type: zapcore.StringType, String: task.ActivityId},
-		zapcore.Field{Key: tagActivityType, Type: zapcore.StringType, String: task.ActivityType.Name},
-		zapcore.Field{Key: tagWorkflowType, Type: zapcore.StringType, String: task.WorkflowType.Name},
-		zapcore.Field{Key: tagWorkflowID, Type: zapcore.StringType, String: task.WorkflowExecution.WorkflowId},
-		zapcore.Field{Key: tagRunID, Type: zapcore.StringType, String: task.WorkflowExecution.RunId},
+	logger = log.With(logger,
+		tagActivityID, task.ActivityId,
+		tagActivityType, task.ActivityType.Name,
+		tagWorkflowType, task.WorkflowType.Name,
+		tagWorkflowID, task.WorkflowExecution.WorkflowId,
+		tagRunID, task.WorkflowExecution.RunId,
 	)
 
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{

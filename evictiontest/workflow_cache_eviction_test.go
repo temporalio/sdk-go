@@ -39,7 +39,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -86,10 +85,6 @@ func (s *CacheEvictionSuite) TearDownTest() {
 }
 
 func TestWorkersTestSuite(t *testing.T) {
-	formatter := &log.TextFormatter{}
-	formatter.FullTimestamp = true
-	log.SetFormatter(formatter)
-	log.SetLevel(log.DebugLevel)
 	suite.Run(t, new(CacheEvictionSuite))
 }
 
@@ -165,7 +160,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 
 	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
 
-	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{DisableActivityWorker: true})
+	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{})
 	// this is an arbitrary workflow we use for this test
 	// NOTE: a simple helloworld that doesn't execute an activity
 	// won't work because the workflow will simply just complete

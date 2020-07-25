@@ -42,12 +42,12 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -81,7 +81,7 @@ type (
 		service       workflowservice.WorkflowServiceClient
 		taskHandler   WorkflowTaskHandler
 		metricsScope  tally.Scope
-		logger        *zap.Logger
+		logger        log.Logger
 		dataConverter DataConverter
 
 		stickyUUID                   string
@@ -103,7 +103,7 @@ type (
 		service             workflowservice.WorkflowServiceClient
 		taskHandler         ActivityTaskHandler
 		metricsScope        *metrics.TaggedScope
-		logger              *zap.Logger
+		logger              log.Logger
 		activitiesPerSecond float64
 	}
 
@@ -121,14 +121,14 @@ type (
 		basePoller
 		handler      *localActivityTaskHandler
 		metricsScope tally.Scope
-		logger       *zap.Logger
+		logger       log.Logger
 		laTunnel     *localActivityTunnel
 	}
 
 	localActivityTaskHandler struct {
 		userContext        context.Context
 		metricsScope       *metrics.TaggedScope
-		logger             *zap.Logger
+		logger             log.Logger
 		dataConverter      DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
@@ -284,7 +284,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(
 			task,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
-				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", zap.Int64("TaskStartedEventID", task.task.GetStartedEventId()))
+				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", "TaskStartedEventID", task.task.GetStartedEventId())
 				wtp.metricsScope.Counter(metrics.WorkflowTaskForceCompleted).Inc(1)
 				heartbeatResponse, err := wtp.RespondTaskCompletedWithMetrics(response, nil, task.task, startTime)
 				if err != nil {
@@ -325,9 +325,9 @@ func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTa
 	wtp.metricsScope.Counter(metrics.StickyCacheEvict).Inc(1)
 	if _, err := wtp.service.ResetStickyTaskQueue(tchCtx, rst.task); err != nil {
 		wtp.logger.Warn("ResetStickyTaskQueue failed",
-			zap.String(tagWorkflowID, rst.task.Execution.GetWorkflowId()),
-			zap.String(tagRunID, rst.task.Execution.GetRunId()),
-			zap.Error(err))
+			tagWorkflowID, rst.task.Execution.GetWorkflowId(),
+			tagRunID, rst.task.Execution.GetRunId(),
+			tagError, err)
 		return err
 	}
 
@@ -339,10 +339,10 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(completedRequest 
 	if taskErr != nil {
 		wtp.metricsScope.Counter(metrics.WorkflowTaskExecutionFailedCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
-			zap.String(tagWorkflowType, task.WorkflowType.GetName()),
-			zap.String(tagWorkflowID, task.WorkflowExecution.GetWorkflowId()),
-			zap.String(tagRunID, task.WorkflowExecution.GetRunId()),
-			zap.Error(taskErr))
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
 		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
 	} else {
@@ -377,7 +377,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 					_, err1 = wtp.service.RespondWorkflowTaskFailed(tchCtx, request)
 					if err1 != nil {
 						traceLog(func() {
-							wtp.logger.Debug("RespondWorkflowTaskFailed failed.", zap.Error(err1))
+							wtp.logger.Debug("RespondWorkflowTaskFailed failed.", tagError, err1)
 						})
 					}
 				}
@@ -396,14 +396,14 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				response, err1 = wtp.service.RespondWorkflowTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
-						wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", zap.Error(err1))
+						wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err1)
 					})
 				}
 			case *workflowservice.RespondQueryTaskCompletedRequest:
 				_, err1 = wtp.service.RespondQueryTaskCompleted(tchCtx, request)
 				if err1 != nil {
 					traceLog(func() {
-						wtp.logger.Debug("RespondQueryTaskCompleted failed.", zap.Error(err1))
+						wtp.logger.Debug("RespondQueryTaskCompleted failed.", tagError, err1)
 					})
 				}
 			default:
@@ -507,11 +507,11 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
 			st := getStackTraceRaw(topLine, 7, 0)
 			lath.logger.Error("LocalActivity panic.",
-				zap.String(tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID),
-				zap.String(tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID),
-				zap.String(tagActivityType, activityType),
-				zap.String("PanicError", fmt.Sprintf("%v", p)),
-				zap.String("PanicStack", st))
+				tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+				tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+				tagActivityType, activityType,
+				"PanicError", fmt.Sprintf("%v", p),
+				"PanicStack", st)
 			metricsScope.Counter(metrics.LocalActivityPanicCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = &localActivityResult{
@@ -562,10 +562,10 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
 			lath.logger.Warn("LocalActivity takes too long to complete.",
-				zap.String("LocalActivityID", task.activityID),
-				zap.String("LocalActivityType", activityType),
-				zap.Int32("ScheduleToCloseTimeoutSeconds", task.params.ScheduleToCloseTimeoutSeconds),
-				zap.Duration("ActualExecutionDuration", executionLatency))
+				"LocalActivityID", task.activityID,
+				"LocalActivityType", activityType,
+				"ScheduleToCloseTimeoutSeconds", task.params.ScheduleToCloseTimeoutSeconds,
+				"ActualExecutionDuration", executionLatency)
 		}
 	}(doneCh)
 
@@ -693,10 +693,10 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 			firstEventID = response.History.Events[0].GetEventId()
 		}
 		wtp.logger.Debug("workflowTaskPoller::Poll Succeed",
-			zap.Int64("StartedEventID", response.GetStartedEventId()),
-			zap.Int64("Attempt", response.GetAttempt()),
-			zap.Int64("FirstEventID", firstEventID),
-			zap.Bool("IsQueryTask", response.Query != nil))
+			"StartedEventID", response.GetStartedEventId(),
+			"Attempt", response.GetAttempt(),
+			"FirstEventID", firstEventID,
+			"IsQueryTask", response.Query != nil)
 	})
 
 	wtp.metricsScope.Counter(metrics.PollWorkflowQueueSucceedCounter).Inc(1)
@@ -915,7 +915,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	if reportErr != nil {
 		metricsScope.Counter(metrics.ActivityResponseFailedCounter).Inc(1)
 		traceLog(func() {
-			atp.logger.Debug("reportActivityComplete failed", zap.Error(reportErr))
+			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
 		})
 		return reportErr
 	}

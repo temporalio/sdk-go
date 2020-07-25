@@ -48,8 +48,9 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 func testInternalWorkerRegister(r *registry) {
@@ -160,9 +161,8 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 }
 
-func getLogger() *zap.Logger {
-	logger, _ := zap.NewDevelopment()
-	return logger
+func getLogger() log.Logger {
+	return log.NewDefaultLogger()
 }
 
 func testReplayWorkflow(ctx Context) error {
@@ -173,7 +173,7 @@ func testReplayWorkflow(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -186,12 +186,12 @@ func testReplayWorkflowLocalActivity(ctx Context) error {
 	ctx = WithLocalActivityOptions(ctx, ao)
 	err := ExecuteLocalActivity(ctx, testActivity).Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteLocalActivity(ctx, testActivity).Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -207,7 +207,7 @@ func testReplayWorkflowFromFile(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivityMultipleArgs", 2, "test", true).Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -330,17 +330,17 @@ func testReplayWorkflowGetVersion(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -369,17 +369,17 @@ func testReplayWorkflowGetVersionReplacedChangeID(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -403,17 +403,17 @@ func testReplayWorkflowGetVersionRemoved(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -447,17 +447,17 @@ func testReplayWorkflowGetVersionAddNewBefore(ctx Context) error {
 	ctx = WithActivityOptions(ctx, ao)
 	err := ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	err = ExecuteActivity(ctx, "testActivity").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -561,7 +561,7 @@ func testReplayWorkflowCancelActivity(ctx Context) error {
 
 	err := ExecuteActivity(ctx, "testActivity2").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -638,7 +638,7 @@ func testReplayWorkflowCancelTimer(ctx Context) error {
 
 	err := ExecuteActivity(ctx, "testActivity2").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -711,7 +711,7 @@ func testReplayWorkflowCancelChildWorkflow(ctx Context) error {
 
 	err := ExecuteActivity(ctx, "testActivity2").Get(ctx, nil)
 	if err != nil {
-		getLogger().Error("activity failed with error.", zap.Error(err))
+		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
 	return err
@@ -958,17 +958,27 @@ func testActivityMultipleArgsWithStruct(_ context.Context, i int, s testActivity
 
 func (s *internalWorkerTestSuite) TestCreateWorker() {
 	worker := createWorkerWithThrottle(s.service, 500.0, nil)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)
+	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	worker.Stop()
+	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker := createWorkerWithDataConverter(s.service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)
+	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	worker.Stop()
 }
 
@@ -978,17 +988,21 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	worker := createWorker(service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Run()
+		_ = worker.Run(InterruptCh())
 	}()
 	time.Sleep(time.Millisecond * 200)
 	p, err := os.FindProcess(os.Getpid())
 	assert.NoError(s.T(), err)
 	assert.NoError(s.T(), p.Signal(os.Interrupt))
 	wg.Wait()
+	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
@@ -998,6 +1012,8 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.Empty(t, w.registry.getRegisteredActivities())
 	assert.Empty(t, w.registry.getRegisteredWorkflowTypes())
 	assert.NoError(t, w.Start())
+	assert.False(t, w.activityWorker.worker.isWorkerStarted)
+	assert.False(t, w.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
@@ -1022,22 +1038,30 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 			}).Times(2)
 
 		worker := createWorker(service)
+		worker.RegisterActivity(testActivityNoResult)
+		worker.RegisterWorkflow(testWorkflowReturnStruct)
 		if tc.isErrFatal {
 			err := worker.Start()
 			assert.Error(t, err, "worker.start() MUST fail when namespace is invalid")
 			errC := make(chan error)
-			go func() { errC <- worker.Run() }()
+			go func() { errC <- worker.Run(InterruptCh()) }()
 			select {
 			case e := <-errC:
 				assert.Error(t, e, "worker.Run() MUST fail when namespace is invalid")
 			case <-time.After(time.Second):
 				assert.Fail(t, "worker.Run() MUST fail when namespace is invalid")
 			}
+			assert.False(t, worker.activityWorker.worker.isWorkerStarted)
+			assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
 			continue
 		}
 		err := worker.Start()
 		assert.NoError(t, err, "worker.Start() failed unexpectedly")
+		assert.True(t, worker.activityWorker.worker.isWorkerStarted)
+		assert.True(t, worker.workflowWorker.worker.isWorkerStarted)
 		worker.Stop()
+		assert.False(t, worker.activityWorker.worker.isWorkerStarted)
+		assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
 	}
 }
 
@@ -1678,19 +1702,21 @@ func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 
 func TestActivityNilArgs(t *testing.T) {
 	nilErr := errors.New("nils")
-	activityFn := func(name string, idx int, strptr *string) error {
-		if name == "" && idx == 0 && strptr == nil {
+	activityFn := func(name string, idx int, strptr *string, wt *commonpb.WorkflowType) error {
+		if name == "" && idx == 0 && strptr == nil && wt == nil {
 			return nilErr
 		}
 		return nil
 	}
 
-	args := []interface{}{nil, nil, nil}
+	args := []interface{}{nil, nil, nil, nil}
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
 	dataConverter := getDefaultDataConverter()
-	data, _ := encodeArgs(dataConverter, args)
+	data, err := encodeArgs(dataConverter, args)
+	require.NoError(t, err)
+
 	reflectArgs, err := decodeArgs(dataConverter, reflect.TypeOf(activityFn), data)
 	require.NoError(t, err)
 
@@ -1749,10 +1775,10 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &defaultDataConverter{},
+		dataConverter:      &CompositeDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
-		logger:             zap.NewNop(),
+		logger:             log.NewNopLogger(),
 	}
 
 	options := WorkerOptions{

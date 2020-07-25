@@ -38,12 +38,13 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -79,12 +80,11 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	logger, err := zap.NewDevelopment()
-	ts.NoError(err)
+	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:           ts.config.ServiceAddr,
 		Namespace:          namespace,
-		Logger:             logger,
+		Logger:             log.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
 	})
 	ts.NoError(err)
@@ -396,11 +396,9 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
-	logger, err := zap.NewDevelopment()
-	ts.NoError(err)
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err = replayer.ReplayPartialWorkflowHistoryFromJSONFile(logger, "fixtures/activity.cancel.sm.repro.json", 12)
+	err := replayer.ReplayPartialWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 
@@ -479,6 +477,57 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	// createSession activity, actual activity, completeSession activity.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
+}
+
+func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
+	workflowID := "test-async-activity-completion"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	workflowRun, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(workflowID), ts.workflows.ActivityCompletionUsingID)
+	ts.Nil(err)
+	ts.Equal(workflowID, workflowRun.GetID())
+	ts.NotEqual("", workflowRun.GetRunID())
+
+	// wait for both the activities to be started
+	describeResp, err := ts.client.DescribeWorkflowExecution(ctx, workflowID, workflowRun.GetRunID())
+	ts.Nil(err)
+	status := describeResp.WorkflowExecutionInfo.Status
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
+	var pendingActivities []*workflowpb.PendingActivityInfo
+	for {
+		pendingActivities = describeResp.PendingActivities
+		if len(pendingActivities) == 2 && pendingActivities[0].State == enumspb.PENDING_ACTIVITY_STATE_STARTED &&
+			pendingActivities[1].State == enumspb.PENDING_ACTIVITY_STATE_STARTED {
+			// condition met
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		// check to see if workflow is still running
+		describeResp, err = ts.client.DescribeWorkflowExecution(ctx, workflowID, workflowRun.GetRunID())
+		ts.Nil(err)
+		status := describeResp.WorkflowExecutionInfo.Status
+		ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
+	}
+
+	// Both the activities are started
+	ts.EqualValues([]string{"asyncComplete", "asyncComplete"}, ts.activities.invoked())
+
+	// Complete first activity using ID
+	err = ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), "A", "activityA completed", nil)
+	ts.Nil(err)
+
+	// Complete second activity using ID
+	err = ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), "B", "activityB completed", nil)
+	ts.Nil(err)
+
+	// Now wait for workflow to complete
+	var result []string
+	err = workflowRun.Get(ctx, &result)
+	ts.Nil(err)
+	ts.EqualValues([]string{"activityA completed", "activityB completed"}, result)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

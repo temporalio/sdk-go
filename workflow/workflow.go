@@ -27,10 +27,10 @@ package workflow
 
 import (
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/encoded"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/log"
 )
 
 type (
@@ -166,7 +166,7 @@ func GetInfo(ctx Context) *Info {
 }
 
 // GetLogger returns a logger to be used in workflow's context
-func GetLogger(ctx Context) *zap.Logger {
+func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }
 

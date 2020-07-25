@@ -40,7 +40,6 @@ string parameter, appends a word to it and then returns the result.
 		"context"
 
 		"go.temporal.io/sdk/activity"
-		"go.uber.org/zap"
 	)
 
 	func init() {
@@ -48,7 +47,7 @@ string parameter, appends a word to it and then returns the result.
 	}
 
 	func SimpleActivity(ctx context.Context, value string) (string, error) {
-		activity.GetLogger(ctx).Info("SimpleActivity called.", zap.String("Value", value))
+		activity.GetLogger(ctx).Info("SimpleActivity called.", "Value", value)
 		return "Processed: ” + value, nil
 	}
 

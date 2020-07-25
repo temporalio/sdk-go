@@ -28,9 +28,9 @@ import (
 	"context"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/log"
 )
 
 type (
@@ -57,7 +57,7 @@ func GetInfo(ctx context.Context) Info {
 }
 
 // GetLogger returns a logger that can be used in activity
-func GetLogger(ctx context.Context) *zap.Logger {
+func GetLogger(ctx context.Context) log.Logger {
 	return internal.GetActivityLogger(ctx)
 }
 

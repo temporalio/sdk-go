@@ -30,9 +30,9 @@ import (
 	"strconv"
 	"time"
 
-	"go.uber.org/zap"
-
 	"go.temporal.io/api/workflowservice/v1"
+
+	"go.temporal.io/sdk/internal/log"
 )
 
 // ** This is for internal stress testing framework **
@@ -56,7 +56,7 @@ type (
 
 	pressurePointMgrImpl struct {
 		config map[string]map[string]string
-		logger *zap.Logger
+		logger log.Logger
 	}
 )
 
@@ -73,8 +73,8 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 				if rand.Int31n(100) < int32(probability) {
 					// Drop the task.
 					p.logger.Debug("pressurePointMgrImpl.Execute drop task.",
-						zap.String("PressurePointName", pressurePointName),
-						zap.Int("probability", probability))
+						"PressurePointName", pressurePointName,
+						"probability", probability)
 					return errors.New("pressurepoint configured")
 				}
 			}
@@ -82,8 +82,8 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 			if timeout, err := strconv.Atoi(value); err == nil {
 				if timeout > 0 {
 					p.logger.Debug("pressurePointMgrImpl.Execute sleep.",
-						zap.String("PressurePointName", pressurePointName),
-						zap.Int("DurationSeconds", timeout))
+						"PressurePointName", pressurePointName,
+						"DurationSeconds", timeout)
 					d := time.Duration(timeout) * time.Second
 					time.Sleep(d)
 					return nil

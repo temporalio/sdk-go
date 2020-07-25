@@ -22,49 +22,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package serializer
+package log
 
-import (
-	"bytes"
-
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
-)
-
-type (
-	// JSONPBEncoder is JSON encoder/decoder for protobuf structs and slices of protobuf structs.
-	// This is an wrapper on top of jsonpb.Marshaler which supports not only single object serialization
-	// but also slices of concrete objects.
-	JSONPBEncoder struct {
-		marshaler   jsonpb.Marshaler
-		unmarshaler jsonpb.Unmarshaler
-	}
-)
-
-// NewJSONPBEncoder creates a new JSONPBEncoder.
-func NewJSONPBEncoder() *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
+// NopLogger is Logger implementation that doesn't produce any logs.
+type NopLogger struct {
 }
 
-// NewJSONPBIndentEncoder creates a new JSONPBEncoder with indent.
-func NewJSONPBIndentEncoder(indent string) *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{Indent: indent},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
+// NewNopLogger creates new instance of NopLogger.
+func NewNopLogger() *NopLogger {
+	return &NopLogger{}
 }
 
-// Encode protobuf struct to bytes.
-func (e *JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
-	var buf bytes.Buffer
-	err := e.marshaler.Marshal(&buf, pb)
-	return buf.Bytes(), err
+// Debug does nothing.
+func (l *NopLogger) Debug(msg string, keyvals ...interface{}) {
 }
 
-// Decode bytes to protobuf struct.
-func (e *JSONPBEncoder) Decode(data []byte, pb proto.Message) error {
-	return e.unmarshaler.Unmarshal(bytes.NewReader(data), pb)
+// Info does nothing.
+func (l *NopLogger) Info(msg string, keyvals ...interface{}) {
+}
+
+// Warn does nothing.
+func (l *NopLogger) Warn(msg string, keyvals ...interface{}) {
+}
+
+// Error does nothing.
+func (l *NopLogger) Error(msg string, keyvals ...interface{}) {
+}
+
+// With returns new NopLogger.
+func (l *NopLogger) With(keyvals ...interface{}) Logger {
+	return NewNopLogger()
 }

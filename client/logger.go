@@ -22,49 +22,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package serializer
+package client
 
 import (
-	"bytes"
-
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
+	"go.temporal.io/sdk/internal/log"
 )
 
 type (
-	// JSONPBEncoder is JSON encoder/decoder for protobuf structs and slices of protobuf structs.
-	// This is an wrapper on top of jsonpb.Marshaler which supports not only single object serialization
-	// but also slices of concrete objects.
-	JSONPBEncoder struct {
-		marshaler   jsonpb.Marshaler
-		unmarshaler jsonpb.Unmarshaler
-	}
+	// Logger is an interface that can be passed to ClientOptions.Logger.
+	Logger = log.Logger
+
+	// WithLogger is an interface that prepend every log entry with keyvals.
+	WithLogger = log.WithLogger
 )
-
-// NewJSONPBEncoder creates a new JSONPBEncoder.
-func NewJSONPBEncoder() *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
-}
-
-// NewJSONPBIndentEncoder creates a new JSONPBEncoder with indent.
-func NewJSONPBIndentEncoder(indent string) *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{Indent: indent},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
-}
-
-// Encode protobuf struct to bytes.
-func (e *JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
-	var buf bytes.Buffer
-	err := e.marshaler.Marshal(&buf, pb)
-	return buf.Bytes(), err
-}
-
-// Decode bytes to protobuf struct.
-func (e *JSONPBEncoder) Decode(data []byte, pb proto.Message) error {
-	return e.unmarshaler.Unmarshal(bytes.NewReader(data), pb)
-}

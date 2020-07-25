@@ -30,11 +30,11 @@ import (
 
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.uber.org/zap"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -114,9 +114,14 @@ type (
 
 		// Start the worker in a non-blocking fashion.
 		Start() error
-		// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+
+		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+		// Pass nil to stop the worker with external Stop() call.
+		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error only if worker fails to start.
-		Run() error
+		Run(interruptCh <-chan interface{}) error
+
 		// Stop the worker.
 		Stop()
 	}
@@ -129,7 +134,6 @@ type (
 	// It is important to maintain backwards compatibility through use of workflow.GetVersion
 	// to ensure that new deployments are not going to break open workflows.
 	WorkflowReplayer interface {
-
 		// RegisterWorkflow registers workflow that is going to be replayed
 		RegisterWorkflow(w interface{})
 
@@ -139,14 +143,14 @@ type (
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error
+		ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error
+		ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error
 
 		// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the json history file upto provided
 		// lastEventID(inclusive), downloaded from the cli.
@@ -154,12 +158,12 @@ type (
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
-		ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error
+		ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error
 
 		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single workflow task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is the only optional parameter. Defaults to the noop logger.
-		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution workflow.Execution) error
+		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution workflow.Execution) error
 	}
 
 	// Options is used to configure a worker instance.
@@ -229,4 +233,9 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 // On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
+}
+
+// InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
+func InterruptCh() <-chan interface{} {
+	return internal.InterruptCh()
 }

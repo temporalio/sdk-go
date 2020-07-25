@@ -22,25 +22,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package log
 
-const (
-	tagActivityID        = "ActivityID"
-	tagActivityType      = "ActivityType"
-	tagNamespace         = "Namespace"
-	tagEventID           = "EventID"
-	tagEventType         = "EventType"
-	tagRunID             = "RunID"
-	tagTaskQueue         = "TaskQueue"
-	tagTimerID           = "TimerID"
-	tagWorkflowID        = "WorkflowID"
-	tagWorkflowType      = "WorkflowType"
-	tagWorkerID          = "WorkerID"
-	tagWorkerType        = "WorkerType"
-	tagSideEffectID      = "SideEffectID"
-	tagChildWorkflowID   = "ChildWorkflowID"
-	tagLocalActivityType = "LocalActivityType"
-	tagQueryType         = "QueryType"
-	tagResult            = "Result"
-	tagError             = "Error"
-)
+// Logger is an interface that can be passed to ClientOptions.Logger.
+type Logger interface {
+	Debug(msg string, keyvals ...interface{})
+	Info(msg string, keyvals ...interface{})
+	Warn(msg string, keyvals ...interface{})
+	Error(msg string, keyvals ...interface{})
+}

@@ -28,16 +28,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"testing"
 	"time"
 
-	commonpb "go.temporal.io/api/common/v1"
-	enumspb "go.temporal.io/api/enums/v1"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -158,12 +155,6 @@ func TestHistoryEventIteratorSuite(t *testing.T) {
 	suite.Run(t, s)
 }
 
-func (s *historyEventIteratorSuite) SetupSuite() {
-	if testing.Verbose() {
-		log.SetOutput(os.Stdout)
-	}
-}
-
 func (s *historyEventIteratorSuite) SetupTest() {
 	// Create service endpoint
 	s.mockCtrl = gomock.NewController(s.T())
@@ -205,7 +196,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError() {
 
 	dummyEvent := []*historypb.HistoryEvent{
 		// dummy history event
-		&historypb.HistoryEvent{},
+		{},
 	}
 
 	blobData := serializeEvents(dummyEvent)
@@ -256,7 +247,7 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 
 	dummyEvent := []*historypb.HistoryEvent{
 		// dummy history event
-		&historypb.HistoryEvent{},
+		{},
 	}
 
 	blobData := serializeEvents(dummyEvent)
@@ -331,12 +322,6 @@ type (
 func TestWorkflowRunSuite(t *testing.T) {
 	s := new(workflowRunSuite)
 	suite.Run(t, s)
-}
-
-func (s *workflowRunSuite) SetupSuite() {
-	if testing.Verbose() {
-		log.SetOutput(os.Stdout)
-	}
 }
 
 func (s *workflowRunSuite) TearDownSuite() {
@@ -417,7 +402,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	workflowResult := time.Hour * 59
 	encodedResult, _ := encodeArg(getDefaultDataConverter(), workflowResult)
 	events := []*historypb.HistoryEvent{
-		&historypb.HistoryEvent{
+		{
 			EventType: eventType,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
 				Result: encodedResult,
@@ -979,12 +964,6 @@ type (
 
 func TestWorkflowClientSuite(t *testing.T) {
 	suite.Run(t, new(workflowClientTestSuite))
-}
-
-func (s *workflowClientTestSuite) SetupSuite() {
-	if testing.Verbose() {
-		log.SetOutput(os.Stdout)
-	}
 }
 
 func (s *workflowClientTestSuite) SetupTest() {

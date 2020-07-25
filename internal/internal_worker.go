@@ -48,19 +48,17 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally"
-	enumspb "go.temporal.io/api/enums/v1"
-
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -166,7 +164,7 @@ type (
 
 		MetricsScope tally.Scope
 
-		Logger *zap.Logger
+		Logger log.Logger
 
 		// Enable logging in replay mode
 		EnableLoggingInReplay bool
@@ -215,13 +213,8 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
 	if params.Logger == nil {
-		// create default logger if user does not supply one.
-		config := zap.NewProductionConfig()
-		// set default time formatter to "2006-01-02T15:04:05.000Z0700"
-		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		// config.Level.SetLevel(zapcore.DebugLevel)
-		logger, _ := config.Build()
-		params.Logger = logger
+		// create default logger if user does not supply one (should happen in tests only).
+		params.Logger = log.NewDefaultLogger()
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsScope == nil {
@@ -237,7 +230,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger *zap.Logger) error {
+func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
 		tchCtx, cancel := newChannelContext(ctx)
@@ -246,14 +239,14 @@ func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespac
 		if err != nil {
 			switch err.(type) {
 			case *serviceerror.NotFound:
-				logger.Error("namespace does not exist", zap.String("namespace", namespace), zap.Error(err))
+				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
 				return err
 			case *serviceerror.InvalidArgument:
-				logger.Error("namespace does not exist", zap.String("namespace", namespace), zap.Error(err))
+				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
 				return err
 			}
 			// on any other error, just return true
-			logger.Warn("unable to verify if namespace exist", zap.String("namespace", namespace), zap.Error(err))
+			logger.Warn("unable to verify if namespace exist", tagNamespace, namespace, tagError, err)
 		}
 		return nil
 	}
@@ -345,16 +338,6 @@ func (ww *workflowWorker) Start() error {
 	return nil // TODO: propagate error
 }
 
-func (ww *workflowWorker) Run() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
-	if err != nil {
-		return err
-	}
-	ww.localActivityWorker.Start()
-	ww.worker.Run()
-	return nil
-}
-
 // Stop the worker.
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
@@ -400,14 +383,6 @@ func (sw *sessionWorker) Start() error {
 		return err
 	}
 	return nil
-}
-
-func (sw *sessionWorker) Run() error {
-	err := sw.creationWorker.Start()
-	if err != nil {
-		return err
-	}
-	return sw.activityWorker.Run()
 }
 
 func (sw *sessionWorker) Stop() {
@@ -469,16 +444,6 @@ func (aw *activityWorker) Start() error {
 	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
-}
-
-// Run the worker.
-func (aw *activityWorker) Run() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
-	if err != nil {
-		return err
-	}
-	aw.worker.Run()
-	return nil
 }
 
 // Stop the worker.
@@ -943,8 +908,9 @@ type AggregatedWorker struct {
 	workflowWorker *workflowWorker
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
-	logger         *zap.Logger
+	logger         log.Logger
 	registry       *registry
+	stopC          chan struct{}
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -988,7 +954,7 @@ func (aw *AggregatedWorker) Start() error {
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.
-				if !isInterfaceNil(aw.workflowWorker) && len(aw.registry.getRegisteredWorkflowTypes()) > 0 {
+				if aw.workflowWorker.worker.isWorkerStarted {
 					aw.workflowWorker.Stop()
 				}
 				return err
@@ -1000,16 +966,15 @@ func (aw *AggregatedWorker) Start() error {
 		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
-			if !isInterfaceNil(aw.workflowWorker) {
+			if aw.workflowWorker.worker.isWorkerStarted {
 				aw.workflowWorker.Stop()
 			}
-			if !isInterfaceNil(aw.activityWorker) {
+			if aw.activityWorker.worker.isWorkerStarted {
 				aw.activityWorker.Stop()
 			}
 			return err
 		}
 	}
-
 	aw.logger.Info("Started Worker")
 	return nil
 }
@@ -1081,20 +1046,28 @@ func getBinaryChecksum() string {
 	return binaryChecksum
 }
 
-// Run the worker in a blocking fashion. Stop the worker when process is killed with SIGINT or SIGTERM.
+// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+// Pass nil to stop the worker with external Stop() call.
+// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 // Returns error only if worker fails to start.
-func (aw *AggregatedWorker) Run() error {
+func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
-	d := <-getKillSignal()
-	aw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
-	aw.Stop()
+	select {
+	case s := <-interruptCh:
+		aw.logger.Info("Worker has been stopped.", "Signal", s)
+		aw.Stop()
+	case <-aw.stopC:
+	}
 	return nil
 }
 
 // Stop the worker.
 func (aw *AggregatedWorker) Stop() {
+	close(aw.stopC)
+
 	if !isInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()
 	}
@@ -1131,13 +1104,12 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // ReplayWorkflowHistory executes a single workflow task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *historypb.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
 	if logger == nil {
-		logger = zap.NewNop()
+		logger = log.NewDefaultLogger()
 	}
 
-	testReporter := logger.Sugar()
-	controller := gomock.NewController(testReporter)
+	controller := gomock.NewController(log.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
 	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
@@ -1146,7 +1118,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger *zap.Logger, history *h
 // ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error {
 	return aw.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
 }
 
@@ -1154,26 +1126,29 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger *zap.Logger
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger *zap.Logger, jsonfileName string, lastEventID int64) error {
+func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
 
 	if err != nil {
 		return err
 	}
 
-	if logger == nil {
-		logger = zap.NewNop()
+	if loger == nil {
+		loger = log.NewDefaultLogger()
 	}
 
-	testReporter := logger.Sugar()
-	controller := gomock.NewController(testReporter)
+	controller := gomock.NewController(log.NewTestReporter(loger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(loger, service, ReplayNamespace, history)
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
-func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger *zap.Logger, namespace string, execution WorkflowExecution) error {
+func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution WorkflowExecution) error {
+	if logger == nil {
+		logger = log.NewDefaultLogger()
+	}
+
 	sharedExecution := &commonpb.WorkflowExecution{
 		RunId:      execution.RunID,
 		WorkflowId: execution.ID,
@@ -1199,7 +1174,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {
@@ -1235,9 +1210,6 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
 	}
-	if logger == nil {
-		logger = zap.NewNop()
-	}
 
 	metricScope := tally.NoopScope
 	iterator := &historyIteratorImpl{
@@ -1252,7 +1224,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger *zap.Logger, service wo
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
-		Logger:    logger,
+		Logger:    loger,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1365,12 +1337,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = workerParams.Logger.With(
-		zapcore.Field{Key: tagNamespace, Type: zapcore.StringType, String: client.namespace},
-		zapcore.Field{Key: tagTaskQueue, Type: zapcore.StringType, String: taskQueue},
-		zapcore.Field{Key: tagWorkerID, Type: zapcore.StringType, String: workerParams.Identity},
+	workerParams.Logger = log.With(workerParams.Logger,
+		tagNamespace, client.namespace,
+		tagTaskQueue, taskQueue,
+		tagWorkerID, workerParams.Identity,
 	)
-	logger := workerParams.Logger
 
 	processTestTags(&options, &workerParams)
 
@@ -1380,21 +1351,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
-	if !options.DisableWorkflowWorker {
-		testTags := getTestTags(options.BackgroundActivityContext)
-		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
-		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
-		}
+	testTags := getTestTags(options.BackgroundActivityContext)
+	if len(testTags) > 0 {
+		workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+	} else {
+		workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 	}
 
 	// activity types.
-	var activityWorker *activityWorker
-
-	if !options.DisableActivityWorker {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
-	}
+	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker {
@@ -1405,15 +1370,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		registry.RegisterActivityWithOptions(sessionCompletionActivity, RegisterActivityOptions{
 			Name: sessionCompletionActivityName,
 		})
-
 	}
 
 	return &AggregatedWorker{
 		workflowWorker: workflowWorker,
 		activityWorker: activityWorker,
 		sessionWorker:  sessionWorker,
-		logger:         logger,
+		logger:         workerParams.Logger,
 		registry:       registry,
+		stopC:          make(chan struct{}),
 	}
 }
 
@@ -1505,7 +1470,8 @@ func getWorkflowFunctionName(r *registry, i interface{}) string {
 }
 
 func isInterfaceNil(i interface{}) bool {
-	return i == nil || reflect.ValueOf(i).IsNil()
+	v := reflect.ValueOf(i)
+	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {

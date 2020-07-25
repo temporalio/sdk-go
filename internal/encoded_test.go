@@ -32,12 +32,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 )
 
 const (
-	metadataEncodingGob = "gob"
+	metadataEncodingGob = "binary/gob"
 )
 
 var (
@@ -105,15 +106,13 @@ func testToStringsFunction(
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	strings, err := dc.ToStrings(input)
-	require.NoError(t, err, err)
+	strings := dc.ToStrings(input)
 
 	return strings
 }
 
 func TestToStrings(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
 
 	testStruct := struct {
 		A string
@@ -123,7 +122,7 @@ func TestToStrings(t *testing.T) {
 		B: 3,
 	}
 
-	got := testToStringsFunction(t, dc,
+	got := testToStringsFunction(t, DefaultDataConverter,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",
@@ -135,7 +134,7 @@ func TestToStrings(t *testing.T) {
 		"[hello world]",
 		"hello world",
 		"42",
-		"map[A:hi B:3]",
+		"{A:hi B:3}",
 	}
 
 	require.Equal(t, want, got)
@@ -212,40 +211,33 @@ func (dc *testDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 	return nil
 }
 
-func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) ([]string, error) {
+func (dc *testDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	var result []string
-	for i, payload := range payloads.GetPayloads() {
-		payloadAsStr, err := toStringTestHelper(payload)
-
-		if err != nil {
-			return result, fmt.Errorf("args[%d]: %w", i, err)
-		}
-
-		result = append(result, payloadAsStr)
+	for _, payload := range payloads.GetPayloads() {
+		result = append(result, dc.ToString(payload))
 	}
 
-	return result, nil
+	return result
 }
 
-func toStringTestHelper(payload *commonpb.Payload) (string, error) {
+func (dc *testDataConverter) ToString(payload *commonpb.Payload) string {
 	encoding, ok := payload.GetMetadata()[metadataEncoding]
 
 	if !ok {
-		return "", ErrEncodingIsNotSet
+		return ErrEncodingIsNotSet.Error()
 	}
 
 	e := string(encoding)
-	if e == metadataEncodingGob {
-		var byteSlice []byte
-		dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
-		if err := dec.Decode(&byteSlice); err != nil {
-			return "", fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err)
-		}
-	} else {
-		return "", fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported)
+	if e != metadataEncodingGob {
+		return fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported).Error()
 	}
 
-	return "", nil
+	var byteSlice []byte
+	dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
+	if err := dec.Decode(&byteSlice); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnableToDecodeGob, err).Error()
+	}
+	return string(byteSlice)
 }
 
 func TestDecodeArg(t *testing.T) {
@@ -263,4 +255,64 @@ func TestDecodeArg(t *testing.T) {
 	b, err = encodeArgs(dc, []interface{}{testErrorDetails1, testErrorDetails2})
 	require.NoError(t, err)
 	require.Error(t, decodeArg(dc, b, &r))
+}
+
+func TestProtoJsonPayloadConverter(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := &commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"name":"qwe"}`, s)
+}
+
+func TestProtoPayloadConverter(t *testing.T) {
+	pc := NewProtoPayloadConverter()
+
+	wt := &commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "CgNxd2U", s)
+}
+
+func TestJsonPayloadConverter(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	wt := WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "{Name:qwe}", s)
 }

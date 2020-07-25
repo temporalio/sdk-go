@@ -37,18 +37,63 @@ type (
 
 	// DataConverter is used by the framework to serialize/deserialize input and output of activity/workflow
 	// that need to be sent over the wire.
-	// To encode/decode workflow arguments, one should set DataConverter in two places:
-	//   1. Workflow worker, through worker.Options
-	//   2. Client, through client.Options
-	// To encode/decode Activity/ChildWorkflow arguments, one should set DataConverter in two places:
-	//   1. Inside workflow code, use workflow.WithDataConverter to create new Context,
+	// To encode/decode workflow arguments, set DataConverter in client, through client.Options.
+	// To override DataConverter for specific activity or child workflow use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
-	//   2. Activity/Workflow worker that run these activity/childWorkflow, through worker.Options.
 	DataConverter = internal.DataConverter
+
+	// CompositeDataConverter applies PayloadConverters in specified order.
+	CompositeDataConverter = internal.CompositeDataConverter
+
+	// PayloadConverter is an interface to convert a single payload.
+	PayloadConverter = internal.PayloadConverter
+	// ByteSlicePayloadConverter pass through []byte to Data field in payload.
+	ByteSlicePayloadConverter = internal.ByteSlicePayloadConverter
+	// JSONPayloadConverter converts to/from JSON.
+	JSONPayloadConverter = internal.JSONPayloadConverter
+	// ProtoJSONPayloadConverter converts proto objects to/from JSON.
+	ProtoJSONPayloadConverter = internal.ProtoJSONPayloadConverter
+	// ProtoPayloadConverter converts proto objects to protobuf binary format.
+	ProtoPayloadConverter = internal.ProtoPayloadConverter
+	// NilPayloadConverter doesn't set Data field in payload.
+	NilPayloadConverter = internal.NilPayloadConverter
 )
 
-// GetDefaultDataConverter return default data converter used by Temporal worker
+// GetDefaultDataConverter return default data converter used by Temporal worker.
 func GetDefaultDataConverter() DataConverter {
 	return internal.DefaultDataConverter
+}
+
+// NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
+// Order is important here because during serialization DataConverter will try PayloadsConverters in
+// that order until PayloadConverter returns non nil payload.
+// Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
+func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
+	return internal.NewCompositeDataConverter(payloadConverters...)
+}
+
+// NewByteSlicePayloadConverter creates new instance of ByteSlicePayloadConverter.
+func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
+	return internal.NewByteSlicePayloadConverter()
+}
+
+// NewJSONPayloadConverter creates new instance of JSONPayloadConverter.
+func NewJSONPayloadConverter() *JSONPayloadConverter {
+	return internal.NewJSONPayloadConverter()
+}
+
+// NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
+func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
+	return internal.NewProtoJSONPayloadConverter()
+}
+
+// NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
+func NewProtoPayloadConverter() *ProtoPayloadConverter {
+	return internal.NewProtoPayloadConverter()
+}
+
+// NewNilPayloadConverter creates new instance of NilPayloadConverter.
+func NewNilPayloadConverter() *NilPayloadConverter {
+	return internal.NewNilPayloadConverter()
 }

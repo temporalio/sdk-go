@@ -30,20 +30,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/api/serviceerror"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"golang.org/x/time/rate"
-
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/serviceerror"
+	"golang.org/x/time/rate"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -85,7 +83,7 @@ type (
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
-		GetLogger() *zap.Logger
+		GetLogger() log.Logger
 		GetMetricsScope() tally.Scope
 		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
@@ -146,7 +144,7 @@ type (
 		limiterContext       context.Context
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger               *zap.Logger
+		logger               log.Logger
 		metricsScope         tally.Scope
 
 		pollerRequestCh    chan struct{}
@@ -171,14 +169,14 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger *zap.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
 		stopCh:          make(chan struct{}),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          logger.With(zapcore.Field{Key: tagWorkerType, Type: zapcore.StringType, String: options.workerType}),
+		logger:          log.With(logger, tagWorkerType, options.workerType),
 		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
@@ -213,9 +211,9 @@ func (bw *baseWorker) Start() {
 	bw.isWorkerStarted = true
 	traceLog(func() {
 		bw.logger.Info("Started Worker",
-			zap.Int("PollerCount", bw.options.pollerCount),
-			zap.Int("MaxConcurrentTask", bw.options.maxConcurrentTask),
-			zap.Float64("MaxTaskPerSecond", bw.options.maxTaskPerSecond),
+			"PollerCount", bw.options.pollerCount,
+			"MaxConcurrentTask", bw.options.maxConcurrentTask,
+			"MaxTaskPerSecond", bw.options.maxTaskPerSecond,
 		)
 	})
 }
@@ -279,12 +277,16 @@ func (bw *baseWorker) pollTask() {
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
 		if err != nil && enableVerboseLogging {
-			bw.logger.Debug("Failed to poll for task.", zap.Error(err))
+			bw.logger.Debug("Failed to poll for task.", tagError, err)
 		}
 		if err != nil {
 			if isNonRetriableError(err) {
-				bw.logger.Error("Worker received non-retriable error. Shutting down.", zap.Error(err))
-				_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
+				if p, err := os.FindProcess(os.Getpid()); err != nil {
+					bw.logger.Error("Unable to find current process.", "pid", os.Getpid(), tagError, err)
+				} else {
+					_ = p.Signal(os.Interrupt)
+				}
 				return
 			}
 			bw.retrier.Failed()
@@ -329,8 +331,8 @@ func (bw *baseWorker) processTask(task interface{}) {
 			topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
 			st := getStackTraceRaw(topLine, 7, 0)
 			bw.logger.Error("Unhandled panic.",
-				zap.String("PanicError", fmt.Sprintf("%v", p)),
-				zap.String("PanicStack", st))
+				"PanicError", fmt.Sprintf("%v", p),
+				"PanicStack", st)
 		}
 
 		if isPolledTask {
@@ -340,20 +342,11 @@ func (bw *baseWorker) processTask(task interface{}) {
 	err := bw.options.taskWorker.ProcessTask(task)
 	if err != nil {
 		if isClientSideError(err) {
-			bw.logger.Info("Task processing failed with client side error", zap.Error(err))
+			bw.logger.Info("Task processing failed with client side error", tagError, err)
 		} else {
-			bw.logger.Info("Task processing failed with error", zap.Error(err))
+			bw.logger.Info("Task processing failed with error", tagError, err)
 		}
 	}
-}
-
-func (bw *baseWorker) Run() {
-	bw.Start()
-	d := <-getKillSignal()
-	traceLog(func() {
-		bw.logger.Info("Worker has been killed", zap.String("Signal", d.String()))
-	})
-	bw.Stop()
 }
 
 // Stop is a blocking call and cleans up all the resources associated with worker.
@@ -366,7 +359,7 @@ func (bw *baseWorker) Stop() {
 
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
-			bw.logger.Info("Worker graceful stop timed out.", zap.Duration("Stop timeout", bw.options.stopTimeout))
+			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
 		})
 	}
 
@@ -374,4 +367,6 @@ func (bw *baseWorker) Stop() {
 	if bw.options.userContextCancel != nil {
 		bw.options.userContextCancel()
 	}
+
+	bw.isWorkerStarted = false
 }
