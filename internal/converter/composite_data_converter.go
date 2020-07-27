@@ -151,12 +151,3 @@ func encoding(payload *commonpb.Payload) (string, error) {
 
 	return "", ErrEncodingIsNotSet
 }
-
-func newPayload(data []byte, c PayloadConverter) *commonpb.Payload {
-	return &commonpb.Payload{
-		Metadata: map[string][]byte{
-			metadataEncoding: []byte(c.Encoding()),
-		},
-		Data: data,
-	}
-}

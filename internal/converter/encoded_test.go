@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/sdk/internal"
 )
 
 func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
@@ -128,22 +129,22 @@ func TestToStrings(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-// func TestDecodeArg(t *testing.T) {
-// 	t.Parallel()
-// 	dc := getDefaultDataConverter()
-//
-// 	b, err := internal.encodeArg(dc, internal.testErrorDetails3)
-// 	require.NoError(t, err)
-// 	var r internal.testStruct
-// 	err = internal.decodeArg(dc, b, &r)
-// 	require.NoError(t, err)
-// 	require.Equal(t, internal.testErrorDetails3, r)
-//
-// 	// test mismatch of multi arguments
-// 	b, err = internal.encodeArgs(dc, []interface{}{internal.testErrorDetails1, internal.testErrorDetails2})
-// 	require.NoError(t, err)
-// 	require.Error(t, internal.decodeArg(dc, b, &r))
-// }
+func TestDecodeArg(t *testing.T) {
+	t.Parallel()
+	dc := getDefaultDataConverter()
+
+	b, err := internal.encodeArg(dc, internal.testErrorDetails3)
+	require.NoError(t, err)
+	var r internal.testStruct
+	err = internal.decodeArg(dc, b, &r)
+	require.NoError(t, err)
+	require.Equal(t, internal.testErrorDetails3, r)
+
+	// test mismatch of multi arguments
+	b, err = internal.encodeArgs(dc, []interface{}{internal.testErrorDetails1, internal.testErrorDetails2})
+	require.NoError(t, err)
+	require.Error(t, internal.decodeArg(dc, b, &r))
+}
 
 func TestProtoJsonPayloadConverter(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
@@ -185,22 +186,22 @@ func TestProtoPayloadConverter(t *testing.T) {
 	assert.Equal(t, "CgNxd2U", s)
 }
 
-// func TestJsonPayloadConverter(t *testing.T) {
-// 	pc := NewJSONPayloadConverter()
-//
-// 	wt := internal.WorkflowType{Name: "qwe"}
-// 	payload, err := pc.ToPayload(wt)
-// 	require.NoError(t, err)
-// 	wt2 := internal.WorkflowType{}
-// 	err = pc.FromPayload(payload, &wt2)
-// 	require.NoError(t, err)
-// 	assert.Equal(t, "qwe", wt2.Name)
-//
-// 	var wt3 *internal.WorkflowType
-// 	err = pc.FromPayload(payload, &wt3)
-// 	require.NoError(t, err)
-// 	assert.Equal(t, "qwe", wt3.Name)
-//
-// 	s := pc.ToString(payload)
-// 	assert.Equal(t, "{Name:qwe}", s)
-// }
+func TestJsonPayloadConverter(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	wt := internal.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := internal.WorkflowType{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *internal.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "{Name:qwe}", s)
+}
