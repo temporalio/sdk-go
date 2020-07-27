@@ -35,6 +35,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 
 	"go.temporal.io/sdk/internal/common/util"
+	"go.temporal.io/sdk/internal/converter"
 )
 
 type (
@@ -829,7 +830,7 @@ func (h *commandsHelper) getActivityID(event *historypb.HistoryEvent) string {
 	return activityID
 }
 
-func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc DataConverter) commandStateMachine {
+func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
 	changeIDPayload, err := dc.ToPayloads(changeID)
@@ -868,7 +869,7 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
 	h.versionMarkerLookup[eventID] = changeID
 }
 
-func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc DataConverter) commandStateMachine {
+func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
@@ -899,7 +900,7 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	return command
 }
 
-func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc DataConverter) commandStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 
 	mutableSideEffectIDPayload, err := dc.ToPayloads(mutableSideEffectID)

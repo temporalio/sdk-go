@@ -30,8 +30,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -41,6 +41,7 @@ import (
 
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -90,8 +91,8 @@ type (
 		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) Value
-		GetDataConverter() DataConverter
+		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.Value
+		GetDataConverter() converter.DataConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
@@ -282,7 +283,11 @@ func (bw *baseWorker) pollTask() {
 		if err != nil {
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
-				_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+				if p, err := os.FindProcess(os.Getpid()); err != nil {
+					bw.logger.Error("Unable to find current process.", "pid", os.Getpid(), tagError, err)
+				} else {
+					_ = p.Signal(os.Interrupt)
+				}
 				return
 			}
 			bw.retrier.Failed()

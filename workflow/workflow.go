@@ -28,7 +28,7 @@ package workflow
 import (
 	"github.com/uber-go/tally"
 
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/log"
 )
@@ -240,7 +240,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 //  } else {
 //         ....
 //  }
-func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
+func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
 	return internal.SideEffect(ctx, f)
 }
 
@@ -259,7 +259,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) encoded.Value {
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) encoded.Value {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
 	return internal.MutableSideEffect(ctx, id, f, equals)
 }
 

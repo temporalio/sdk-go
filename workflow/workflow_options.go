@@ -27,7 +27,7 @@ package workflow
 import (
 	"time"
 
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 )
 
@@ -66,6 +66,6 @@ func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 }
 
 // WithDataConverter adds DataConverter to the context.
-func WithDataConverter(ctx Context, dc encoded.DataConverter) Context {
+func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return internal.WithDataConverter(ctx, dc)
 }

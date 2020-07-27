@@ -22,49 +22,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package serializer
+package converter
 
 import (
-	"bytes"
-
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
+	commonpb "go.temporal.io/api/common/v1"
 )
 
-type (
-	// JSONPBEncoder is JSON encoder/decoder for protobuf structs and slices of protobuf structs.
-	// This is an wrapper on top of jsonpb.Marshaler which supports not only single object serialization
-	// but also slices of concrete objects.
-	JSONPBEncoder struct {
-		marshaler   jsonpb.Marshaler
-		unmarshaler jsonpb.Unmarshaler
-	}
-)
+// PayloadConverter is an interface to convert a single payload.
+type PayloadConverter interface {
+	// ToPayload converts single value to payload. It should return nil if the PayloadConveter can not convert passed value (i.e. type is unknown).
+	ToPayload(value interface{}) (*commonpb.Payload, error)
+	// FromPayload converts single value from payload. valuePtr should be a reference to the variable of the type that is corresponding for payload encoding.
+	// Otherwise it should return error.
+	FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
+	// ToString converts payload object into human readable string.
+	ToString(*commonpb.Payload) string
 
-// NewJSONPBEncoder creates a new JSONPBEncoder.
-func NewJSONPBEncoder() *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{},
-		unmarshaler: jsonpb.Unmarshaler{},
-	}
+	// Encoding returns encoding supported by PayloadConverter.
+	Encoding() string
 }
 
-// NewJSONPBIndentEncoder creates a new JSONPBEncoder with indent.
-func NewJSONPBIndentEncoder(indent string) *JSONPBEncoder {
-	return &JSONPBEncoder{
-		marshaler:   jsonpb.Marshaler{Indent: indent},
-		unmarshaler: jsonpb.Unmarshaler{},
+func newPayload(data []byte, c PayloadConverter) *commonpb.Payload {
+	return &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding: []byte(c.Encoding()),
+		},
+		Data: data,
 	}
-}
-
-// Encode protobuf struct to bytes.
-func (e *JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
-	var buf bytes.Buffer
-	err := e.marshaler.Marshal(&buf, pb)
-	return buf.Bytes(), err
-}
-
-// Decode bytes to protobuf struct.
-func (e *JSONPBEncoder) Decode(data []byte, pb proto.Message) error {
-	return e.unmarshaler.Unmarshal(bytes.NewReader(data), pb)
 }

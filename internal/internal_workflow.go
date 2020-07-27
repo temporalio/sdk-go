@@ -41,6 +41,7 @@ import (
 	"go.uber.org/atomic"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 )
 
 const (
@@ -114,14 +115,14 @@ type (
 	}
 
 	channelImpl struct {
-		name            string             // human readable channel name
-		size            int                // Channel buffer size. 0 for non buffered.
-		buffer          []interface{}      // buffered messages
-		blockedSends    []*sendCallback    // puts waiting when buffer is full.
-		blockedReceives []*receiveCallback // receives waiting when no messages are available.
-		closed          bool               // true if channel is closed.
-		recValue        *interface{}       // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
-		dataConverter   DataConverter      // for decode data
+		name            string                  // human readable channel name
+		size            int                     // Channel buffer size. 0 for non buffered.
+		buffer          []interface{}           // buffered messages
+		blockedSends    []*sendCallback         // puts waiting when buffer is full.
+		blockedReceives []*receiveCallback      // receives waiting when no messages are available.
+		closed          bool                    // true if channel is closed.
+		recValue        *interface{}            // Used only while receiving value, this is used as pre-fetch buffer value from the channel.
+		dataConverter   converter.DataConverter // for decode data
 		env             WorkflowEnvironment
 	}
 
@@ -182,7 +183,7 @@ type (
 		WorkflowID                      string
 		WaitForCancellation             bool
 		WorkflowIDReusePolicy           enumspb.WorkflowIdReusePolicy
-		DataConverter                   DataConverter
+		DataConverter                   converter.DataConverter
 		RetryPolicy                     *commonpb.RetryPolicy
 		CronSchedule                    string
 		ContextPropagators              []ContextPropagator
@@ -238,7 +239,7 @@ type (
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 	}
 )
 
@@ -305,7 +306,7 @@ func getWorkflowOutboundCallsInterceptor(ctx Context) WorkflowOutboundCallsInter
 	return wc.(WorkflowOutboundCallsInterceptor)
 }
 
-func (f *futureImpl) Get(ctx Context, value interface{}) error {
+func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 	more := f.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -313,17 +314,17 @@ func (f *futureImpl) Get(ctx Context, value interface{}) error {
 	if !f.ready {
 		panic("not ready")
 	}
-	if f.err != nil || f.value == nil || value == nil {
+	if f.err != nil || f.value == nil || valuePtr == nil {
 		return f.err
 	}
-	rf := reflect.ValueOf(value)
+	rf := reflect.ValueOf(valuePtr)
 	if rf.Type().Kind() != reflect.Ptr {
-		return errors.New("value parameter is not a pointer")
+		return errors.New("valuePtr parameter is not a pointer")
 	}
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
-		if _, ok2 := value.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, value); err != nil {
+		if _, ok2 := valuePtr.(**commonpb.Payloads); !ok2 {
+			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
 				return err
 			}
 			return f.err
@@ -1152,7 +1153,7 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 	return &syncWorkflowDefinition{workflow: workflow}
 }
 
-func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
+func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter converter.DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -1172,7 +1173,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	}
 
 	if dataConverter == nil {
-		dataConverter = getDefaultDataConverter()
+		dataConverter = converter.DefaultDataConverter
 	}
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1199,15 +1200,15 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
 	if newOptions.DataConverter == nil {
-		newOptions.DataConverter = getDefaultDataConverter()
+		newOptions.DataConverter = converter.DefaultDataConverter
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) DataConverter {
+func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.DataConverter == nil {
-		return getDefaultDataConverter()
+		return converter.DefaultDataConverter
 	}
 	return options.DataConverter
 }
@@ -1257,7 +1258,7 @@ func (w *WorkflowOptions) getUnhandledSignals() []string {
 	return unhandledSignals
 }
 
-func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
+func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 	more := d.futureImpl.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -1265,15 +1266,15 @@ func (d *decodeFutureImpl) Get(ctx Context, value interface{}) error {
 	if !d.futureImpl.ready {
 		panic("not ready")
 	}
-	if d.futureImpl.err != nil || d.futureImpl.value == nil || value == nil {
+	if d.futureImpl.err != nil || d.futureImpl.value == nil || valuePtr == nil {
 		return d.futureImpl.err
 	}
-	rf := reflect.ValueOf(value)
+	rf := reflect.ValueOf(valuePtr)
 	if rf.Type().Kind() != reflect.Ptr {
-		return errors.New("value parameter is not a pointer")
+		return errors.New("valuePtr parameter is not a pointer")
 	}
 	dataConverter := getDataConverterFromWorkflowContext(ctx)
-	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), value)
+	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
 		return err
 	}

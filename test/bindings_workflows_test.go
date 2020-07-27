@@ -30,7 +30,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	bindings "go.temporal.io/sdk/internalbindings"
 	"go.temporal.io/sdk/workflow"
 )
@@ -46,7 +46,7 @@ type EmptyWorkflowDefinition struct {
 }
 
 func (wd *EmptyWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
-	payload, err := encoded.GetDefaultDataConverter().ToPayloads("EmptyResult")
+	payload, err := converter.GetDefaultDataConverter().ToPayloads("EmptyResult")
 	env.Complete(payload, err)
 }
 
@@ -76,11 +76,11 @@ type SingleActivityWorkflowDefinition struct {
 func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	var signalInput string
 	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads) {
-		_ = encoded.GetDefaultDataConverter().FromPayloads(input, &signalInput)
+		_ = converter.GetDefaultDataConverter().FromPayloads(input, &signalInput)
 	})
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
-			input, _ := encoded.GetDefaultDataConverter().ToPayloads("World")
+			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
 			parameters := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
 					TaskQueueName:              env.WorkflowInfo().TaskQueueName,
@@ -101,9 +101,9 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 				}
 				env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
 					var childResult string
-					_ = encoded.GetDefaultDataConverter().FromPayloads(r, &childResult)
+					_ = converter.GetDefaultDataConverter().FromPayloads(r, &childResult)
 					result := childResult + signalInput
-					encodedResult, _ := encoded.GetDefaultDataConverter().ToPayloads(result)
+					encodedResult, _ := converter.GetDefaultDataConverter().ToPayloads(result)
 					env.Complete(encodedResult, err)
 				}), func(r bindings.WorkflowExecution, e error) {})
 			}))

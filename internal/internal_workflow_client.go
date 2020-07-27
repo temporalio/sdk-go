@@ -47,6 +47,7 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -72,7 +73,7 @@ type (
 		logger             log.Logger
 		metricsScope       *metrics.TaggedScope
 		identity           string
-		dataConverter      DataConverter
+		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -115,7 +116,7 @@ type (
 		firstRunID    string
 		currentRunID  string
 		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 		registry      *registry
 	}
 
@@ -834,7 +835,7 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error) {
+func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error) {
 	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -877,7 +878,7 @@ type QueryWorkflowWithOptionsRequest struct {
 type QueryWorkflowWithOptionsResponse struct {
 	// QueryResult contains the result of executing the query.
 	// This will only be set if the query was completed successfully and not rejected.
-	QueryResult Value
+	QueryResult converter.Value
 
 	// QueryRejected contains information about the query rejection.
 	QueryRejected *querypb.QueryRejected
@@ -1162,7 +1163,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	return err
 }
 
-func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.Memo, error) {
+func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -1170,7 +1171,7 @@ func getWorkflowMemo(input map[string]interface{}, dc DataConverter) (*commonpb.
 	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
 		// TODO (shtin): use dc here???
-		memoBytes, err := DefaultDataConverter.ToPayload(v)
+		memoBytes, err := converter.DefaultDataConverter.ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1186,7 +1187,7 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 
 	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := DefaultDataConverter.ToPayload(v)
+		attrBytes, err := converter.DefaultDataConverter.ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}
