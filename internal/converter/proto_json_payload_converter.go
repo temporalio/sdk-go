@@ -81,6 +81,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		protoType := value.Type().Elem()                         // i.e. commonpb.WorkflowType
 		newProtoValue := reflect.New(protoType)                  // is of type i.e. *commonpb.WorkflowType
 		protoMessage = newProtoValue.Interface().(proto.Message) // type assertion will always succeed
+		value.Set(newProtoValue)                                 // Set newly created value back to passed valuePtr
 	}
 
 	err := c.unmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), protoMessage)
@@ -88,7 +89,6 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
 	}
 
-	value.Set(reflect.ValueOf(protoMessage))
 	return nil
 }
 
