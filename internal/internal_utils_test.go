@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	"go.temporal.io/sdk/internal/converter"
 )
 
 func TestChannelBuilderOptions(t *testing.T) {
@@ -53,7 +54,7 @@ func TestNewValues(t *testing.T) {
 		Age:  heartbeatDetail2,
 	}
 	details = append(details, heartbeatDetail, heartbeatDetail2, heartbeatDetail3)
-	data, err := encodeArgs(getDefaultDataConverter(), details)
+	data, err := encodeArgs(converter.DefaultDataConverter, details)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +70,7 @@ func TestNewValues(t *testing.T) {
 func TestNewValue(t *testing.T) {
 	t.Parallel()
 	heartbeatDetail := "status-report-to-workflow"
-	data, err := encodeArg(getDefaultDataConverter(), heartbeatDetail)
+	data, err := encodeArg(converter.DefaultDataConverter, heartbeatDetail)
 	if err != nil {
 		panic(err)
 	}
@@ -80,7 +81,7 @@ func TestNewValue(t *testing.T) {
 
 func TestConvertFailureToError_ApplicationError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := converter.DefaultDataConverter
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
@@ -100,7 +101,7 @@ func TestConvertFailureToError_ApplicationError(t *testing.T) {
 
 func TestConvertFailureToError_CancelError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := converter.DefaultDataConverter
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
@@ -120,7 +121,7 @@ func TestConvertFailureToError_CancelError(t *testing.T) {
 
 func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := converter.DefaultDataConverter
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
@@ -142,7 +143,7 @@ func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 
 func TestConvertFailureToError_TimeoutError(t *testing.T) {
 	t.Parallel()
-	dc := getDefaultDataConverter()
+	dc := converter.DefaultDataConverter
 	details, err := dc.ToPayloads(testErrorDetails1)
 	require.NoError(t, err)
 

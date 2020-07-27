@@ -35,7 +35,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -125,7 +125,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.Header
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := encoded.GetDefaultDataConverter().ToPayload(value)
+		encodedValue, err := converter.GetDefaultDataConverter().ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer wo
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
 		}
-		encodedValue, err := encoded.GetDefaultDataConverter().ToPayload(value)
+		encodedValue, err := converter.GetDefaultDataConverter().ToPayload(value)
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.Heade
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := encoded.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}
@@ -173,7 +173,7 @@ func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader wor
 	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
 		if _, ok := s.keys[key]; ok {
 			var decodedValue string
-			err := encoded.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
 			if err != nil {
 				return err
 			}

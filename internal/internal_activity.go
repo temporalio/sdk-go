@@ -37,6 +37,7 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -84,7 +85,7 @@ type (
 		ExecuteActivityOptions
 		ActivityType  ActivityType
 		Input         *commonpb.Payloads
-		DataConverter DataConverter
+		DataConverter converter.DataConverter
 		Header        *commonpb.Header
 	}
 
@@ -95,7 +96,7 @@ type (
 		ActivityType  string      // local activity type
 		InputArgs     []interface{}
 		WorkflowInfo  *WorkflowInfo
-		DataConverter DataConverter
+		DataConverter converter.DataConverter
 		Attempt       int32
 		ScheduledTime time.Time
 		Header        *commonpb.Header
@@ -135,7 +136,7 @@ type (
 		scheduledTimestamp time.Time
 		startedTimestamp   time.Time
 		taskQueue          string
-		dataConverter      DataConverter
+		dataConverter      converter.DataConverter
 		attempt            int32 // starts from 1.
 		heartbeatDetails   *commonpb.Payloads
 		workflowType       *WorkflowType
@@ -275,7 +276,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter DataConverter) (*commonpb.Payloads, error) {
+func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter converter.DataConverter) (*commonpb.Payloads, error) {
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
@@ -316,7 +317,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func serializeResults(f interface{}, results []interface{}, dataConverter DataConverter) (result *commonpb.Payloads, err error) {
+func serializeResults(f interface{}, results []interface{}, dataConverter converter.DataConverter) (result *commonpb.Payloads, err error) {
 	// results contain all results including error
 	resultSize := len(results)
 

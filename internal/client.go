@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -283,7 +284,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (Value, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -368,7 +369,7 @@ type (
 
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
 		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
-		DataConverter DataConverter
+		DataConverter converter.DataConverter
 
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
 		// default: no tracer - opentracing.NoopTracer
@@ -560,7 +561,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.DataConverter == nil {
-		options.DataConverter = getDefaultDataConverter()
+		options.DataConverter = converter.DefaultDataConverter
 	}
 
 	if options.Tracer != nil {
@@ -619,7 +620,7 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data *commonpb.Payloads) Value {
+func NewValue(data *commonpb.Payloads) converter.Value {
 	return newEncodedValue(data, nil)
 }
 
@@ -630,6 +631,6 @@ func NewValue(data *commonpb.Payloads) Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data *commonpb.Payloads) Values {
+func NewValues(data *commonpb.Payloads) converter.Values {
 	return newEncodedValues(data, nil)
 }

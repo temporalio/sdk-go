@@ -35,7 +35,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 )
 
@@ -313,7 +313,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (encoded.Value, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -399,7 +399,7 @@ var _ internal.NamespaceClient = NamespaceClient(nil)
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data *commonpb.Payloads) encoded.Value {
+func NewValue(data *commonpb.Payloads) converter.Value {
 	return internal.NewValue(data)
 }
 
@@ -410,6 +410,6 @@ func NewValue(data *commonpb.Payloads) encoded.Value {
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data *commonpb.Payloads) encoded.Values {
+func NewValues(data *commonpb.Payloads) converter.Values {
 	return internal.NewValues(data)
 }

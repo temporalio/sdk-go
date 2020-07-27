@@ -32,6 +32,8 @@ import (
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
+
+	"go.temporal.io/sdk/internal/converter"
 )
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
@@ -500,7 +502,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newCommandsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker(1, nil, DefaultDataConverter)
+	d := h.recordSideEffectMarker(1, nil, converter.DefaultDataConverter)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// send commands

@@ -22,18 +22,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package mocks
+package converter
 
-import (
-	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/converter"
-)
+type (
+	// Value is used to encapsulate/extract encoded value from workflow/activity.
+	Value interface {
+		// HasValue return whether there is value encoded.
+		HasValue() bool
+		// Get extract the encoded value into strong typed value pointer.
+		Get(valuePtr interface{}) error
+	}
 
-// make sure mocks are in sync with interfaces
-var (
-	_ client.Client               = (*Client)(nil)
-	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
-	_ client.NamespaceClient      = (*NamespaceClient)(nil)
-	_ converter.Value             = (*Value)(nil)
-	_ client.WorkflowRun          = (*WorkflowRun)(nil)
+	// Values is used to encapsulate/extract encoded one or more values from workflow/activity.
+	Values interface {
+		// HasValues return whether there are values encoded.
+		HasValues() bool
+		// Get extract the encoded values into strong typed value pointers.
+		Get(valuePtr ...interface{}) error
+	}
 )
