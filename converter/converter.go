@@ -23,7 +23,7 @@
 // THE SOFTWARE.
 
 // Package encoded contains wrappers that are used for binary payloads deserialization.
-package encoded
+package converter
 
 import (
 	"go.temporal.io/sdk/internal/converter"
