@@ -694,22 +694,23 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		if e == nil {
 			childWorkflowExecution = &r
 		}
+
+		if cancellable {
+			cancellationCallback.fn = func(v interface{}, more bool) bool {
+				if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
+					// child workflow started, and ctx cancelled
+					getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, childWorkflowExecution.ID)
+				}
+				return false
+			}
+			_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+			if ok || !more {
+				cancellationCallback.fn(nil, more)
+			}
+		}
+
 		executionSettable.Set(r, e)
 	})
-
-	if cancellable {
-		cancellationCallback.fn = func(v interface{}, more bool) bool {
-			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
-				// child workflow started, and ctx cancelled
-				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, childWorkflowExecution.ID)
-			}
-			return false
-		}
-		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
-		if ok || !more {
-			cancellationCallback.fn(nil, more)
-		}
-	}
 
 	return result
 }
