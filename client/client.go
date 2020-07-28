@@ -34,7 +34,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -341,10 +340,6 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
-
-		// CheckHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-		// Success response is healthpb.HealthCheckResponse_SERVING (1) and nil error.
-		CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error)
 
 		// Close client and clean up underlying resources.
 		Close()

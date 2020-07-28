@@ -320,7 +320,7 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 		Identity: "test-worker-identity",
 	}
 
-	client := NewServiceClient(s.service, nil, nil, clientOptions)
+	client := NewServiceClient(s.service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 	worker.RegisterWorkflowWithOptions(
 		longWorkflowTaskWorkflowFn,
@@ -450,7 +450,7 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		Identity: "test-worker-identity",
 	}
 
-	client := NewServiceClient(s.service, nil, nil, clientOptions)
+	client := NewServiceClient(s.service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 	worker.RegisterWorkflowWithOptions(
 		longWorkflowTaskWorkflowFn,

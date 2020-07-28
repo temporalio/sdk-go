@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -53,6 +54,9 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
+
+	healthCheckServiceName         = "temporal.api.workflowservice.v1.WorkflowService"
+	healthCheckTimeout             = 1 * time.Second
 )
 
 type (
@@ -311,10 +315,6 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
-		// CheckHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-		// Success response is healthpb.HealthCheckResponse_SERVING (1) and nil error.
-		CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error)
-
 		// Close client and clean up underlying resources.
 		Close()
 	}
@@ -537,12 +537,17 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	connection, err := dial(newDialParameters(&options))
-
 	if err != nil {
 		return nil, err
 	}
 
-	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), healthpb.NewHealthClient(connection), connection, options), nil
+	if !options.ConnectionOptions.DisableHealthCheck{
+		if err = checkHealth(connection); err != nil{
+			return nil, err
+		}
+	}
+
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -555,7 +560,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 }
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
-func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, healthCheckService healthpb.HealthClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
 	// Namespace can be empty in unit tests.
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
@@ -577,7 +582,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
-		healthCheckService: healthCheckService,
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
 		registry:           newRegistry(),
@@ -601,6 +605,12 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	connection, err := dial(newDialParameters(&options))
 	if err != nil {
 		return nil, err
+	}
+
+	if !options.ConnectionOptions.DisableHealthCheck{
+		if err = checkHealth(connection); err != nil{
+			return nil, err
+		}
 	}
 
 	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
@@ -639,4 +649,26 @@ func NewValue(data *commonpb.Payloads) converter.Value {
 //   NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.Values {
 	return newEncodedValues(data, nil)
+}
+
+// checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+func checkHealth(connection grpc.ClientConnInterface) error {
+	healthClient := healthpb.NewHealthClient(connection)
+
+	request := &healthpb.HealthCheckRequest{
+		Service: healthCheckServiceName,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer cancel()
+	resp, err := healthClient.Check(ctx, request)
+	if err != nil {
+		return fmt.Errorf("health check error: %w", err)
+	}
+
+	if resp.Status != healthpb.HealthCheckResponse_SERVING{
+		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+	}
+
+	return nil
 }

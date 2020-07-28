@@ -49,8 +49,6 @@ import (
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
-
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -59,8 +57,6 @@ var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
 	defaultGetHistoryTimeoutInSecs = 65
-	healthCheckServiceName         = "temporal.api.workflowservice.v1.WorkflowService"
-	healthCheckTimeout             = 1 * time.Second
 )
 
 var (
@@ -71,7 +67,6 @@ type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
 		workflowService    workflowservice.WorkflowServiceClient
-		healthCheckService healthpb.HealthClient
 		connectionCloser   io.Closer
 		namespace          string
 		registry           *registry
@@ -970,23 +965,6 @@ func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue strin
 	}
 
 	return resp, nil
-}
-
-// CheckHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-// Success response is healthpb.HealthCheckResponse_SERVING (1) and nil error.
-func (wc *WorkflowClient) CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error) {
-	request := &healthpb.HealthCheckRequest{
-		Service: healthCheckServiceName,
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
-	defer cancel()
-	resp, err := wc.healthCheckService.Check(ctx, request)
-	if err != nil {
-		return healthpb.HealthCheckResponse_UNKNOWN, err
-	}
-
-	return resp.Status, nil
 }
 
 // Close client and clean up underlying resources.

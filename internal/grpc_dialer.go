@@ -40,7 +40,8 @@ import (
 type (
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
 	ConnectionOptions struct {
-		TLS *tls.Config
+		TLS                *tls.Config
+		DisableHealthCheck bool
 	}
 
 	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
