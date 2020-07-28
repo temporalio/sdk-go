@@ -32,7 +32,7 @@ import (
 
 	"go.temporal.io/api/workflowservice/v1"
 
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 // ** This is for internal stress testing framework **

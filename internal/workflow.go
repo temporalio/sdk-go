@@ -38,7 +38,7 @@ import (
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 var (

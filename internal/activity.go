@@ -34,7 +34,8 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 type (
@@ -260,7 +261,7 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = log.With(logger,
+	logger = ilog.With(logger,
 		tagActivityID, task.ActivityId,
 		tagActivityType, task.ActivityType.Name,
 		tagWorkflowType, task.WorkflowType.Name,

@@ -35,7 +35,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -62,7 +62,7 @@ func (s *replayTestSuite) TearDownTest() {
 func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	s.T().Skip("Remove this Skip to regenerate the history.")
 	c, _ := client.NewClient(client.Options{
-		Logger: log.NewDefaultLogger(),
+		Logger: ilog.NewDefaultLogger(),
 	})
 	defer c.Close()
 
@@ -105,7 +105,7 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 		replayer.RegisterWorkflow(Workflow1)
 		replayer.RegisterWorkflow(Workflow2)
 
-		err = replayer.ReplayWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), testFile)
+		err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), testFile)
 		require.NoError(s.T(), err, "file: %s", testFile)
 	}
 }
@@ -114,7 +114,7 @@ func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(Workflow1)
 
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), "bad-history.json")
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-history.json")
 	require.Error(s.T(), err)
 	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow failed with failure"))
 }

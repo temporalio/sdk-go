@@ -40,7 +40,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 const (
@@ -185,7 +185,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 4,
 		MaxConcurrentWorkflowTaskQueuePollers: 4,
-		Logger:                                log.NewDefaultLogger(),
+		Logger:                                ilog.NewDefaultLogger(),
 		Tracer:                                opentracing.NoopTracer{},
 	}
 
@@ -216,7 +216,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 10,
 		MaxConcurrentWorkflowTaskQueuePollers: 10,
-		Logger:                                log.NewDefaultLogger(),
+		Logger:                                ilog.NewDefaultLogger(),
 		Tracer:                                opentracing.NoopTracer{},
 	}
 
