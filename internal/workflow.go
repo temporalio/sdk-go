@@ -690,6 +690,9 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		}
 	}, func(r WorkflowExecution, e error) {
 		if e == nil {
+			// We must wait for Workflow initiation to finish before registering the cancellation handler.
+			// Otherwise, we risk firing the cancel handler and then having the workflow "initiate" afterwards,
+			// which would result in an uncancelled workflow.
 			if cancellable {
 				cancellationCallback.fn = func(v interface{}, _ bool) bool {
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
