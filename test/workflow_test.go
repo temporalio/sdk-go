@@ -316,7 +316,7 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyRequestCancel(ctx w
 		WorkflowID:               workflow.GetInfo(ctx).WorkflowExecution.ID + "-child",
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
-	ft := workflow.ExecuteChildWorkflow(ctx, w.sleep, 10*time.Second)
+	ft := workflow.ExecuteChildWorkflow(ctx, w.timer, 10*time.Second)
 	return ft.Get(ctx, nil)
 }
 
@@ -600,6 +600,10 @@ func (w *Workflows) sleep(ctx workflow.Context, d time.Duration) error {
 	return workflow.ExecuteActivity(ctx, "Sleep", d).Get(ctx, nil)
 }
 
+func (w *Workflows) timer(ctx workflow.Context, d time.Duration) error {
+	return workflow.NewTimer(ctx, d).Get(ctx, nil)
+}
+
 func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	info := workflow.GetInfo(ctx)
 	namespace := info.Namespace
@@ -706,6 +710,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
 	worker.RegisterWorkflow(w.sleep)
+	worker.RegisterWorkflow(w.timer)
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
