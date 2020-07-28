@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"time"
@@ -387,6 +388,12 @@ type (
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
+	}
+
+	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	ConnectionOptions struct {
+		TLS                *tls.Config
+		DisableHealthCheck bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
