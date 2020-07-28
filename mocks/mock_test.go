@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/client"
 )
@@ -90,4 +91,12 @@ func Test_MockClient(t *testing.T) {
 	next, err := historyIter.Next()
 	require.NotNil(t, next)
 	require.NoError(t, err)
+}
+
+func Test_MockHealthCheck(t *testing.T) {
+	mockClient := &Client{}
+	mockClient.On("CheckHealth", mock.Anything).Return(healthpb.HealthCheckResponse_SERVING, nil).Once()
+	code, err := mockClient.CheckHealth(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, healthpb.HealthCheckResponse_SERVING, code)
 }

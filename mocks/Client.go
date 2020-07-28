@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -488,6 +489,29 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	}
 
 	return r0
+}
+
+// TerminateWorkflow provides a mock function with given fields: ctx, workflowID, runID, reason, details
+func (_m *Client) CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error) {
+	ret := _m.Called(ctx)
+
+	var r0 healthpb.HealthCheckResponse_ServingStatus
+	if rf, ok := ret.Get(0).(func(context.Context) healthpb.HealthCheckResponse_ServingStatus); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(healthpb.HealthCheckResponse_ServingStatus)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // Close provides a mock function without given fields

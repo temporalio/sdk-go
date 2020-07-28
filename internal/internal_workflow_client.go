@@ -972,6 +972,8 @@ func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue strin
 	return resp, nil
 }
 
+// CheckHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+// Success response is healthpb.HealthCheckResponse_SERVING (1) and nil error.
 func (wc *WorkflowClient) CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error) {
 	request := &healthpb.HealthCheckRequest{
 		Service: healthCheckServiceName,
