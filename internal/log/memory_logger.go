@@ -27,6 +27,8 @@ package log
 import (
 	"fmt"
 	"strings"
+
+	"go.temporal.io/sdk/log"
 )
 
 // MemoryLogger is Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
@@ -73,7 +75,7 @@ func (l *MemoryLogger) Error(msg string, keyvals ...interface{}) {
 }
 
 // With returns new logger the prepend every log entry with keyvals.
-func (l *MemoryLogger) With(keyvals ...interface{}) Logger {
+func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
 	logger := &MemoryLogger{
 		lines: l.lines,
 	}

@@ -38,7 +38,8 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -527,7 +528,7 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	if options.Logger == nil {
-		options.Logger = log.NewDefaultLogger()
+		options.Logger = ilog.NewDefaultLogger()
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 

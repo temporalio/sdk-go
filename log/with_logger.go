@@ -22,16 +22,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package client
+package log
 
-import (
-	"go.temporal.io/sdk/internal/log"
-)
-
-type (
-	// Logger is an interface that can be passed to ClientOptions.Logger.
-	Logger = log.Logger
-
-	// WithLogger is an interface that prepend every log entry with keyvals.
-	WithLogger = log.WithLogger
-)
+// WithLogger is an interface that prepend every log entry with keyvals.
+type WithLogger interface {
+	With(keyvals ...interface{}) Logger
+}

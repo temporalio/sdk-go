@@ -22,12 +22,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package log
+package temporal
 
-// Logger is an interface that can be passed to ClientOptions.Logger.
-type Logger interface {
-	Debug(msg string, keyvals ...interface{})
-	Info(msg string, keyvals ...interface{})
-	Warn(msg string, keyvals ...interface{})
-	Error(msg string, keyvals ...interface{})
-}
+import "go.temporal.io/sdk/internal"
+
+// RetryPolicy defines the retry policy for activity/workflow.
+type RetryPolicy = internal.RetryPolicy

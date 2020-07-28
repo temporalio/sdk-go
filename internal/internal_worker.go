@@ -60,7 +60,8 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -216,7 +217,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	}
 	if params.Logger == nil {
 		// create default logger if user does not supply one (should happen in tests only).
-		params.Logger = log.NewDefaultLogger()
+		params.Logger = ilog.NewDefaultLogger()
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsScope == nil {
@@ -1041,10 +1042,10 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
 	if logger == nil {
-		logger = log.NewDefaultLogger()
+		logger = ilog.NewDefaultLogger()
 	}
 
-	controller := gomock.NewController(log.NewTestReporter(logger))
+	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
 	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
@@ -1069,10 +1070,10 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 	}
 
 	if loger == nil {
-		loger = log.NewDefaultLogger()
+		loger = ilog.NewDefaultLogger()
 	}
 
-	controller := gomock.NewController(log.NewTestReporter(loger))
+	controller := gomock.NewController(ilog.NewTestReporter(loger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
 	return aw.replayWorkflowHistory(loger, service, ReplayNamespace, history)
@@ -1081,7 +1082,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
 func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution WorkflowExecution) error {
 	if logger == nil {
-		logger = log.NewDefaultLogger()
+		logger = ilog.NewDefaultLogger()
 	}
 
 	sharedExecution := &commonpb.WorkflowExecution{
@@ -1272,7 +1273,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = log.With(workerParams.Logger,
+	workerParams.Logger = ilog.With(workerParams.Logger,
 		tagNamespace, client.namespace,
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,

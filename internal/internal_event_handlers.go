@@ -47,7 +47,8 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -188,8 +189,8 @@ func newWorkflowExecutionEventHandler(
 		contextPropagators:    contextPropagators,
 		tracer:                tracer,
 	}
-	context.logger = log.NewReplayLogger(
-		log.With(logger,
+	context.logger = ilog.NewReplayLogger(
+		ilog.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,

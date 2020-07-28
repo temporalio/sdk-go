@@ -42,7 +42,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -1135,7 +1135,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockWorkflowWait() {
 func (s *WorkflowTestSuiteUnitTest) Test_MockPanic() {
 	// mock panic, verify that the panic won't be swallowed by our panic handler to detect unexpected mock call.
 	oldLogger := s.GetLogger()
-	s.SetLogger(log.NewNopLogger()) // use no-op logger to avoid noisy logging by panic
+	s.SetLogger(ilog.NewNopLogger()) // use no-op logger to avoid noisy logging by panic
 	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).
 		Return("hello_mock_panic", nil).

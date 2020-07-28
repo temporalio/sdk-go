@@ -30,7 +30,7 @@ import (
 	"github.com/uber-go/tally"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 // WorkflowInterceptor is used to create a single link in the interceptor chain
