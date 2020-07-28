@@ -244,16 +244,9 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))
 
-	for {
-		resp, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
-		ts.NoError(err)
-		info := resp.GetWorkflowExecutionInfo()
-		if info.GetCloseTime().GetValue() > 0 {
-			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, info.GetStatus())
-			break
-		}
-		time.Sleep(time.Millisecond * 500)
-	}
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
 }
 
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
