@@ -158,7 +158,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	// so if our worker puts *cacheSize* entries in the cache, it should evict exactly one
 	s.service.EXPECT().ResetStickyTaskQueue(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskQueue).Times(1)
 
-	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
+	client := internal.NewServiceClient(s.service, nil, nil, internal.ClientOptions{})
 
 	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{})
 	// this is an arbitrary workflow we use for this test

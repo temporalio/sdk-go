@@ -35,6 +35,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
@@ -310,6 +311,10 @@ type (
 		//  - EntityNotExistError
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
+		// CheckHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+		// Success response is healthpb.HealthCheckResponse_SERVING (1) and nil error.
+		CheckHealth(ctx context.Context) (healthpb.HealthCheckResponse_ServingStatus, error)
+
 		// Close client and clean up underlying resources.
 		Close()
 	}
@@ -537,7 +542,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), healthpb.NewHealthClient(connection), connection, options), nil
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -550,7 +555,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 }
 
 // NewServiceClient creates workflow client from workflowservice.WorkflowServiceClient. Must be used internally in unit tests only.
-func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
+func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClient, healthCheckService healthpb.HealthClient, connectionCloser io.Closer, options ClientOptions) *WorkflowClient {
 	// Namespace can be empty in unit tests.
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
@@ -572,6 +577,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
+		healthCheckService: healthCheckService,
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
 		registry:           newRegistry(),

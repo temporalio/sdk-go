@@ -1708,7 +1708,7 @@ func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
 }
 
 func (i *temporalInvoker) GetClient(options ClientOptions) Client {
-	return NewServiceClient(i.service, nil, options)
+	return NewServiceClient(i.service, nil, nil, options)
 }
 
 func newServiceInvoker(

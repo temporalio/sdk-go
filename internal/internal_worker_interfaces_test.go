@@ -232,7 +232,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		WorkflowExecutionTimeout: 10 * time.Second,
 		WorkflowTaskTimeout:      10 * time.Second,
 	}
-	workflowClient := NewServiceClient(s.service, nil, ClientOptions{})
+	workflowClient := NewServiceClient(s.service, nil, nil, ClientOptions{})
 	_, err := workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, "WorkflowType")
 	s.NoError(err)
 }

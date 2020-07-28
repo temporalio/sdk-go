@@ -162,8 +162,9 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
 	s.wfClient = &WorkflowClient{
-		workflowService: s.workflowServiceClient,
-		namespace:       DefaultNamespace,
+		workflowService:    s.workflowServiceClient,
+		healthCheckService: nil,
+		namespace:          DefaultNamespace,
 	}
 }
 
@@ -339,7 +340,7 @@ func (s *workflowRunSuite) SetupTest() {
 		MetricsScope: metricsScope,
 		Identity:     identity,
 	}
-	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
+	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, nil, options)
 	s.dataConverter = converter.DefaultDataConverter
 }
 
@@ -970,7 +971,7 @@ func TestWorkflowClientSuite(t *testing.T) {
 func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	s.client = NewServiceClient(s.service, nil, ClientOptions{})
+	s.client = NewServiceClient(s.service, nil, nil, ClientOptions{})
 	s.dataConverter = converter.DefaultDataConverter
 }
 
@@ -1029,7 +1030,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = NewServiceClient(s.service, nil, ClientOptions{
+	s.client = NewServiceClient(s.service, nil, nil, ClientOptions{
 		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
 	})
 	client, ok := s.client.(*WorkflowClient)
@@ -1061,7 +1062,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	dc := converter.NewTestDataConverter()
-	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	s.client = NewServiceClient(s.service, nil, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
