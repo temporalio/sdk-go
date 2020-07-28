@@ -38,7 +38,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
 
@@ -81,9 +81,9 @@ type (
 	}
 )
 
-func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.Values {
+func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValues {
 	if dc == nil {
-		dc = converter.DefaultDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 	return &EncodedValues{values, dc}
 }
@@ -172,14 +172,14 @@ func (t *TestActivityEnvironment) RegisterActivityWithOptions(a interface{}, opt
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
-// Caller should use Value.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (converter.Value, error) {
+// Caller should use EncodedValue.Get() to extract strong typed result value.
+func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (converter.EncodedValue, error) {
 	return t.impl.executeActivity(activityFn, args...)
 }
 
 // ExecuteLocalActivity executes a local activity. The tested activity will be executed synchronously in the calling goroutinue.
-// Caller should use Value.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val converter.Value, err error) {
+// Caller should use EncodedValue.Get() to extract strong typed result value.
+func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val converter.EncodedValue, err error) {
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 
@@ -544,7 +544,7 @@ func (e *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
-	listener func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)) *TestWorkflowEnvironment {
 	e.impl.onActivityStartedListener = listener
 	return e
 }
@@ -552,7 +552,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
 // SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityCompletedListener(
-	listener func(activityInfo *ActivityInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
 	e.impl.onActivityCompletedListener = listener
 	return e
 }
@@ -568,7 +568,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
-	listener func(activityInfo *ActivityInfo, details converter.Values)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, details converter.EncodedValues)) *TestWorkflowEnvironment {
 	e.impl.onActivityHeartbeatListener = listener
 	return e
 }
@@ -576,7 +576,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 // SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
-	listener func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues)) *TestWorkflowEnvironment {
 	e.impl.onChildWorkflowStartedListener = listener
 	return e
 }
@@ -584,7 +584,7 @@ func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 // SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
-	listener func(workflowInfo *WorkflowInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
 	e.impl.onChildWorkflowCompletedListener = listener
 	return e
 }
@@ -627,7 +627,7 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
 // SetOnLocalActivityCompletedListener sets a listener that will be called after local activity is completed.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
-	listener func(activityInfo *ActivityInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
 	e.impl.onLocalActivityCompletedListener = listener
 	return e
 }
@@ -689,7 +689,7 @@ func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName stri
 }
 
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
-func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (converter.Value, error) {
+func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	return e.impl.queryWorkflow(queryType, args...)
 }
 

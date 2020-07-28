@@ -30,6 +30,8 @@ import (
 	"fmt"
 
 	commonpb "go.temporal.io/api/common/v1"
+
+	"go.temporal.io/sdk/converter"
 )
 
 const (
@@ -40,7 +42,7 @@ const (
 type TestDataConverter struct{}
 
 // NewTestDataConverter created new instance of TestDataConverter.
-func NewTestDataConverter() DataConverter {
+func NewTestDataConverter() converter.DataConverter {
 	return &TestDataConverter{}
 }
 
@@ -78,12 +80,12 @@ func (dc *TestDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(value); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+		return nil, fmt.Errorf("%w: %v", converter.ErrUnableToEncode, err)
 	}
 
 	payload := &commonpb.Payload{
 		Metadata: map[string][]byte{
-			metadataEncoding: []byte(metadataEncodingGob),
+			converter.MetadataEncoding: []byte(metadataEncodingGob),
 		},
 		Data: buf.Bytes(),
 	}
@@ -93,20 +95,20 @@ func (dc *TestDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 
 // FromPayload converts single value from payload.
 func (dc *TestDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	enc, ok := payload.GetMetadata()[metadataEncoding]
+	enc, ok := payload.GetMetadata()[converter.MetadataEncoding]
 
 	if !ok {
-		return ErrEncodingIsNotSet
+		return converter.ErrEncodingIsNotSet
 	}
 
 	e := string(enc)
 	if e == metadataEncodingGob {
 		dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
 		if err := dec.Decode(valuePtr); err != nil {
-			return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
+			return fmt.Errorf("%w: %v", converter.ErrUnableToDecode, err)
 		}
 	} else {
-		return fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported)
+		return fmt.Errorf("encoding %q: %w", e, converter.ErrEncodingIsNotSupported)
 	}
 
 	return nil
@@ -124,21 +126,21 @@ func (dc *TestDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 
 // ToString converts payload object into human readable string.
 func (dc *TestDataConverter) ToString(payload *commonpb.Payload) string {
-	enc, ok := payload.GetMetadata()[metadataEncoding]
+	enc, ok := payload.GetMetadata()[converter.MetadataEncoding]
 
 	if !ok {
-		return ErrEncodingIsNotSet.Error()
+		return converter.ErrEncodingIsNotSet.Error()
 	}
 
 	e := string(enc)
 	if e != metadataEncodingGob {
-		return fmt.Errorf("encoding %q: %w", e, ErrEncodingIsNotSupported).Error()
+		return fmt.Errorf("encoding %q: %w", e, converter.ErrEncodingIsNotSupported).Error()
 	}
 
 	var byteSlice []byte
 	dec := gob.NewDecoder(bytes.NewBuffer(payload.GetData()))
 	if err := dec.Decode(&byteSlice); err != nil {
-		return fmt.Errorf("%w: %v", ErrUnableToDecode, err).Error()
+		return fmt.Errorf("%w: %v", converter.ErrUnableToDecode, err).Error()
 	}
 	return string(byteSlice)
 }

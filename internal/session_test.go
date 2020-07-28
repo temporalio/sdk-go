@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 )
 
 type SessionTestSuite struct {
@@ -428,7 +428,7 @@ func (s *SessionTestSuite) TestSessionTaskQueue() {
 	env.RegisterActivity(testSessionActivity)
 
 	var taskQueueUsed []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		taskQueueUsed = append(taskQueueUsed, activityInfo.TaskQueue)
 	})
 	resourceID := "testResourceID"
@@ -483,7 +483,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskQueue() {
 	env.RegisterActivity(testSessionActivity)
 
 	var taskQueueUsed []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		taskQueueUsed = append(taskQueueUsed, activityInfo.TaskQueue)
 	})
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
@@ -553,7 +553,7 @@ func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testSessionActivity)
 	var taskQueueUsed string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		taskQueueUsed = activityInfo.TaskQueue
 	})
 	env.ExecuteWorkflow(workflowFn)

@@ -39,9 +39,9 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"golang.org/x/time/rate"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -92,7 +92,7 @@ type (
 		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.Value
+		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)

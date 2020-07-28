@@ -55,11 +55,11 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
-	"go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -225,7 +225,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = converter.DefaultDataConverter
+		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 }
@@ -830,11 +830,11 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return converter.DefaultDataConverter
+		return converter.GetDefaultDataConverter()
 	}
 	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
 	if info.dataConverter == nil {
-		return converter.DefaultDataConverter
+		return converter.GetDefaultDataConverter()
 	}
 	return info.dataConverter
 }
@@ -1448,7 +1448,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 // setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
-		client.dataConverter = converter.DefaultDataConverter
+		client.dataConverter = converter.GetDefaultDataConverter()
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

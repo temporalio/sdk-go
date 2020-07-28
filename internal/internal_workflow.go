@@ -40,8 +40,8 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.uber.org/atomic"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 )
 
 const (
@@ -1173,7 +1173,7 @@ func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, 
 	}
 
 	if dataConverter == nil {
-		dataConverter = converter.DefaultDataConverter
+		dataConverter = converter.GetDefaultDataConverter()
 	}
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1200,7 +1200,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.queryHandlers = make(map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error))
 	}
 	if newOptions.DataConverter == nil {
-		newOptions.DataConverter = converter.DefaultDataConverter
+		newOptions.DataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
@@ -1208,7 +1208,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.DataConverter == nil {
-		return converter.DefaultDataConverter
+		return converter.GetDefaultDataConverter()
 	}
 	return options.DataConverter
 }

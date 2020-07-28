@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 )
 
 func TestHeaderWriter(t *testing.T) {
@@ -101,7 +101,7 @@ func TestHeaderWriter(t *testing.T) {
 }
 
 func encodeString(t *testing.T, s string) *commonpb.Payload {
-	p, err := converter.DefaultDataConverter.ToPayload(s)
+	p, err := converter.GetDefaultDataConverter().ToPayload(s)
 	assert.NoError(t, err)
 	return p
 }
