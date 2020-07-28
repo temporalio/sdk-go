@@ -79,8 +79,8 @@ type WorkflowOutboundCallsInterceptor interface {
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
-	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value
-	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value
+	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue
+	MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
 	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
 	IsReplaying(ctx Context) bool
@@ -184,12 +184,12 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetSignalChannel(ctx Context, sig
 }
 
 // SideEffect forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
+func (t *WorkflowOutboundCallsInterceptorBase) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	return t.Next.SideEffect(ctx, f)
 }
 
 // MutableSideEffect forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
+func (t *WorkflowOutboundCallsInterceptorBase) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return t.Next.MutableSideEffect(ctx, id, f, equals)
 }
 

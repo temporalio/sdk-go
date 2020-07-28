@@ -157,15 +157,15 @@ type (
 
 		expectedMockCalls map[string]struct{}
 
-		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values)
-		onActivityCompletedListener      func(activityInfo *ActivityInfo, result converter.Value, err error)
+		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)
+		onActivityCompletedListener      func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
 		onActivityCanceledListener       func(activityInfo *ActivityInfo)
 		onLocalActivityStartedListener   func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})
-		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result converter.Value, err error)
+		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
 		onLocalActivityCanceledListener  func(activityInfo *ActivityInfo)
-		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details converter.Values)
-		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values)
-		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result converter.Value, err error)
+		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details converter.EncodedValues)
+		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues)
+		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error)
 		onChildWorkflowCanceledListener  func(workflowInfo *WorkflowInfo)
 		onTimerScheduledListener         func(timerID string, duration time.Duration)
 		onTimerFiredListener             func(timerID string)
@@ -189,7 +189,7 @@ type (
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isTestCompleted bool
-		testResult      converter.Value
+		testResult      converter.EncodedValue
 		testError       error
 		doneChannel     chan struct{}
 		workerOptions   WorkerOptions
@@ -510,7 +510,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
-) (converter.Value, error) {
+) (converter.EncodedValue, error) {
 	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
 	if err != nil {
 		panic(err)
@@ -591,7 +591,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
-) (val converter.Value, err error) {
+) (val converter.EncodedValue, err error) {
 	params := ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
@@ -2129,7 +2129,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) converter.Value {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) converter.EncodedValue {
 	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
 }
 
@@ -2206,7 +2206,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
-func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (converter.Value, error) {
+func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		return nil, err

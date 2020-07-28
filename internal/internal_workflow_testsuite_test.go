@@ -191,7 +191,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnActivityStartedListener() {
 	env.RegisterActivity(testActivityHello)
 
 	var activityCalls []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		var input string
 		s.NoError(args.Get(&input))
 		activityCalls = append(activityCalls, fmt.Sprintf("%s:%s", activityInfo.ActivityType.Name, input))
@@ -354,12 +354,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	env.RegisterActivity(testActivityHeartbeat)
 	activityMap := make(map[string]string) // msg -> activityID
 	var completedActivityID, cancelledActivityID string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		var msg string
 		s.NoError(args.Get(&msg))
 		activityMap[msg] = activityInfo.ActivityID
 	})
-	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.Value, err error) {
+	env.SetOnActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.EncodedValue, err error) {
 		completedActivityID = activityInfo.ActivityID
 	})
 	env.SetOnActivityCanceledListener(func(activityInfo *ActivityInfo) {
@@ -849,10 +849,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Listener() {
 	env.RegisterActivity(testActivityHello)
 
 	var childWorkflowName, childWorkflowResult string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues) {
 		childWorkflowName = workflowInfo.WorkflowType.Name
 	})
-	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result converter.Value, err error) {
+	env.SetOnChildWorkflowCompletedListener(func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error) {
 		s.NoError(err)
 		s.NoError(result.Get(&childWorkflowResult))
 	})
@@ -1574,7 +1574,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "foo"})
 	var called []string
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		called = append(called, activityInfo.ActivityType.Name)
 	})
 
@@ -1606,7 +1606,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 	env.RegisterWorkflow(testWorkflowHello)
 	env.RegisterActivity(testActivityHello)
 	var called []string
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values) {
+	env.SetOnChildWorkflowStartedListener(func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues) {
 		called = append(called, workflowInfo.WorkflowType.Name)
 	})
 
@@ -1787,7 +1787,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 		env.SignalWorkflow("query-signal", "hello-query")
 	}, time.Hour)
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
-	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values) {
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		verifyStateWithQuery(stateWaitActivity)
 	})
 	env.ExecuteWorkflow(workflowFn)
@@ -1881,7 +1881,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		startedCount.Inc()
 	})
 
-	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.Value, err error) {
+	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.EncodedValue, err error) {
 		s.NoError(err)
 		var resultValue string
 		err = result.Get(&resultValue)

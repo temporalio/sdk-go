@@ -251,7 +251,7 @@ func (wc *WorkflowClient) StartWorkflow(
 
 // ExecuteWorkflow starts a workflow execution and returns a WorkflowRun that will allow you to wait until this workflow
 // reaches the end state, such as workflow finished successfully or timeout.
-// The user can use this to start using a functor like below and get the workflow execution result, as Value
+// The user can use this to start using a functor like below and get the workflow execution result, as EncodedValue
 // Either by
 //     ExecuteWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
 //     or
@@ -835,7 +835,7 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - InternalServiceError
 //  - EntityNotExistError
 //  - QueryFailError
-func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error) {
+func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -878,7 +878,7 @@ type QueryWorkflowWithOptionsRequest struct {
 type QueryWorkflowWithOptionsResponse struct {
 	// QueryResult contains the result of executing the query.
 	// This will only be set if the query was completed successfully and not rejected.
-	QueryResult converter.Value
+	QueryResult converter.EncodedValue
 
 	// QueryRejected contains information about the query rejection.
 	QueryRejected *querypb.QueryRejected

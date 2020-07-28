@@ -125,21 +125,21 @@ type (
 		errType      string
 		nonRetryable bool
 		cause        error
-		details      converter.Values
+		details      converter.EncodedValues
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		temporalError
 		timeoutType          enumspb.TimeoutType
-		lastHeartbeatDetails converter.Values
+		lastHeartbeatDetails converter.EncodedValues
 		cause                error
 	}
 
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
 		temporalError
-		details converter.Values
+		details converter.EncodedValues
 	}
 
 	// TerminatedError returned when workflow was terminated.
@@ -586,7 +586,7 @@ func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
-func convertErrDetailsToPayloads(details converter.Values, dc converter.DataConverter) *commonpb.Payloads {
+func convertErrDetailsToPayloads(details converter.EncodedValues, dc converter.DataConverter) *commonpb.Payloads {
 	switch d := details.(type) {
 	case ErrorDetailsValues:
 		data, err := encodeArgs(dc, d)
