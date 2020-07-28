@@ -38,7 +38,7 @@ import (
 
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 type WorkflowUnitTest struct {
@@ -202,7 +202,7 @@ func (s *WorkflowUnitTest) Test_SplitJoinActivityWorkflow() {
 
 func TestWorkflowPanic(t *testing.T) {
 	ts := &WorkflowTestSuite{}
-	ts.SetLogger(log.NewNopLogger()) // this test simulate panic, use nop logger to avoid logging noise
+	ts.SetLogger(ilog.NewNopLogger()) // this test simulate panic, use nop logger to avoid logging noise
 	env := ts.NewTestWorkflowEnvironment()
 	env.RegisterActivity(testAct)
 	env.ExecuteWorkflow(splitJoinActivityWorkflow, true)
@@ -222,7 +222,7 @@ func TestWorkflowPanic(t *testing.T) {
 
 func TestWorkflowReturnsPanic(t *testing.T) {
 	ts := &WorkflowTestSuite{}
-	ts.SetLogger(log.NewNopLogger()) // this test simulate panic, use nop logger to avoid logging noise
+	ts.SetLogger(ilog.NewNopLogger()) // this test simulate panic, use nop logger to avoid logging noise
 	env := ts.NewTestWorkflowEnvironment()
 	env.ExecuteWorkflow(returnPanicWorkflow)
 	require.True(t, env.IsWorkflowCompleted())

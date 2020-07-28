@@ -42,7 +42,7 @@ import (
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 // ActivityTaskHandler never returns response
@@ -100,7 +100,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                log.NewDefaultLogger(),
+		Logger:                                ilog.NewDefaultLogger(),
 		UserContext:                           ctx,
 		UserContextCancel:                     cancel,
 	}
@@ -121,7 +121,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
-		Logger:                                log.NewDefaultLogger(),
+		Logger:                                ilog.NewDefaultLogger(),
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -162,7 +162,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
 		ConcurrentActivityExecutionSize:       2,
-		Logger:                                log.NewDefaultLogger(),
+		Logger:                                ilog.NewDefaultLogger(),
 		UserContext:                           ctx,
 		UserContextCancel:                     cancel,
 		WorkerStopTimeout:                     time.Second * 2,
@@ -195,7 +195,7 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testWorkflowTaskQueue",
 		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                log.NewNopLogger(),
+		Logger:                                ilog.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())

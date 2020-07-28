@@ -44,7 +44,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -84,7 +84,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:           ts.config.ServiceAddr,
 		Namespace:          namespace,
-		Logger:             log.NewDefaultLogger(),
+		Logger:             ilog.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
 	})
 	ts.NoError(err)
@@ -420,7 +420,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err := replayer.ReplayPartialWorkflowHistoryFromJSONFile(log.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json", 12)
+	err := replayer.ReplayPartialWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json", 12)
 	ts.NoError(err)
 }
 
