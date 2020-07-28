@@ -51,7 +51,8 @@ import (
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -265,7 +266,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	env.runningWorkflows[env.workflowInfo.WorkflowExecution.ID] = &testWorkflowHandle{env: env, callback: func(result *commonpb.Payloads, err error) {}}
 
 	if env.logger == nil {
-		env.logger = log.NewDefaultLogger()
+		env.logger = ilog.NewDefaultLogger()
 	}
 	if env.metricsScope == nil {
 		env.metricsScope = metrics.NewTaggedScope(s.scope)
@@ -274,7 +275,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	env.header = s.header
 
 	// setup mock service
-	mockCtrl := gomock.NewController(log.NewTestReporter(env.logger))
+	mockCtrl := gomock.NewController(ilog.NewTestReporter(env.logger))
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) error {

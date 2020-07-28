@@ -53,7 +53,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (

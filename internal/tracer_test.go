@@ -34,7 +34,7 @@ import (
 	"github.com/uber/jaeger-client-go/config"
 	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 func TestTracingContextPropagator(t *testing.T) {
@@ -42,7 +42,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(log.NewNopLogger(), tracer)
+	ctxProp := NewTracingContextPropagator(ilog.NewNopLogger(), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	ctx := context.Background()
@@ -64,7 +64,7 @@ func TestTracingContextPropagator(t *testing.T) {
 
 func TestTracingContextPropagatorNoSpan(t *testing.T) {
 	t.Parallel()
-	ctxProp := NewTracingContextPropagator(log.NewNopLogger(), opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(ilog.NewNopLogger(), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{},
@@ -82,7 +82,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(log.NewNopLogger(), tracer)
+	ctxProp := NewTracingContextPropagator(ilog.NewNopLogger(), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	assert.NotNil(t, span.Context())
@@ -109,7 +109,7 @@ func TestTracingContextPropagatorWorkflowContext(t *testing.T) {
 
 func TestTracingContextPropagatorWorkflowContextNoSpan(t *testing.T) {
 	t.Parallel()
-	ctxProp := NewTracingContextPropagator(log.NewNopLogger(), opentracing.NoopTracer{})
+	ctxProp := NewTracingContextPropagator(ilog.NewNopLogger(), opentracing.NoopTracer{})
 
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{},
@@ -127,7 +127,7 @@ func TestConsistentInjectionExtraction(t *testing.T) {
 	tracer, closer, err := config.Configuration{ServiceName: "test-service"}.NewTracer()
 	require.NoError(t, err)
 	defer func() { _ = closer.Close() }()
-	ctxProp := NewTracingContextPropagator(log.NewNopLogger(), tracer)
+	ctxProp := NewTracingContextPropagator(ilog.NewNopLogger(), tracer)
 
 	span := tracer.StartSpan("test-operation")
 	// base64 encoded string '{}'

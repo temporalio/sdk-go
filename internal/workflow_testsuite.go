@@ -39,7 +39,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 type (
