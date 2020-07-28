@@ -227,6 +227,35 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.True(errors.As(err, &canceledErr))
 }
 
+func (ts *IntegrationTestSuite) TestCascadingCancellation() {
+	workflowID := "test-cascading-cancellation-" + uuid.New()
+	childWorkflowID := workflowID + "-child"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(workflowID), ts.workflows.ChildWorkflowSuccessWithParentClosePolicyRequestCancel)
+	ts.NotNil(run)
+	ts.NoError(err)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, workflowID, ""))
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
+
+	for {
+		resp, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+		ts.NoError(err)
+		info := resp.GetWorkflowExecutionInfo()
+		if info.GetCloseTime().GetValue() > 0 {
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, info.GetStatus())
+			break
+		}
+		time.Sleep(time.Millisecond * 500)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
