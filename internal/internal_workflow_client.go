@@ -260,7 +260,6 @@ func (wc *WorkflowClient) StartWorkflow(
 // subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
-
 	// start the workflow execution
 	var runID string
 	var workflowID string
