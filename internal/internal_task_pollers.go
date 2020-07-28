@@ -48,7 +48,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/converter"
-	tlog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -82,7 +82,7 @@ type (
 		service       workflowservice.WorkflowServiceClient
 		taskHandler   WorkflowTaskHandler
 		metricsScope  tally.Scope
-		logger        tlog.Logger
+		logger        log.Logger
 		dataConverter converter.DataConverter
 
 		stickyUUID                   string
@@ -104,7 +104,7 @@ type (
 		service             workflowservice.WorkflowServiceClient
 		taskHandler         ActivityTaskHandler
 		metricsScope        *metrics.TaggedScope
-		logger              tlog.Logger
+		logger              log.Logger
 		activitiesPerSecond float64
 	}
 
@@ -122,14 +122,14 @@ type (
 		basePoller
 		handler      *localActivityTaskHandler
 		metricsScope tally.Scope
-		logger       tlog.Logger
+		logger       log.Logger
 		laTunnel     *localActivityTunnel
 	}
 
 	localActivityTaskHandler struct {
 		userContext        context.Context
 		metricsScope       *metrics.TaggedScope
-		logger             tlog.Logger
+		logger             log.Logger
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer

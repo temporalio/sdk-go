@@ -47,8 +47,8 @@ import (
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -118,7 +118,7 @@ type (
 		signalHandler   func(name string, input *commonpb.Payloads) // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
 
-		logger                tlog.Logger
+		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
@@ -165,7 +165,7 @@ var (
 func newWorkflowExecutionEventHandler(
 	workflowInfo *WorkflowInfo,
 	completeHandler completionHandler,
-	logger tlog.Logger,
+	logger log.Logger,
 	enableLoggingInReplay bool,
 	scope tally.Scope,
 	registry *registry,
@@ -189,8 +189,8 @@ func newWorkflowExecutionEventHandler(
 		contextPropagators:    contextPropagators,
 		tracer:                tracer,
 	}
-	context.logger = log.NewReplayLogger(
-		log.With(logger,
+	context.logger = ilog.NewReplayLogger(
+		ilog.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,
@@ -395,7 +395,7 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *co
 	wc.queryHandler = handler
 }
 
-func (wc *workflowEnvironmentImpl) GetLogger() tlog.Logger {
+func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
 	return wc.logger
 }
 

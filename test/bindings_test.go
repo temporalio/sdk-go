@@ -37,7 +37,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -68,7 +68,7 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
-		Logger:    log.NewDefaultLogger(),
+		Logger:    ilog.NewDefaultLogger(),
 	})
 	ts.NoError(err)
 	ts.registerNamespace()

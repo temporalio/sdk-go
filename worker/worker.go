@@ -34,7 +34,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/workflow"
 )
 

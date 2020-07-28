@@ -48,7 +48,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/converter"
-	tlog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/log"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -70,7 +70,7 @@ type (
 		connectionCloser   io.Closer
 		namespace          string
 		registry           *registry
-		logger             tlog.Logger
+		logger             log.Logger
 		metricsScope       *metrics.TaggedScope
 		identity           string
 		dataConverter      converter.DataConverter
@@ -83,7 +83,7 @@ type (
 		workflowService  workflowservice.WorkflowServiceClient
 		connectionCloser io.Closer
 		metricsScope     tally.Scope
-		logger           tlog.Logger
+		logger           log.Logger
 		identity         string
 	}
 

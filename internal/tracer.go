@@ -31,7 +31,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	tlog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/log"
 )
 
 type tracingReader struct {
@@ -77,12 +77,12 @@ func (t tracingWriter) Set(key, val string) {
 //		the header and puts it in the Context object. Does not start a new span
 //		as that is started outside when the workflow is actually executed
 type tracingContextPropagator struct {
-	logger tlog.Logger
+	logger log.Logger
 	tracer opentracing.Tracer
 }
 
 // NewTracingContextPropagator returns new tracing context propagator object
-func NewTracingContextPropagator(logger tlog.Logger, tracer opentracing.Tracer) ContextPropagator {
+func NewTracingContextPropagator(logger log.Logger, tracer opentracing.Tracer) ContextPropagator {
 	return &tracingContextPropagator{logger, tracer}
 }
 

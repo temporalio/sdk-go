@@ -38,8 +38,8 @@ import (
 
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -328,7 +328,7 @@ type (
 
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
-		Logger tlog.Logger
+		Logger log.Logger
 
 		// Optional: Metrics to be reported.
 		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
@@ -528,7 +528,7 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	if options.Logger == nil {
-		options.Logger = log.NewDefaultLogger()
+		options.Logger = ilog.NewDefaultLogger()
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 

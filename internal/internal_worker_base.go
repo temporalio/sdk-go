@@ -42,8 +42,8 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -85,7 +85,7 @@ type (
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
-		GetLogger() tlog.Logger
+		GetLogger() log.Logger
 		GetMetricsScope() tally.Scope
 		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
@@ -146,7 +146,7 @@ type (
 		limiterContext       context.Context
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger               tlog.Logger
+		logger               log.Logger
 		metricsScope         tally.Scope
 
 		pollerRequestCh    chan struct{}
@@ -171,14 +171,14 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger tlog.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
 		stopCh:          make(chan struct{}),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          log.With(logger, tagWorkerType, options.workerType),
+		logger:          ilog.With(logger, tagWorkerType, options.workerType),
 		metricsScope:    tagScope(metricsScope, tagWorkerType, options.workerType),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.

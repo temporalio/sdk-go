@@ -53,7 +53,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/converter"
-	tlog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -124,7 +124,7 @@ type (
 		namespace              string
 		metricsScope           *metrics.TaggedScope
 		ppMgr                  pressurePointMgr
-		logger                 tlog.Logger
+		logger                 log.Logger
 		identity               string
 		enableLoggingInReplay  bool
 		disableStickyExecution bool
@@ -144,7 +144,7 @@ type (
 		identity           string
 		service            workflowservice.WorkflowServiceClient
 		metricsScope       *metrics.TaggedScope
-		logger             tlog.Logger
+		logger             log.Logger
 		userContext        context.Context
 		registry           *registry
 		activityProvider   activityProvider

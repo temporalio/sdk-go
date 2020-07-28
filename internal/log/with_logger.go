@@ -25,12 +25,12 @@
 package log
 
 import (
-	tlog "go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/log"
 )
 
 // With returns Logger instance that prepend every log entry with keyvals. If logger implments WithLogger it is used, otherwise every log call will be intercepted.
-func With(logger tlog.Logger, keyvals ...interface{}) tlog.Logger {
-	if wl, ok := logger.(tlog.WithLogger); ok {
+func With(logger log.Logger, keyvals ...interface{}) log.Logger {
+	if wl, ok := logger.(log.WithLogger); ok {
 		return wl.With(keyvals...)
 	}
 
@@ -38,11 +38,11 @@ func With(logger tlog.Logger, keyvals ...interface{}) tlog.Logger {
 }
 
 type withLogger struct {
-	logger  tlog.Logger
+	logger  log.Logger
 	keyvals []interface{}
 }
 
-func newWithLogger(logger tlog.Logger, keyvals ...interface{}) *withLogger {
+func newWithLogger(logger log.Logger, keyvals ...interface{}) *withLogger {
 	return &withLogger{logger: logger, keyvals: keyvals}
 }
 

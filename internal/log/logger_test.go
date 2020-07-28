@@ -28,13 +28,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"go.temporal.io/sdk/log"
 )
 
 func TestMemoryLogger_With(t *testing.T) {
 	logger := NewMemoryLogger()
-	withLogger := log.With(logger, "p1", 1, "p2", "v2")
+	withLogger := With(logger, "p1", 1, "p2", "v2")
 	withLogger.Info("message", "p3", float64(3))
 	logger.Info("message2", "p4", 4)
 
@@ -44,7 +42,7 @@ func TestMemoryLogger_With(t *testing.T) {
 
 func TestWithLogger(t *testing.T) {
 	logger := NewMemoryLogger()
-	withLogger := log.newWithLogger(logger, "p1", 1, "p2", "v2")
+	withLogger := newWithLogger(logger, "p1", 1, "p2", "v2")
 	withLogger.Info("message", "p3", float64(3))
 	logger.Info("message2", "p4", 4)
 

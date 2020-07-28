@@ -34,8 +34,8 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 type (
@@ -172,7 +172,7 @@ func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 }
 
 // GetActivityLogger returns a logger that can be used in activity
-func GetActivityLogger(ctx context.Context) tlog.Logger {
+func GetActivityLogger(ctx context.Context) log.Logger {
 	env := getActivityEnv(ctx)
 	return env.logger
 }
@@ -239,7 +239,7 @@ func WithActivityTask(
 	task *workflowservice.PollActivityTaskQueueResponse,
 	taskQueue string,
 	invoker ServiceInvoker,
-	logger tlog.Logger,
+	logger log.Logger,
 	scope tally.Scope,
 	dataConverter converter.DataConverter,
 	workerStopChannel <-chan struct{},
@@ -261,7 +261,7 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = log.With(logger,
+	logger = ilog.With(logger,
 		tagActivityID, task.ActivityId,
 		tagActivityType, task.ActivityType.Name,
 		tagWorkflowType, task.WorkflowType.Name,

@@ -48,8 +48,8 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -59,7 +59,7 @@ const (
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
-		logger   tlog.Logger
+		logger   log.Logger
 		service  *workflowservicemock.MockWorkflowServiceClient
 		registry *registry
 	}
@@ -126,7 +126,7 @@ func (t *TaskHandlersTestSuite) SetupTest() {
 }
 
 func (t *TaskHandlersTestSuite) SetupSuite() {
-	t.logger = log.NewDefaultLogger()
+	t.logger = ilog.NewDefaultLogger()
 	registerWorkflows(t.registry)
 }
 
@@ -665,7 +665,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -700,7 +700,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -741,7 +741,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -820,7 +820,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		Namespace:              testNamespace,
 		TaskQueue:              taskQueue,
 		Identity:               "test-id-1",
-		Logger:                 log.NewNopLogger(),
+		Logger:                 ilog.NewNopLogger(),
 		DisableStickyExecution: disableSticky,
 	}
 
@@ -863,7 +863,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 		WorkerStopChannel:   stopC,
 	}
@@ -926,7 +926,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -953,7 +953,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -1008,7 +1008,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -1042,7 +1042,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 		Namespace:           testNamespace,
 		TaskQueue:           taskQueue,
 		Identity:            "test-id-1",
-		Logger:              log.NewNopLogger(),
+		Logger:              ilog.NewNopLogger(),
 		WorkflowPanicPolicy: BlockWorkflow,
 	}
 
@@ -1362,7 +1362,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 }
 
 type testActivityDeadline struct {
-	logger tlog.Logger
+	logger log.Logger
 	d      time.Duration
 }
 

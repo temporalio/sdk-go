@@ -30,7 +30,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
-	"go.temporal.io/sdk/internal/log"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 type (

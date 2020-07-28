@@ -51,8 +51,8 @@ import (
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
-	tlog "go.temporal.io/sdk/log"
+	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 func testInternalWorkerRegister(r *registry) {
@@ -163,8 +163,8 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 }
 
-func getLogger() tlog.Logger {
-	return log.NewDefaultLogger()
+func getLogger() log.Logger {
+	return ilog.NewDefaultLogger()
 }
 
 func testReplayWorkflow(ctx Context) error {
@@ -1780,7 +1780,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		dataConverter:      &converter.CompositeDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
-		logger:             log.NewNopLogger(),
+		logger:             ilog.NewNopLogger(),
 	}
 
 	options := WorkerOptions{
