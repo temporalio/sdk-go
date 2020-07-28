@@ -680,8 +680,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		attempt:         1,
 	}
 
-	var childWorkflowExecution *WorkflowExecution
-
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
 	getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
@@ -692,24 +690,26 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		}
 	}, func(r WorkflowExecution, e error) {
 		if e == nil {
-			childWorkflowExecution = &r
+			// We must wait for Workflow initiation to finish before registering the cancellation handler.
+			// Otherwise, we risk firing the cancel handler and then having the workflow "initiate" afterwards,
+			// which would result in an uncancelled workflow.
+			if cancellable {
+				cancellationCallback.fn = func(v interface{}, _ bool) bool {
+					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
+						// child workflow started, and ctx cancelled
+						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
+					}
+					return false
+				}
+				_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+				if ok || !more {
+					cancellationCallback.fn(nil, more)
+				}
+			}
 		}
+
 		executionSettable.Set(r, e)
 	})
-
-	if cancellable {
-		cancellationCallback.fn = func(v interface{}, more bool) bool {
-			if ctx.Err() == ErrCanceled && childWorkflowExecution != nil && !mainFuture.IsReady() {
-				// child workflow started, and ctx cancelled
-				getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, childWorkflowExecution.ID)
-			}
-			return false
-		}
-		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
-		if ok || !more {
-			cancellationCallback.fn(nil, more)
-		}
-	}
 
 	return result
 }
