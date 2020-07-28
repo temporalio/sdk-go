@@ -56,8 +56,8 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName = "temporal.api.workflowservice.v1.WorkflowService"
-	healthCheckTimeout     = 1 * time.Second
+	healthCheckServiceName    = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckTimeout = 5 * time.Second
 )
 
 type (
@@ -93,7 +93,7 @@ type (
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
 
-		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance
+		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
@@ -219,7 +219,7 @@ type (
 		//  - EntityNotExistError
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
-		// ListClosedWorkflow gets open workflow executions based on request filters
+		// ListOpenWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
@@ -394,6 +394,7 @@ type (
 	ConnectionOptions struct {
 		TLS                *tls.Config
 		DisableHealthCheck bool
+		HealthCheckTimeout time.Duration
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -548,10 +549,8 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	if !options.ConnectionOptions.DisableHealthCheck {
-		if err = checkHealth(connection); err != nil {
-			return nil, err
-		}
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		return nil, err
 	}
 
 	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
@@ -614,10 +613,8 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		return nil, err
 	}
 
-	if !options.ConnectionOptions.DisableHealthCheck {
-		if err = checkHealth(connection); err != nil {
-			return nil, err
-		}
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		return nil, err
 	}
 
 	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
@@ -659,11 +656,20 @@ func NewValues(data *commonpb.Payloads) converter.Values {
 }
 
 // checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-func checkHealth(connection grpc.ClientConnInterface) error {
+func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
+	if options.DisableHealthCheck {
+		return nil
+	}
+
 	healthClient := healthpb.NewHealthClient(connection)
 
 	request := &healthpb.HealthCheckRequest{
 		Service: healthCheckServiceName,
+	}
+
+	healthCheckTimeout := options.HealthCheckTimeout
+	if healthCheckTimeout == time.Duration(0) {
+		healthCheckTimeout = defaultHealthCheckTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
