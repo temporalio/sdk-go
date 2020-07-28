@@ -308,11 +308,10 @@ func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, e
 	return
 }
 
-func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyRequestCancel(ctx workflow.Context) (err error) {
+func (w *Workflows) CascadingCancellation(ctx workflow.Context) (err error) {
 	opts := workflow.ChildWorkflowOptions{
 		WorkflowTaskTimeout:      5 * time.Second,
 		WorkflowExecutionTimeout: 30 * time.Second,
-		ParentClosePolicy:        enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		WorkflowID:               workflow.GetInfo(ctx).WorkflowExecution.ID + "-child",
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
@@ -693,38 +692,39 @@ func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, e
 }
 
 func (w *Workflows) register(worker worker.Worker) {
-	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.ActivityCancelRepro)
+	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
-	worker.RegisterWorkflow(w.ContinueAsNew)
-	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
-	worker.RegisterWorkflow(w.IDReusePolicy)
+	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.CancelActivity)
+	worker.RegisterWorkflow(w.CancelActivityImmediately)
+	worker.RegisterWorkflow(w.CancelChildWorkflow)
+	worker.RegisterWorkflow(w.CancelTimer)
+	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
-	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyRequestCancel)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
+	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
-	worker.RegisterWorkflow(w.sleep)
-	worker.RegisterWorkflow(w.timer)
-	worker.RegisterWorkflow(w.child)
-	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
-	worker.RegisterWorkflow(w.ActivityCancelRepro)
-	worker.RegisterWorkflow(w.CancelActivity)
-	worker.RegisterWorkflow(w.CancelTimer)
-	worker.RegisterWorkflow(w.CancelChildWorkflow)
-	worker.RegisterWorkflow(w.CancelActivityImmediately)
-	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
-	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
-	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
-	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
+
+	worker.RegisterWorkflow(w.child)
+	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
+	worker.RegisterWorkflow(w.sleep)
+	worker.RegisterWorkflow(w.timer)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

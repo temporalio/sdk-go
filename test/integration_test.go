@@ -234,7 +234,7 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	defer cancel()
 
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions(workflowID), ts.workflows.ChildWorkflowSuccessWithParentClosePolicyRequestCancel)
+		ts.startWorkflowOptions(workflowID), ts.workflows.CascadingCancellation)
 	ts.NotNil(run)
 	ts.NoError(err)
 
