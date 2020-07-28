@@ -24,14 +24,13 @@
 
 package log
 
-// WithLogger is an interface that prepend every log entry with keyvals.
-type WithLogger interface {
-	With(keyvals ...interface{}) Logger
-}
+import (
+	tlog "go.temporal.io/sdk/log"
+)
 
 // With returns Logger instance that prepend every log entry with keyvals. If logger implments WithLogger it is used, otherwise every log call will be intercepted.
-func With(logger Logger, keyvals ...interface{}) Logger {
-	if wl, ok := logger.(WithLogger); ok {
+func With(logger tlog.Logger, keyvals ...interface{}) tlog.Logger {
+	if wl, ok := logger.(tlog.WithLogger); ok {
 		return wl.With(keyvals...)
 	}
 
@@ -39,11 +38,11 @@ func With(logger Logger, keyvals ...interface{}) Logger {
 }
 
 type withLogger struct {
-	logger  Logger
+	logger  tlog.Logger
 	keyvals []interface{}
 }
 
-func newWithLogger(logger Logger, keyvals ...interface{}) *withLogger {
+func newWithLogger(logger tlog.Logger, keyvals ...interface{}) *withLogger {
 	return &withLogger{logger: logger, keyvals: keyvals}
 }
 

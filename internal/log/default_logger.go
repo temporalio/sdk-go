@@ -29,6 +29,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	tlog "go.temporal.io/sdk/log"
 )
 
 // DefaultLogger is Logger implementation on top of standart log.Logger. It is used if logger is not specified.
@@ -72,7 +74,7 @@ func (l *DefaultLogger) Error(msg string, keyvals ...interface{}) {
 }
 
 // With returns new logger the prepend every log entry with keyvals.
-func (l *DefaultLogger) With(keyvals ...interface{}) Logger {
+func (l *DefaultLogger) With(keyvals ...interface{}) tlog.Logger {
 	logger := &DefaultLogger{
 		logger: l.logger,
 	}

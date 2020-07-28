@@ -43,6 +43,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 const (
@@ -84,7 +85,7 @@ type (
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
-		GetLogger() log.Logger
+		GetLogger() tlog.Logger
 		GetMetricsScope() tally.Scope
 		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
@@ -145,7 +146,7 @@ type (
 		limiterContext       context.Context
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger               log.Logger
+		logger               tlog.Logger
 		metricsScope         tally.Scope
 
 		pollerRequestCh    chan struct{}
@@ -170,7 +171,7 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(options baseWorkerOptions, logger tlog.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,

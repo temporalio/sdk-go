@@ -61,6 +61,7 @@ import (
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 const (
@@ -166,7 +167,7 @@ type (
 
 		MetricsScope tally.Scope
 
-		Logger log.Logger
+		Logger tlog.Logger
 
 		// Enable logging in replay mode
 		EnableLoggingInReplay bool
@@ -232,7 +233,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
+func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger tlog.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
 		tchCtx, cancel := newChannelContext(ctx)
@@ -843,7 +844,7 @@ type AggregatedWorker struct {
 	workflowWorker *workflowWorker
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
-	logger         log.Logger
+	logger         tlog.Logger
 	registry       *registry
 	stopC          chan struct{}
 }
@@ -1039,7 +1040,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 // ReplayWorkflowHistory executes a single workflow task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger tlog.Logger, history *historypb.History) error {
 	if logger == nil {
 		logger = log.NewDefaultLogger()
 	}
@@ -1053,7 +1054,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *hi
 // ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger tlog.Logger, jsonfileName string) error {
 	return aw.ReplayPartialWorkflowHistoryFromJSONFile(logger, jsonfileName, 0)
 }
 
@@ -1061,7 +1062,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger,
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.Logger, jsonfileName string, lastEventID int64) error {
+func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger tlog.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
 
 	if err != nil {
@@ -1079,7 +1080,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.L
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
-func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution WorkflowExecution) error {
+func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger tlog.Logger, namespace string, execution WorkflowExecution) error {
 	if logger == nil {
 		logger = log.NewDefaultLogger()
 	}
@@ -1109,7 +1110,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(loger tlog.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {

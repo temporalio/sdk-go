@@ -24,6 +24,10 @@
 
 package log
 
+import (
+	tlog "go.temporal.io/sdk/log"
+)
+
 // NopLogger is Logger implementation that doesn't produce any logs.
 type NopLogger struct {
 }
@@ -50,6 +54,6 @@ func (l *NopLogger) Error(msg string, keyvals ...interface{}) {
 }
 
 // With returns new NopLogger.
-func (l *NopLogger) With(keyvals ...interface{}) Logger {
+func (l *NopLogger) With(keyvals ...interface{}) tlog.Logger {
 	return NewNopLogger()
 }

@@ -38,7 +38,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 type (
@@ -128,7 +128,7 @@ type (
 		activityID         string
 		activityType       ActivityType
 		serviceInvoker     ServiceInvoker
-		logger             log.Logger
+		logger             tlog.Logger
 		metricsScope       tally.Scope
 		isLocalActivity    bool
 		heartbeatTimeout   time.Duration

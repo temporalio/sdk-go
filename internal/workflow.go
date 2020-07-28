@@ -38,7 +38,7 @@ import (
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 var (
@@ -764,12 +764,12 @@ func (wc *workflowEnvironmentInterceptor) GetWorkflowInfo(ctx Context) *Workflow
 }
 
 // GetLogger returns a logger to be used in workflow's context
-func GetLogger(ctx Context) log.Logger {
+func GetLogger(ctx Context) tlog.Logger {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.GetLogger(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) log.Logger {
+func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) tlog.Logger {
 	return wc.env.GetLogger()
 }
 

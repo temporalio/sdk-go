@@ -39,7 +39,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/internal/converter"
-	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 type (
@@ -54,7 +54,7 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger             log.Logger
+		logger             tlog.Logger
 		scope              tally.Scope
 		contextPropagators []ContextPropagator
 		header             *commonpb.Header
@@ -134,12 +134,12 @@ func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnvironmen
 
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
 // with Debug level logging enabled.
-func (s *WorkflowTestSuite) SetLogger(logger log.Logger) {
+func (s *WorkflowTestSuite) SetLogger(logger tlog.Logger) {
 	s.logger = logger
 }
 
 // GetLogger gets the logger for this WorkflowTestSuite.
-func (s *WorkflowTestSuite) GetLogger() log.Logger {
+func (s *WorkflowTestSuite) GetLogger() tlog.Logger {
 	return s.logger
 }
 

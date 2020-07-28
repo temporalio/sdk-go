@@ -52,6 +52,7 @@ import (
 
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 func testInternalWorkerRegister(r *registry) {
@@ -162,7 +163,7 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 }
 
-func getLogger() log.Logger {
+func getLogger() tlog.Logger {
 	return log.NewDefaultLogger()
 }
 

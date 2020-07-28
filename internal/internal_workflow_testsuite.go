@@ -52,6 +52,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 const (
@@ -133,7 +134,7 @@ type (
 
 		mock               *mock.Mock
 		service            workflowservice.WorkflowServiceClient
-		logger             log.Logger
+		logger             tlog.Logger
 		metricsScope       *metrics.TaggedScope
 		contextPropagators []ContextPropagator
 		identity           string
@@ -963,7 +964,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	return nil
 }
 
-func (env *testWorkflowEnvironmentImpl) GetLogger() log.Logger {
+func (env *testWorkflowEnvironmentImpl) GetLogger() tlog.Logger {
 	return env.logger
 }
 

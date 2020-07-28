@@ -49,6 +49,7 @@ import (
 
 	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 const (
@@ -58,7 +59,7 @@ const (
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
-		logger   log.Logger
+		logger   tlog.Logger
 		service  *workflowservicemock.MockWorkflowServiceClient
 		registry *registry
 	}
@@ -1361,7 +1362,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 }
 
 type testActivityDeadline struct {
-	logger log.Logger
+	logger tlog.Logger
 	d      time.Duration
 }
 

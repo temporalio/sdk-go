@@ -32,7 +32,7 @@ import (
 
 	"go.temporal.io/api/workflowservice/v1"
 
-	"go.temporal.io/sdk/internal/log"
+	tlog "go.temporal.io/sdk/log"
 )
 
 // ** This is for internal stress testing framework **
@@ -56,7 +56,7 @@ type (
 
 	pressurePointMgrImpl struct {
 		config map[string]map[string]string
-		logger log.Logger
+		logger tlog.Logger
 	}
 )
 

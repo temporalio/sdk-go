@@ -27,15 +27,17 @@ package log
 import (
 	"fmt"
 	"os"
+
+	tlog "go.temporal.io/sdk/log"
 )
 
 // TestReporter is a log adapter for gomock.
 type TestReporter struct {
-	logger Logger
+	logger tlog.Logger
 }
 
 // NewTestReporter creates new instance of TestReporter.
-func NewTestReporter(logger Logger) *TestReporter {
+func NewTestReporter(logger tlog.Logger) *TestReporter {
 	return &TestReporter{logger: logger}
 }
 
