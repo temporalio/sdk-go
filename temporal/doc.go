@@ -121,11 +121,5 @@ current workflow executions.
 
 Debuggability - Replay any workflow execution history locally under a debugger. The Temporal client library provides an
 API to allow you to capture a stack trace from any failed workflow execution history.
-
 */
 package temporal
-
-import "go.temporal.io/sdk/internal"
-
-// RetryPolicy defines the retry policy for activity/workflow.
-type RetryPolicy = internal.RetryPolicy
