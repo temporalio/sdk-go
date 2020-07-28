@@ -47,11 +47,11 @@ const (
 	DefaultNamespace = internal.DefaultNamespace
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
-	// stack of the workflow. The result will be a string encoded in the encoded.Value.
+	// stack of the workflow. The result will be a string encoded in the converter.EncodedValue.
 	QueryTypeStackTrace string = internal.QueryTypeStackTrace
 
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
-	// sessions in the workflow. The result will be a list of SessionInfo encoded in the encoded.Value.
+	// sessions in the workflow. The result will be a list of SessionInfo encoded in the converter.EncodedValue.
 	QueryTypeOpenSessions string = internal.QueryTypeOpenSessions
 )
 
@@ -201,7 +201,7 @@ type (
 		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
-		// CompleteActivityById reports activity completed.
+		// CompleteActivityByID reports activity completed.
 		// Similar to CompleteActivity, but may save user from keeping taskToken info.
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
@@ -313,7 +313,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -393,23 +393,23 @@ var _ internal.Client = Client(nil)
 var _ NamespaceClient = internal.NamespaceClient(nil)
 var _ internal.NamespaceClient = NamespaceClient(nil)
 
-// NewValue creates a new encoded.Value which can be used to decode binary data returned by Temporal.  For example:
+// NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data *commonpb.Payloads) converter.Value {
+func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return internal.NewValue(data)
 }
 
-// NewValues creates a new encoded.Values which can be used to decode binary data returned by Temporal. For example:
+// NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data *commonpb.Payloads) converter.Values {
+func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return internal.NewValues(data)
 }

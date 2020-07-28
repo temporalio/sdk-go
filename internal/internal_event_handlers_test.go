@@ -30,7 +30,8 @@ import (
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 )
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
@@ -52,7 +53,7 @@ func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 func TestDecodedValue(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.DefaultDataConverter,
+		dataConverter: converter.GetDefaultDataConverter(),
 	}
 	testDecodeValueHelper(t, env)
 }
@@ -60,7 +61,7 @@ func TestDecodedValue(t *testing.T) {
 func TestDecodedValueWithDataConverter(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.NewTestDataConverter(),
+		dataConverter: iconverter.NewTestDataConverter(),
 	}
 	testDecodeValueHelper(t, env)
 }
@@ -68,7 +69,7 @@ func TestDecodedValueWithDataConverter(t *testing.T) {
 func Test_DecodedValuePtr(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.DefaultDataConverter,
+		dataConverter: converter.GetDefaultDataConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		ao := a.(*ActivityOptions)
@@ -88,7 +89,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 func Test_DecodedValueNil(t *testing.T) {
 	t.Parallel()
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.DefaultDataConverter,
+		dataConverter: converter.GetDefaultDataConverter(),
 	}
 	equals := func(a, b interface{}) bool {
 		return a == nil && b == nil
@@ -128,7 +129,7 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(searchAttr.IndexedFields))
 	var resp int
-	_ = converter.DefaultDataConverter.FromPayload(searchAttr.IndexedFields["key"], &resp)
+	_ = converter.GetDefaultDataConverter().FromPayload(searchAttr.IndexedFields["key"], &resp)
 	require.Equal(t, 1, resp)
 }
 
@@ -161,7 +162,7 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	t.Parallel()
 
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := converter.DefaultDataConverter.ToPayload(str)
+		payload, _ := converter.GetDefaultDataConverter().ToPayload(str)
 		return payload
 	}
 

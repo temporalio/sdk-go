@@ -29,12 +29,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 )
 
 func TestDecodeArg(t *testing.T) {
 	t.Parallel()
-	dc := converter.DefaultDataConverter
+	dc := converter.GetDefaultDataConverter()
 
 	b, err := encodeArg(dc, testErrorDetails3)
 	require.NoError(t, err)

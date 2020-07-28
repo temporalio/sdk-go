@@ -329,18 +329,18 @@ func (_m *Client) ListArchivedWorkflow(ctx context.Context, request *workflowser
 }
 
 // QueryWorkflow provides a mock function with given fields: ctx, workflowID, runID, queryType, args
-func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error) {
+func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	var _ca []interface{}
 	_ca = append(_ca, ctx, workflowID, runID, queryType)
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
 
-	var r0 converter.Value
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) converter.Value); ok {
+	var r0 converter.EncodedValue
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) converter.EncodedValue); ok {
 		r0 = rf(ctx, workflowID, runID, queryType, args...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(converter.Value)
+			r0 = ret.Get(0).(converter.EncodedValue)
 		}
 	}
 

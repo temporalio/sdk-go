@@ -239,7 +239,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 //  } else {
 //         ....
 //  }
-func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
+func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
 }
 
@@ -258,7 +258,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
 }
 

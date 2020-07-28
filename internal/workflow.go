@@ -35,9 +35,9 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/log"
 )
 
@@ -129,7 +129,7 @@ type (
 		Set(value interface{}, err error)
 		SetValue(value interface{})
 		SetError(err error)
-		Chain(future Future) // Value (or error) of the future become the same of the chained one.
+		Chain(future Future) // EncodedValue (or error) of the future become the same of the chained one.
 	}
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
@@ -737,8 +737,8 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID         string
 	ParentWorkflowNamespace         string
 	ParentWorkflowExecution         *WorkflowExecution
-	Memo                            *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
-	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
+	Memo                            *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	BinaryChecksum                  string
 }
 
@@ -1076,9 +1076,9 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalNa
 	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
 }
 
-func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.Value {
+func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
 	if dc == nil {
-		dc = converter.DefaultDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 	return &EncodedValue{value, dc}
 }
@@ -1132,12 +1132,12 @@ func (b EncodedValue) HasValue() bool {
 //  } else {
 //         ....
 //  }
-func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
+func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.SideEffect(ctx, f)
 }
 
-func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.Value {
+func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
@@ -1170,12 +1170,12 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.MutableSideEffect(ctx, id, f, equals)
 }
 
-func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.Value {
+func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	wrapperFunc := func() interface{} {
 		return f(ctx)
 	}

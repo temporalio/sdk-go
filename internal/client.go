@@ -26,6 +26,8 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"io"
 	"time"
 
@@ -35,9 +37,10 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -53,6 +56,9 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
+
+	healthCheckServiceName    = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckTimeout = 5 * time.Second
 )
 
 type (
@@ -88,7 +94,7 @@ type (
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
 
-		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance
+		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
@@ -214,7 +220,7 @@ type (
 		//  - EntityNotExistError
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
-		// ListClosedWorkflow gets open workflow executions based on request filters
+		// ListOpenWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
@@ -285,7 +291,7 @@ type (
 		//  - InternalServiceError
 		//  - EntityNotExistError
 		//  - QueryFailError
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.Value, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -383,6 +389,13 @@ type (
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
+	}
+
+	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	ConnectionOptions struct {
+		TLS                *tls.Config
+		DisableHealthCheck bool
+		HealthCheckTimeout time.Duration
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -533,8 +546,11 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	connection, err := dial(newDialParameters(&options))
-
 	if err != nil {
+		return nil, err
+	}
+
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
 		return nil, err
 	}
 
@@ -562,7 +578,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.DataConverter == nil {
-		options.DataConverter = converter.DefaultDataConverter
+		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
 	if options.Tracer != nil {
@@ -598,6 +614,10 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		return nil, err
 	}
 
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		return nil, err
+	}
+
 	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
@@ -615,23 +635,54 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 	}
 }
 
-// NewValue creates a new encoded.Value which can be used to decode binary data returned by Temporal.  For example:
+// NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //   var result string // This need to be same type as the one passed to RecordHeartbeat
 //   NewValue(data).Get(&result)
-func NewValue(data *commonpb.Payloads) converter.Value {
+func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return newEncodedValue(data, nil)
 }
 
-// NewValues creates a new encoded.Values which can be used to decode binary data returned by Temporal. For example:
+// NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //   var result1 string
 //   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //   NewValues(data).Get(&result1, &result2)
-func NewValues(data *commonpb.Payloads) converter.Values {
+func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
+}
+
+// checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
+	if options.DisableHealthCheck {
+		return nil
+	}
+
+	healthClient := healthpb.NewHealthClient(connection)
+
+	request := &healthpb.HealthCheckRequest{
+		Service: healthCheckServiceName,
+	}
+
+	healthCheckTimeout := options.HealthCheckTimeout
+	if healthCheckTimeout == time.Duration(0) {
+		healthCheckTimeout = defaultHealthCheckTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer cancel()
+	resp, err := healthClient.Check(ctx, request)
+	if err != nil {
+		return fmt.Errorf("health check error: %w", err)
+	}
+
+	if resp.Status != healthpb.HealthCheckResponse_SERVING {
+		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+	}
+
+	return nil
 }

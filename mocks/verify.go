@@ -34,6 +34,6 @@ var (
 	_ client.Client               = (*Client)(nil)
 	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
 	_ client.NamespaceClient      = (*NamespaceClient)(nil)
-	_ converter.Value             = (*Value)(nil)
+	_ converter.EncodedValue      = (*Value)(nil)
 	_ client.WorkflowRun          = (*WorkflowRun)(nil)
 )
