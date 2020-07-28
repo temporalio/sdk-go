@@ -26,6 +26,8 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"io"
 	"time"
 
@@ -35,6 +37,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/converter"
@@ -53,6 +56,9 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
+
+	healthCheckServiceName    = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckTimeout = 5 * time.Second
 )
 
 type (
@@ -88,7 +94,7 @@ type (
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
 
-		// GetWorkfow retrieves a workflow execution and return a WorkflowRun instance
+		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
@@ -214,7 +220,7 @@ type (
 		//  - EntityNotExistError
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
-		// ListClosedWorkflow gets open workflow executions based on request filters
+		// ListOpenWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
 		//  - BadRequestError
 		//  - InternalServiceError
@@ -385,6 +391,13 @@ type (
 		ConnectionOptions ConnectionOptions
 	}
 
+	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	ConnectionOptions struct {
+		TLS                *tls.Config
+		DisableHealthCheck bool
+		HealthCheckTimeout time.Duration
+	}
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -533,8 +546,11 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	connection, err := dial(newDialParameters(&options))
-
 	if err != nil {
+		return nil, err
+	}
+
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
 		return nil, err
 	}
 
@@ -598,6 +614,10 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		return nil, err
 	}
 
+	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		return nil, err
+	}
+
 	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
@@ -634,4 +654,35 @@ func NewValue(data *commonpb.Payloads) converter.Value {
 //   NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.Values {
 	return newEncodedValues(data, nil)
+}
+
+// checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
+	if options.DisableHealthCheck {
+		return nil
+	}
+
+	healthClient := healthpb.NewHealthClient(connection)
+
+	request := &healthpb.HealthCheckRequest{
+		Service: healthCheckServiceName,
+	}
+
+	healthCheckTimeout := options.HealthCheckTimeout
+	if healthCheckTimeout == time.Duration(0) {
+		healthCheckTimeout = defaultHealthCheckTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer cancel()
+	resp, err := healthClient.Check(ctx, request)
+	if err != nil {
+		return fmt.Errorf("health check error: %w", err)
+	}
+
+	if resp.Status != healthpb.HealthCheckResponse_SERVING {
+		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+	}
+
+	return nil
 }
