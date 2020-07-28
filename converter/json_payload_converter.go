@@ -76,7 +76,7 @@ func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return s
 }
 
-// Encoding returns metadataEncodingJSON.
+// Encoding returns MetadataEncodingJSON.
 func (c *JSONPayloadConverter) Encoding() string {
-	return metadataEncodingJSON
+	return MetadataEncodingJSON
 }

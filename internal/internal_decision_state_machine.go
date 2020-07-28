@@ -34,8 +34,8 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/util"
-	"go.temporal.io/sdk/internal/converter"
 )
 
 type (

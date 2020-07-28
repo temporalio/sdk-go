@@ -55,13 +55,12 @@ func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, ar
 
 func TestDefaultDataConverter(t *testing.T) {
 	t.Parallel()
-	dc := DefaultDataConverter
 	t.Run("result", func(t *testing.T) {
 		t.Parallel()
 		f1 := func(ctx context.Context, r []byte) string {
 			return "result"
 		}
-		r1 := testDataConverterFunction(t, dc, f1, context.Background(), []byte("test"))
+		r1 := testDataConverterFunction(t, defaultDataConverter, f1, context.Background(), []byte("test"))
 		require.Equal(t, r1, "result")
 	})
 	t.Run("empty", func(t *testing.T) {
@@ -70,7 +69,7 @@ func TestDefaultDataConverter(t *testing.T) {
 		f2 := func() string {
 			return "empty-result"
 		}
-		r2 := testDataConverterFunction(t, dc, f2)
+		r2 := testDataConverterFunction(t, defaultDataConverter, f2)
 		require.Equal(t, r2, "empty-result")
 	})
 	t.Run("nil", func(t *testing.T) {
@@ -79,7 +78,7 @@ func TestDefaultDataConverter(t *testing.T) {
 		f3 := func(r []byte) string {
 			return "nil-result"
 		}
-		r3 := testDataConverterFunction(t, dc, f3, []byte(""))
+		r3 := testDataConverterFunction(t, defaultDataConverter, f3, []byte(""))
 		require.Equal(t, r3, "nil-result")
 	})
 }
@@ -108,7 +107,7 @@ func TestToStrings(t *testing.T) {
 		B: 3,
 	}
 
-	got := testToStringsFunction(t, DefaultDataConverter,
+	got := testToStringsFunction(t, defaultDataConverter,
 		[]byte("test"),
 		[]string{"hello", "world"},
 		"hello world",

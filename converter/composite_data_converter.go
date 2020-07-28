@@ -169,7 +169,7 @@ func encoding(payload *commonpb.Payload) (string, error) {
 		return "", ErrMetadataIsNotSet
 	}
 
-	if e, ok := metadata[metadataEncoding]; ok {
+	if e, ok := metadata[MetadataEncoding]; ok {
 		return string(e), nil
 	}
 

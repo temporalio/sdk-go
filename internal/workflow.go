@@ -35,9 +35,9 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -740,8 +740,8 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID         string
 	ParentWorkflowNamespace         string
 	ParentWorkflowExecution         *WorkflowExecution
-	Memo                            *commonpb.Memo             // Value can be decoded using data converter (DefaultDataConverter, or custom one if set).
-	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using DefaultDataConverter.
+	Memo                            *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	BinaryChecksum                  string
 }
 
@@ -1081,7 +1081,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalNa
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.Value {
 	if dc == nil {
-		dc = converter.DefaultDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 	return &EncodedValue{value, dc}
 }

@@ -41,7 +41,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -79,7 +79,7 @@ type (
 func (s *WorkersTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	s.dataConverter = converter.DefaultDataConverter
+	s.dataConverter = converter.GetDefaultDataConverter()
 }
 
 func (s *WorkersTestSuite) TearDownTest() {

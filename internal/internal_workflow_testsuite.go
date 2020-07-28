@@ -48,9 +48,9 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -254,7 +254,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
-		dataConverter:     converter.DefaultDataConverter,
+		dataConverter:     converter.GetDefaultDataConverter(),
 		runTimeout:        maxWorkflowTimeout,
 	}
 

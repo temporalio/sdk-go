@@ -36,8 +36,8 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -561,7 +561,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.DataConverter == nil {
-		options.DataConverter = converter.DefaultDataConverter
+		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
 	if options.Tracer != nil {

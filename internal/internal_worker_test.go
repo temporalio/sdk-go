@@ -50,7 +50,8 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -131,7 +132,7 @@ type internalWorkerTestSuite struct {
 func TestInternalWorkerTestSuite(t *testing.T) {
 	s := &internalWorkerTestSuite{
 		registry:      newRegistry(),
-		dataConverter: converter.DefaultDataConverter,
+		dataConverter: converter.GetDefaultDataConverter(),
 	}
 	testInternalWorkerRegister(s.registry)
 	suite.Run(t, s)
@@ -246,7 +247,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -288,7 +289,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -480,7 +481,7 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -584,7 +585,7 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -661,7 +662,7 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -734,7 +735,7 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -805,12 +806,12 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskQueue := "taskQueue1"
-	result, _ := converter.DefaultDataConverter.ToPayloads("some-incorrect-result")
+	result, _ := converter.GetDefaultDataConverter().ToPayloads("some-incorrect-result")
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -847,12 +848,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskQueue := "taskQueue1"
-	result, _ := converter.DefaultDataConverter.ToPayloads("some-incorrect-result")
+	result, _ := converter.GetDefaultDataConverter().ToPayloads("some-incorrect-result")
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/sdk/internal.testReplayWorkflow"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -926,7 +927,7 @@ func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
 		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
-		DataConverter: converter.NewTestDataConverter(),
+		DataConverter: iconverter.NewTestDataConverter(),
 	}
 	s.testWorkflowTaskHandlerHelper(params)
 }
@@ -1145,7 +1146,7 @@ func createWorkerWithThrottle(
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
-	return createWorkerWithThrottle(service, 0.0, converter.NewTestDataConverter())
+	return createWorkerWithThrottle(service, 0.0, iconverter.NewTestDataConverter())
 }
 
 func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt ClientOptions) {
@@ -1181,7 +1182,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity() {
 }
 
 func (s *internalWorkerTestSuite) TestCompleteActivityWithDataConverter() {
-	opt := ClientOptions{DataConverter: converter.NewTestDataConverter()}
+	opt := ClientOptions{DataConverter: iconverter.NewTestDataConverter()}
 	s.testCompleteActivityHelper(opt)
 }
 
@@ -1233,7 +1234,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter() {
 	t := s.T()
-	dc := converter.NewTestDataConverter()
+	dc := iconverter.NewTestDataConverter()
 	opt := ClientOptions{Namespace: "testNamespace", DataConverter: dc}
 	wfClient := NewServiceClient(s.service, nil, opt)
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
@@ -1480,7 +1481,7 @@ func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
 func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
-	env.SetDataConverter(converter.NewTestDataConverter())
+	env.SetDataConverter(iconverter.NewTestDataConverter())
 	env.RegisterWorkflow(wf)
 	testInternalWorkerRegisterWithTestEnv(env)
 	env.ExecuteWorkflow(wf, []byte{1, 2})
@@ -1602,7 +1603,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 }
 
 func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
-	dc := converter.NewTestDataConverter()
+	dc := iconverter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
@@ -1665,7 +1666,7 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 }
 
 func TestActivityCancelledErrorWithDataConverter(t *testing.T) {
-	dc := converter.NewTestDataConverter()
+	dc := iconverter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityCancelledErrorHelper(ctx, t, dc)
 }
@@ -1694,7 +1695,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 }
 
 func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
-	dc := converter.NewTestDataConverter()
+	dc := iconverter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
 		dataConverter: dc,
 	})
@@ -1714,7 +1715,7 @@ func TestActivityNilArgs(t *testing.T) {
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
-	dataConverter := converter.DefaultDataConverter
+	dataConverter := converter.GetDefaultDataConverter()
 	data, err := encodeArgs(dataConverter, args)
 	require.NoError(t, err)
 
@@ -1749,7 +1750,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         converter.DefaultDataConverter,
+		DataConverter:                         converter.GetDefaultDataConverter(),
 		Tracer:                                opentracing.NoopTracer{},
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,

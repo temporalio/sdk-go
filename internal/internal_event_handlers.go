@@ -44,9 +44,9 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 

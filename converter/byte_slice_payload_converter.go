@@ -70,7 +70,7 @@ func (c *ByteSlicePayloadConverter) ToString(payload *commonpb.Payload) string {
 	return base64.RawStdEncoding.EncodeToString(byteSlice)
 }
 
-// Encoding returns metadataEncodingBinary.
+// Encoding returns MetadataEncodingBinary.
 func (c *ByteSlicePayloadConverter) Encoding() string {
-	return metadataEncodingBinary
+	return MetadataEncodingBinary
 }

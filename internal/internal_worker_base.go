@@ -39,9 +39,9 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"golang.org/x/time/rate"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 

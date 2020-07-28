@@ -38,7 +38,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -83,7 +83,7 @@ type (
 
 func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.Values {
 	if dc == nil {
-		dc = converter.DefaultDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
 	return &EncodedValues{values, dc}
 }

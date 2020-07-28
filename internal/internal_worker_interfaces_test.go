@@ -39,7 +39,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -152,7 +152,7 @@ func (ga greeterActivity) ActivityType() ActivityType {
 }
 
 func (ga greeterActivity) Execute(context.Context, *commonpb.Payloads) (*commonpb.Payloads, error) {
-	return converter.DefaultDataConverter.ToPayloads([]byte("World"))
+	return converter.GetDefaultDataConverter().ToPayloads([]byte("World"))
 }
 
 func (ga greeterActivity) GetFunction() interface{} {

@@ -40,7 +40,8 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -123,14 +124,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter()
 		ctx = WithActivityOptions(ctx, ao)
 
 		var result string
-		ctx = WithDataConverter(ctx, converter.NewTestDataConverter())
+		ctx = WithDataConverter(ctx, iconverter.NewTestDataConverter())
 		err := ExecuteActivity(ctx, testActivityHello, "world").Get(ctx, &result)
 		if err != nil {
 			return "", err
 		}
 
 		var result1 string
-		ctx1 := WithDataConverter(ctx, converter.DefaultDataConverter) // use another converter to run activity
+		ctx1 := WithDataConverter(ctx, converter.GetDefaultDataConverter()) // use another converter to run activity
 		err1 := ExecuteActivity(ctx1, testActivityHello, "world1").Get(ctx1, &result1)
 		if err1 != nil {
 			return "", err1
@@ -142,7 +143,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionWithDataConverter()
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHello)
 
-	env.SetDataConverter(converter.NewTestDataConverter())
+	env.SetDataConverter(iconverter.NewTestDataConverter())
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Return(mockActivity).Twice()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -654,7 +655,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_BasicWithDataConverter() 
 		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		var helloWorkflowResult string
-		ctx = WithDataConverter(ctx, converter.NewTestDataConverter())
+		ctx = WithDataConverter(ctx, iconverter.NewTestDataConverter())
 		err = ExecuteChildWorkflow(ctx, testWorkflowHello).Get(ctx, &helloWorkflowResult)
 		if err != nil {
 			return "", err
@@ -1276,7 +1277,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = converter.DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
+		err = converter.GetDefaultDataConverter().FromPayload(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
@@ -1336,7 +1337,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 		changeVersionsBytes, ok := wfInfo.SearchAttributes.IndexedFields[TemporalChangeVersion]
 		s.True(ok)
 		var changeVersions []string
-		err = converter.DefaultDataConverter.FromPayload(changeVersionsBytes, &changeVersions)
+		err = converter.GetDefaultDataConverter().FromPayload(changeVersionsBytes, &changeVersions)
 		s.NoError(err)
 		s.Equal(2, len(changeVersions))
 		s.Equal("change_2-2", changeVersions[0])
@@ -1402,7 +1403,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
 		var result int
-		_ = converter.DefaultDataConverter.FromPayload(valBytes, &result)
+		_ = converter.GetDefaultDataConverter().FromPayload(valBytes, &result)
 		s.Equal(1, result)
 
 		return nil
@@ -1694,7 +1695,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
 	}
 
 	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	testPayload, err := converter.DefaultDataConverter.ToPayload("test-data")
+	testPayload, err := converter.GetDefaultDataConverter().ToPayload("test-data")
 	s.NoError(err)
 
 	s.SetHeader(&commonpb.Header{

@@ -43,11 +43,11 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
-	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -1171,7 +1171,7 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (
 	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
 		// TODO (shtin): use dc here???
-		memoBytes, err := converter.DefaultDataConverter.ToPayload(v)
+		memoBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1187,7 +1187,7 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 
 	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := converter.DefaultDataConverter.ToPayload(v)
+		attrBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}

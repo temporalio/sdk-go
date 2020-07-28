@@ -29,7 +29,7 @@ import (
 
 	"github.com/uber-go/tally"
 
-	"go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
