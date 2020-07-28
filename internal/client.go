@@ -56,8 +56,8 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName         = "temporal.api.workflowservice.v1.WorkflowService"
-	healthCheckTimeout             = 1 * time.Second
+	healthCheckServiceName = "temporal.api.workflowservice.v1.WorkflowService"
+	healthCheckTimeout     = 1 * time.Second
 )
 
 type (
@@ -548,8 +548,8 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	if !options.ConnectionOptions.DisableHealthCheck{
-		if err = checkHealth(connection); err != nil{
+	if !options.ConnectionOptions.DisableHealthCheck {
+		if err = checkHealth(connection); err != nil {
 			return nil, err
 		}
 	}
@@ -614,8 +614,8 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		return nil, err
 	}
 
-	if !options.ConnectionOptions.DisableHealthCheck{
-		if err = checkHealth(connection); err != nil{
+	if !options.ConnectionOptions.DisableHealthCheck {
+		if err = checkHealth(connection); err != nil {
 			return nil, err
 		}
 	}
@@ -673,7 +673,7 @@ func checkHealth(connection grpc.ClientConnInterface) error {
 		return fmt.Errorf("health check error: %w", err)
 	}
 
-	if resp.Status != healthpb.HealthCheckResponse_SERVING{
+	if resp.Status != healthpb.HealthCheckResponse_SERVING {
 		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
 	}
 

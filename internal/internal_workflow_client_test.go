@@ -162,8 +162,8 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
 	s.wfClient = &WorkflowClient{
-		workflowService:    s.workflowServiceClient,
-		namespace:          DefaultNamespace,
+		workflowService: s.workflowServiceClient,
+		namespace:       DefaultNamespace,
 	}
 }
 
