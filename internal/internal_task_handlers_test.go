@@ -47,6 +47,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -109,7 +110,7 @@ func panicWorkflowFunc(Context, []byte) error {
 func getWorkflowInfoWorkflowFunc(ctx Context, expectedLastCompletionResult string) (info *WorkflowInfo, err error) {
 	result := GetWorkflowInfo(ctx)
 	var lastCompletionResult string
-	err = getDefaultDataConverter().FromPayloads(result.lastCompletionResult, &lastCompletionResult)
+	err = converter.DefaultDataConverter.FromPayloads(result.lastCompletionResult, &lastCompletionResult)
 	if err != nil {
 		return nil, err
 	}
@@ -276,12 +277,12 @@ func createTestEventChildWorkflowExecutionCanceled(eventID int64, attr *historyp
 }
 
 func createTestEventVersionMarker(eventID int64, workflowTaskCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
-	changeIDPayload, err := DefaultDataConverter.ToPayloads(changeID)
+	changeIDPayload, err := converter.DefaultDataConverter.ToPayloads(changeID)
 	if err != nil {
 		panic(err)
 	}
 
-	versionPayload, err := DefaultDataConverter.ToPayloads(version)
+	versionPayload, err := converter.DefaultDataConverter.ToPayloads(version)
 	if err != nil {
 		panic(err)
 	}
@@ -433,7 +434,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDat
 		TaskQueue:     testWorkflowTaskTaskqueue,
 		Identity:      "test-id-1",
 		Logger:        t.logger,
-		DataConverter: newTestDataConverter(),
+		DataConverter: converter.NewTestDataConverter(),
 	}
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
@@ -474,7 +475,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[0].GetCommandType())
 	checksumsPayload := response.Commands[0].GetCompleteWorkflowExecutionCommandAttributes().GetResult()
 	var checksums []string
-	_ = DefaultDataConverter.FromPayloads(checksumsPayload, &checksums)
+	_ = converter.DefaultDataConverter.FromPayloads(checksumsPayload, &checksums)
 	t.Equal(3, len(checksums))
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
@@ -983,7 +984,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	var runTimeout int32 = 21098
 	var taskTimeout int32 = 21
 	workflowType := "GetWorkflowInfoWorkflow"
-	lastCompletionResult, err := getDefaultDataConverter().ToPayloads("lastCompletionData")
+	lastCompletionResult, err := converter.DefaultDataConverter.ToPayloads("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &historypb.WorkflowExecutionStartedEventAttributes{
 		Input:                           lastCompletionResult,
@@ -1019,7 +1020,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
 	attr := r.Commands[0].GetCompleteWorkflowExecutionCommandAttributes()
 	var result WorkflowInfo
-	t.NoError(getDefaultDataConverter().FromPayloads(attr.Result, &result))
+	t.NoError(converter.DefaultDataConverter.FromPayloads(attr.Result, &result))
 	t.EqualValues(taskQueue, result.TaskQueueName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
@@ -1066,9 +1067,9 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	taskQueue := "tq1"
 	checksum1 := "chck1"
-	numberOfSignalsToComplete, err := getDefaultDataConverter().ToPayloads(2)
+	numberOfSignalsToComplete, err := converter.DefaultDataConverter.ToPayloads(2)
 	t.NoError(err)
-	signal, err := getDefaultDataConverter().ToPayloads("signal data")
+	signal, err := converter.DefaultDataConverter.ToPayloads("signal data")
 	t.NoError(err)
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
@@ -1103,7 +1104,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Commands, 0)
-	answer, _ := DefaultDataConverter.ToPayloads(startingQueryValue)
+	answer, _ := converter.DefaultDataConverter.ToPayloads(startingQueryValue)
 	expectedQueryResults := map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: enumspb.QUERY_RESULT_TYPE_ANSWERED,
@@ -1123,7 +1124,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Commands, 1)
-	answer, _ = DefaultDataConverter.ToPayloads("signal data")
+	answer, _ = converter.DefaultDataConverter.ToPayloads("signal data")
 	expectedQueryResults = map[string]*querypb.WorkflowQueryResult{
 		"id1": {
 			ResultType: enumspb.QUERY_RESULT_TYPE_ANSWERED,
@@ -1416,7 +1417,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		a.d = d.actWaitDuration
 		wep := workerExecutionParameters{
 			Logger:        t.logger,
-			DataConverter: getDefaultDataConverter(),
+			DataConverter: converter.DefaultDataConverter,
 			Tracer:        opentracing.NoopTracer{},
 		}
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
@@ -1473,7 +1474,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	ctx, cancel := context.WithCancel(context.Background())
 	wep := workerExecutionParameters{
 		Logger:            t.logger,
-		DataConverter:     getDefaultDataConverter(),
+		DataConverter:     converter.DefaultDataConverter,
 		UserContext:       ctx,
 		UserContextCancel: cancel,
 		WorkerStopChannel: workerStopCh,
@@ -1613,7 +1614,7 @@ func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 func Test_IsSearchAttributesMatched(t *testing.T) {
 	encodeString := func(str string) *commonpb.Payload {
-		payload, _ := DefaultDataConverter.ToPayload(str)
+		payload, _ := converter.DefaultDataConverter.ToPayload(str)
 		return payload
 	}
 

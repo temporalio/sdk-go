@@ -30,6 +30,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	commonpb "go.temporal.io/api/common/v1"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -43,7 +44,7 @@ var _ opentracing.TextMapReader = (*tracingReader)(nil)
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
 	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
 		var decodedValue string
-		err := DefaultDataConverter.FromPayload(v, &decodedValue)
+		err := converter.DefaultDataConverter.FromPayload(v, &decodedValue)
 		if err != nil {
 			return err
 		}
@@ -59,7 +60,7 @@ type tracingWriter struct {
 var _ opentracing.TextMapWriter = (*tracingWriter)(nil)
 
 func (t tracingWriter) Set(key, val string) {
-	encodedValue, _ := DefaultDataConverter.ToPayload(val)
+	encodedValue, _ := converter.DefaultDataConverter.ToPayload(val)
 	t.writer.Set(key, encodedValue)
 }
 

@@ -47,6 +47,7 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -82,7 +83,7 @@ type (
 		taskHandler   WorkflowTaskHandler
 		metricsScope  tally.Scope
 		logger        log.Logger
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 
 		stickyUUID                   string
 		disableStickyExecution       bool
@@ -129,7 +130,7 @@ type (
 		userContext        context.Context
 		metricsScope       *metrics.TaggedScope
 		logger             log.Logger
-		dataConverter      DataConverter
+		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
 	}
@@ -1026,7 +1027,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
-	dataConverter DataConverter) interface{} {
+	dataConverter converter.DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -1060,7 +1061,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result *commonpb.Payloads, err error, dataConverter DataConverter) interface{} {
+	result *commonpb.Payloads, err error, dataConverter converter.DataConverter) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

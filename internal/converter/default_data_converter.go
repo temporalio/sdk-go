@@ -22,18 +22,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package mocks
+package converter
 
-import (
-	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/converter"
-)
-
-// make sure mocks are in sync with interfaces
 var (
-	_ client.Client               = (*Client)(nil)
-	_ client.HistoryEventIterator = (*HistoryEventIterator)(nil)
-	_ client.NamespaceClient      = (*NamespaceClient)(nil)
-	_ converter.Value             = (*Value)(nil)
-	_ client.WorkflowRun          = (*WorkflowRun)(nil)
+	// DefaultDataConverter is default data converter used by Temporal worker.
+	DefaultDataConverter = NewCompositeDataConverter(
+		NewNilPayloadConverter(),
+		NewByteSlicePayloadConverter(),
+		// Only one proto converter should be used.
+		// Although they check for different interfaces (proto.Message and proto.Marshaler) all proto messages implements both interfaces.
+		NewProtoJSONPayloadConverter(),
+		// NewProtoPayloadConverter(),
+		NewJSONPayloadConverter(),
+	)
 )

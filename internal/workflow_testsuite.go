@@ -38,6 +38,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -45,7 +46,7 @@ type (
 	// EncodedValues is a type alias used to encapsulate/extract encoded arguments from workflow/activity.
 	EncodedValues struct {
 		values        *commonpb.Payloads
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 	}
 
 	// ErrorDetailsValues is a type alias used hold error details objects.
@@ -80,9 +81,9 @@ type (
 	}
 )
 
-func newEncodedValues(values *commonpb.Payloads, dc DataConverter) Values {
+func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.Values {
 	if dc == nil {
-		dc = getDefaultDataConverter()
+		dc = converter.DefaultDataConverter
 	}
 	return &EncodedValues{values, dc}
 }
@@ -172,13 +173,13 @@ func (t *TestActivityEnvironment) RegisterActivityWithOptions(a interface{}, opt
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use Value.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (Value, error) {
+func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (converter.Value, error) {
 	return t.impl.executeActivity(activityFn, args...)
 }
 
 // ExecuteLocalActivity executes a local activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use Value.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val Value, err error) {
+func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val converter.Value, err error) {
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 
@@ -192,7 +193,7 @@ func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestA
 }
 
 // SetDataConverter sets data converter.
-func (t *TestActivityEnvironment) SetDataConverter(dataConverter DataConverter) *TestActivityEnvironment {
+func (t *TestActivityEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestActivityEnvironment {
 	t.impl.setDataConverter(dataConverter)
 	return t
 }
@@ -498,7 +499,7 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 }
 
 // SetDataConverter sets data converter.
-func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter DataConverter) *TestWorkflowEnvironment {
+func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
 	e.impl.setDataConverter(dataConverter)
 	return e
 }
@@ -543,7 +544,7 @@ func (e *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
-	listener func(activityInfo *ActivityInfo, ctx context.Context, args Values)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values)) *TestWorkflowEnvironment {
 	e.impl.onActivityStartedListener = listener
 	return e
 }
@@ -551,7 +552,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
 // SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityCompletedListener(
-	listener func(activityInfo *ActivityInfo, result Value, err error)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
 	e.impl.onActivityCompletedListener = listener
 	return e
 }
@@ -567,7 +568,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
-	listener func(activityInfo *ActivityInfo, details Values)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, details converter.Values)) *TestWorkflowEnvironment {
 	e.impl.onActivityHeartbeatListener = listener
 	return e
 }
@@ -575,7 +576,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 // SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
-	listener func(workflowInfo *WorkflowInfo, ctx Context, args Values)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values)) *TestWorkflowEnvironment {
 	e.impl.onChildWorkflowStartedListener = listener
 	return e
 }
@@ -583,7 +584,7 @@ func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 // SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
-	listener func(workflowInfo *WorkflowInfo, result Value, err error)) *TestWorkflowEnvironment {
+	listener func(workflowInfo *WorkflowInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
 	e.impl.onChildWorkflowCompletedListener = listener
 	return e
 }
@@ -626,7 +627,7 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
 // SetOnLocalActivityCompletedListener sets a listener that will be called after local activity is completed.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
-	listener func(activityInfo *ActivityInfo, result Value, err error)) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, result converter.Value, err error)) *TestWorkflowEnvironment {
 	e.impl.onLocalActivityCompletedListener = listener
 	return e
 }
@@ -688,7 +689,7 @@ func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName stri
 }
 
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
-func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (Value, error) {
+func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (converter.Value, error) {
 	return e.impl.queryWorkflow(queryType, args...)
 }
 

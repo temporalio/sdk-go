@@ -50,6 +50,7 @@ import (
 
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -114,7 +115,7 @@ type (
 		name          string
 		fn            interface{}
 		isWorkflow    bool
-		dataConverter DataConverter
+		dataConverter converter.DataConverter
 		interceptors  []WorkflowInterceptor
 	}
 
@@ -155,15 +156,15 @@ type (
 
 		expectedMockCalls map[string]struct{}
 
-		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args Values)
-		onActivityCompletedListener      func(activityInfo *ActivityInfo, result Value, err error)
+		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args converter.Values)
+		onActivityCompletedListener      func(activityInfo *ActivityInfo, result converter.Value, err error)
 		onActivityCanceledListener       func(activityInfo *ActivityInfo)
 		onLocalActivityStartedListener   func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})
-		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result Value, err error)
+		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result converter.Value, err error)
 		onLocalActivityCanceledListener  func(activityInfo *ActivityInfo)
-		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details Values)
-		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args Values)
-		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result Value, err error)
+		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details converter.Values)
+		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args converter.Values)
+		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result converter.Value, err error)
 		onChildWorkflowCanceledListener  func(workflowInfo *WorkflowInfo)
 		onTimerScheduledListener         func(timerID string, duration time.Duration)
 		onTimerFiredListener             func(timerID string)
@@ -187,11 +188,11 @@ type (
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isTestCompleted bool
-		testResult      Value
+		testResult      converter.Value
 		testError       error
 		doneChannel     chan struct{}
 		workerOptions   WorkerOptions
-		dataConverter   DataConverter
+		dataConverter   converter.DataConverter
 		runTimeout      time.Duration
 
 		heartbeatDetails *commonpb.Payloads
@@ -253,7 +254,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
-		dataConverter:     getDefaultDataConverter(),
+		dataConverter:     converter.DefaultDataConverter,
 		runTimeout:        maxWorkflowTimeout,
 	}
 
@@ -396,7 +397,7 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 	env.identity = identity
 }
 
-func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter DataConverter) {
+func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
 	env.dataConverter = dataConverter
 }
 
@@ -508,7 +509,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn interface{},
 	args ...interface{},
-) (Value, error) {
+) (converter.Value, error) {
 	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
 	if err != nil {
 		panic(err)
@@ -589,7 +590,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
-) (val Value, err error) {
+) (val converter.Value, err error) {
 	params := ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
@@ -970,7 +971,7 @@ func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
 	return env.metricsScope
 }
 
-func (env *testWorkflowEnvironmentImpl) GetDataConverter() DataConverter {
+func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 	return env.dataConverter
 }
 
@@ -1342,7 +1343,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 }
 
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string,
-	dataConverter DataConverter) {
+	dataConverter converter.DataConverter) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
 		tagActivityID, activityID, tagActivityType, activityType)
 	activityInfo := env.getActivityInfo(activityID, activityType)
@@ -1768,7 +1769,7 @@ func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []int
 	return m.getMockValue(mockRet)
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter DataConverter) ActivityTaskHandler {
+func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter converter.DataConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
 		TaskQueue:          taskQueue,
@@ -2127,7 +2128,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) Value {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) converter.Value {
 	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
 }
 
@@ -2204,7 +2205,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
-func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (Value, error) {
+func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...interface{}) (converter.Value, error) {
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		return nil, err

@@ -32,6 +32,8 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+
+	"go.temporal.io/sdk/internal/converter"
 )
 
 /*
@@ -123,21 +125,21 @@ type (
 		errType      string
 		nonRetryable bool
 		cause        error
-		details      Values
+		details      converter.Values
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		temporalError
 		timeoutType          enumspb.TimeoutType
-		lastHeartbeatDetails Values
+		lastHeartbeatDetails converter.Values
 		cause                error
 	}
 
 	// CanceledError returned when operation was canceled.
 	CanceledError struct {
 		temporalError
-		details Values
+		details converter.Values
 	}
 
 	// TerminatedError returned when workflow was terminated.
@@ -584,7 +586,7 @@ func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
-func convertErrDetailsToPayloads(details Values, dc DataConverter) *commonpb.Payloads {
+func convertErrDetailsToPayloads(details converter.Values, dc converter.DataConverter) *commonpb.Payloads {
 	switch d := details.(type) {
 	case ErrorDetailsValues:
 		data, err := encodeArgs(dc, d)
@@ -647,7 +649,7 @@ func getErrType(err error) string {
 }
 
 // convertErrorToFailure converts error to failure.
-func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
+func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
 	if err == nil {
 		return nil
 	}
@@ -740,7 +742,7 @@ func convertErrorToFailure(err error, dc DataConverter) *failurepb.Failure {
 }
 
 // convertFailureToError converts failure to error.
-func convertFailureToError(failure *failurepb.Failure, dc DataConverter) error {
+func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
 	if failure == nil {
 		return nil
 	}

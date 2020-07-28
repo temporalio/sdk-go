@@ -50,6 +50,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
 
+	"go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -124,13 +125,13 @@ type internalWorkerTestSuite struct {
 	mockCtrl      *gomock.Controller
 	service       *workflowservicemock.MockWorkflowServiceClient
 	registry      *registry
-	dataConverter DataConverter
+	dataConverter converter.DataConverter
 }
 
 func TestInternalWorkerTestSuite(t *testing.T) {
 	s := &internalWorkerTestSuite{
 		registry:      newRegistry(),
-		dataConverter: getDefaultDataConverter(),
+		dataConverter: converter.DefaultDataConverter,
 	}
 	testInternalWorkerRegister(s.registry)
 	suite.Run(t, s)
@@ -245,7 +246,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -287,7 +288,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -479,7 +480,7 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -583,7 +584,7 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -660,7 +661,7 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -733,7 +734,7 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -804,12 +805,12 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskQueue := "taskQueue1"
-	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
+	result, _ := converter.DefaultDataConverter.ToPayloads("some-incorrect-result")
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -846,12 +847,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
 	taskQueue := "taskQueue1"
-	result, _ := DefaultDataConverter.ToPayloads("some-incorrect-result")
+	result, _ := converter.DefaultDataConverter.ToPayloads("some-incorrect-result")
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "go.temporal.io/sdk/internal.testReplayWorkflow"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(getDefaultDataConverter()),
+			Input:        testEncodeFunctionArgs(converter.DefaultDataConverter),
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
@@ -925,7 +926,7 @@ func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
 		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
-		DataConverter: newTestDataConverter(),
+		DataConverter: converter.NewTestDataConverter(),
 	}
 	s.testWorkflowTaskHandlerHelper(params)
 }
@@ -1095,7 +1096,7 @@ func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *Aggre
 }
 
 func createWorkerWithThrottle(
-	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc DataConverter,
+	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc converter.DataConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -1144,7 +1145,7 @@ func createWorkerWithThrottle(
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
-	return createWorkerWithThrottle(service, 0.0, newTestDataConverter())
+	return createWorkerWithThrottle(service, 0.0, converter.NewTestDataConverter())
 }
 
 func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt ClientOptions) {
@@ -1180,7 +1181,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity() {
 }
 
 func (s *internalWorkerTestSuite) TestCompleteActivityWithDataConverter() {
-	opt := ClientOptions{DataConverter: newTestDataConverter()}
+	opt := ClientOptions{DataConverter: converter.NewTestDataConverter()}
 	s.testCompleteActivityHelper(opt)
 }
 
@@ -1232,7 +1233,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter() {
 	t := s.T()
-	dc := newTestDataConverter()
+	dc := converter.NewTestDataConverter()
 	opt := ClientOptions{Namespace: "testNamespace", DataConverter: dc}
 	wfClient := NewServiceClient(s.service, nil, opt)
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
@@ -1479,7 +1480,7 @@ func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
 func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
-	env.SetDataConverter(newTestDataConverter())
+	env.SetDataConverter(converter.NewTestDataConverter())
 	env.RegisterWorkflow(wf)
 	testInternalWorkerRegisterWithTestEnv(env)
 	env.ExecuteWorkflow(wf, []byte{1, 2})
@@ -1539,7 +1540,7 @@ type testErrorDetails struct {
 	T string
 }
 
-func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1601,12 +1602,12 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 }
 
 func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
-	dc := newTestDataConverter()
+	dc := converter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
-func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1664,12 +1665,12 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 }
 
 func TestActivityCancelledErrorWithDataConverter(t *testing.T) {
-	dc := newTestDataConverter()
+	dc := converter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
 	testActivityCancelledErrorHelper(ctx, t, dc)
 }
 
-func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter DataConverter) {
+func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 1}, nil
@@ -1693,7 +1694,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 }
 
 func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
-	dc := newTestDataConverter()
+	dc := converter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
 		dataConverter: dc,
 	})
@@ -1713,7 +1714,7 @@ func TestActivityNilArgs(t *testing.T) {
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
-	dataConverter := getDefaultDataConverter()
+	dataConverter := converter.DefaultDataConverter
 	data, err := encodeArgs(dataConverter, args)
 	require.NoError(t, err)
 
@@ -1748,7 +1749,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         getDefaultDataConverter(),
+		DataConverter:                         converter.DefaultDataConverter,
 		Tracer:                                opentracing.NoopTracer{},
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
@@ -1775,7 +1776,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &CompositeDataConverter{},
+		dataConverter:      &converter.CompositeDataConverter{},
 		contextPropagators: nil,
 		tracer:             nil,
 		logger:             log.NewNopLogger(),
@@ -1901,7 +1902,7 @@ func _TestThriftEncoding(t *testing.T) {
 */
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter DataConverter, args ...interface{}) *commonpb.Payloads {
+func testEncodeFunctionArgs(dataConverter converter.DataConverter, args ...interface{}) *commonpb.Payloads {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)

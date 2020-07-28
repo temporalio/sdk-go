@@ -31,6 +31,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/internal/converter"
 
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -75,7 +76,7 @@ func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.Pol
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
-		failure := convertErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil), getDefaultDataConverter())
+		failure := convertErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil), converter.DefaultDataConverter)
 		return &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Failure:   failure,

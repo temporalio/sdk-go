@@ -32,7 +32,7 @@ import (
 
 	enumspb "go.temporal.io/api/enums/v1"
 
-	"go.temporal.io/sdk/encoded"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
@@ -202,13 +202,13 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", errors.New("memo or search attributes are not carried over")
 	}
 	var memoVal string
-	err := encoded.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
+	err := converter.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
 	if err != nil {
 		return "", errors.New("error when get memo value")
 	}
 
 	var searchAttrVal string
-	err = encoded.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
+	err = converter.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return "", errors.New("error when get search attribute value")
 	}
@@ -565,12 +565,12 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
 	info := workflow.GetInfo(ctx)
 	var memo string
-	err = encoded.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memo)
+	err = converter.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memo)
 	if err != nil {
 		return
 	}
 	var searchAttrVal string
-	err = encoded.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
+	err = converter.GetDefaultDataConverter().FromPayload(info.SearchAttributes.IndexedFields["CustomKeywordField"], &searchAttrVal)
 	if err != nil {
 		return
 	}
