@@ -79,12 +79,12 @@ func (p *pressurePointMgrImpl) Execute(pressurePointName string) error {
 				}
 			}
 		} else if value, ok3 := config[pressurePointConfigSleep]; ok3 {
-			if timeout, err := strconv.Atoi(value); err == nil {
-				if timeout > 0 {
+			if timeoutSeconds, err := strconv.Atoi(value); err == nil {
+				if timeoutSeconds > 0 {
 					p.logger.Debug("pressurePointMgrImpl.Execute sleep.",
 						"PressurePointName", pressurePointName,
-						"DurationSeconds", timeout)
-					d := time.Duration(timeout) * time.Second
+						"DurationSeconds", timeoutSeconds)
+					d := time.Duration(timeoutSeconds) * time.Second
 					time.Sleep(d)
 					return nil
 				}

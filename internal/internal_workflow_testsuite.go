@@ -244,9 +244,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowType:  WorkflowType{Name: workflowTypeNotSpecified},
 			TaskQueueName: defaultTestTaskQueue,
 
-			WorkflowExecutionTimeoutSeconds: common.Int32Ceil(maxWorkflowTimeout.Seconds()),
-			WorkflowTaskTimeoutSeconds:      1,
-			Attempt:                         1,
+			WorkflowExecutionTimeout: maxWorkflowTimeout,
+			WorkflowTaskTimeout:      1 * time.Second,
+			Attempt:                  1,
 		},
 		registry: r,
 
@@ -353,14 +353,14 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.WorkflowExecution.RunID = params.WorkflowID + "_RunID"
 	childEnv.workflowInfo.Namespace = params.Namespace
 	childEnv.workflowInfo.TaskQueueName = params.TaskQueueName
-	childEnv.workflowInfo.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
-	childEnv.workflowInfo.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
-	childEnv.workflowInfo.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
+	childEnv.workflowInfo.WorkflowExecutionTimeout = params.WorkflowExecutionTimeout
+	childEnv.workflowInfo.WorkflowRunTimeout = params.WorkflowRunTimeout
+	childEnv.workflowInfo.WorkflowTaskTimeout = params.WorkflowTaskTimeout
 	childEnv.workflowInfo.lastCompletionResult = params.lastCompletionResult
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
-	childEnv.runTimeout = time.Duration(params.WorkflowRunTimeoutSeconds) * time.Second
+	childEnv.runTimeout = params.WorkflowRunTimeout
 	if workflowHandler, ok := env.runningWorkflows[params.WorkflowID]; ok {
 		// duplicate workflow ID
 		if !workflowHandler.handled {
@@ -448,14 +448,14 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		panic(fmt.Sprintf("Current TestWorkflowEnvironment is used to execute %v. Please create a new TestWorkflowEnvironment for %v.", wInfo.WorkflowType.Name, workflowType))
 	}
 	wInfo.WorkflowType.Name = workflowType
-	if wInfo.WorkflowRunTimeoutSeconds == 0 {
-		wInfo.WorkflowRunTimeoutSeconds = common.Int32Ceil(env.runTimeout.Seconds())
+	if wInfo.WorkflowRunTimeout == 0 {
+		wInfo.WorkflowRunTimeout = env.runTimeout
 	}
-	if wInfo.WorkflowExecutionTimeoutSeconds == 0 {
-		wInfo.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(maxWorkflowTimeout.Seconds())
+	if wInfo.WorkflowExecutionTimeout == 0 {
+		wInfo.WorkflowExecutionTimeout = maxWorkflowTimeout
 	}
-	if wInfo.WorkflowTaskTimeoutSeconds == 0 {
-		wInfo.WorkflowTaskTimeoutSeconds = 1
+	if wInfo.WorkflowTaskTimeout == 0 {
+		wInfo.WorkflowTaskTimeout = 1 * time.Second
 	}
 	env.locker.Unlock()
 
@@ -523,8 +523,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	parameters := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
-			ScheduleToCloseTimeoutSeconds: 600,
-			StartToCloseTimeoutSeconds:    600,
+			ScheduleToCloseTimeout: 600 * time.Second,
+			StartToCloseTimeout:    600 * time.Second,
 		},
 		ActivityType: *activityType,
 		Input:        input,
@@ -540,10 +540,10 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
-	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
-	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = parameters.ScheduleToStartTimeoutSeconds
-	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
+	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
+	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
+	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
+	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 
@@ -594,7 +594,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 ) (val converter.EncodedValue, err error) {
 	params := ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
-			ScheduleToCloseTimeoutSeconds: common.Int32Ceil(env.testTimeout.Seconds()),
+			ScheduleToCloseTimeout: env.testTimeout,
 		},
 		ActivityFn:   activityFn,
 		InputArgs:    args,
@@ -901,8 +901,8 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 
 	if params.RetryPolicy != nil && env.testError != nil {
 		var expireTime time.Time
-		if params.WorkflowOptions.WorkflowExecutionTimeoutSeconds > 0 {
-			expireTime = params.scheduledTime.Add(time.Second * time.Duration(params.WorkflowOptions.WorkflowExecutionTimeoutSeconds))
+		if params.WorkflowOptions.WorkflowExecutionTimeout > 0 {
+			expireTime = params.scheduledTime.Add(params.WorkflowOptions.WorkflowExecutionTimeout)
 		}
 		backoff := getRetryBackoffFromProtoRetryPolicy(params.RetryPolicy, env.workflowInfo.Attempt, env.testError, env.Now(), expireTime)
 		if backoff > 0 {
@@ -993,13 +993,13 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
-	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
-	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = parameters.ScheduleToStartTimeoutSeconds
-	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
+	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
+	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
+	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
+	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
-	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeoutSeconds)
+	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
 	activityInfo := &ActivityID{
 		scheduleID: scheduleID,
 		activityID: activityID,
@@ -1053,7 +1053,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 // Copy of the server function func (v *commandAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
-	runTimeout int32,
+	runTimeout time.Duration,
 ) error {
 
 	// if err := v.validateCrossNamespaceCall(
@@ -1097,33 +1097,31 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 
 	// Only attempt to deduce and fill in unspecified timeouts only when all timeouts are non-negative.
-	if attributes.GetScheduleToCloseTimeoutSeconds() < 0 || attributes.GetScheduleToStartTimeoutSeconds() < 0 ||
-		attributes.GetStartToCloseTimeoutSeconds() < 0 || attributes.GetHeartbeatTimeoutSeconds() < 0 {
+	if common.DurationValue(attributes.GetScheduleToCloseTimeout()) < 0 || common.DurationValue(attributes.GetScheduleToStartTimeout()) < 0 ||
+		common.DurationValue(attributes.GetStartToCloseTimeout()) < 0 || common.DurationValue(attributes.GetHeartbeatTimeout()) < 0 {
 		return serviceerror.NewInvalidArgument("A valid timeout may not be negative.")
 	}
 
-	validScheduleToClose := attributes.GetScheduleToCloseTimeoutSeconds() > 0
-	validScheduleToStart := attributes.GetScheduleToStartTimeoutSeconds() > 0
-	validStartToClose := attributes.GetStartToCloseTimeoutSeconds() > 0
+	validScheduleToClose := common.DurationValue(attributes.GetScheduleToCloseTimeout()) > 0
+	validScheduleToStart := common.DurationValue(attributes.GetScheduleToStartTimeout()) > 0
+	validStartToClose := common.DurationValue(attributes.GetStartToCloseTimeout()) > 0
 
 	if validScheduleToClose {
 		if validScheduleToStart {
-			attributes.ScheduleToStartTimeoutSeconds = common.MinInt32(attributes.GetScheduleToStartTimeoutSeconds(),
-				attributes.GetScheduleToCloseTimeoutSeconds())
+			attributes.ScheduleToStartTimeout = common.MinDurationPtr(attributes.GetScheduleToStartTimeout(), attributes.GetScheduleToCloseTimeout())
 		} else {
-			attributes.ScheduleToStartTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
+			attributes.ScheduleToStartTimeout = attributes.GetScheduleToCloseTimeout()
 		}
 		if validStartToClose {
-			attributes.StartToCloseTimeoutSeconds = common.MinInt32(attributes.GetStartToCloseTimeoutSeconds(),
-				attributes.GetScheduleToCloseTimeoutSeconds())
+			attributes.StartToCloseTimeout = common.MinDurationPtr(attributes.GetStartToCloseTimeout(), attributes.GetScheduleToCloseTimeout())
 		} else {
-			attributes.StartToCloseTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
+			attributes.StartToCloseTimeout = attributes.GetScheduleToCloseTimeout()
 		}
 	} else if validStartToClose {
 		// We are in !validScheduleToClose due to the first if above
-		attributes.ScheduleToCloseTimeoutSeconds = runTimeout
+		attributes.ScheduleToCloseTimeout = &runTimeout
 		if !validScheduleToStart {
-			attributes.ScheduleToStartTimeoutSeconds = runTimeout
+			attributes.ScheduleToStartTimeout = &runTimeout
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
@@ -1131,22 +1129,20 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
-		if attributes.GetScheduleToCloseTimeoutSeconds() > runTimeout {
-			attributes.ScheduleToCloseTimeoutSeconds = runTimeout
+		if common.DurationValue(attributes.GetScheduleToCloseTimeout()) > runTimeout {
+			attributes.ScheduleToCloseTimeout = &runTimeout
 		}
-		if attributes.GetScheduleToStartTimeoutSeconds() > runTimeout {
-			attributes.ScheduleToStartTimeoutSeconds = runTimeout
+		if common.DurationValue(attributes.GetScheduleToStartTimeout()) > runTimeout {
+			attributes.ScheduleToStartTimeout = &runTimeout
 		}
-		if attributes.GetStartToCloseTimeoutSeconds() > runTimeout {
-			attributes.StartToCloseTimeoutSeconds = runTimeout
+		if common.DurationValue(attributes.GetStartToCloseTimeout()) > runTimeout {
+			attributes.StartToCloseTimeout = &runTimeout
 		}
-		if attributes.GetHeartbeatTimeoutSeconds() > runTimeout {
-			attributes.HeartbeatTimeoutSeconds = runTimeout
+		if common.DurationValue(attributes.GetHeartbeatTimeout()) > runTimeout {
+			attributes.HeartbeatTimeout = &runTimeout
 		}
 	}
-	if attributes.GetHeartbeatTimeoutSeconds() > attributes.GetScheduleToCloseTimeoutSeconds() {
-		attributes.HeartbeatTimeoutSeconds = attributes.GetScheduleToCloseTimeoutSeconds()
-	}
+	attributes.HeartbeatTimeout = common.MinDurationPtr(attributes.GetHeartbeatTimeout(), attributes.GetScheduleToCloseTimeout())
 	return nil
 }
 
@@ -1186,16 +1182,16 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// nil policy is valid which means no retry
 		return nil
 	}
-	if policy.GetInitialIntervalInSeconds() < 0 {
+	if common.DurationValue(policy.GetInitialInterval()) < 0 {
 		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds cannot be less than 0 on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
 	}
-	if policy.GetMaximumIntervalInSeconds() < 0 {
+	if common.DurationValue(policy.GetMaximumInterval()) < 0 {
 		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than 0 on retry policy.")
 	}
-	if policy.GetMaximumIntervalInSeconds() > 0 && policy.GetMaximumIntervalInSeconds() < policy.GetInitialIntervalInSeconds() {
+	if common.DurationValue(policy.GetMaximumInterval()) > 0 && common.DurationValue(policy.GetMaximumInterval()) < common.DurationValue(policy.GetInitialInterval()) {
 		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
 	}
 	if policy.GetMaximumAttempts() < 0 {
@@ -1229,8 +1225,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	task *workflowservice.PollActivityTaskQueueResponse,
 ) (result interface{}) {
 	var expireTime time.Time
-	if parameters.ScheduleToCloseTimeoutSeconds > 0 {
-		expireTime = env.Now().Add(time.Second * time.Duration(parameters.ScheduleToCloseTimeoutSeconds))
+	if parameters.ScheduleToCloseTimeout > 0 {
+		expireTime = env.Now().Add(parameters.ScheduleToCloseTimeout)
 	}
 
 	for {
@@ -1278,9 +1274,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
-		InitialInterval:        time.Second * time.Duration(p.GetInitialIntervalInSeconds()),
+		InitialInterval:        common.DurationValue(p.GetInitialInterval()),
 		BackoffCoefficient:     p.GetBackoffCoefficient(),
-		MaximumInterval:        time.Second * time.Duration(p.GetMaximumIntervalInSeconds()),
+		MaximumInterval:        common.DurationValue(p.GetMaximumInterval()),
 		MaximumAttempts:        p.GetMaximumAttempts(),
 		NonRetryableErrorTypes: p.NonRetryableErrorTypes,
 	}
@@ -1832,21 +1828,22 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	attr *commandpb.ScheduleActivityTaskCommandAttributes) *workflowservice.PollActivityTaskQueueResponse {
 	activityID := attr.GetActivityId()
+	now := time.Now()
 	task := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt: 1,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		ActivityId:                    activityID,
-		TaskToken:                     []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
-		ActivityType:                  &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
-		Input:                         attr.GetInput(),
-		ScheduledTimestamp:            time.Now().UnixNano(),
-		ScheduleToCloseTimeoutSeconds: attr.GetScheduleToCloseTimeoutSeconds(),
-		StartedTimestamp:              time.Now().UnixNano(),
-		StartToCloseTimeoutSeconds:    attr.GetStartToCloseTimeoutSeconds(),
-		HeartbeatTimeoutSeconds:       attr.GetHeartbeatTimeoutSeconds(),
+		ActivityId:             activityID,
+		TaskToken:              []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
+		ActivityType:           &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
+		Input:                  attr.GetInput(),
+		ScheduledTime:          &now,
+		ScheduleToCloseTimeout: attr.GetScheduleToCloseTimeout(),
+		StartedTime:            &now,
+		StartToCloseTimeout:    attr.GetStartToCloseTimeout(),
+		HeartbeatTimeout:       attr.GetHeartbeatTimeout(),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: workflowTypeName,
 		},
@@ -2251,13 +2248,13 @@ func (env *testWorkflowEnvironmentImpl) GetRegistry() *registry {
 func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWorkflowOptions) {
 	wf := env.workflowInfo
 	if options.WorkflowExecutionTimeout > 0 {
-		wf.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(options.WorkflowExecutionTimeout.Seconds())
+		wf.WorkflowExecutionTimeout = options.WorkflowExecutionTimeout
 	}
 	if options.WorkflowRunTimeout > 0 {
-		wf.WorkflowRunTimeoutSeconds = common.Int32Ceil(options.WorkflowRunTimeout.Seconds())
+		wf.WorkflowRunTimeout = options.WorkflowRunTimeout
 	}
 	if options.WorkflowTaskTimeout > 0 {
-		wf.WorkflowTaskTimeoutSeconds = common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())
+		wf.WorkflowTaskTimeout = options.WorkflowTaskTimeout
 	}
 	if len(options.TaskQueue) > 0 {
 		wf.TaskQueueName = options.TaskQueue

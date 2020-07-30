@@ -36,7 +36,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/log"
 )
@@ -727,22 +726,22 @@ func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Head
 
 // WorkflowInfo information about currently executing workflow
 type WorkflowInfo struct {
-	WorkflowExecution               WorkflowExecution
-	WorkflowType                    WorkflowType
-	TaskQueueName                   string
-	WorkflowExecutionTimeoutSeconds int32
-	WorkflowRunTimeoutSeconds       int32
-	WorkflowTaskTimeoutSeconds      int32
-	Namespace                       string
-	Attempt                         int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult            *commonpb.Payloads
-	CronSchedule                    string
-	ContinuedExecutionRunID         string
-	ParentWorkflowNamespace         string
-	ParentWorkflowExecution         *WorkflowExecution
-	Memo                            *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
-	SearchAttributes                *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
-	BinaryChecksum                  string
+	WorkflowExecution        WorkflowExecution
+	WorkflowType             WorkflowType
+	TaskQueueName            string
+	WorkflowExecutionTimeout time.Duration
+	WorkflowRunTimeout       time.Duration
+	WorkflowTaskTimeout      time.Duration
+	Namespace                string
+	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
+	lastCompletionResult     *commonpb.Payloads
+	CronSchedule             string
+	ContinuedExecutionRunID  string
+	ParentWorkflowNamespace  string
+	ParentWorkflowExecution  *WorkflowExecution
+	Memo                     *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	SearchAttributes         *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	BinaryChecksum           string
 }
 
 // GetBinaryChecksum return binary checksum.
@@ -996,9 +995,9 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 		wfOptions.TaskQueueName = cwo.TaskQueue
 	}
 	wfOptions.WorkflowID = cwo.WorkflowID
-	wfOptions.WorkflowExecutionTimeoutSeconds = common.Int32Ceil(cwo.WorkflowExecutionTimeout.Seconds())
-	wfOptions.WorkflowRunTimeoutSeconds = common.Int32Ceil(cwo.WorkflowRunTimeout.Seconds())
-	wfOptions.WorkflowTaskTimeoutSeconds = common.Int32Ceil(cwo.WorkflowTaskTimeout.Seconds())
+	wfOptions.WorkflowExecutionTimeout = cwo.WorkflowExecutionTimeout
+	wfOptions.WorkflowRunTimeout = cwo.WorkflowRunTimeout
+	wfOptions.WorkflowTaskTimeout = cwo.WorkflowTaskTimeout
 	wfOptions.WaitForCancellation = cwo.WaitForCancellation
 	wfOptions.WorkflowIDReusePolicy = cwo.WorkflowIDReusePolicy
 	wfOptions.RetryPolicy = convertRetryPolicy(cwo.RetryPolicy)
@@ -1039,7 +1038,7 @@ func WithWorkflowID(ctx Context, workflowID string) Context {
 // subjected to change in the future.
 func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).WorkflowRunTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).WorkflowRunTimeout = d
 	return ctx1
 }
 
@@ -1048,7 +1047,7 @@ func WithWorkflowRunTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).WorkflowTaskTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getWorkflowEnvOptions(ctx1).WorkflowTaskTimeout = d
 	return ctx1
 }
 
@@ -1374,10 +1373,10 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	if len(options.TaskQueue) > 0 {
 		eap.TaskQueueName = options.TaskQueue
 	}
-	eap.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
-	eap.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
-	eap.ScheduleToStartTimeoutSeconds = common.Int32Ceil(options.ScheduleToStartTimeout.Seconds())
-	eap.HeartbeatTimeoutSeconds = common.Int32Ceil(options.HeartbeatTimeout.Seconds())
+	eap.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
+	eap.StartToCloseTimeout = options.StartToCloseTimeout
+	eap.ScheduleToStartTimeout = options.ScheduleToStartTimeout
+	eap.HeartbeatTimeout = options.HeartbeatTimeout
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
@@ -1391,8 +1390,8 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	ctx1 := setLocalActivityParametersIfNotExist(ctx)
 	opts := getLocalActivityOptions(ctx1)
 
-	opts.ScheduleToCloseTimeoutSeconds = common.Int32Ceil(options.ScheduleToCloseTimeout.Seconds())
-	opts.StartToCloseTimeoutSeconds = common.Int32Ceil(options.StartToCloseTimeout.Seconds())
+	opts.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
+	opts.StartToCloseTimeout = options.StartToCloseTimeout
 	opts.RetryPolicy = options.RetryPolicy
 	return ctx1
 }
@@ -1409,7 +1408,7 @@ func WithTaskQueue(ctx Context, name string) Context {
 // subjected to change in the future.
 func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getActivityOptions(ctx1).ScheduleToCloseTimeout = d
 	return ctx1
 }
 
@@ -1418,7 +1417,7 @@ func WithScheduleToCloseTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).ScheduleToStartTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getActivityOptions(ctx1).ScheduleToStartTimeout = d
 	return ctx1
 }
 
@@ -1427,7 +1426,7 @@ func WithScheduleToStartTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).StartToCloseTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getActivityOptions(ctx1).StartToCloseTimeout = d
 	return ctx1
 }
 
@@ -1436,7 +1435,7 @@ func WithStartToCloseTimeout(ctx Context, d time.Duration) Context {
 // subjected to change in the future.
 func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).HeartbeatTimeoutSeconds = common.Int32Ceil(d.Seconds())
+	getActivityOptions(ctx1).HeartbeatTimeout = d
 	return ctx1
 }
 
@@ -1462,10 +1461,10 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
 	}
 	return &commonpb.RetryPolicy{
-		MaximumIntervalInSeconds: common.Int32Ceil(retryPolicy.MaximumInterval.Seconds()),
-		InitialIntervalInSeconds: common.Int32Ceil(retryPolicy.InitialInterval.Seconds()),
-		BackoffCoefficient:       retryPolicy.BackoffCoefficient,
-		MaximumAttempts:          retryPolicy.MaximumAttempts,
-		NonRetryableErrorTypes:   retryPolicy.NonRetryableErrorTypes,
+		MaximumInterval:        &retryPolicy.MaximumInterval,
+		InitialInterval:        &retryPolicy.InitialInterval,
+		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
+		MaximumAttempts:        retryPolicy.MaximumAttempts,
+		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 }

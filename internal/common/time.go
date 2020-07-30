@@ -25,55 +25,35 @@
 package common
 
 import (
-	"math"
+	"time"
 )
 
-// Int32Ceil return the int32 ceil of a float64
-func Int32Ceil(v float64) int32 {
-	return int32(math.Ceil(v))
-}
-
-// Int64Ceil return the int64 ceil of a float64
-func Int64Ceil(v float64) int64 {
-	return int64(math.Ceil(v))
-}
-
-// MinInt64 returns the smaller of two given int64
-func MinInt64(a, b int64) int64 {
-	if a < b {
-		return a
+// TimeValue dereference time in a safe way.
+func TimeValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
 	}
-	return b
+	return *t
 }
 
-// MaxInt64 returns the greater of two given int64
-func MaxInt64(a, b int64) int64 {
-	if a > b {
-		return a
+// DurationValue dereference duration in a safe way.
+func DurationValue(d *time.Duration) time.Duration {
+	if d == nil {
+		return 0
 	}
-	return b
+	return *d
 }
 
-// MinInt32 return smaller one of two inputs int32
-func MinInt32(a, b int32) int32 {
-	if a < b {
-		return a
+// MinDurationPtr returns pointer to minimum duration.
+func MinDurationPtr(d1 *time.Duration, d2 *time.Duration) *time.Duration {
+	d1v, d2v := DurationValue(d1), DurationValue(d2)
+	if d1v > d2v {
+		return &d2v
 	}
-	return b
+	return &d1v
 }
 
-// MinInt returns the smaller of two given integers
-func MinInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// MaxInt returns the greater one of two given integers
-func MaxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+// DurationPtr returns pointer to duration.
+func DurationPtr(d time.Duration) *time.Duration {
+	return &d
 }

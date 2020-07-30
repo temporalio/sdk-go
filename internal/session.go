@@ -297,7 +297,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	}
 
 	heartbeatTimeout := defaultSessionHeartbeatTimeout
-	if options.HeartbeatTimeout != time.Duration(0) {
+	if options.HeartbeatTimeout != 0 {
 		heartbeatTimeout = options.HeartbeatTimeout
 	}
 	ao := ActivityOptions{

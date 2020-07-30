@@ -62,22 +62,22 @@ type (
 
 	// ExecuteActivityOptions option for executing an activity
 	ExecuteActivityOptions struct {
-		ActivityID                    string // Users can choose IDs but our framework makes it optional to decrease the crust.
-		TaskQueueName                 string
-		ScheduleToCloseTimeoutSeconds int32
-		ScheduleToStartTimeoutSeconds int32
-		StartToCloseTimeoutSeconds    int32
-		HeartbeatTimeoutSeconds       int32
-		WaitForCancellation           bool
-		OriginalTaskQueueName         string
-		RetryPolicy                   *commonpb.RetryPolicy
+		ActivityID             string // Users can choose IDs but our framework makes it optional to decrease the crust.
+		TaskQueueName          string
+		ScheduleToCloseTimeout time.Duration
+		ScheduleToStartTimeout time.Duration
+		StartToCloseTimeout    time.Duration
+		HeartbeatTimeout       time.Duration
+		WaitForCancellation    bool
+		OriginalTaskQueueName  string
+		RetryPolicy            *commonpb.RetryPolicy
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity
 	ExecuteLocalActivityOptions struct {
-		ScheduleToCloseTimeoutSeconds int32
-		StartToCloseTimeoutSeconds    int32
-		RetryPolicy                   *RetryPolicy
+		ScheduleToCloseTimeout time.Duration
+		StartToCloseTimeout    time.Duration
+		RetryPolicy            *RetryPolicy
 	}
 
 	// ExecuteActivityParams parameters for executing an activity
@@ -133,8 +133,8 @@ type (
 		isLocalActivity    bool
 		heartbeatTimeout   time.Duration
 		deadline           time.Time
-		scheduledTimestamp time.Time
-		startedTimestamp   time.Time
+		scheduledTime      time.Time
+		startedTime        time.Time
 		taskQueue          string
 		dataConverter      converter.DataConverter
 		attempt            int32 // starts from 1.
@@ -185,19 +185,19 @@ func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions
 	if p == nil {
 		return nil, errLocalActivityParamsBadRequest
 	}
-	if p.ScheduleToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("negative ScheduleToCloseTimeoutSeconds")
+	if p.ScheduleToCloseTimeout < 0 {
+		return nil, errors.New("negative ScheduleToCloseTimeout")
 	}
-	if p.StartToCloseTimeoutSeconds < 0 {
-		return nil, errors.New("negative StartToCloseTimeoutSeconds")
+	if p.StartToCloseTimeout < 0 {
+		return nil, errors.New("negative StartToCloseTimeout")
 	}
-	if p.ScheduleToCloseTimeoutSeconds == 0 && p.StartToCloseTimeoutSeconds == 0 {
-		return nil, errors.New("at least one of ScheduleToCloseTimeoutSeconds and StartToCloseTimeoutSeconds is required")
+	if p.ScheduleToCloseTimeout == 0 && p.StartToCloseTimeout == 0 {
+		return nil, errors.New("at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required")
 	}
-	if p.ScheduleToCloseTimeoutSeconds == 0 {
-		p.ScheduleToCloseTimeoutSeconds = p.StartToCloseTimeoutSeconds
+	if p.ScheduleToCloseTimeout == 0 {
+		p.ScheduleToCloseTimeout = p.StartToCloseTimeout
 	} else {
-		p.StartToCloseTimeoutSeconds = p.ScheduleToCloseTimeoutSeconds
+		p.StartToCloseTimeout = p.ScheduleToCloseTimeout
 	}
 	return p, nil
 }

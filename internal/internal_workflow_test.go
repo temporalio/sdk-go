@@ -446,9 +446,9 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	var resultErr *ContinueAsNewError
 	s.True(errors.As(err, &resultErr))
 	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.WorkflowType.Name)
-	s.EqualValues(100, resultErr.params.WorkflowExecutionTimeoutSeconds)
-	s.EqualValues(50, resultErr.params.WorkflowRunTimeoutSeconds)
-	s.EqualValues(5, resultErr.params.WorkflowTaskTimeoutSeconds)
+	s.EqualValues(100*time.Second, resultErr.params.WorkflowExecutionTimeout)
+	s.EqualValues(50*time.Second, resultErr.params.WorkflowRunTimeout)
+	s.EqualValues(5*time.Second, resultErr.params.WorkflowTaskTimeout)
 	s.EqualValues("default-test-taskqueue", resultErr.params.TaskQueueName)
 }
 

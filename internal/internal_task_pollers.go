@@ -389,7 +389,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 							Name: getWorkerTaskQueue(wtp.stickyUUID),
 							Kind: enumspb.TASK_QUEUE_KIND_STICKY,
 						},
-						ScheduleToStartTimeoutSeconds: common.Int32Ceil(wtp.StickyScheduleToStartTimeout.Seconds()),
+						ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 					}
 				} else {
 					request.ReturnNewWorkflowTask = false
@@ -526,11 +526,11 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		}
 	}()
 
-	timeout := task.params.ScheduleToCloseTimeoutSeconds
-	if task.params.StartToCloseTimeoutSeconds != 0 && task.params.StartToCloseTimeoutSeconds < timeout {
-		timeout = task.params.StartToCloseTimeoutSeconds
+	timeout := task.params.ScheduleToCloseTimeout
+	if task.params.StartToCloseTimeout != 0 && task.params.StartToCloseTimeout < timeout {
+		timeout = task.params.StartToCloseTimeout
 	}
-	timeoutDuration := time.Duration(timeout) * time.Second
+	timeoutDuration := timeout
 	deadline := time.Now().Add(timeoutDuration)
 	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
@@ -565,7 +565,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			lath.logger.Warn("LocalActivity takes too long to complete.",
 				"LocalActivityID", task.activityID,
 				"LocalActivityType", activityType,
-				"ScheduleToCloseTimeoutSeconds", task.params.ScheduleToCloseTimeoutSeconds,
+				"ScheduleToCloseTimeout", task.params.ScheduleToCloseTimeout,
 				"ActualExecutionDuration", executionLatency)
 		}
 	}(doneCh)
@@ -703,7 +703,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	wtp.metricsScope.Counter(metrics.PollWorkflowQueueSucceedCounter).Inc(1)
 	wtp.metricsScope.Timer(metrics.PollWorkflowQueueLatency).Record(time.Since(startTime))
 
-	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestamp())
+	scheduledToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetScheduledTime()))
 	wtp.metricsScope.Timer(metrics.WorkflowTaskScheduledToStartLatency).Record(scheduledToStartLatency)
 	return task, nil
 }
@@ -858,7 +858,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	atp.metricsScope.Counter(metrics.ActivityPollSucceedCounter).Inc(1)
 	atp.metricsScope.Timer(metrics.ActivityPollLatency).Record(time.Since(startTime))
 
-	scheduledToStartLatency := time.Duration(response.GetStartedTimestamp() - response.GetScheduledTimestampThisAttempt())
+	scheduledToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
 	atp.metricsScope.Timer(metrics.ActivityScheduledToStartLatency).Record(scheduledToStartLatency)
 
 	return &activityTask{task: response, pollStartTime: startTime}, nil

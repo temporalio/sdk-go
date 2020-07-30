@@ -48,6 +48,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
@@ -372,7 +373,7 @@ func createTestEventTimerStarted(eventID int64, id int) *historypb.HistoryEvent 
 	timerID := fmt.Sprintf("%v", id)
 	attr := &historypb.TimerStartedEventAttributes{
 		TimerId:                      timerID,
-		StartToFireTimeoutSeconds:    0,
+		StartToFireTimeout:           nil,
 		WorkflowTaskCompletedEventId: 0,
 	}
 	return &historypb.HistoryEvent{
@@ -982,24 +983,24 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	}
 	parentNamespace := "parentNamespace"
 	var attempt int32 = 123
-	var executionTimeout int32 = 213456
-	var runTimeout int32 = 21098
-	var taskTimeout int32 = 21
+	executionTimeout := 213456 * time.Second
+	runTimeout := 21098 * time.Second
+	taskTimeout := 21 * time.Second
 	workflowType := "GetWorkflowInfoWorkflow"
 	lastCompletionResult, err := converter.GetDefaultDataConverter().ToPayloads("lastCompletionData")
 	t.NoError(err)
 	startedEventAttributes := &historypb.WorkflowExecutionStartedEventAttributes{
-		Input:                           lastCompletionResult,
-		TaskQueue:                       &taskqueuepb.TaskQueue{Name: taskQueue},
-		ParentWorkflowExecution:         parentExecution,
-		CronSchedule:                    cronSchedule,
-		ContinuedExecutionRunId:         continuedRunID,
-		ParentWorkflowNamespace:         parentNamespace,
-		Attempt:                         attempt,
-		WorkflowExecutionTimeoutSeconds: executionTimeout,
-		WorkflowRunTimeoutSeconds:       runTimeout,
-		WorkflowTaskTimeoutSeconds:      taskTimeout,
-		LastCompletionResult:            lastCompletionResult,
+		Input:                    lastCompletionResult,
+		TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
+		ParentWorkflowExecution:  parentExecution,
+		CronSchedule:             cronSchedule,
+		ContinuedExecutionRunId:  continuedRunID,
+		ParentWorkflowNamespace:  parentNamespace,
+		Attempt:                  attempt,
+		WorkflowExecutionTimeout: &executionTimeout,
+		WorkflowRunTimeout:       &runTimeout,
+		WorkflowTaskTimeout:      &taskTimeout,
+		LastCompletionResult:     lastCompletionResult,
 	}
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
@@ -1030,9 +1031,9 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
 	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)
 	t.EqualValues(attempt, result.Attempt)
-	t.EqualValues(executionTimeout, result.WorkflowExecutionTimeoutSeconds)
-	t.EqualValues(runTimeout, result.WorkflowRunTimeoutSeconds)
-	t.EqualValues(taskTimeout, result.WorkflowTaskTimeoutSeconds)
+	t.EqualValues(executionTimeout, result.WorkflowExecutionTimeout)
+	t.EqualValues(runTimeout, result.WorkflowRunTimeout)
+	t.EqualValues(taskTimeout, result.WorkflowTaskTimeout)
 	t.EqualValues(workflowType, result.WorkflowType.Name)
 	t.EqualValues(testNamespace, result.Namespace)
 }
@@ -1211,15 +1212,14 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 }
 
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
-	backoffIntervalInSeconds := int32(1)
-	backoffDuration := time.Second * time.Duration(backoffIntervalInSeconds)
+	backoffInterval := 1 * time.Second
 	workflowComplete := false
 
 	retryLocalActivityWorkflowFunc := func(ctx Context, intput []byte) error {
 		ao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{
-				InitialInterval:    backoffDuration,
+				InitialInterval:    backoffInterval,
 				BackoffCoefficient: 1.1,
 				MaximumInterval:    time.Minute,
 				MaximumAttempts:    0,
@@ -1239,12 +1239,13 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	)
 
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
-	workflowTaskStartedEvent.Timestamp = time.Now().UnixNano()
+	now := time.Now()
+	workflowTaskStartedEvent.EventTime = &now
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			WorkflowTaskTimeoutSeconds: backoffIntervalInSeconds,
-			TaskQueue:                  &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
+			WorkflowTaskTimeout: &backoffInterval,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
 		),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		workflowTaskStartedEvent,
@@ -1297,7 +1298,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	t.Error(err)
 
 	// wait for the retry timer to fire
-	time.Sleep(backoffDuration)
+	time.Sleep(backoffInterval)
 	t.False(workflowComplete)
 	<-doneCh
 }
@@ -1390,23 +1391,23 @@ func (t *testActivityDeadline) GetFunction() interface{} {
 type deadlineTest struct {
 	actWaitDuration  time.Duration
 	ScheduleTS       time.Time
-	ScheduleDuration int32
+	ScheduleDuration time.Duration
 	StartTS          time.Time
-	StartDuration    int32
+	StartDuration    time.Duration
 	err              error
 }
 
 func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	deadlineTests := []deadlineTest{
-		{time.Duration(0), time.Now(), 3, time.Now(), 3, nil},
-		{time.Duration(0), time.Now(), 4, time.Now(), 3, nil},
-		{time.Duration(0), time.Now(), 3, time.Now(), 4, nil},
-		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now(), 1, context.DeadlineExceeded},
-		{time.Duration(0), time.Now(), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-		{time.Duration(0), time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1, time.Now(), 1, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 2, time.Now(), 1, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1, time.Now(), 2, context.DeadlineExceeded},
+		{0, time.Now(), 3 * time.Second, time.Now(), 3 * time.Second, nil},
+		{0, time.Now(), 4 * time.Second, time.Now(), 3 * time.Second, nil},
+		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, nil},
+		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
+		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
+		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, context.DeadlineExceeded},
 	}
 	a := &testActivityDeadline{logger: t.logger}
 	registry := t.registry
@@ -1429,12 +1430,12 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
-			ActivityType:                  &commonpb.ActivityType{Name: "test"},
-			ActivityId:                    uuid.New(),
-			ScheduledTimestamp:            d.ScheduleTS.UnixNano(),
-			ScheduleToCloseTimeoutSeconds: d.ScheduleDuration,
-			StartedTimestamp:              d.StartTS.UnixNano(),
-			StartToCloseTimeoutSeconds:    d.StartDuration,
+			ActivityType:           &commonpb.ActivityType{Name: "test"},
+			ActivityId:             uuid.New(),
+			ScheduledTime:          &d.ScheduleTS,
+			ScheduleToCloseTimeout: &d.ScheduleDuration,
+			StartedTime:            &d.StartTS,
+			StartToCloseTimeout:    &d.StartDuration,
 			WorkflowType: &commonpb.WorkflowType{
 				Name: "wType",
 			},
@@ -1483,18 +1484,19 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		Tracer:            opentracing.NoopTracer{},
 	}
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
+	now := time.Now()
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
-		ActivityType:                  &commonpb.ActivityType{Name: "test"},
-		ActivityId:                    uuid.New(),
-		ScheduledTimestamp:            time.Now().UnixNano(),
-		ScheduleToCloseTimeoutSeconds: 1,
-		StartedTimestamp:              time.Now().UnixNano(),
-		StartToCloseTimeoutSeconds:    1,
+		ActivityType:           &commonpb.ActivityType{Name: "test"},
+		ActivityId:             uuid.New(),
+		ScheduledTime:          &now,
+		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
+		StartedTime:            &now,
+		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},

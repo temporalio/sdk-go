@@ -44,6 +44,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
@@ -392,7 +393,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if info.GetCloseTime().GetValue() > 0 {
+		if !common.TimeValue(info.GetCloseTime()).IsZero() {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
 			break
 		}
@@ -409,7 +410,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if info.GetCloseTime().GetValue() > 0 {
+		if !common.TimeValue(info.GetCloseTime()).IsZero() {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
 			break
 		}
@@ -558,10 +559,10 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := namespace
-	retention := int32(1)
+	retention := 1 * time.Hour * 24
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                                 name,
-		WorkflowExecutionRetentionPeriodDays: retention,
+		Name:                             name,
+		WorkflowExecutionRetentionPeriod: &retention,
 	})
 	client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {

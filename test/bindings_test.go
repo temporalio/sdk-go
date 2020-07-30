@@ -37,6 +37,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -80,10 +81,9 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := namespace
-	retention := int32(1)
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                                 name,
-		WorkflowExecutionRetentionPeriodDays: retention,
+		Name:                             name,
+		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
 	})
 	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {

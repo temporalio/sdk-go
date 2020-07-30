@@ -49,6 +49,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -57,7 +58,7 @@ import (
 )
 
 const (
-	defaultHeartBeatIntervalInSec = 10 * 60
+	defaultHeartBeatInterval = 10 * 60 * time.Second
 
 	defaultStickyCacheSize = 10000
 
@@ -616,23 +617,23 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			ID:    workflowID,
 			RunID: runID,
 		},
-		WorkflowType:                    WorkflowType{Name: task.WorkflowType.GetName()},
-		TaskQueueName:                   taskQueue.GetName(),
-		WorkflowExecutionTimeoutSeconds: attributes.GetWorkflowExecutionTimeoutSeconds(),
-		WorkflowRunTimeoutSeconds:       attributes.GetWorkflowRunTimeoutSeconds(),
-		WorkflowTaskTimeoutSeconds:      attributes.GetWorkflowTaskTimeoutSeconds(),
-		Namespace:                       wth.namespace,
-		Attempt:                         attributes.GetAttempt(),
-		lastCompletionResult:            attributes.LastCompletionResult,
-		CronSchedule:                    attributes.CronSchedule,
-		ContinuedExecutionRunID:         attributes.ContinuedExecutionRunId,
-		ParentWorkflowNamespace:         attributes.ParentWorkflowNamespace,
-		ParentWorkflowExecution:         parentWorkflowExecution,
-		Memo:                            attributes.Memo,
-		SearchAttributes:                attributes.SearchAttributes,
+		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
+		TaskQueueName:            taskQueue.GetName(),
+		WorkflowExecutionTimeout: common.DurationValue(attributes.GetWorkflowExecutionTimeout()),
+		WorkflowRunTimeout:       common.DurationValue(attributes.GetWorkflowRunTimeout()),
+		WorkflowTaskTimeout:      common.DurationValue(attributes.GetWorkflowTaskTimeout()),
+		Namespace:                wth.namespace,
+		Attempt:                  attributes.GetAttempt(),
+		lastCompletionResult:     attributes.LastCompletionResult,
+		CronSchedule:             attributes.CronSchedule,
+		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
+		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
+		ParentWorkflowExecution:  parentWorkflowExecution,
+		Memo:                     attributes.Memo,
+		SearchAttributes:         attributes.SearchAttributes,
 	}
 
-	wfStartTime := time.Unix(0, h.Events[0].GetTimestamp())
+	wfStartTime := common.TimeValue(h.Events[0].GetEventTime())
 	return newWorkflowExecutionContext(wfStartTime, workflowInfo, wth), nil
 }
 
@@ -770,8 +771,7 @@ processWorkflowLoop:
 		if err == nil && response == nil {
 		waitLocalActivityLoop:
 			for {
-				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteWorkflowTaskComplete) *
-					float32(workflowContext.GetWorkflowTaskTimeout()))
+				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteWorkflowTaskComplete) * float32(workflowContext.workflowInfo.WorkflowTaskTimeout))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
 				select {
 				case <-time.After(delayDuration):
@@ -963,7 +963,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	}
 
 	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
-	if retryBackoff > 0 && retryBackoff <= w.GetWorkflowTaskTimeout() {
+	if retryBackoff > 0 && retryBackoff <= w.workflowInfo.WorkflowTaskTimeout {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
 			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
@@ -1123,10 +1123,6 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 	return nil
 }
 
-func (w *workflowExecutionContextImpl) GetWorkflowTaskTimeout() time.Duration {
-	return time.Second * time.Duration(w.workflowInfo.WorkflowTaskTimeoutSeconds)
-}
-
 func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
 	if d.GetCommandType() == enumspb.COMMAND_TYPE_RECORD_MARKER {
 		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
@@ -1255,7 +1251,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		commandAttributes := d.GetStartTimerCommandAttributes()
 
 		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() ||
-			(strictMode && eventAttributes.GetStartToFireTimeoutSeconds() != commandAttributes.GetStartToFireTimeoutSeconds()) {
+			(strictMode && common.DurationValue(eventAttributes.GetStartToFireTimeout()) != common.DurationValue(commandAttributes.GetStartToFireTimeout())) {
 			return false
 		}
 
@@ -1471,14 +1467,14 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:               &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
-			Input:                      contErr.params.Input,
-			TaskQueue:                  &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeoutSeconds:  contErr.params.WorkflowRunTimeoutSeconds,
-			WorkflowTaskTimeoutSeconds: contErr.params.WorkflowTaskTimeoutSeconds,
-			Header:                     contErr.params.Header,
-			Memo:                       workflowContext.workflowInfo.Memo,
-			SearchAttributes:           workflowContext.workflowInfo.SearchAttributes,
+			WorkflowType:        &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
+			Input:               contErr.params.Input,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:  &contErr.params.WorkflowRunTimeout,
+			WorkflowTaskTimeout: &contErr.params.WorkflowTaskTimeout,
+			Header:              contErr.params.Header,
+			Memo:                workflowContext.workflowInfo.Memo,
+			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1592,15 +1588,15 @@ func newActivityTaskHandlerWithCustomProvider(
 
 type temporalInvoker struct {
 	sync.Mutex
-	identity              string
-	service               workflowservice.WorkflowServiceClient
-	taskToken             []byte
-	cancelHandler         func()
-	heartBeatTimeoutInSec int32       // The heart beat interval configured for this activity.
-	hbBatchEndTimer       *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport   **commonpb.Payloads
-	closeCh               chan struct{}
-	workerStopChannel     <-chan struct{}
+	identity            string
+	service             workflowservice.WorkflowServiceClient
+	taskToken           []byte
+	cancelHandler       func()
+	heartBeatTimeout    time.Duration // The heart beat interval configured for this activity.
+	hbBatchEndTimer     *time.Timer   // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
+	lastDetailsToReport **commonpb.Payloads
+	closeCh             chan struct{}
+	workerStopChannel   <-chan struct{}
 }
 
 func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching bool) error {
@@ -1622,10 +1618,10 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 		i.lastDetailsToReport = nil
 
 		// Create timer to fire before the threshold to report.
-		deadlineToTrigger := i.heartBeatTimeoutInSec
+		deadlineToTrigger := i.heartBeatTimeout
 		if deadlineToTrigger <= 0 {
 			// If we don't have any heartbeat timeout configured.
-			deadlineToTrigger = defaultHeartBeatIntervalInSec
+			deadlineToTrigger = defaultHeartBeatInterval
 		}
 
 		// We set a deadline at 80% of the timeout.
@@ -1667,9 +1663,9 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 
 func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, error) {
 	isActivityCancelled := false
-	timeout := time.Duration(i.heartBeatTimeoutInSec) * time.Second
+	timeout := i.heartBeatTimeout
 	if timeout <= 0 {
-		timeout = time.Duration(defaultHeartBeatIntervalInSec) * time.Second
+		timeout = defaultHeartBeatInterval
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -1716,17 +1712,17 @@ func newServiceInvoker(
 	identity string,
 	service workflowservice.WorkflowServiceClient,
 	cancelHandler func(),
-	heartBeatTimeoutInSec int32,
+	heartBeatTimeout time.Duration,
 	workerStopChannel <-chan struct{},
 ) ServiceInvoker {
 	return &temporalInvoker{
-		taskToken:             taskToken,
-		identity:              identity,
-		service:               service,
-		cancelHandler:         cancelHandler,
-		heartBeatTimeoutInSec: heartBeatTimeoutInSec,
-		closeCh:               make(chan struct{}),
-		workerStopChannel:     workerStopChannel,
+		taskToken:         taskToken,
+		identity:          identity,
+		service:           service,
+		cancelHandler:     cancelHandler,
+		heartBeatTimeout:  heartBeatTimeout,
+		closeCh:           make(chan struct{}),
+		workerStopChannel: workerStopChannel,
 	}
 }
 
@@ -1746,7 +1742,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
-	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, t.GetHeartbeatTimeoutSeconds(), ath.workerStopCh)
+	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, cancel, common.DurationValue(t.GetHeartbeatTimeout()), ath.workerStopCh)
 	defer func() {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.

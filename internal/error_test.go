@@ -80,7 +80,7 @@ func Test_GenericGoError(t *testing.T) {
 
 	err = errors.Unwrap(activityErr)
 	var applicationErr *ApplicationError
-	require.True(t, errors.As(err, &applicationErr))
+	require.True(t, errors.As(err, &applicationErr), err)
 
 	require.Equal(t, "activity error", err.Error())
 
@@ -205,7 +205,7 @@ func Test_ApplicationError(t *testing.T) {
 
 	err = errors.Unwrap(activityErr)
 	var err1 *ApplicationError
-	require.True(t, errors.As(err, &err1))
+	require.True(t, errors.As(err, &err1), err)
 	require.True(t, err1.HasDetails())
 	var b1 string
 	var b2 int
@@ -277,7 +277,7 @@ func Test_ApplicationError_Pointer(t *testing.T) {
 
 	err = errors.Unwrap(activityErr)
 	var err3 *ApplicationError
-	require.True(t, errors.As(err, &err3))
+	require.True(t, errors.As(err, &err3), err)
 	require.True(t, err3.HasDetails())
 	b1 := testStruct2{}
 	require.NoError(t, err3.Details(&b1))
@@ -369,7 +369,7 @@ func Test_CanceledError(t *testing.T) {
 
 	err = errors.Unwrap(activityErr)
 	var err1 *CanceledError
-	require.True(t, errors.As(err, &err1))
+	require.True(t, errors.As(err, &err1), err)
 	require.True(t, err1.HasDetails())
 	var b1 string
 	var b2 int

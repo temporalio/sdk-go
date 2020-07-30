@@ -2,7 +2,7 @@
   "events": [
     {
       "eventId": "1",
-      "timestamp": "1593300497763824460",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionStarted",
       "version": "-24",
       "taskId": "2097152",
@@ -24,9 +24,9 @@
             }
           ]
         },
-        "workflowExecutionTimeoutSeconds": 315360000,
-        "workflowRunTimeoutSeconds": 315360000,
-        "workflowTaskTimeoutSeconds": 10,
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
         "initiator": "Workflow",
         "originalExecutionRunId": "7a971df0-94f4-416d-ab2b-d7de0571b75c",
         "identity": "24014@ShtinUbuntu2@",
@@ -36,7 +36,7 @@
     },
     {
       "eventId": "2",
-      "timestamp": "1593300497764016736",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": "-24",
       "taskId": "2097153",
@@ -44,12 +44,12 @@
         "taskQueue": {
           "name": "replay-test"
         },
-        "startToCloseTimeoutSeconds": 10
+        "startToCloseTimeout": "10s"
       }
     },
     {
       "eventId": "3",
-      "timestamp": "1593300497780333506",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": "-24",
       "taskId": "2097158",
@@ -61,7 +61,7 @@
     },
     {
       "eventId": "4",
-      "timestamp": "1593300497788670410",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": "-24",
       "taskId": "2097161",
@@ -74,7 +74,7 @@
     },
     {
       "eventId": "5",
-      "timestamp": "1593300497788810292",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "MarkerRecorded",
       "version": "-24",
       "taskId": "2097162",
@@ -107,7 +107,7 @@
     },
     {
       "eventId": "6",
-      "timestamp": "1593300497788963911",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "UpsertWorkflowSearchAttributes",
       "version": "-24",
       "taskId": "2097163",
@@ -127,7 +127,7 @@
     },
     {
       "eventId": "7",
-      "timestamp": "1593300497788982477",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskScheduled",
       "version": "-24",
       "taskId": "2097164",
@@ -150,10 +150,10 @@
             }
           ]
         },
-        "scheduleToCloseTimeoutSeconds": 315360000,
-        "scheduleToStartTimeoutSeconds": 60,
-        "startToCloseTimeoutSeconds": 60,
-        "heartbeatTimeoutSeconds": 20,
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "20s",
         "workflowTaskCompletedEventId": "4"
       }
     }
