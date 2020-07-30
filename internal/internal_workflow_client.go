@@ -44,7 +44,6 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
@@ -168,9 +167,9 @@ func (wc *WorkflowClient) StartWorkflow(
 		workflowID = uuid.NewRandom().String()
 	}
 
-	executionTimeout := common.Int32Ceil(options.WorkflowExecutionTimeout.Seconds())
-	runTimeout := common.Int32Ceil(options.WorkflowRunTimeout.Seconds())
-	workflowTaskTimeout := common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())
+	executionTimeout := options.WorkflowExecutionTimeout
+	runTimeout := options.WorkflowRunTimeout
+	workflowTaskTimeout := options.WorkflowTaskTimeout
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, wc.dataConverter, wc.registry)
@@ -203,22 +202,22 @@ func (wc *WorkflowClient) StartWorkflow(
 
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
-		Namespace:                       wc.namespace,
-		RequestId:                       uuid.New(),
-		WorkflowId:                      workflowID,
-		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-		Input:                           input,
-		WorkflowExecutionTimeoutSeconds: executionTimeout,
-		WorkflowRunTimeoutSeconds:       runTimeout,
-		WorkflowTaskTimeoutSeconds:      workflowTaskTimeout,
-		Identity:                        wc.identity,
-		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy,
-		RetryPolicy:                     convertRetryPolicy(options.RetryPolicy),
-		CronSchedule:                    options.CronSchedule,
-		Memo:                            memo,
-		SearchAttributes:                searchAttr,
-		Header:                          header,
+		Namespace:                wc.namespace,
+		RequestId:                uuid.New(),
+		WorkflowId:               workflowID,
+		WorkflowType:             &commonpb.WorkflowType{Name: workflowType.Name},
+		TaskQueue:                &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+		Input:                    input,
+		WorkflowExecutionTimeout: &executionTimeout,
+		WorkflowRunTimeout:       &runTimeout,
+		WorkflowTaskTimeout:      &workflowTaskTimeout,
+		Identity:                 wc.identity,
+		WorkflowIdReusePolicy:    options.WorkflowIDReusePolicy,
+		RetryPolicy:              convertRetryPolicy(options.RetryPolicy),
+		CronSchedule:             options.CronSchedule,
+		Memo:                     memo,
+		SearchAttributes:         searchAttr,
+		Header:                   header,
 	}
 
 	var response *workflowservice.StartWorkflowExecutionResponse
@@ -352,9 +351,9 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		workflowID = uuid.NewRandom().String()
 	}
 
-	executionTimeout := common.Int32Ceil(options.WorkflowExecutionTimeout.Seconds())
-	runTimeout := common.Int32Ceil(options.WorkflowRunTimeout.Seconds())
-	taskTimeout := common.Int32Ceil(options.WorkflowTaskTimeout.Seconds())
+	executionTimeout := options.WorkflowExecutionTimeout
+	runTimeout := options.WorkflowRunTimeout
+	taskTimeout := options.WorkflowTaskTimeout
 
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, wc.dataConverter, wc.registry)
@@ -380,24 +379,24 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	header := wc.getWorkflowHeader(ctx)
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
-		Namespace:                       wc.namespace,
-		RequestId:                       uuid.New(),
-		WorkflowId:                      workflowID,
-		WorkflowType:                    &commonpb.WorkflowType{Name: workflowType.Name},
-		TaskQueue:                       &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-		Input:                           input,
-		WorkflowExecutionTimeoutSeconds: executionTimeout,
-		WorkflowRunTimeoutSeconds:       runTimeout,
-		WorkflowTaskTimeoutSeconds:      taskTimeout,
-		SignalName:                      signalName,
-		SignalInput:                     signalInput,
-		Identity:                        wc.identity,
-		RetryPolicy:                     convertRetryPolicy(options.RetryPolicy),
-		CronSchedule:                    options.CronSchedule,
-		Memo:                            memo,
-		SearchAttributes:                searchAttr,
-		WorkflowIdReusePolicy:           options.WorkflowIDReusePolicy,
-		Header:                          header,
+		Namespace:                wc.namespace,
+		RequestId:                uuid.New(),
+		WorkflowId:               workflowID,
+		WorkflowType:             &commonpb.WorkflowType{Name: workflowType.Name},
+		TaskQueue:                &taskqueuepb.TaskQueue{Name: options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+		Input:                    input,
+		WorkflowExecutionTimeout: &executionTimeout,
+		WorkflowRunTimeout:       &runTimeout,
+		WorkflowTaskTimeout:      &taskTimeout,
+		SignalName:               signalName,
+		SignalInput:              signalInput,
+		Identity:                 wc.identity,
+		RetryPolicy:              convertRetryPolicy(options.RetryPolicy),
+		CronSchedule:             options.CronSchedule,
+		Memo:                     memo,
+		SearchAttributes:         searchAttr,
+		WorkflowIdReusePolicy:    options.WorkflowIDReusePolicy,
+		Header:                   header,
 	}
 
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse

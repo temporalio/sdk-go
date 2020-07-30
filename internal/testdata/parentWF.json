@@ -2,7 +2,7 @@
   "events": [
     {
       "eventId": 1,
-      "timestamp": 1561506494525296000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "taskId": 50331648,
@@ -13,19 +13,19 @@
         "taskQueue": {
           "name": "childWorkflowGroup"
         },
-        "workflowRunTimeoutSeconds": 60,
-        "workflowTaskTimeoutSeconds": 60,
+        "workflowRunTimeout": "60s",
+        "workflowTaskTimeout": "60s",
         "originalExecutionRunId": "0ea65eda-a0db-4a59-bef3-dce48e8484f8",
         "identity": "10773@longer-C02V60N3HTDG@",
         "attempt": 1,
         "cronSchedule": "",
-        "firstWorkflowTaskBackoffSeconds": 0,
+        "firstWorkflowTaskBackoff": "0s",
         "header": {}
       }
     },
     {
       "eventId": 2,
-      "timestamp": 1561506494525315000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331649,
@@ -33,13 +33,13 @@
         "taskQueue": {
           "name": "childWorkflowGroup"
         },
-        "startToCloseTimeoutSeconds": 60,
+        "startToCloseTimeout": "60s",
         "attempt": 1
       }
     },
     {
       "eventId": 3,
-      "timestamp": 1561506524119673000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331654,
@@ -51,7 +51,7 @@
     },
     {
       "eventId": 4,
-      "timestamp": 1561506524134556000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331657,
@@ -64,7 +64,7 @@
     },
     {
       "eventId": 5,
-      "timestamp": 1561506524134580000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "StartChildWorkflowExecutionInitiated",
       "version": -24,
       "taskId": 50331658,
@@ -78,8 +78,8 @@
           "name": "childWorkflowGroup"
         },
         "input": null,
-        "workflowRunTimeoutSeconds": 60,
-        "workflowTaskTimeoutSeconds": 10,
+        "workflowRunTimeout": "60s",
+        "workflowTaskTimeout": "10s",
         "workflowTaskCompletedEventId": 4,
         "workflowIdReusePolicy": "AllowDuplicateFailedOnly",
         "header": {}
@@ -87,7 +87,7 @@
     },
     {
       "eventId": 6,
-      "timestamp": 1561506524150629000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ChildWorkflowExecutionStarted",
       "version": -24,
       "taskId": 50331660,
@@ -106,7 +106,7 @@
     },
     {
       "eventId": 7,
-      "timestamp": 1561506524150637000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331663,
@@ -114,13 +114,13 @@
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
-        "startToCloseTimeoutSeconds": 60,
+        "startToCloseTimeout": "60s",
         "attempt": 1
       }
     },
     {
       "eventId": 8,
-      "timestamp": 1561506524166038000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331667,
@@ -132,7 +132,7 @@
     },
     {
       "eventId": 9,
-      "timestamp": 1561506524177688000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331670,
@@ -145,7 +145,7 @@
     },
     {
       "eventId": 10,
-      "timestamp": 1561506524177725000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "SignalExternalWorkflowExecutionInitiated",
       "version": -24,
       "taskId": 50331671,
@@ -164,7 +164,7 @@
     },
     {
       "eventId": 11,
-      "timestamp": 1561506524254684000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ExternalWorkflowExecutionSignaled",
       "version": -24,
       "taskId": 50331673,
@@ -180,7 +180,7 @@
     },
     {
       "eventId": 12,
-      "timestamp": 1561506524254689000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331676,
@@ -188,13 +188,13 @@
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
-        "startToCloseTimeoutSeconds": 60,
+        "startToCloseTimeout": "60s",
         "attempt": 1
       }
     },
     {
       "eventId": 13,
-      "timestamp": 1561506524259702000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331680,
@@ -206,7 +206,7 @@
     },
     {
       "eventId": 14,
-      "timestamp": 1561506524264877000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331683,
@@ -219,7 +219,7 @@
     },
     {
       "eventId": 15,
-      "timestamp": 1561506524402360000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ChildWorkflowExecutionCompleted",
       "version": -24,
       "taskId": 50331684,
@@ -239,7 +239,7 @@
     },
     {
       "eventId": 16,
-      "timestamp": 1561506524402364000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "taskId": 50331687,
@@ -247,13 +247,13 @@
         "taskQueue": {
           "name": "longer-C02V60N3HTDG:3abcb72a-67e1-4f91-b742-83e7577c157c"
         },
-        "startToCloseTimeoutSeconds": 60,
+        "startToCloseTimeout": "60s",
         "attempt": 1
       }
     },
     {
       "eventId": 17,
-      "timestamp": 1561506524410406000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "taskId": 50331691,
@@ -265,7 +265,7 @@
     },
     {
       "eventId": 18,
-      "timestamp": 1561506524417332000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "taskId": 50331694,
@@ -278,7 +278,7 @@
     },
     {
       "eventId": 19,
-      "timestamp": 1561506524417344000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionCompleted",
       "version": -24,
       "taskId": 50331695,

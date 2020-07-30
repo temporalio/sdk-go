@@ -2,7 +2,7 @@
   "events": [
     {
       "eventId": 1,
-      "timestamp": 1563844217060613000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionStarted",
       "version": -24,
       "workflowExecutionStartedEventAttributes": {
@@ -12,27 +12,27 @@
         "taskQueue": {
           "name": "tq-1"
         },
-        "workflowRunTimeoutSeconds": 10,
-        "workflowTaskTimeoutSeconds": 1,
+        "workflowRunTimeout": "10s",
+        "workflowTaskTimeout": "1s",
         "identity": "97228@samar-C02XG22GJGH6@"
       }
     },
     {
       "eventId": 2,
-      "timestamp": 1563844217060620000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "tq-1"
         },
-        "startToCloseTimeoutSeconds": 1,
+        "startToCloseTimeout": "1s",
         "attempt": 1
       }
     },
     {
       "eventId": 3,
-      "timestamp": 1563844217066914000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "workflowTaskStartedEventAttributes": {
@@ -43,7 +43,7 @@
     },
     {
       "eventId": 4,
-      "timestamp": 1563844217073526000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "version": -24,
       "workflowTaskCompletedEventAttributes": {
@@ -54,18 +54,18 @@
     },
     {
       "eventId": 5,
-      "timestamp": 1563844217073598000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "TimerStarted",
       "version": -24,
       "timerStartedEventAttributes": {
         "timerId": "5",
-        "startToFireTimeoutSeconds": 10,
+        "startToFireTimeout": "10s",
         "workflowTaskCompletedEventId": 4
       }
     },
     {
       "eventId": 6,
-      "timestamp": 1563844217073620000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
@@ -77,16 +77,16 @@
           "name": "tq-1"
         },
         "input": null,
-        "scheduleToCloseTimeoutSeconds": 10,
-        "scheduleToStartTimeoutSeconds": 10,
-        "startToCloseTimeoutSeconds": 9,
-        "heartbeatTimeoutSeconds": 0,
+        "scheduleToCloseTimeout": "10s",
+        "scheduleToStartTimeout": "10s",
+        "startToCloseTimeout": "9s",
+        "heartbeatTimeout": "0s",
         "workflowTaskCompletedEventId": 4
       }
     },
     {
       "eventId": 7,
-      "timestamp": 1563844217073670000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
@@ -98,16 +98,16 @@
           "name": "bad_tq"
         },
         "input": null,
-        "scheduleToCloseTimeoutSeconds": 10,
-        "scheduleToStartTimeoutSeconds": 10,
-        "startToCloseTimeoutSeconds": 9,
-        "heartbeatTimeoutSeconds": 0,
+        "scheduleToCloseTimeout": "10s",
+        "scheduleToStartTimeout": "10s",
+        "startToCloseTimeout": "9s",
+        "heartbeatTimeout": "0s",
         "workflowTaskCompletedEventId": 4
       }
     },
     {
       "eventId": 8,
-      "timestamp": 1563844217073679000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskScheduled",
       "version": -24,
       "activityTaskScheduledEventAttributes": {
@@ -119,16 +119,16 @@
           "name": "bad_tq"
         },
         "input": null,
-        "scheduleToCloseTimeoutSeconds": 10,
-        "scheduleToStartTimeoutSeconds": 10,
-        "startToCloseTimeoutSeconds": 9,
-        "heartbeatTimeoutSeconds": 0,
+        "scheduleToCloseTimeout": "10s",
+        "scheduleToStartTimeout": "10s",
+        "startToCloseTimeout": "9s",
+        "heartbeatTimeout": "0s",
         "workflowTaskCompletedEventId": 4
       }
     },
     {
       "eventId": 9,
-      "timestamp": 1563844217080804000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskStarted",
       "version": -24,
       "activityTaskStartedEventAttributes": {
@@ -140,7 +140,7 @@
     },
     {
       "eventId": 10,
-      "timestamp": 1563844222089088000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskCompleted",
       "version": -24,
       "activityTaskCompletedEventAttributes": {
@@ -152,20 +152,20 @@
     },
     {
       "eventId": 11,
-      "timestamp": 1563844222089104000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "version": -24,
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "tq-1"
         },
-        "startToCloseTimeoutSeconds": 1,
+        "startToCloseTimeout": "1s",
         "attempt": 1
       }
     },
     {
       "eventId": 12,
-      "timestamp": 1563844222096052000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "version": -24,
       "workflowTaskStartedEventAttributes": {
@@ -176,7 +176,7 @@
     },
     {
       "eventId": 13,
-      "timestamp": 1563844222102892000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskFailed",
       "version": -24,
       "workflowTaskFailedEventAttributes": {
@@ -189,7 +189,7 @@
     },
     {
       "eventId": 14,
-      "timestamp": 1563844227061245000,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionTimedOut",
       "version": -24,
       "workflowExecutionTimedOutEventAttributes": {

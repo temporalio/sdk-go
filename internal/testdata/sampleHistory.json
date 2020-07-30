@@ -2,7 +2,7 @@
   "events": [
     {
       "eventId": 1,
-      "timestamp": 1528336257159337100,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionStarted",
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
@@ -11,26 +11,26 @@
         "taskQueue": {
           "name": "taskQueue1"
         },
-        "workflowRunTimeoutSeconds": 60,
-        "workflowTaskTimeoutSeconds": 60,
+        "workflowRunTimeout": "60s",
+        "workflowTaskTimeout": "60s",
         "identity": "temporal-cli@user-C02WC08UHTDG"
       }
     },
     {
       "eventId": 2,
-      "timestamp": 1528336257159349200,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "taskQueue1"
         },
-        "startToCloseTimeoutSeconds": 60,
+        "startToCloseTimeout": "60s",
         "attempt": 1
       }
     },
     {
       "eventId": 3,
-      "timestamp": 1528336257174772700,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
       "workflowTaskStartedEventAttributes": {
         "scheduledEventId": 2,
@@ -40,7 +40,7 @@
     },
     {
       "eventId": 4,
-      "timestamp": 1528336257188460300,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
       "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": 2,
@@ -50,7 +50,7 @@
     },
     {
       "eventId": 5,
-      "timestamp": 1528336257188469200,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskScheduled",
       "activityTaskScheduledEventAttributes": {
         "activityId": "5",
@@ -61,86 +61,86 @@
           "name": "taskQueue1"
         },
         "input": null,
-        "scheduleToCloseTimeoutSeconds": 120,
-        "scheduleToStartTimeoutSeconds": 60,
-        "startToCloseTimeoutSeconds": 60,
-        "heartbeatTimeoutSeconds": 20,
+        "scheduleToCloseTimeout": "120s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "20s",
         "workflowTaskCompletedEventId": 4
       }
     },
     {
-      "eventId":6,
-      "timestamp":1558126757393919000,
+      "eventId": 6,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskStarted",
-      "version":-24,
-      "taskId":33554446,
-      "activityTaskStartedEventAttributes":{
-        "scheduledEventId":5,
+      "version": -24,
+      "taskId": 33554446,
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": 5,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
-        "requestId":"45c4006a-ae7c-4392-baa6-c090857f884b",
-        "attempt":1
+        "requestId": "45c4006a-ae7c-4392-baa6-c090857f884b",
+        "attempt": 1
       }
     },
     {
-      "eventId":7,
-      "timestamp":1558126757403468000,
+      "eventId": 7,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "ActivityTaskCompleted",
-      "version":-24,
-      "taskId":33554447,
-      "activityTaskCompletedEventAttributes":{
-        "result":null,
-        "scheduledEventId":5,
-        "startedEventId":6,
+      "version": -24,
+      "taskId": 33554447,
+      "activityTaskCompletedEventAttributes": {
+        "result": null,
+        "scheduledEventId": 5,
+        "startedEventId": 6,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1"
       }
     },
     {
-      "eventId":8,
-      "timestamp":1558126757403476000,
+      "eventId": 8,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskScheduled",
-      "version":-24,
-      "taskId":33554450,
-      "workflowTaskScheduledEventAttributes":{
-        "taskQueue":{
-          "name":"longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
+      "version": -24,
+      "taskId": 33554450,
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "longer-C02V60N3HTDG:33ab3ada-4636-4386-8575-81dd8dc02e9a"
         },
-        "startToCloseTimeoutSeconds":10,
-        "attempt":1
+        "startToCloseTimeout": "10s",
+        "attempt": 1
       }
     },
     {
-      "eventId":9,
-      "timestamp":1558126757410564000,
+      "eventId": 9,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskStarted",
-      "version":-24,
-      "taskId":33554454,
-      "workflowTaskStartedEventAttributes":{
-        "scheduledEventId":8,
+      "version": -24,
+      "taskId": 33554454,
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": 8,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
-        "requestId":"cb1fdadf-f46b-4840-9b97-863f4b3b6b11"
+        "requestId": "cb1fdadf-f46b-4840-9b97-863f4b3b6b11"
       }
     },
     {
-      "eventId":10,
-      "timestamp":1558126757491491000,
+      "eventId": 10,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowTaskCompleted",
-      "version":-24,
-      "taskId":33554457,
-      "workflowTaskCompletedEventAttributes":{
-        "scheduledEventId":8,
-        "startedEventId":9,
+      "version": -24,
+      "taskId": 33554457,
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": 8,
+        "startedEventId": 9,
         "identity": "50114@user-C02WC08UHTDG@taskQueue1",
-        "binaryChecksum":"b2e32759177ccbb3e67ad7694aec233c"
+        "binaryChecksum": "b2e32759177ccbb3e67ad7694aec233c"
       }
     },
     {
-      "eventId":11,
-      "timestamp":1558126757491513000,
+      "eventId": 11,
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
       "eventType": "WorkflowExecutionCompleted",
-      "version":-24,
-      "taskId":33554458,
-      "workflowExecutionCompletedEventAttributes":{
-        "workflowTaskCompletedEventId":10
+      "version": -24,
+      "taskId": 33554458,
+      "workflowExecutionCompletedEventAttributes": {
+        "workflowTaskCompletedEventId": 10
       }
     }
   ]

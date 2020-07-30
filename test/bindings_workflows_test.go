@@ -83,9 +83,9 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
 			parameters := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
-					TaskQueueName:              env.WorkflowInfo().TaskQueueName,
-					StartToCloseTimeoutSeconds: 10,
-					ActivityID:                 "id1",
+					TaskQueueName:       env.WorkflowInfo().TaskQueueName,
+					StartToCloseTimeout: 10 * time.Second,
+					ActivityID:          "id1",
 				},
 				ActivityType: bindings.ActivityType{Name: "SingleActivity"},
 				Input:        input,

@@ -175,23 +175,23 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil() as the duration. But is
 	// subjected to change in the future.
 	WorkflowOptions struct {
-		TaskQueueName                   string
-		WorkflowExecutionTimeoutSeconds int32
-		WorkflowRunTimeoutSeconds       int32
-		WorkflowTaskTimeoutSeconds      int32
-		Namespace                       string
-		WorkflowID                      string
-		WaitForCancellation             bool
-		WorkflowIDReusePolicy           enumspb.WorkflowIdReusePolicy
-		DataConverter                   converter.DataConverter
-		RetryPolicy                     *commonpb.RetryPolicy
-		CronSchedule                    string
-		ContextPropagators              []ContextPropagator
-		Memo                            map[string]interface{}
-		SearchAttributes                map[string]interface{}
-		ParentClosePolicy               enumspb.ParentClosePolicy
-		signalChannels                  map[string]Channel
-		queryHandlers                   map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
+		TaskQueueName            string
+		WorkflowExecutionTimeout time.Duration
+		WorkflowRunTimeout       time.Duration
+		WorkflowTaskTimeout      time.Duration
+		Namespace                string
+		WorkflowID               string
+		WaitForCancellation      bool
+		WorkflowIDReusePolicy    enumspb.WorkflowIdReusePolicy
+		DataConverter            converter.DataConverter
+		RetryPolicy              *commonpb.RetryPolicy
+		CronSchedule             string
+		ContextPropagators       []ContextPropagator
+		Memo                     map[string]interface{}
+		SearchAttributes         map[string]interface{}
+		ParentClosePolicy        enumspb.ParentClosePolicy
+		signalChannels           map[string]Channel
+		queryHandlers            map[string]func(*commonpb.Payloads) (*commonpb.Payloads, error)
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
@@ -445,9 +445,9 @@ func newWorkflowContext(env WorkflowEnvironment, interceptors WorkflowOutboundCa
 	wInfo := env.WorkflowInfo()
 	rootCtx = WithWorkflowNamespace(rootCtx, wInfo.Namespace)
 	rootCtx = WithWorkflowTaskQueue(rootCtx, wInfo.TaskQueueName)
-	getWorkflowEnvOptions(rootCtx).WorkflowExecutionTimeoutSeconds = wInfo.WorkflowExecutionTimeoutSeconds
-	rootCtx = WithWorkflowRunTimeout(rootCtx, time.Duration(wInfo.WorkflowRunTimeoutSeconds)*time.Second)
-	rootCtx = WithWorkflowTaskTimeout(rootCtx, time.Duration(wInfo.WorkflowTaskTimeoutSeconds)*time.Second)
+	getWorkflowEnvOptions(rootCtx).WorkflowExecutionTimeout = wInfo.WorkflowExecutionTimeout
+	rootCtx = WithWorkflowRunTimeout(rootCtx, wInfo.WorkflowRunTimeout)
+	rootCtx = WithWorkflowTaskTimeout(rootCtx, wInfo.WorkflowTaskTimeout)
 	rootCtx = WithTaskQueue(rootCtx, wInfo.TaskQueueName)
 	rootCtx = WithDataConverter(rootCtx, env.GetDataConverter())
 	rootCtx = withContextPropagators(rootCtx, env.GetContextPropagators())

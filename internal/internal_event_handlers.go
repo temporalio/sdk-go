@@ -360,9 +360,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Namespace = params.Namespace
 	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	attributes.WorkflowId = params.WorkflowID
-	attributes.WorkflowExecutionTimeoutSeconds = params.WorkflowExecutionTimeoutSeconds
-	attributes.WorkflowRunTimeoutSeconds = params.WorkflowRunTimeoutSeconds
-	attributes.WorkflowTaskTimeoutSeconds = params.WorkflowTaskTimeoutSeconds
+	attributes.WorkflowExecutionTimeout = &params.WorkflowExecutionTimeout
+	attributes.WorkflowRunTimeout = &params.WorkflowRunTimeout
+	attributes.WorkflowTaskTimeout = &params.WorkflowTaskTimeout
 	attributes.Input = params.Input
 	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.WorkflowType.Name}
 	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy
@@ -441,10 +441,10 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeoutSeconds = parameters.ScheduleToCloseTimeoutSeconds
-	scheduleTaskAttr.StartToCloseTimeoutSeconds = parameters.StartToCloseTimeoutSeconds
-	scheduleTaskAttr.ScheduleToStartTimeoutSeconds = parameters.ScheduleToStartTimeoutSeconds
-	scheduleTaskAttr.HeartbeatTimeoutSeconds = parameters.HeartbeatTimeoutSeconds
+	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
+	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
+	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
+	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 
@@ -498,8 +498,8 @@ func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActiv
 		header:      params.Header,
 	}
 
-	if params.ScheduleToCloseTimeoutSeconds > 0 {
-		task.expireTime = params.ScheduledTime.Add(time.Second * time.Duration(params.ScheduleToCloseTimeoutSeconds))
+	if params.ScheduleToCloseTimeout > 0 {
+		task.expireTime = params.ScheduledTime.Add(params.ScheduleToCloseTimeout)
 	}
 	return task
 }
@@ -535,7 +535,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	timerID := wc.GenerateSequenceID()
 	startTimerAttr := &commandpb.StartTimerCommandAttributes{}
 	startTimerAttr.TimerId = timerID
-	startTimerAttr.StartToFireTimeoutSeconds = common.Int64Ceil(d.Seconds())
+	startTimerAttr.StartToFireTimeout = &d
 
 	command := wc.commandsHelper.startTimer(startTimerAttr)
 	command.setData(&scheduledTimer{callback: callback})
@@ -770,7 +770,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
-		weh.SetCurrentReplayTime(time.Unix(0, event.GetTimestamp()))
+		weh.SetCurrentReplayTime(common.TimeValue(event.GetEventTime()))
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnWorkflowTaskStarted()
@@ -835,7 +835,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.handleWorkflowExecutionSignaled(event.GetWorkflowExecutionSignaledEventAttributes())
 
 	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
-		signalID := string(event.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Control)
+		signalID := event.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Control
 		weh.commandsHelper.handleSignalExternalWorkflowExecutionInitiated(event.GetEventId(), signalID)
 
 	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:

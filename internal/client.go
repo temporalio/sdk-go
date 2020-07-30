@@ -669,7 +669,7 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 	}
 
 	healthCheckTimeout := options.HealthCheckTimeout
-	if healthCheckTimeout == time.Duration(0) {
+	if healthCheckTimeout == 0 {
 		healthCheckTimeout = defaultHealthCheckTimeout
 	}
 

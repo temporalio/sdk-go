@@ -34,6 +34,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -247,13 +248,13 @@ func WithActivityTask(
 	tracer opentracing.Tracer,
 ) context.Context {
 	var deadline time.Time
-	scheduled := time.Unix(0, task.GetScheduledTimestamp())
-	started := time.Unix(0, task.GetStartedTimestamp())
-	scheduleToCloseTimeout := time.Duration(task.GetScheduleToCloseTimeoutSeconds()) * time.Second
-	startToCloseTimeout := time.Duration(task.GetStartToCloseTimeoutSeconds()) * time.Second
-	heartbeatTimeout := time.Duration(task.GetHeartbeatTimeoutSeconds()) * time.Second
-	scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
-	startToCloseDeadline := started.Add(startToCloseTimeout)
+	scheduled := task.GetScheduledTime()
+	started := task.GetStartedTime()
+	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout()
+	startToCloseTimeout := task.GetStartToCloseTimeout()
+	heartbeatTimeout := task.GetHeartbeatTimeout()
+	scheduleToCloseDeadline := common.TimeValue(scheduled).Add(common.DurationValue(scheduleToCloseTimeout))
+	startToCloseDeadline := common.TimeValue(started).Add(common.DurationValue(startToCloseTimeout))
 	// Minimum of the two deadlines.
 	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
 		deadline = scheduleToCloseDeadline
@@ -280,9 +281,9 @@ func WithActivityTask(
 		logger:             logger,
 		metricsScope:       scope,
 		deadline:           deadline,
-		heartbeatTimeout:   heartbeatTimeout,
-		scheduledTimestamp: scheduled,
-		startedTimestamp:   started,
+		heartbeatTimeout:   common.DurationValue(heartbeatTimeout),
+		scheduledTimestamp: common.TimeValue(scheduled),
+		startedTimestamp:   common.TimeValue(started),
 		taskQueue:          taskQueue,
 		dataConverter:      dataConverter,
 		attempt:            task.GetAttempt(),

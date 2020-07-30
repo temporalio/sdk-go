@@ -42,6 +42,7 @@ import (
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 )
 
@@ -133,18 +134,21 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 }
 
 func (s *WorkersTestSuite) TestActivityWorkerStop() {
+	now := time.Now()
+	oneSecond := 1 * time.Second
+
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
 			RunId:      "rID"},
-		ActivityType:                  &commonpb.ActivityType{Name: "test"},
-		ActivityId:                    uuid.New(),
-		ScheduledTimestamp:            time.Now().UnixNano(),
-		ScheduleToCloseTimeoutSeconds: 1,
-		StartedTimestamp:              time.Now().UnixNano(),
-		StartToCloseTimeoutSeconds:    1,
+		ActivityType:           &commonpb.ActivityType{Name: "test"},
+		ActivityId:             uuid.New(),
+		ScheduledTime:          &now,
+		ScheduleToCloseTimeout: &oneSecond,
+		StartedTime:            &now,
+		StartToCloseTimeout:    &oneSecond,
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},
@@ -236,11 +240,11 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 			EventId:   1,
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
-				TaskQueue:                       &taskqueuepb.TaskQueue{Name: taskQueue},
-				WorkflowExecutionTimeoutSeconds: 10,
-				WorkflowRunTimeoutSeconds:       10,
-				WorkflowTaskTimeoutSeconds:      2,
-				WorkflowType:                    &commonpb.WorkflowType{Name: "long-running-workflow-task-workflow-type"},
+				TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
+				WorkflowExecutionTimeout: common.DurationPtr(10 * time.Second),
+				WorkflowRunTimeout:       common.DurationPtr(10 * time.Second),
+				WorkflowTaskTimeout:      common.DurationPtr(2 * time.Second),
+				WorkflowType:             &commonpb.WorkflowType{Name: "long-running-workflow-task-workflow-type"},
 			}},
 		},
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
@@ -374,11 +378,11 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 			EventId:   1,
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
-				TaskQueue:                       &taskqueuepb.TaskQueue{Name: taskQueue},
-				WorkflowExecutionTimeoutSeconds: 10,
-				WorkflowRunTimeoutSeconds:       10,
-				WorkflowTaskTimeoutSeconds:      3,
-				WorkflowType:                    &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
+				TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
+				WorkflowExecutionTimeout: common.DurationPtr(10 * time.Second),
+				WorkflowRunTimeout:       common.DurationPtr(10 * time.Second),
+				WorkflowTaskTimeout:      common.DurationPtr(3 * time.Second),
+				WorkflowType:             &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),

@@ -80,10 +80,10 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	name := namespace
-	retention := int32(1)
+	oneDay := 1 * 24 * time.Hour
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                                 name,
-		WorkflowExecutionRetentionPeriodDays: retention,
+		Name:                             name,
+		WorkflowExecutionRetentionPeriod: &oneDay,
 	})
 	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
