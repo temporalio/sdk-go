@@ -48,6 +48,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
@@ -1484,7 +1485,6 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	}
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	now := time.Now()
-	oneSecond := 1 * time.Second
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
 		TaskToken: []byte("token"),
@@ -1494,9 +1494,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
 		ScheduledTime:          &now,
-		ScheduleToCloseTimeout: &oneSecond,
+		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
 		StartedTime:            &now,
-		StartToCloseTimeout:    &oneSecond,
+		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},

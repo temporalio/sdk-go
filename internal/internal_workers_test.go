@@ -135,7 +135,6 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 
 func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	now := time.Now()
-	oneSecond := 1 * time.Second
 
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
@@ -146,9 +145,9 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
 		ScheduledTime:          &now,
-		ScheduleToCloseTimeout: &oneSecond,
+		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
 		StartedTime:            &now,
-		StartToCloseTimeout:    &oneSecond,
+		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},
