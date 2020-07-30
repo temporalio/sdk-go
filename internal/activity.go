@@ -248,13 +248,13 @@ func WithActivityTask(
 	tracer opentracing.Tracer,
 ) context.Context {
 	var deadline time.Time
-	scheduled := task.GetScheduledTime()
-	started := task.GetStartedTime()
-	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout()
-	startToCloseTimeout := task.GetStartToCloseTimeout()
-	heartbeatTimeout := task.GetHeartbeatTimeout()
-	scheduleToCloseDeadline := common.TimeValue(scheduled).Add(common.DurationValue(scheduleToCloseTimeout))
-	startToCloseDeadline := common.TimeValue(started).Add(common.DurationValue(startToCloseTimeout))
+	scheduled := common.TimeValue(task.GetScheduledTime())
+	started := common.TimeValue(task.GetStartedTime())
+	scheduleToCloseTimeout := common.DurationValue(task.GetScheduleToCloseTimeout())
+	startToCloseTimeout := common.DurationValue(task.GetStartToCloseTimeout())
+	heartbeatTimeout := common.DurationValue(task.GetHeartbeatTimeout())
+	scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+	startToCloseDeadline := started.Add(startToCloseTimeout)
 	// Minimum of the two deadlines.
 	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
 		deadline = scheduleToCloseDeadline
@@ -281,9 +281,9 @@ func WithActivityTask(
 		logger:             logger,
 		metricsScope:       scope,
 		deadline:           deadline,
-		heartbeatTimeout:   common.DurationValue(heartbeatTimeout),
-		scheduledTimestamp: common.TimeValue(scheduled),
-		startedTimestamp:   common.TimeValue(started),
+		heartbeatTimeout:   heartbeatTimeout,
+		scheduledTimestamp: scheduled,
+		startedTimestamp:   started,
 		taskQueue:          taskQueue,
 		dataConverter:      dataConverter,
 		attempt:            task.GetAttempt(),

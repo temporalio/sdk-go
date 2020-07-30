@@ -1251,7 +1251,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		commandAttributes := d.GetStartTimerCommandAttributes()
 
 		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() ||
-			(strictMode && eventAttributes.GetStartToFireTimeout() != commandAttributes.GetStartToFireTimeout()) {
+			(strictMode && common.DurationValue(eventAttributes.GetStartToFireTimeout()) != common.DurationValue(commandAttributes.GetStartToFireTimeout())) {
 			return false
 		}
 
