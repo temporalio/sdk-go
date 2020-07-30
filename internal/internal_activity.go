@@ -133,8 +133,8 @@ type (
 		isLocalActivity    bool
 		heartbeatTimeout   time.Duration
 		deadline           time.Time
-		scheduledTimestamp time.Time
-		startedTimestamp   time.Time
+		scheduledTime      time.Time
+		startedTime        time.Time
 		taskQueue          string
 		dataConverter      converter.DataConverter
 		attempt            int32 // starts from 1.

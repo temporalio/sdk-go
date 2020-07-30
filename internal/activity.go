@@ -47,18 +47,18 @@ type (
 
 	// ActivityInfo contains information about currently executing activity.
 	ActivityInfo struct {
-		TaskToken          []byte
-		WorkflowType       *WorkflowType
-		WorkflowNamespace  string
-		WorkflowExecution  WorkflowExecution
-		ActivityID         string
-		ActivityType       ActivityType
-		TaskQueue          string
-		HeartbeatTimeout   time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
-		ScheduledTimestamp time.Time     // Time of activity scheduled by a workflow
-		StartedTimestamp   time.Time     // Time of activity start
-		Deadline           time.Time     // Time of activity timeout
-		Attempt            int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
+		TaskToken         []byte
+		WorkflowType      *WorkflowType
+		WorkflowNamespace string
+		WorkflowExecution WorkflowExecution
+		ActivityID        string
+		ActivityType      ActivityType
+		TaskQueue         string
+		HeartbeatTimeout  time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
+		ScheduledTime     time.Time     // Time of activity scheduled by a workflow
+		StartedTime       time.Time     // Time of activity start
+		Deadline          time.Time     // Time of activity timeout
+		Attempt           int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity
@@ -137,18 +137,18 @@ type (
 func GetActivityInfo(ctx context.Context) ActivityInfo {
 	env := getActivityEnv(ctx)
 	return ActivityInfo{
-		ActivityID:         env.activityID,
-		ActivityType:       env.activityType,
-		TaskToken:          env.taskToken,
-		WorkflowExecution:  env.workflowExecution,
-		HeartbeatTimeout:   env.heartbeatTimeout,
-		Deadline:           env.deadline,
-		ScheduledTimestamp: env.scheduledTimestamp,
-		StartedTimestamp:   env.startedTimestamp,
-		TaskQueue:          env.taskQueue,
-		Attempt:            env.attempt,
-		WorkflowType:       env.workflowType,
-		WorkflowNamespace:  env.workflowNamespace,
+		ActivityID:        env.activityID,
+		ActivityType:      env.activityType,
+		TaskToken:         env.taskToken,
+		WorkflowExecution: env.workflowExecution,
+		HeartbeatTimeout:  env.heartbeatTimeout,
+		Deadline:          env.deadline,
+		ScheduledTime:     env.scheduledTime,
+		StartedTime:       env.startedTime,
+		TaskQueue:         env.taskQueue,
+		Attempt:           env.attempt,
+		WorkflowType:      env.workflowType,
+		WorkflowNamespace: env.workflowNamespace,
 	}
 }
 
@@ -278,16 +278,16 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: task.WorkflowExecution.RunId,
 			ID:    task.WorkflowExecution.WorkflowId},
-		logger:             logger,
-		metricsScope:       scope,
-		deadline:           deadline,
-		heartbeatTimeout:   heartbeatTimeout,
-		scheduledTimestamp: scheduled,
-		startedTimestamp:   started,
-		taskQueue:          taskQueue,
-		dataConverter:      dataConverter,
-		attempt:            task.GetAttempt(),
-		heartbeatDetails:   task.HeartbeatDetails,
+		logger:           logger,
+		metricsScope:     scope,
+		deadline:         deadline,
+		heartbeatTimeout: heartbeatTimeout,
+		scheduledTime:    scheduled,
+		startedTime:      started,
+		taskQueue:        taskQueue,
+		dataConverter:    dataConverter,
+		attempt:          task.GetAttempt(),
+		heartbeatDetails: task.HeartbeatDetails,
 		workflowType: &WorkflowType{
 			Name: task.WorkflowType.Name,
 		},
