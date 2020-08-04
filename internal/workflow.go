@@ -36,7 +36,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/log"
 )
 
@@ -1457,9 +1456,7 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
-	if retryPolicy.BackoffCoefficient == 0 {
-		retryPolicy.BackoffCoefficient = backoff.DefaultBackoffCoefficient
-	}
+
 	return &commonpb.RetryPolicy{
 		MaximumInterval:        &retryPolicy.MaximumInterval,
 		InitialInterval:        &retryPolicy.InitialInterval,
