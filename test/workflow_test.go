@@ -284,7 +284,8 @@ func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
 func (w *Workflows) ChildWorkflowRetryOnTimeout(ctx workflow.Context) error {
 	opts := workflow.ChildWorkflowOptions{
 		WorkflowTaskTimeout:      time.Second,
-		WorkflowExecutionTimeout: time.Second,
+		WorkflowRunTimeout:       time.Second,
+		WorkflowExecutionTimeout: 30 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
