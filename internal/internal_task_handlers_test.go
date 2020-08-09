@@ -1327,7 +1327,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
 	t.NoError(heartbeatErr)
 
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 3)
 	t.Equal(2, recordActivityTaskCount, "batch timer did not execute")
 }
 
