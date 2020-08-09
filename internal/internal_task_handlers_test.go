@@ -1306,11 +1306,11 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-	recordActivityTaskCount := 0
+	invocationChannel := make(chan int, 2)
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	mockService.EXPECT().
 		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { recordActivityTaskCount++ }).
+		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { invocationChannel <- 1 }).
 		Return(&heartbeatResponse, nil).
 		Times(2)
 
@@ -1327,8 +1327,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
 	t.NoError(heartbeatErr)
 
-	time.Sleep(time.Second * 3)
-	t.Equal(2, recordActivityTaskCount, "batch timer did not execute")
+	for i := 0; i < 2; i++ {
+		select {
+		case <-invocationChannel:
+		case <-time.After(3 * time.Second):
+			t.Fail("did not get expected calls to record heartbeat")
+		}
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
