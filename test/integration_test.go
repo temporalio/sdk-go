@@ -193,6 +193,13 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnHBTimeout() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
+	var expected []string
+	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	var result int
 	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskQueueName)

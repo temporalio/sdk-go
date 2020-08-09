@@ -137,6 +137,24 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enu
 	return []string{"sleep", "sleep", "sleep"}, nil
 }
 
+func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, error) {
+	opts := w.defaultActivityOptionsWithRetry()
+	opts.HeartbeatTimeout = 3 * time.Second
+	opts.ScheduleToCloseTimeout = time.Second * 12
+	opts.StartToCloseTimeout = time.Second * 12
+	opts.RetryPolicy = &internal.RetryPolicy{
+		MaximumAttempts: 1,
+	}
+	ctx = workflow.WithActivityOptions(ctx, opts)
+
+	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 300*time.Millisecond).Get(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("expected activity to succeeded but it failed: %v", err)
+	}
+
+	return []string{"longRunningHeartbeat"}, nil
+}
+
 func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
 	opts.HeartbeatTimeout = time.Second
@@ -718,6 +736,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
+	worker.RegisterWorkflow(w.LongRunningActivityWithHB)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
