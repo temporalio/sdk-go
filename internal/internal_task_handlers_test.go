@@ -1324,15 +1324,25 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 	t.NoError(heartbeatErr)
 
+	select {
+	case <-invocationChannel:
+	case <-time.After(3 * time.Second):
+		t.Fail("did not get expected 1st call to record heartbeat")
+	}
+
 	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
 	t.NoError(heartbeatErr)
 
-	for i := 0; i < 2; i++ {
-		select {
-		case <-invocationChannel:
-		case <-time.After(3 * time.Second):
-			t.Fail("did not get expected calls to record heartbeat")
-		}
+	select {
+	case <-invocationChannel:
+		t.Fail("got unexpected call to record heartbeat. 2nd call should come via batch timer")
+	default:
+	}
+
+	select {
+	case <-invocationChannel:
+	case <-time.After(3 * time.Second):
+		t.Fail("did not get expected 2nd call to record heartbeat via batch timer")
 	}
 }
 

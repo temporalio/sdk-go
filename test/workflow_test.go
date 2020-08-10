@@ -149,7 +149,7 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 
 	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 300*time.Millisecond).Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("expected activity to succeeded but it failed: %v", err)
+		return nil, fmt.Errorf("expected activity to succeed but it failed: %v", err)
 	}
 
 	return []string{"longRunningHeartbeat"}, nil
