@@ -1625,7 +1625,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 		}
 
 		// We set a deadline at 80% of the timeout.
-		duration := time.Duration(0.8*float32(deadlineToTrigger)) * time.Second
+		duration := time.Duration(0.8 * float64(deadlineToTrigger))
 		i.hbBatchEndTimer = time.NewTimer(duration)
 
 		go func() {

@@ -85,6 +85,17 @@ func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.
 	return seq, nil
 }
 
+func (a *Activities) LongRunningHeartbeat(ctx context.Context, delay time.Duration, recordHeartbeatDelay time.Duration) error {
+	a.append("longRunningHeartbeat")
+	endTime := time.Now().Add(delay)
+	for time.Now().Before(endTime) {
+		activity.RecordHeartbeat(ctx)
+		time.Sleep(recordHeartbeatDelay)
+	}
+
+	return nil
+}
+
 func (a *Activities) fail(_ context.Context) error {
 	a.append("fail")
 	return errFailOnPurpose

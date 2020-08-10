@@ -1306,19 +1306,44 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-
+	invocationChannel := make(chan int, 2)
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
-	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	mockService.EXPECT().
+		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { invocationChannel <- 1 }).
+		Return(&heartbeatResponse, nil).
+		Times(2)
 
 	temporalInvoker := &temporalInvoker{
-		identity:  "Test_Temporal_Invoker",
-		service:   mockService,
-		taskToken: nil,
+		identity:         "Test_Temporal_Invoker",
+		service:          mockService,
+		taskToken:        nil,
+		heartBeatTimeout: time.Second,
 	}
 
 	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
-
 	t.NoError(heartbeatErr)
+
+	select {
+	case <-invocationChannel:
+	case <-time.After(3 * time.Second):
+		t.Fail("did not get expected 1st call to record heartbeat")
+	}
+
+	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
+	t.NoError(heartbeatErr)
+
+	select {
+	case <-invocationChannel:
+		t.Fail("got unexpected call to record heartbeat. 2nd call should come via batch timer")
+	default:
+	}
+
+	select {
+	case <-invocationChannel:
+	case <-time.After(3 * time.Second):
+		t.Fail("did not get expected 2nd call to record heartbeat via batch timer")
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
