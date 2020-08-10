@@ -31,7 +31,7 @@ package internal
 // This represents API changes visible to Temporal SDK consumers, i.e. developers
 // that are writing workflows. So every time we change API that can affect them we have to change this number.
 // Format: MAJOR.MINOR.PATCH
-const SDKVersion = "0.28.0"
+const SDKVersion = "0.28.1"
 
 // SDKFeatureVersion is a semver that represents the feature set version of this Temporal SDK support.
 // This can be used for client capability check, on Temporal server, for backward compatibility.
