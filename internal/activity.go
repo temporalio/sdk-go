@@ -96,7 +96,7 @@ type (
 		// Optional: Default zero, means no heart beating is needed.
 		HeartbeatTimeout time.Duration
 
-		// WaitForCancellation - Whether to wait for cancelled activity to be completed(
+		// WaitForCancellation - Whether to wait for canceled activity to be completed(
 		// activity can be failed, completed, cancel accepted)
 		// Optional: default false
 		WaitForCancellation bool
@@ -194,9 +194,9 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 }
 
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
-// If the activity is either cancelled (or) workflow/activity doesn't exist then we would cancel
+// If the activity is either canceled (or) workflow/activity doesn't exist then we would cancel
 // the context with error context.Canceled.
-//  TODO: we don't have a way to distinguish between the two cases when context is cancelled because
+//  TODO: we don't have a way to distinguish between the two cases when context is canceled because
 //  context doesn't support overriding value of ctx.Error.
 //  TODO: Implement automatic heartbeating with cancellation through ctx.
 // details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
@@ -227,7 +227,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
 // Implement to unit test activities.
 type ServiceInvoker interface {
-	// Returns ActivityTaskCanceledError if activity is cancelled
+	// Returns ActivityTaskCanceledError if activity is canceled
 	Heartbeat(details *commonpb.Payloads, skipBatching bool) error
 	Close(flushBufferedHeartbeat bool)
 	GetClient(options ClientOptions) Client

@@ -190,7 +190,7 @@ type (
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
 		// Example:-
@@ -206,7 +206,7 @@ type (
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
 		// namespace name, workflowID, activityID are required, runID is optional.

@@ -173,7 +173,7 @@ type (
 		// activity Execute method can return acitivity.activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
 		// Example:-
@@ -189,7 +189,7 @@ type (
 		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
 		// namespace name, workflowID, activityID are required, runID is optional.
@@ -444,7 +444,7 @@ type (
 		// after the current run is completed/failed/timeout. If a RetryPolicy is also supplied, and the workflow failed
 		// or timeout, the workflow will be retried based on the retry policy. While the workflow is retrying, it won't
 		// schedule its next run. If next schedule is due while workflow is running (or retrying), then it will skip that
-		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning temporal.CanceledError).
+		// schedule. Cron workflow will not stop until it is terminated or canceled (by returning temporal.CanceledError).
 		// The cron spec is as following:
 		// ┌───────────── minute (0 - 59)
 		// │ ┌───────────── hour (0 - 23)

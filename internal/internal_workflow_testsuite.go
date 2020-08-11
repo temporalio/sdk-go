@@ -169,7 +169,7 @@ type (
 		onChildWorkflowCanceledListener  func(workflowInfo *WorkflowInfo)
 		onTimerScheduledListener         func(timerID string, duration time.Duration)
 		onTimerFiredListener             func(timerID string)
-		onTimerCancelledListener         func(timerID string)
+		onTimerCanceledListener          func(timerID string)
 	}
 
 	// testWorkflowEnvironmentImpl is the environment that runs the workflow/activity unit tests.
@@ -284,7 +284,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		activityHandle, ok := env.getActivityHandle(activityID)
 		env.locker.Unlock()
 		if !ok {
-			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or cancelled.",
+			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or canceled.",
 				tagActivityID, activityID)
 			return serviceerror.NewNotFound("")
 		}
@@ -796,8 +796,8 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID string) {
 	timerHandle.timer.Stop()
 	timerHandle.env.postCallback(func() {
 		timerHandle.callback(nil, NewCanceledError())
-		if timerHandle.env.onTimerCancelledListener != nil {
-			timerHandle.env.onTimerCancelledListener(timerID)
+		if timerHandle.env.onTimerCanceledListener != nil {
+			timerHandle.env.onTimerCanceledListener(timerID)
 		}
 	}, true)
 }
@@ -807,8 +807,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
-	var cancelledErr *CanceledError
-	if errors.As(err, &cancelledErr) && env.workflowCancelHandler != nil {
+	var canceledErr *CanceledError
+	if errors.As(err, &canceledErr) && env.workflowCancelHandler != nil {
 		env.workflowCancelHandler()
 	}
 
@@ -820,7 +820,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		var timeoutErr *TimeoutError
 		var workflowPanicErr *workflowPanicError
 		var workflowExecutionAlreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
-		if errors.As(err, &cancelledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) {
+		if errors.As(err, &canceledErr) || errors.As(err, &continueAsNewErr) || errors.As(err, &timeoutErr) || errors.As(err, &workflowExecutionAlreadyStartedErr) {
 			env.testError = err
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
@@ -953,7 +953,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 	env.postCallback(func() {
 		activityHandle, ok := env.getActivityHandle(activityID)
 		if !ok {
-			env.logger.Debug("CompleteActivity: ActivityID not found, could be already completed or cancelled.",
+			env.logger.Debug("CompleteActivity: ActivityID not found, could be already completed or canceled.",
 				tagActivityID, activityID)
 			return
 		}
@@ -1356,7 +1356,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	// this is running in dispatcher
 	activityHandle, ok := env.getActivityHandle(activityID)
 	if !ok {
-		env.logger.Debug("handleActivityResult: ActivityID not exists, could be already completed or cancelled.",
+		env.logger.Debug("handleActivityResult: ActivityID not exists, could be already completed or canceled.",
 			tagActivityID, activityID)
 		return
 	}
@@ -1437,7 +1437,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	activityInfo := env.getActivityInfo(activityID, activityType)
 	task, ok := env.localActivities[activityID]
 	if !ok {
-		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or cancelled.",
+		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or canceled.",
 			tagActivityID, activityID)
 		return
 	}
@@ -1446,7 +1446,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	if result.err != nil && result.result != nil {
 		result.result = nil
 	}
-	// Always return CancelledError for cancelled tasks
+	// Always return CanceledError for canceled tasks
 	if task.canceled {
 		var canceledErr *CanceledError
 		if !errors.As(result.err, &canceledErr) {
