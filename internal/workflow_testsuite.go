@@ -610,9 +610,9 @@ func (e *TestWorkflowEnvironment) SetOnTimerFiredListener(listener func(timerID 
 	return e
 }
 
-// SetOnTimerCancelledListener sets a listener that will be called after a timer is cancelled
-func (e *TestWorkflowEnvironment) SetOnTimerCancelledListener(listener func(timerID string)) *TestWorkflowEnvironment {
-	e.impl.onTimerCancelledListener = listener
+// SetOnTimerCanceledListener sets a listener that will be called after a timer is canceled
+func (e *TestWorkflowEnvironment) SetOnTimerCanceledListener(listener func(timerID string)) *TestWorkflowEnvironment {
+	e.impl.onTimerCanceledListener = listener
 	return e
 }
 

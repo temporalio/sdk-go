@@ -454,7 +454,7 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 
 func cancelWorkflowTest(ctx Context) (string, error) {
 	if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
-		return "Cancelled.", ctx.Err()
+		return "Canceled.", ctx.Err()
 	}
 	return "Completed.", nil
 }
@@ -491,7 +491,7 @@ func cancelWorkflowAfterActivityTest(ctx Context) ([]byte, error) {
 	}
 
 	if ctx.Done().Receive(ctx, nil); ctx.Err() == ErrCanceled {
-		return []byte("Cancelled."), ctx.Err()
+		return []byte("Canceled."), ctx.Err()
 	}
 	return []byte("Completed."), nil
 }

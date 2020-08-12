@@ -75,9 +75,9 @@ var ErrSessionFailed = internal.ErrSessionFailed
 // executing the session is down, that session will be marked as failed. Executing an activity
 // within a failed session will return ErrSessionFailed immediately without scheduling that activity.
 //
-// The returned session Context will be cancelled if the session fails (worker died) or CompleteSession()
+// The returned session Context will be canceled if the session fails (worker died) or CompleteSession()
 // is called. This means that in these two cases, all user activities scheduled using the returned session
-// Context will also be cancelled.
+// Context will also be canceled.
 //
 // If user wants to end a session since activity returns some error, use CompleteSession API below.
 // New session can be created if necessary to retry the whole session.

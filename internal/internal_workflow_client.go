@@ -576,7 +576,7 @@ func isEntityNotFoundFromPassive(err error) bool {
 // CompleteActivity reports activity completed. activity Execute method can return activity.ErrResultPending to
 // indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
 // should be called when that activity is completed with the actual result and error. If err is nil, activity task
-// completed event will be reported; if err is CanceledError, activity task cancelled event will be reported; otherwise,
+// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 // activity task failed event will be reported.
 func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
 	if taskToken == nil {

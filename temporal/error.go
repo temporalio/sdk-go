@@ -173,7 +173,7 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 }
 
 // NewCanceledError creates CanceledError instance.
-// Return this error from activity or child workflow to indicate that it was successfully cancelled.
+// Return this error from activity or child workflow to indicate that it was successfully canceled.
 func NewCanceledError(details ...interface{}) *CanceledError {
 	return internal.NewCanceledError(details...)
 }

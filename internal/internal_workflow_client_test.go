@@ -640,7 +640,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
 	s.Equal(workflowRun.GetID(), wid)
 }
 
-func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Cancelled() {
+func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Canceled() {
 	createResponse := &workflowservice.StartWorkflowExecutionResponse{
 		RunId: runID,
 	}
