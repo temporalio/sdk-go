@@ -24,10 +24,14 @@
 
 package metrics
 
+type (
+	contextKey string
+)
+
 // Workflow Creation metrics
 const (
-	ScopeContextKey    = "MetricsScope"
-	LongPollContextKey = "IsLongPoll"
+	ScopeContextKey    = contextKey("MetricsScope")
+	LongPollContextKey = contextKey("IsLongPoll")
 
 	TemporalMetricsPrefix = "temporal_"
 

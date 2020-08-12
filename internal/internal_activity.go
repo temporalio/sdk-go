@@ -208,7 +208,6 @@ func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkfl
 	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(workflowFunc).String()
-		return nil
 	case reflect.Func:
 		fnName = getFunctionName(workflowFunc)
 	default:
