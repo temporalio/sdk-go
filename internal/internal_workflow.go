@@ -507,7 +507,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
-		// it doesn't do anything new, the context remains cancelled.
+		// it doesn't do anything new, the context remains canceled.
 		d.cancel()
 	})
 

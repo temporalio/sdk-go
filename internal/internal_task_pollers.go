@@ -1041,11 +1041,11 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 			Identity:  identity}
 	}
 
-	var cancelledErr *CanceledError
-	if errors.As(err, &cancelledErr) {
+	var canceledErr *CanceledError
+	if errors.As(err, &canceledErr) {
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
-			Details:   convertErrDetailsToPayloads(cancelledErr.details, dataConverter),
+			Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 			Identity:  identity}
 	}
 	if errors.Is(err, context.Canceled) {
@@ -1078,14 +1078,14 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 			Identity:   identity}
 	}
 
-	var cancelledErr *CanceledError
-	if errors.As(err, &cancelledErr) {
+	var canceledErr *CanceledError
+	if errors.As(err, &canceledErr) {
 		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
 			Namespace:  namespace,
 			WorkflowId: workflowID,
 			RunId:      runID,
 			ActivityId: activityID,
-			Details:    convertErrDetailsToPayloads(cancelledErr.details, dataConverter),
+			Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 			Identity:   identity}
 	}
 

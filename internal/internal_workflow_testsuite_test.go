@@ -342,7 +342,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 			cancelHandler()
 		}).Select(ctx)
 
-		err := f2.Get(ctx, nil) // verify slow activity is cancelled
+		err := f2.Get(ctx, nil) // verify slow activity is canceled
 		if _, ok := err.(*CanceledError); !ok {
 			return err
 		}
@@ -353,7 +353,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHeartbeat)
 	activityMap := make(map[string]string) // msg -> activityID
-	var completedActivityID, cancelledActivityID string
+	var completedActivityID, canceledActivityID string
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
 		var msg string
 		s.NoError(args.Get(&msg))
@@ -363,14 +363,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowActivityCancellation() {
 		completedActivityID = activityInfo.ActivityID
 	})
 	env.SetOnActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		cancelledActivityID = activityInfo.ActivityID
+		canceledActivityID = activityInfo.ActivityID
 	})
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	s.Equal(activityMap["fast"], completedActivityID)
-	s.Equal(activityMap["slow"], cancelledActivityID)
+	s.Equal(activityMap["slow"], canceledActivityID)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithUserContext() {
@@ -564,10 +564,10 @@ func testActivityHeartbeat(ctx context.Context, msg string, waitTime time.Durati
 		RecordActivityHeartbeat(ctx)
 		select {
 		case <-ctx.Done():
-			// We have been cancelled.
+			// We have been canceled.
 			return "", ctx.Err()
 		default:
-			// We are not cancelled yet.
+			// We are not canceled yet.
 		}
 
 		sleepDuration := time.Second
@@ -1837,16 +1837,16 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
-	var localActivityFnCancelled atomic.Bool
+	var localActivityFnCanceled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
 		panic("this won't be called because it is mocked")
 	}
 
-	cancelledLocalActivityFn := func(ctx context.Context) error {
+	canceledLocalActivityFn := func(ctx context.Context) error {
 		<-ctx.Done()
-		localActivityFnCancelled.Store(true)
+		localActivityFnCanceled.Store(true)
 		return nil
 	}
 
@@ -1856,7 +1856,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		f := ExecuteLocalActivity(ctx, localActivityFn, "local_activity")
 
 		ctx2, cancel := WithCancel(ctx)
-		f2 := ExecuteLocalActivity(ctx2, cancelledLocalActivityFn)
+		f2 := ExecuteLocalActivity(ctx2, canceledLocalActivityFn)
 
 		err := f.Get(ctx, nil)
 		if err != nil {
@@ -1905,7 +1905,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.Equal(int32(1), completedCount.Load())
 	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
-	s.True(localActivityFnCancelled.Load())
+	s.True(localActivityFnCanceled.Load())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {

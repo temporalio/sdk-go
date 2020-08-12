@@ -1609,7 +1609,7 @@ func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
-func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
+func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
 	a1 := activityExecutor{
 		name: "test",
 		fn: func(arg1 int) (err error) {
@@ -1666,10 +1666,10 @@ func testActivityCancelledErrorHelper(ctx context.Context, t *testing.T, dataCon
 	require.Equal(t, testErrorDetails{T: "testErrorStack4"}, td)
 }
 
-func TestActivityCancelledErrorWithDataConverter(t *testing.T) {
+func TestActivityCanceledErrorWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
 	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
-	testActivityCancelledErrorHelper(ctx, t, dc)
+	testActivityCanceledErrorHelper(ctx, t, dc)
 }
 
 func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, dataConverter converter.DataConverter) {
