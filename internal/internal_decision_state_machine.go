@@ -755,7 +755,7 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 	element := h.orderedCommands.PushBack(command)
 	h.commands[command.getID()] = element
 
-	// Every time new command is added increment the counter used for generating ID
+	// Every time new command is added increment t6he counter used for generating ID
 	h.incrementNextCommandEventID()
 }
 
