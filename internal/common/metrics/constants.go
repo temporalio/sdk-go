@@ -24,15 +24,7 @@
 
 package metrics
 
-type (
-	contextKey string
-)
-
-// Workflow Creation metrics
 const (
-	ScopeContextKey    = contextKey("MetricsScope")
-	LongPollContextKey = contextKey("IsLongPoll")
-
 	TemporalMetricsPrefix = "temporal_"
 
 	WorkflowCompletedCounter     = TemporalMetricsPrefix + "workflow_completed"
@@ -41,8 +33,7 @@ const (
 	WorkflowContinueAsNewCounter = TemporalMetricsPrefix + "workflow_continue_as_new"
 	WorkflowEndToEndLatency      = TemporalMetricsPrefix + "workflow_endtoend_latency" // measure workflow execution from start to close
 
-	WorkflowTaskReplayLatency = TemporalMetricsPrefix + "workflow_task_replay_latency"
-
+	WorkflowTaskReplayLatency           = TemporalMetricsPrefix + "workflow_task_replay_latency"
 	WorkflowTaskQueuePollEmptyCounter   = TemporalMetricsPrefix + "workflow_task_queue_poll_empty"
 	WorkflowTaskQueuePollSucceedCounter = TemporalMetricsPrefix + "workflow_task_queue_poll_succeed"
 	WorkflowTaskScheduleToStartLatency  = TemporalMetricsPrefix + "workflow_task_schedule_to_start_latency"
@@ -68,10 +59,9 @@ const (
 	WorkerStartCounter = TemporalMetricsPrefix + "worker_start"
 	PollerStartCounter = TemporalMetricsPrefix + "poller_start"
 
-	TemporalRequest        = TemporalMetricsPrefix + "request"
-	TemporalRequestFailure = TemporalRequest + "_failure"
-	TemporalRequestLatency = TemporalRequest + "_latency"
-
+	TemporalRequest            = TemporalMetricsPrefix + "request"
+	TemporalRequestFailure     = TemporalRequest + "_failure"
+	TemporalRequestLatency     = TemporalRequest + "_latency"
 	TemporalLongRequest        = TemporalMetricsPrefix + "long_request"
 	TemporalLongRequestFailure = TemporalLongRequest + "_failure"
 	TemporalLongRequestLatency = TemporalLongRequest + "_latency"
