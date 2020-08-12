@@ -152,7 +152,7 @@ type (
 		Name string
 	}
 
-	// WorkflowExecution Details.
+	// WorkflowExecution details.
 	WorkflowExecution struct {
 		ID    string
 		RunID string

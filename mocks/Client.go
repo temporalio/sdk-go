@@ -31,6 +31,7 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
+	"github.com/uber-go/tally"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -221,7 +222,7 @@ func (_m *Client) GetWorkflow(ctx context.Context, workflowID string, runID stri
 }
 
 // GetWorkflowHistory provides a mock function with given fields: ctx, workflowID, runID, isLongPoll, filterType
-func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) client.HistoryEventIterator {
+func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType, metricsScope tally.Scope) internal.HistoryEventIterator {
 	ret := _m.Called(ctx, workflowID, runID, isLongPoll, filterType)
 
 	var r0 internal.HistoryEventIterator

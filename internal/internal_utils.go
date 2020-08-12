@@ -60,63 +60,87 @@ const (
 	maxRPCTimeout = 5 * time.Second
 )
 
-var (
-	// call header to temporal server
-	headers = metadata.New(map[string]string{
-		clientVersionHeaderName:        SDKVersion,
-		clientFeatureVersionHeaderName: SDKFeatureVersion,
-		clientImplHeaderName:           clientImplHeaderValue,
-	})
-)
-
-// ContextBuilder stores all Channel-specific parameters that will
+// grpcContextBuilder stores all gRPC-specific parameters that will
 // be stored inside of a context.
-type contextBuilder struct {
-	// If Timeout is zero, Build will default to defaultTimeout.
+type grpcContextBuilder struct {
 	Timeout time.Duration
 
 	// ParentContext to build the new context from. If empty, context.Background() is used.
 	// The new (child) context inherits a number of properties from the parent context:
 	//   - context fields, accessible via `ctx.Value(key)`
 	ParentContext context.Context
+
+	MetricsScope tally.Scope
+
+	Headers metadata.MD
+
+	IsLongPoll bool
 }
 
-func (cb *contextBuilder) Build() (context.Context, context.CancelFunc) {
-	parent := cb.ParentContext
-	if parent == nil {
-		parent = context.Background()
+func (cb *grpcContextBuilder) Build() (context.Context, context.CancelFunc) {
+	ctx := cb.ParentContext
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	ctx := metadata.NewOutgoingContext(parent, headers)
-	return context.WithTimeout(ctx, cb.Timeout)
+	if cb.Headers != nil {
+		ctx = metadata.NewOutgoingContext(ctx, cb.Headers)
+	}
+	if cb.MetricsScope != nil {
+		ctx = context.WithValue(ctx, metrics.ScopeContextKey, cb.MetricsScope)
+	}
+	ctx = context.WithValue(ctx, metrics.LongPollContextKey, cb.IsLongPoll)
+	var cancel context.CancelFunc
+	if cb.Timeout != time.Duration(0) {
+		ctx, cancel = context.WithTimeout(ctx, cb.Timeout)
+	}
+
+	return ctx, cancel
 }
 
-// sets the rpc timeout for a context
-func chanTimeout(timeout time.Duration) func(builder *contextBuilder) {
-	return func(b *contextBuilder) {
+func grpcTimeout(timeout time.Duration) func(builder *grpcContextBuilder) {
+	return func(b *grpcContextBuilder) {
 		b.Timeout = timeout
 	}
 }
 
-// newChannelContext - Get a rpc channel context
-func newChannelContext(ctx context.Context, options ...func(builder *contextBuilder)) (context.Context, context.CancelFunc) {
+func grpcMetricsScope(metricsScope tally.Scope) func(builder *grpcContextBuilder) {
+	return func(b *grpcContextBuilder) {
+		b.MetricsScope = metricsScope
+	}
+}
+
+func grpcLongPoll(isLongPoll bool) func(builder *grpcContextBuilder) {
+	return func(b *grpcContextBuilder) {
+		b.IsLongPoll = isLongPoll
+	}
+}
+
+// newGRPCContext - Get context for gRPC calls.
+func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
 	rpcTimeout := defaultRPCTimeout
-	if ctx != nil {
-		// Set rpc timeout less than context timeout to allow for retries when call gets lost
-		now := time.Now()
-		if expiration, ok := ctx.Deadline(); ok && expiration.After(now) {
-			rpcTimeout = expiration.Sub(now) / 2
-			// Make sure to not set rpc timeout lower than minRPCTimeout
-			if rpcTimeout < minRPCTimeout {
-				rpcTimeout = minRPCTimeout
-			} else if rpcTimeout > maxRPCTimeout {
-				rpcTimeout = maxRPCTimeout
-			}
+
+	// Set rpc timeout less than context timeout to allow for retries when call gets lost
+	now := time.Now()
+	if deadline, ok := ctx.Deadline(); ok && deadline.After(now) {
+		rpcTimeout = deadline.Sub(now) / 2
+		// Make sure to not set rpc timeout lower than minRPCTimeout
+		if rpcTimeout < minRPCTimeout {
+			rpcTimeout = minRPCTimeout
+		} else if rpcTimeout > maxRPCTimeout {
+			rpcTimeout = maxRPCTimeout
 		}
 	}
-	builder := &contextBuilder{Timeout: rpcTimeout}
-	if ctx != nil {
-		builder.ParentContext = ctx
+
+	builder := &grpcContextBuilder{
+		ParentContext: ctx,
+		Timeout:       rpcTimeout,
+		Headers: metadata.New(map[string]string{
+			clientVersionHeaderName:        SDKVersion,
+			clientFeatureVersionHeaderName: SDKFeatureVersion,
+			clientImplHeaderName:           clientImplHeaderValue,
+		}),
 	}
+
 	for _, opt := range options {
 		opt(builder)
 	}
@@ -132,7 +156,7 @@ func getWorkerIdentity(taskqueueName string) string {
 func getHostName() string {
 	hostName, err := os.Hostname()
 	if err != nil {
-		hostName = "UnKnown"
+		hostName = "Unknown"
 	}
 	return hostName
 }

@@ -236,9 +236,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
-		tchCtx, cancel := newChannelContext(ctx)
+		grpcCtx, cancel := newGRPCContext(ctx)
 		defer cancel()
-		_, err := client.DescribeNamespace(tchCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
+		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
 		if err != nil {
 			switch err.(type) {
 			case *serviceerror.NotFound:
@@ -1147,13 +1147,11 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		PreviousStartedEventId: math.MaxInt64,
 	}
 
-	metricScope := tally.NoopScope
 	iterator := &historyIteratorImpl{
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
 		namespace:     ReplayNamespace,
 		service:       service,
-		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
 	}
 	params := workerExecutionParameters{

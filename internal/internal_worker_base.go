@@ -329,7 +329,6 @@ func (bw *baseWorker) processTask(task interface{}) {
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			bw.metricsScope.Counter(metrics.WorkerPanicCounter).Inc(1)
 			topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
 			st := getStackTraceRaw(topLine, 7, 0)
 			bw.logger.Error("Unhandled panic.",

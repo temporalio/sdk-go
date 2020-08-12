@@ -25,31 +25,57 @@
 package metrics
 
 import (
+	"strings"
 	"time"
 
 	"github.com/uber-go/tally"
-	"go.temporal.io/api/serviceerror"
 )
 
 type (
-	operationScope struct {
-		scope     tally.Scope
-		startTime time.Time
+	requestScope struct {
+		scope      tally.Scope
+		startTime  time.Time
+		isLongPoll bool
 	}
 )
 
-func (s *operationScope) handleError(err error) {
-	s.scope.Timer(TemporalLatency).Record(time.Since(s.startTime))
+func newRequestScope(scope tally.Scope, method string, isLongPoll bool) *requestScope {
+	scopeName := convertMethodToScope(method)
+	subScope := scope.SubScope(scopeName)
+
+	return &requestScope{
+		scope:      subScope,
+		startTime:  time.Now(),
+		isLongPoll: isLongPoll,
+	}
+}
+
+func (rs *requestScope) recordStart() {
+	if rs.isLongPoll {
+		rs.scope.Counter(TemporalLongRequest).Inc(1)
+	} else {
+		rs.scope.Counter(TemporalRequest).Inc(1)
+	}
+}
+
+func (rs *requestScope) recordEnd(err error) {
+	if rs.isLongPoll {
+		rs.scope.Timer(TemporalLongRequestLatency).Record(time.Since(rs.startTime))
+	} else {
+		rs.scope.Timer(TemporalRequestLatency).Record(time.Since(rs.startTime))
+	}
+
 	if err != nil {
-		switch err.(type) {
-		case *serviceerror.NotFound,
-			*serviceerror.InvalidArgument,
-			*serviceerror.NamespaceAlreadyExists,
-			*serviceerror.WorkflowExecutionAlreadyStarted,
-			*serviceerror.QueryFailed:
-			s.scope.Counter(TemporalInvalidRequest).Inc(1)
-		default:
-			s.scope.Counter(TemporalError).Inc(1)
+		if rs.isLongPoll {
+			rs.scope.Counter(TemporalLongRequestFailure).Inc(1)
+		} else {
+			rs.scope.Counter(TemporalRequestFailure).Inc(1)
 		}
 	}
+}
+
+func convertMethodToScope(method string) string {
+	// method is something like "/temporal.api.workflowservice.v1.WorkflowService/RegisterNamespace"
+	methodStart := strings.LastIndex(method, "/") + 1
+	return TemporalMetricsPrefix + method[methodStart:]
 }

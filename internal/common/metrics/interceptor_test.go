@@ -60,14 +60,14 @@ func TestMetricsInterceptor(t *testing.T) {
 			grpcMethod:           "/workflowservice.WorkflowService/PollActivityTaskQueue",
 			err:                  serviceerror.NewInternal("internal error"),
 			expectedMetricName:   "PollActivityTaskQueue",
-			expectedCounterNames: []string{TemporalRequest, TemporalError},
+			expectedCounterNames: []string{TemporalRequest, TemporalRequestFailure},
 		},
 		{
 			name:                 "InvalidRequestError",
 			grpcMethod:           "/workflowservice.WorkflowService/QueryWorkflow",
 			err:                  serviceerror.NewNotFound("not found"),
 			expectedMetricName:   "QueryWorkflow",
-			expectedCounterNames: []string{TemporalRequest, TemporalInvalidRequest},
+			expectedCounterNames: []string{TemporalRequest, TemporalRequestFailure},
 		},
 	}
 
@@ -136,7 +136,7 @@ func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, 
 		assert.True(find)
 	}
 	assert.Equal(1, len(reporter.timers))
-	assert.Equal(TemporalMetricsPrefix+methodName+separator+TemporalLatency, reporter.timers[0].name)
+	assert.Equal(TemporalMetricsPrefix+methodName+separator+TemporalRequestLatency, reporter.timers[0].name)
 }
 
 func assertPrometheusMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, methodName string, counterNames []string) {

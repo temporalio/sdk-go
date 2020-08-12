@@ -920,7 +920,6 @@ ProcessEvents:
 	}
 
 	if nonDeterministicErr != nil {
-		w.wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).Counter(metrics.NonDeterministicError).Inc(1)
 		w.wth.logger.Error("non-deterministic-error",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
@@ -1112,10 +1111,6 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 			"TaskFirstEventID", task.History.Events[0].GetEventId(),
 			"TaskStartedEventID", task.GetStartedEventId(),
 			"TaskPreviousStartedEventID", task.GetPreviousStartedEventId())
-
-		w.wth.metricsScope.
-			GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName()).
-			Counter(metrics.StickyCacheStall).Inc(1)
 
 		w.clearState()
 		return w.resetStateIfDestroyed(task, historyIterator)
@@ -1441,7 +1436,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	var workflowPanicErr *workflowPanicError
 	if errors.As(workflowContext.err, &workflowPanicErr) {
 		// Workflow panic
-		metricsScope.Counter(metrics.WorkflowTaskPanicCounter).Inc(1)
+		metricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 		wth.logger.Error("Workflow panic.",
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
@@ -1771,7 +1766,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 				tagActivityType, activityType,
 				"PanicError", fmt.Sprintf("%v", p),
 				"PanicStack", st)
-			metricsScope.Counter(metrics.ActivityTaskPanicCounter).Inc(1)
+			metricsScope.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
 		}
@@ -1855,11 +1850,11 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel := newChannelContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(tchCtx, request)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(grpcCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
@@ -1888,11 +1883,11 @@ func recordActivityHeartbeatByID(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			tchCtx, cancel := newChannelContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx)
 			defer cancel()
 
 			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeatById(tchCtx, request)
+			heartbeatResponse, err = service.RecordActivityTaskHeartbeatById(grpcCtx, request)
 			return err
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
