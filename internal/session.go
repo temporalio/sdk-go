@@ -156,9 +156,9 @@ var (
 // executing the session is down, that session will be marked as failed. Executing an activity
 // within a failed session will return ErrSessionFailed immediately without scheduling that activity.
 //
-// The returned session Context will be cancelled if the session fails (worker died) or CompleteSession()
+// The returned session Context will be canceled if the session fails (worker died) or CompleteSession()
 // is called. This means that in these two cases, all user activities scheduled using the returned session
-// Context will also be cancelled.
+// Context will also be canceled.
 //
 // If user wants to end a session since activity returns some error, use CompleteSession API below.
 // New session can be created if necessary to retry the whole session.
@@ -222,13 +222,13 @@ func CompleteSession(ctx Context) {
 	// this will cancel the ctx passed into this function
 	sessionInfo.sessionCancelFunc()
 
-	// then execute then completion activity using the completionCtx, which is not cancelled.
+	// then execute then completion activity using the completionCtx, which is not canceled.
 	completionCtx := WithActivityOptions(sessionInfo.completionCtx, ActivityOptions{
 		ScheduleToStartTimeout: time.Second * 3,
 		StartToCloseTimeout:    time.Second * 3,
 	})
 
-	// even though the creation activity has been cancelled, the session worker doesn't know. The worker will wait until
+	// even though the creation activity has been canceled, the session worker doesn't know. The worker will wait until
 	// next heartbeat to figure out that the workflow is completed and then release the resource. We need to make sure the
 	// completion activity is executed before the workflow exits.
 	// the taskqueue will be overrided to use the one stored in sessionInfo.
@@ -429,7 +429,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			isRetryable := func(_ error) bool {
 				// there will be two types of error here:
 				// 1. transient errors like timeout, in which case we should not fail the session
-				// 2. non-retryable errors like activity cancelled, activity not found or domain
+				// 2. non-retryable errors like activity canceled, activity not found or domain
 				// not active. In those cases, the internal implementation will cancel the context,
 				// so in the next iteration, ctx.Done() will be selected. Here we rely on the heartbeat
 				// internal implementation to tell which error is non-retryable.

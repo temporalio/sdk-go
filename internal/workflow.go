@@ -197,7 +197,7 @@ type (
 		// Optional: default is 10s if this is not provided (or if 0 is provided).
 		WorkflowTaskTimeout time.Duration
 
-		// WaitForCancellation - Whether to wait for cancelled child workflow to be ended (child workflow can be ended
+		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
 		// as: completed/failed/timedout/terminated/canceled)
 		// Optional: default false
 		WaitForCancellation bool
@@ -215,7 +215,7 @@ type (
 		// after the current run is completed/failed/timeout. If a RetryPolicy is also supplied, and the workflow failed
 		// or timeout, the workflow will be retried based on the retry policy. While the workflow is retrying, it won't
 		// schedule its next run. If next schedule is due while workflow is running (or retrying), then it will skip that
-		// schedule. Cron workflow will not stop until it is terminated or cancelled (by returning temporal.CanceledError).
+		// schedule. Cron workflow will not stop until it is terminated or canceled (by returning temporal.CanceledError).
 		// The cron spec is as following:
 		// ┌───────────── minute (0 - 59)
 		// │ ┌───────────── hour (0 - 23)
@@ -258,7 +258,7 @@ func Await(ctx Context, condition func() bool) error {
 		// TODO: Consider always returning a channel
 		if doneCh != nil {
 			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
-				return NewCanceledError("Await context cancelled")
+				return NewCanceledError("Await context canceled")
 			}
 		}
 		state.yield("Await")
@@ -277,7 +277,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 		// TODO: Consider always returning a channel
 		if doneCh != nil {
 			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
-				return false, NewCanceledError("AwaitWithTimeout context cancelled")
+				return false, NewCanceledError("AwaitWithTimeout context canceled")
 			}
 		}
 		if timer.IsReady() {
@@ -690,11 +690,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		if e == nil {
 			// We must wait for Workflow initiation to finish before registering the cancellation handler.
 			// Otherwise, we risk firing the cancel handler and then having the workflow "initiate" afterwards,
-			// which would result in an uncancelled workflow.
+			// which would result in an uncanceled workflow.
 			if cancellable {
 				cancellationCallback.fn = func(v interface{}, _ bool) bool {
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
-						// child workflow started, and ctx cancelled
+						// child workflow started, and ctx canceled
 						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
 					}
 					return false

@@ -114,8 +114,8 @@ payload containing progress information.
 
 Activity Cancellation
 
-When an activity is cancelled (or its workflow execution is completed or failed) the context passed into its function
-is cancelled which sets its Done channel’s closed state. So an activity can use that to perform any necessary cleanup
+When an activity is canceled (or its workflow execution is completed or failed) the context passed into its function
+is canceled which sets its Done channel’s closed state. So an activity can use that to perform any necessary cleanup
 and abort its execution. Currently cancellation is delivered only to activities that call RecordHeartbeat.
 
 Async/Manual Activity Completion

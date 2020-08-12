@@ -1456,7 +1456,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	var contErr *ContinueAsNewError
 
 	if errors.As(workflowContext.err, &canceledErr) {
-		// Workflow cancelled
+		// Workflow canceled
 		metricsScope.Counter(metrics.WorkflowCanceledCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION)
 		closeCommand.Attributes = &commandpb.Command_CancelWorkflowExecutionCommandAttributes{CancelWorkflowExecutionCommandAttributes: &commandpb.CancelWorkflowExecutionCommandAttributes{
@@ -1609,11 +1609,11 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 		return nil
 	}
 
-	isActivityCancelled, err := i.internalHeartBeat(details)
+	isActivityCanceled, err := i.internalHeartBeat(details)
 
-	// If the activity is cancelled, the activity can ignore the cancellation and do its work
+	// If the activity is canceled, the activity can ignore the cancellation and do its work
 	// and complete. Our cancellation is co-operative, so we will try to heartbeat.
-	if (err == nil || isActivityCancelled) && !skipBatching {
+	if (err == nil || isActivityCanceled) && !skipBatching {
 		// We have successfully sent heartbeat, start next batching window.
 		i.lastDetailsToReport = nil
 
@@ -1662,7 +1662,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 }
 
 func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, error) {
-	isActivityCancelled := false
+	isActivityCanceled := false
 	timeout := i.heartBeatTimeout
 	if timeout <= 0 {
 		timeout = defaultHeartBeatInterval
@@ -1676,18 +1676,18 @@ func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, e
 	case *CanceledError:
 		// We are asked to cancel. inform the activity about cancellation through context.
 		i.cancelHandler()
-		isActivityCancelled = true
+		isActivityCanceled = true
 
 	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
-		isActivityCancelled = true
+		isActivityCanceled = true
 	}
 
 	// We don't want to bubble temporary errors to the user.
 	// This error won't be return to user check RecordActivityHeartbeat().
-	return isActivityCancelled, err
+	return isActivityCanceled, err
 }
 
 func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
