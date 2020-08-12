@@ -28,6 +28,7 @@ type (
 	contextKey string
 )
 
+// Context keys
 const (
 	ScopeContextKey    = contextKey("MetricsScope")
 	LongPollContextKey = contextKey("IsLongPoll")

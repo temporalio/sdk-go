@@ -24,6 +24,7 @@
 
 package metrics
 
+// Metrics keys
 const (
 	TemporalMetricsPrefix = "temporal_"
 
