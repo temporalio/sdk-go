@@ -202,12 +202,20 @@ func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions
 	return p, nil
 }
 
-func validateFunctionArgs(f interface{}, args []interface{}, isWorkflow bool) error {
-	fType := reflect.TypeOf(f)
-	if fType == nil || fType.Kind() != reflect.Func {
-		return fmt.Errorf("provided type: %v is not a function type", f)
+func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkflow bool) error {
+	fType := reflect.TypeOf(workflowFunc)
+	var fnName string
+	switch getKind(fType) {
+	case reflect.String:
+		fnName = reflect.ValueOf(workflowFunc).String()
+		return nil
+	case reflect.Func:
+		fnName = getFunctionName(workflowFunc)
+	default:
+		return fmt.Errorf(
+			"invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
+			workflowFunc)
 	}
-	fnName := getFunctionName(f)
 
 	fnArgIndex := 0
 	// Skip Context function argument.

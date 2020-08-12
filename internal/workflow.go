@@ -642,7 +642,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
-	workflowType := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	workflowType, _ := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
 	return i.ExecuteChildWorkflow(ctx, workflowType, args...)
 }
 

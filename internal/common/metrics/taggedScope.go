@@ -37,16 +37,21 @@ func (ts *TaggedScope) GetTaggedScope(keyValuePairs ...string) tally.Scope {
 	}
 
 	key := ""
-	tagsMap := map[string]string{}
 	for i := 0; i < len(keyValuePairs); i += 2 {
 		tagName := keyValuePairs[i]
 		tagValue := keyValuePairs[i+1]
-		key = key + tagName + ":" + tagValue + "-" // used to prevent collision of tagValue (map key) for different tagName
-		tagsMap[tagName] = tagValue
+		key += tagName + ":" + tagValue + "-" // used to prevent collision of tagValue (map key) for different tagName
 	}
 
 	taggedScope, ok := ts.Load(key)
 	if !ok {
+		tagsMap := map[string]string{}
+		for i := 0; i < len(keyValuePairs); i += 2 {
+			tagName := keyValuePairs[i]
+			tagValue := keyValuePairs[i+1]
+			tagsMap[tagName] = tagValue
+		}
+
 		ts.Store(key, ts.Scope.Tagged(tagsMap))
 		taggedScope, _ = ts.Load(key)
 	}

@@ -337,7 +337,7 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 		if err := validateFnFormat(fnType, true); err != nil {
 			panic(err)
 		}
-		fnName := getWorkflowFunctionName(e.impl.registry, workflow)
+		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)
 		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}

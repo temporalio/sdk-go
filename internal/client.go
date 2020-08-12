@@ -167,7 +167,7 @@ type (
 		//			}
 		//			events = append(events, event)
 		//		}
-		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType, metricsScope tally.Scope) HistoryEventIterator
+		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
 		// activity Execute method can return acitivity.activity.ErrResultPending to

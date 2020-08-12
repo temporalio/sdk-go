@@ -1153,22 +1153,13 @@ func newSyncWorkflowDefinition(workflow workflow) *syncWorkflowDefinition {
 }
 
 func getValidatedWorkflowFunction(workflowFunc interface{}, args []interface{}, dataConverter converter.DataConverter, r *registry) (*WorkflowType, *commonpb.Payloads, error) {
-	fnName := ""
-	fType := reflect.TypeOf(workflowFunc)
-	switch getKind(fType) {
-	case reflect.String:
-		fnName = reflect.ValueOf(workflowFunc).String()
+	if err := validateFunctionArgs(workflowFunc, args, true); err != nil {
+		return nil, nil, err
+	}
 
-	case reflect.Func:
-		if err := validateFunctionArgs(workflowFunc, args, true); err != nil {
-			return nil, nil, err
-		}
-		fnName = getWorkflowFunctionName(r, workflowFunc)
-
-	default:
-		return nil, nil, fmt.Errorf(
-			"invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
-			workflowFunc)
+	fnName, err := getWorkflowFunctionName(r, workflowFunc)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if dataConverter == nil {

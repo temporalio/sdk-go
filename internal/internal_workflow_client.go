@@ -271,8 +271,9 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue)
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, nil)
+		fnName, _ := getWorkflowFunctionName(wc.registry, workflow)
+		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, fnName)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
 	}
 
 	return &workflowRunImpl{
@@ -293,7 +294,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, nil)
+		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
 	return &workflowRunImpl{
@@ -413,8 +414,8 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		scope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
-		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, scope)
+		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
 	}
 
 	return &workflowRunImpl{
@@ -488,7 +489,17 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 	runID string,
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
-	metricsScope tally.Scope,
+) HistoryEventIterator {
+	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, wc.metricsScope)
+}
+
+func (wc *WorkflowClient) getWorkflowHistory(
+	ctx context.Context,
+	workflowID string,
+	runID string,
+	isLongPoll bool,
+	filterType enumspb.HistoryEventFilterType,
+	requestMetricsScope tally.Scope,
 ) HistoryEventIterator {
 	namespace := wc.namespace
 	paginate := func(nextToken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
@@ -512,7 +523,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 				func() error {
 					var err1 error
 					grpcCtx, cancel := newGRPCContext(ctx,
-						grpcMetricsScope(metricsScope),
+						grpcMetricsScope(requestMetricsScope),
 						grpcLongPoll(isLongPoll),
 						func(builder *grpcContextBuilder) {
 							if isLongPoll {
@@ -1147,10 +1158,11 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
 
+	fnName, _ := getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn)
 	err = NewWorkflowExecutionError(
 		workflowRun.workflowID,
 		workflowRun.currentRunID,
-		getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn),
+		fnName,
 		err)
 
 	return err
