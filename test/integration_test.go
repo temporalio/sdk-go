@@ -475,6 +475,10 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
 	ts.EqualValues(expected, "test-data-in-contexttest-data-in-context")
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivities() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-local-activities", ts.workflows.WorkflowWithParallelLocalActivities, nil))
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

@@ -109,6 +109,7 @@ type (
 		mutableSideEffect map[string]*commonpb.Payloads
 		unstartedLaTasks  map[string]struct{}
 		openSessions      map[string]*SessionInfo
+		idCounter         int64
 
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
@@ -253,6 +254,11 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	}
 	s.handled = true
 	s.callback(result, err)
+}
+
+func (wc *workflowEnvironmentImpl) getNextID() int64 {
+	wc.idCounter++
+	return wc.idCounter
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -480,7 +486,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
-	activityID := wc.GenerateSequenceID()
+	activityID := getStringID(wc.getNextID())
 	task := newLocalActivityTask(params, callback, activityID)
 
 	wc.pendingLaTasks[activityID] = task

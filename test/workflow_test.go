@@ -710,6 +710,25 @@ func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, e
 	return []string{activityAResult, activityBResult}, nil
 }
 
+func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (string, error) {
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	ctx = workflow.WithValue(ctx, contextKey(testContextKey), "test-data-in-context")
+	activities := Activities{}
+	var futures []workflow.Future
+
+	for i := 0; i < 2; i++ {
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.DuplicateStringInContext))
+	}
+
+	for _, future := range futures {
+		if err := future.Get(ctx, nil); err != nil {
+			return "", err
+		}
+	}
+
+	return "", nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -740,6 +759,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
+	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
