@@ -687,8 +687,8 @@ func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (strin
 				return valueToSet
 			})
 			var sideEffectValue int
-			encodedValue.Get(&sideEffectValue)
-			setter.SetValue(sideEffectValue)
+			err := encodedValue.Get(&sideEffectValue)
+			setter.Set(sideEffectValue, err)
 		})
 	}
 
@@ -727,8 +727,8 @@ func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context)
 			)
 
 			var sideEffectValue int
-			encodedValue.Get(&sideEffectValue)
-			setter.SetValue(sideEffectValue)
+			err := encodedValue.Get(&sideEffectValue)
+			setter.Set(sideEffectValue, err)
 		})
 	}
 
