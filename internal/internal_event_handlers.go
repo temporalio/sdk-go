@@ -113,7 +113,9 @@ type (
 		// LocalActivities have a separate, individual counter instead of relying on actual commandEventIDs.
 		// This is because command IDs are only incremented on activity completion, which breaks
 		// local activities that are spawned in parallel as they would all share the same command ID
-		laCounterID int64
+		localActivityCounterID int64
+
+		sideEffectCounterID int64
 
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
@@ -261,8 +263,13 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 }
 
 func (wc *workflowEnvironmentImpl) getNextLocalActivityID() string {
-	wc.laCounterID++
-	return getStringID(wc.laCounterID)
+	wc.localActivityCounterID++
+	return getStringID(wc.localActivityCounterID)
+}
+
+func (wc *workflowEnvironmentImpl) getNextSideEffectID() int64 {
+	wc.sideEffectCounterID++
+	return wc.sideEffectCounterID
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -622,7 +629,7 @@ func getChangeVersion(changeID string, version Version) string {
 }
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
-	sideEffectID := wc.GenerateSequence()
+	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
 		var ok bool
