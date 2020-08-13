@@ -1,0 +1,406 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2020-08-13T19:36:05.679940499Z",
+      "eventType": "WorkflowExecutionStarted",
+      "taskId": "1130317",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "WorkflowWithParallelLocalActivities"
+        },
+        "taskQueue": {
+          "name": "tq-1-TestIntegrationSuite/TestWorkflowWithParallelLocalActivities",
+          "kind": "Normal"
+        },
+        "workflowExecutionTimeout": "15s",
+        "workflowRunTimeout": "15s",
+        "workflowTaskTimeout": "1s",
+        "initiator": "Workflow",
+        "originalExecutionRunId": "d25c867e-82eb-4d6a-ac21-9475f3c2fbbc",
+        "identity": "251118@temporal-dev@",
+        "firstExecutionRunId": "d25c867e-82eb-4d6a-ac21-9475f3c2fbbc",
+        "attempt": 1,
+        "workflowExecutionExpirationTime": "2020-08-13T19:36:20.680Z",
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2020-08-13T19:36:05.679951637Z",
+      "eventType": "WorkflowTaskScheduled",
+      "taskId": "1130318",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "tq-1-TestIntegrationSuite/TestWorkflowWithParallelLocalActivities",
+          "kind": "Normal"
+        },
+        "startToCloseTimeout": "1s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2020-08-13T19:36:05.702764235Z",
+      "eventType": "WorkflowTaskStarted",
+      "taskId": "1130326",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "251118@temporal-dev@",
+        "requestId": "8dd65876-cc06-472e-bcde-37f4a3b06424"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2020-08-13T19:36:05.713549611Z",
+      "eventType": "WorkflowTaskCompleted",
+      "taskId": "1130329",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "251118@temporal-dev@",
+        "binaryChecksum": "a7be638c50301b1ee07e366fa1a6ca58"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2020-08-13T19:36:05.713607115Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130330",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiNCIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzA5NTAxNFoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2020-08-13T19:36:05.713615984Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130331",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMiIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzEyODkwMVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2020-08-13T19:36:05.713621915Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130332",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMyIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzE2MDYxNVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2020-08-13T19:36:05.713628711Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130333",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiNiIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzE5NzQ5WiIsIkF0dGVtcHQiOjAsIkJhY2tvZmYiOjB9"
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2020-08-13T19:36:05.713634257Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130334",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiNSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI0MzAzOFoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2020-08-13T19:36:05.713639400Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130335",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiOCIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI1NDY3M1oiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2020-08-13T19:36:05.713644496Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130336",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI3ODEyOVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2020-08-13T19:36:05.713649584Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130337",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiMTAiLCJBY3Rpdml0eVR5cGUiOiJEdXBsaWNhdGVTdHJpbmdJbkNvbnRleHQiLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTozNjowNS43MDM0Njg5OTFaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2020-08-13T19:36:05.713655085Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130338",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiNyIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzQ4NDAyNVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2020-08-13T19:36:05.713660561Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "1130339",
+      "markerRecordedEventAttributes": {
+        "markerName": "LocalActivity",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "eyJBY3Rpdml0eUlEIjoiOSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzUzNzMzMVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+              }
+            ]
+          },
+          "result": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2020-08-13T19:36:05.713672060Z",
+      "eventType": "WorkflowExecutionCompleted",
+      "taskId": "1130340",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IiI="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}
