@@ -483,6 +483,13 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-side-effect.json")
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-mutable-side-effects", ts.workflows.WorkflowWithParallelMutableSideEffects, nil))
 }

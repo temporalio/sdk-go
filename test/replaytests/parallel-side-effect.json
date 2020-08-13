@@ -1,0 +1,406 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2020-08-13T19:16:46.660409141Z",
+      "eventType": "WorkflowExecutionStarted",
+      "taskId": "2113742",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "WorkflowWithParallelSideEffects"
+        },
+        "taskQueue": {
+          "name": "tq-1-TestIntegrationSuite/TestWorkflowWithParallelSideEffects",
+          "kind": "Normal"
+        },
+        "workflowExecutionTimeout": "15s",
+        "workflowRunTimeout": "15s",
+        "workflowTaskTimeout": "1s",
+        "initiator": "Workflow",
+        "originalExecutionRunId": "efd4cf53-03ba-4dd0-a94c-7b0ae8c71b98",
+        "identity": "247955@temporal-dev@",
+        "firstExecutionRunId": "efd4cf53-03ba-4dd0-a94c-7b0ae8c71b98",
+        "attempt": 1,
+        "workflowExecutionExpirationTime": "2020-08-13T19:17:01.660Z",
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2020-08-13T19:16:46.660435760Z",
+      "eventType": "WorkflowTaskScheduled",
+      "taskId": "2113743",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "tq-1-TestIntegrationSuite/TestWorkflowWithParallelSideEffects",
+          "kind": "Normal"
+        },
+        "startToCloseTimeout": "1s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2020-08-13T19:16:46.670244532Z",
+      "eventType": "WorkflowTaskStarted",
+      "taskId": "2113751",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "247955@temporal-dev@",
+        "requestId": "703e0e13-7c14-4fb8-9738-6976b705fa6d"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2020-08-13T19:16:46.677304931Z",
+      "eventType": "WorkflowTaskCompleted",
+      "taskId": "2113754",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "247955@temporal-dev@",
+        "binaryChecksum": "975ed380a7f6c42d53ebabaeb5c5b580"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2020-08-13T19:16:46.677339352Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113755",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MA=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "NQ=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2020-08-13T19:16:46.677347198Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113756",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MQ=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Ng=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2020-08-13T19:16:46.677354320Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113757",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Mg=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Nw=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2020-08-13T19:16:46.677360372Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113758",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Mw=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "OA=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2020-08-13T19:16:46.677369215Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113759",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "NA=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "OQ=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2020-08-13T19:16:46.677374895Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113760",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "NQ=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MTA="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2020-08-13T19:16:46.677379115Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113761",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Ng=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MTE="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2020-08-13T19:16:46.677383103Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113762",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Nw=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MTI="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2020-08-13T19:16:46.677387347Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113763",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "OA=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MTM="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2020-08-13T19:16:46.677391846Z",
+      "eventType": "MarkerRecorded",
+      "taskId": "2113764",
+      "markerRecordedEventAttributes": {
+        "markerName": "SideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "OQ=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MTQ="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2020-08-13T19:16:46.677398498Z",
+      "eventType": "WorkflowExecutionCompleted",
+      "taskId": "2113765",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IiI="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}
