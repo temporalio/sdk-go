@@ -662,12 +662,17 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	var futures []workflow.Future
 
 	for i := 0; i < 10; i++ {
-		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.DuplicateStringInContext))
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, i))
 	}
 
-	for _, future := range futures {
-		if err := future.Get(ctx, nil); err != nil {
+	for i, future := range futures {
+		var activityResult int
+		if err := future.Get(ctx, &activityResult); err != nil {
 			return "", err
+		}
+
+		if activityResult != i {
+			return "", fmt.Errorf("Expected %v, Got %v", i, activityResult)
 		}
 	}
 

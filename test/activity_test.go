@@ -124,6 +124,10 @@ func (a *Activities) DuplicateStringInContext(ctx context.Context) (string, erro
 	return strings.Repeat(originalString.(string), 2), nil
 }
 
+func (a *Activities) Echo(ctx context.Context, value int) (int, error) {
+	return value, nil
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

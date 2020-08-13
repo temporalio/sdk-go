@@ -2,9 +2,9 @@
   "events": [
     {
       "eventId": "1",
-      "eventTime": "2020-08-13T19:36:05.679940499Z",
+      "eventTime": "2020-08-13T19:41:43.122969892Z",
       "eventType": "WorkflowExecutionStarted",
-      "taskId": "1130317",
+      "taskId": "1130361",
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
           "name": "WorkflowWithParallelLocalActivities"
@@ -17,20 +17,20 @@
         "workflowRunTimeout": "15s",
         "workflowTaskTimeout": "1s",
         "initiator": "Workflow",
-        "originalExecutionRunId": "d25c867e-82eb-4d6a-ac21-9475f3c2fbbc",
-        "identity": "251118@temporal-dev@",
-        "firstExecutionRunId": "d25c867e-82eb-4d6a-ac21-9475f3c2fbbc",
+        "originalExecutionRunId": "196a40e4-39d2-43c9-99bb-f97ccde89afc",
+        "identity": "253349@temporal-dev@",
+        "firstExecutionRunId": "196a40e4-39d2-43c9-99bb-f97ccde89afc",
         "attempt": 1,
-        "workflowExecutionExpirationTime": "2020-08-13T19:36:20.680Z",
+        "workflowExecutionExpirationTime": "2020-08-13T19:41:58.123Z",
         "firstWorkflowTaskBackoff": "0s",
         "header": {}
       }
     },
     {
       "eventId": "2",
-      "eventTime": "2020-08-13T19:36:05.679951637Z",
+      "eventTime": "2020-08-13T19:41:43.122983049Z",
       "eventType": "WorkflowTaskScheduled",
-      "taskId": "1130318",
+      "taskId": "1130362",
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
           "name": "tq-1-TestIntegrationSuite/TestWorkflowWithParallelLocalActivities",
@@ -42,32 +42,32 @@
     },
     {
       "eventId": "3",
-      "eventTime": "2020-08-13T19:36:05.702764235Z",
+      "eventTime": "2020-08-13T19:41:43.132849904Z",
       "eventType": "WorkflowTaskStarted",
-      "taskId": "1130326",
+      "taskId": "1130370",
       "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "2",
-        "identity": "251118@temporal-dev@",
-        "requestId": "8dd65876-cc06-472e-bcde-37f4a3b06424"
+        "identity": "253349@temporal-dev@",
+        "requestId": "8805096e-c3b5-4158-a4e4-a44cc61c9b7c"
       }
     },
     {
       "eventId": "4",
-      "eventTime": "2020-08-13T19:36:05.713549611Z",
+      "eventTime": "2020-08-13T19:41:43.149689160Z",
       "eventType": "WorkflowTaskCompleted",
-      "taskId": "1130329",
+      "taskId": "1130373",
       "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "2",
         "startedEventId": "3",
-        "identity": "251118@temporal-dev@",
-        "binaryChecksum": "a7be638c50301b1ee07e366fa1a6ca58"
+        "identity": "253349@temporal-dev@",
+        "binaryChecksum": "44154247839de5bdf9d80a08db7fd46d"
       }
     },
     {
       "eventId": "5",
-      "eventTime": "2020-08-13T19:36:05.713607115Z",
+      "eventTime": "2020-08-13T19:41:43.149749821Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130330",
+      "taskId": "1130374",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -77,7 +77,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiNCIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzA5NTAxNFoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiOSIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzMyNTYxN1oiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
               }
             ]
           },
@@ -87,7 +87,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "OA=="
               }
             ]
           }
@@ -97,9 +97,9 @@
     },
     {
       "eventId": "6",
-      "eventTime": "2020-08-13T19:36:05.713615984Z",
+      "eventTime": "2020-08-13T19:41:43.149763250Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130331",
+      "taskId": "1130375",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -109,7 +109,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiMiIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzEyODkwMVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiMSIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ0Njk3NjlaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -119,7 +119,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "MA=="
               }
             ]
           }
@@ -129,9 +129,9 @@
     },
     {
       "eventId": "7",
-      "eventTime": "2020-08-13T19:36:05.713621915Z",
+      "eventTime": "2020-08-13T19:41:43.149768161Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130332",
+      "taskId": "1130376",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -141,7 +141,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiMyIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzE2MDYxNVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiMTAiLCJBY3Rpdml0eVR5cGUiOiJFY2hvIiwiUmVwbGF5VGltZSI6IjIwMjAtMDgtMTNUMTk6NDE6NDMuMTM0NjUwMDY5WiIsIkF0dGVtcHQiOjAsIkJhY2tvZmYiOjB9"
               }
             ]
           },
@@ -151,7 +151,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "OQ=="
               }
             ]
           }
@@ -161,9 +161,9 @@
     },
     {
       "eventId": "8",
-      "eventTime": "2020-08-13T19:36:05.713628711Z",
+      "eventTime": "2020-08-13T19:41:43.149772382Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130333",
+      "taskId": "1130377",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -173,7 +173,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiNiIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzE5NzQ5WiIsIkF0dGVtcHQiOjAsIkJhY2tvZmYiOjB9"
+                "data": "eyJBY3Rpdml0eUlEIjoiMiIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ2NzMwNjZaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -183,7 +183,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "MQ=="
               }
             ]
           }
@@ -193,9 +193,9 @@
     },
     {
       "eventId": "9",
-      "eventTime": "2020-08-13T19:36:05.713634257Z",
+      "eventTime": "2020-08-13T19:41:43.149776783Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130334",
+      "taskId": "1130378",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -205,7 +205,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiNSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI0MzAzOFoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiMyIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ2OTkyMzFaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -215,7 +215,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "Mg=="
               }
             ]
           }
@@ -225,9 +225,9 @@
     },
     {
       "eventId": "10",
-      "eventTime": "2020-08-13T19:36:05.713639400Z",
+      "eventTime": "2020-08-13T19:41:43.149781485Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130335",
+      "taskId": "1130379",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -237,7 +237,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiOCIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI1NDY3M1oiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiNSIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ3MjM5MDhaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -247,7 +247,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "NA=="
               }
             ]
           }
@@ -257,9 +257,9 @@
     },
     {
       "eventId": "11",
-      "eventTime": "2020-08-13T19:36:05.713644496Z",
+      "eventTime": "2020-08-13T19:41:43.149786320Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130336",
+      "taskId": "1130380",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -269,7 +269,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiMSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzI3ODEyOVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiOCIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ3NDMzMjNaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -279,7 +279,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "Nw=="
               }
             ]
           }
@@ -289,9 +289,9 @@
     },
     {
       "eventId": "12",
-      "eventTime": "2020-08-13T19:36:05.713649584Z",
+      "eventTime": "2020-08-13T19:41:43.149790478Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130337",
+      "taskId": "1130381",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -301,7 +301,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiMTAiLCJBY3Rpdml0eVR5cGUiOiJEdXBsaWNhdGVTdHJpbmdJbkNvbnRleHQiLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTozNjowNS43MDM0Njg5OTFaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
+                "data": "eyJBY3Rpdml0eUlEIjoiNCIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ3NjM2NjJaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -311,7 +311,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "Mw=="
               }
             ]
           }
@@ -321,9 +321,9 @@
     },
     {
       "eventId": "13",
-      "eventTime": "2020-08-13T19:36:05.713655085Z",
+      "eventTime": "2020-08-13T19:41:43.149794650Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130338",
+      "taskId": "1130382",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -333,7 +333,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiNyIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzQ4NDAyNVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiNiIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ3ODI2MzNaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -343,7 +343,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "NQ=="
               }
             ]
           }
@@ -353,9 +353,9 @@
     },
     {
       "eventId": "14",
-      "eventTime": "2020-08-13T19:36:05.713660561Z",
+      "eventTime": "2020-08-13T19:41:43.149799395Z",
       "eventType": "MarkerRecorded",
-      "taskId": "1130339",
+      "taskId": "1130383",
       "markerRecordedEventAttributes": {
         "markerName": "LocalActivity",
         "details": {
@@ -365,7 +365,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "eyJBY3Rpdml0eUlEIjoiOSIsIkFjdGl2aXR5VHlwZSI6IkR1cGxpY2F0ZVN0cmluZ0luQ29udGV4dCIsIlJlcGxheVRpbWUiOiIyMDIwLTA4LTEzVDE5OjM2OjA1LjcwMzUzNzMzMVoiLCJBdHRlbXB0IjowLCJCYWNrb2ZmIjowfQ=="
+                "data": "eyJBY3Rpdml0eUlEIjoiNyIsIkFjdGl2aXR5VHlwZSI6IkVjaG8iLCJSZXBsYXlUaW1lIjoiMjAyMC0wOC0xM1QxOTo0MTo0My4xMzQ3OTgwMTNaIiwiQXR0ZW1wdCI6MCwiQmFja29mZiI6MH0="
               }
             ]
           },
@@ -375,7 +375,7 @@
                 "metadata": {
                   "encoding": "anNvbi9wbGFpbg=="
                 },
-                "data": "InRlc3QtZGF0YS1pbi1jb250ZXh0dGVzdC1kYXRhLWluLWNvbnRleHQi"
+                "data": "Ng=="
               }
             ]
           }
@@ -385,9 +385,9 @@
     },
     {
       "eventId": "15",
-      "eventTime": "2020-08-13T19:36:05.713672060Z",
+      "eventTime": "2020-08-13T19:41:43.149805504Z",
       "eventType": "WorkflowExecutionCompleted",
-      "taskId": "1130340",
+      "taskId": "1130384",
       "workflowExecutionCompletedEventAttributes": {
         "result": {
           "payloads": [
