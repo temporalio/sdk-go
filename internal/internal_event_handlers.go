@@ -110,6 +110,14 @@ type (
 		unstartedLaTasks  map[string]struct{}
 		openSessions      map[string]*SessionInfo
 
+		// SideEffects and LocalActivities have a separate, individual counter
+		// instead of relying on actual commandEventIDs.
+		// LocalActivities: IDs are only incremented on activity completion, which breaks
+		// local activities that are spawned in parallel.
+		// SideEffects: IDs are only incremented when a command is sent, but not on replay,
+		// which means that SideEffects would not work properly during replay.
+		markerIDCounter int64
+
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
@@ -253,6 +261,11 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	}
 	s.handled = true
 	s.callback(result, err)
+}
+
+func (wc *workflowEnvironmentImpl) getNextMarkerID() int64 {
+	wc.markerIDCounter++
+	return wc.markerIDCounter
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -460,7 +473,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
 	return &ActivityID{
-		scheduleID: wc.GenerateSequence(),
+		scheduleID: scheduleID,
 		activityID: activityID,
 	}
 }
@@ -480,7 +493,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
-	activityID := wc.GenerateSequenceID()
+	activityID := getStringID(wc.getNextMarkerID())
 	task := newLocalActivityTask(params, callback, activityID)
 
 	wc.pendingLaTasks[activityID] = task
@@ -612,7 +625,7 @@ func getChangeVersion(changeID string, version Version) string {
 }
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
-	sideEffectID := wc.GenerateSequence()
+	sideEffectID := wc.getNextMarkerID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
 		var ok bool

@@ -479,6 +479,14 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivities() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-local-activities", ts.workflows.WorkflowWithParallelLocalActivities, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-mutable-side-effects", ts.workflows.WorkflowWithParallelMutableSideEffects, nil))
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

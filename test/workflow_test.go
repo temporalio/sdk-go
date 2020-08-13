@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -660,13 +661,85 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	activities := Activities{}
 	var futures []workflow.Future
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 10; i++ {
 		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.DuplicateStringInContext))
 	}
 
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {
 			return "", err
+		}
+	}
+
+	return "", nil
+}
+
+func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		valueToSet := i
+		future, setter := workflow.NewFuture(ctx)
+		futures = append(futures, future)
+
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+				return valueToSet
+			})
+			var sideEffectValue int
+			encodedValue.Get(&sideEffectValue)
+			setter.SetValue(sideEffectValue)
+		})
+	}
+
+	for i, future := range futures {
+		var sideEffectValue int
+		if err := future.Get(ctx, &sideEffectValue); err != nil {
+			return "", err
+		}
+
+		if i != sideEffectValue {
+			return "", fmt.Errorf("Expected %v, Got %v", i, sideEffectValue)
+		}
+	}
+
+	return "", nil
+}
+
+func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context) (string, error) {
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		valueToSet := i
+		future, setter := workflow.NewFuture(ctx)
+		futures = append(futures, future)
+
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			encodedValue := workflow.MutableSideEffect(
+				ctx,
+				strconv.Itoa(valueToSet),
+				func(ctx workflow.Context) interface{} {
+					return valueToSet
+				},
+				func(a interface{}, b interface{}) bool {
+					return a == b
+				},
+			)
+
+			var sideEffectValue int
+			encodedValue.Get(&sideEffectValue)
+			setter.SetValue(sideEffectValue)
+		})
+	}
+
+	for i, future := range futures {
+		var sideEffectValue int
+		if err := future.Get(ctx, &sideEffectValue); err != nil {
+			return "", err
+		}
+
+		if i != sideEffectValue {
+			return "", fmt.Errorf("Expected %v, Got %v", i, sideEffectValue)
 		}
 	}
 
@@ -760,6 +833,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
+	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
+	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
