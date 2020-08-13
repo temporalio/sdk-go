@@ -820,12 +820,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("5"),
+			Details:                      s.createLocalActivityMarkerDataForTest("1"),
 			WorkflowTaskCompletedEventId: 4,
 		}),
 		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("6"),
+			Details:                      s.createLocalActivityMarkerDataForTest("2"),
 			WorkflowTaskCompletedEventId: 4,
 		}),
 
