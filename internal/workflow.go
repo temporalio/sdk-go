@@ -550,7 +550,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, acti
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
-		Attempt:                     1,
 	}
 
 	Go(ctx, func(ctx Context) {
