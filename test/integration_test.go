@@ -486,9 +486,9 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingRepl
 	ts.NoError(err)
 }
 
-func (ts *IntegrationTestSuite) TestWorkflowWithLongLocalActivityAndHeartbeat() {
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
 	if !ts.config.IsStickyOff {
-		ts.NoError(ts.executeWorkflow(uuid.New(), ts.workflows.WorkflowWithLongLocalActivityAndHeartbeat, nil))
+		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
 	}
 }
 

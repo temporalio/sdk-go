@@ -678,7 +678,7 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	return "", nil
 }
 
-func (w *Workflows) WorkflowWithLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
+func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
 	ao := w.defaultLocalActivityOptions()
 	ao.ScheduleToCloseTimeout = 10 * time.Second
 	ctx = workflow.WithLocalActivityOptions(ctx, ao)
@@ -861,7 +861,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
-	worker.RegisterWorkflow(w.WorkflowWithLongLocalActivityAndHeartbeat)
+	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
