@@ -499,7 +499,6 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
 	activityID := wc.getNextLocalActivityID()
 	task := newLocalActivityTask(params, callback, activityID)
-
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
 	return &LocalActivityID{activityID: activityID}

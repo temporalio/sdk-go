@@ -657,12 +657,11 @@ func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context
 
 func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
-	ctx = workflow.WithValue(ctx, contextKey(testContextKey), "test-data-in-context")
 	activities := Activities{}
 	var futures []workflow.Future
 
 	for i := 0; i < 10; i++ {
-		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, i))
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 0, i))
 	}
 
 	for i, future := range futures {
@@ -677,6 +676,31 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	}
 
 	return "", nil
+}
+
+func (w *Workflows) WorkflowWithLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
+	ao := w.defaultLocalActivityOptions()
+	ao.ScheduleToCloseTimeout = 10 * time.Second
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	activities := Activities{}
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 5, i))
+	}
+
+	for i, future := range futures {
+		var activityResult int
+		if err := future.Get(ctx, &activityResult); err != nil {
+			return err
+		}
+
+		if activityResult != i {
+			return fmt.Errorf("Expected %v, Got %v", i, activityResult)
+		}
+	}
+
+	return nil
 }
 
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
@@ -837,6 +861,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
+	worker.RegisterWorkflow(w.WorkflowWithLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
