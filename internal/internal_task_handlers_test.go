@@ -1215,7 +1215,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	backoffInterval := 1 * time.Second
 	workflowComplete := false
 
-	retryLocalActivityWorkflowFunc := func(ctx Context, intput []byte) error {
+	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
 		ao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Minute,
 			RetryPolicy: &RetryPolicy{

@@ -786,6 +786,7 @@ processWorkflowLoop:
 					if workflowTask == nil {
 						return nil, nil
 					}
+
 					continue processWorkflowLoop
 
 				case lar := <-workflowTask.laResultCh:
