@@ -26,6 +26,7 @@ package metrics
 
 import (
 	"io"
+	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -57,6 +58,7 @@ func (c *realClock) Now() time.Time {
 
 // CapturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
 type CapturingStatsReporter struct {
+	sync.Mutex
 	counts                   []CapturedCount
 	gauges                   []CapturedGauge
 	timers                   []CapturedTimer
@@ -181,6 +183,8 @@ func (c *CapturingStatsReporter) ReportCounter(
 	tags map[string]string,
 	value int64,
 ) {
+	c.Lock()
+	defer c.Unlock()
 	c.counts = append(c.counts, CapturedCount{name, tags, value})
 }
 
@@ -190,6 +194,8 @@ func (c *CapturingStatsReporter) ReportGauge(
 	tags map[string]string,
 	value float64,
 ) {
+	c.Lock()
+	defer c.Unlock()
 	c.gauges = append(c.gauges, CapturedGauge{name, tags, value})
 }
 
@@ -199,6 +205,8 @@ func (c *CapturingStatsReporter) ReportTimer(
 	tags map[string]string,
 	value time.Duration,
 ) {
+	c.Lock()
+	defer c.Unlock()
 	c.timers = append(c.timers, CapturedTimer{name, tags, value})
 }
 
@@ -213,6 +221,8 @@ func (c *CapturingStatsReporter) ReportHistogramValueSamples(
 ) {
 	elem := CapturedHistogramValueSamples{name, tags,
 		bucketLowerBound, bucketUpperBound, samples}
+	c.Lock()
+	defer c.Unlock()
 	c.histogramValueSamples = append(c.histogramValueSamples, elem)
 }
 
@@ -227,11 +237,15 @@ func (c *CapturingStatsReporter) ReportHistogramDurationSamples(
 ) {
 	elem := CapturedHistogramDurationSamples{name, tags,
 		bucketLowerBound, bucketUpperBound, samples}
+	c.Lock()
+	defer c.Unlock()
 	c.histogramDurationSamples = append(c.histogramDurationSamples, elem)
 }
 
 // Capabilities return tally.Capabilities
 func (c *CapturingStatsReporter) Capabilities() tally.Capabilities {
+	c.Lock()
+	defer c.Unlock()
 	c.capabilities++
 	return c
 }
@@ -248,5 +262,7 @@ func (c *CapturingStatsReporter) Tagging() bool {
 
 // Flush will add one to flush
 func (c *CapturingStatsReporter) Flush() {
+	c.Lock()
+	defer c.Unlock()
 	c.flush++
 }
