@@ -124,6 +124,15 @@ func (a *Activities) DuplicateStringInContext(ctx context.Context) (string, erro
 	return strings.Repeat(originalString.(string), 2), nil
 }
 
+func (a *Activities) Echo(ctx context.Context, delayInSeconds int, value int) (int, error) {
+	select {
+	case <-time.After(time.Duration(delayInSeconds) * time.Second):
+	case <-ctx.Done():
+	}
+
+	return value, nil
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
