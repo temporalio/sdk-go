@@ -47,6 +47,7 @@ func TestMetricsInterceptor(t *testing.T) {
 		err                  error
 		expectedMetricName   string
 		expectedCounterNames []string
+		isLongPoll           bool
 	}{
 		{
 			name:                 "Success",
@@ -56,11 +57,12 @@ func TestMetricsInterceptor(t *testing.T) {
 			expectedCounterNames: []string{TemporalRequest},
 		},
 		{
-			name:                 "GenericError",
+			name:                 "GenericErrorLongPoll",
 			grpcMethod:           "/workflowservice.WorkflowService/PollActivityTaskQueue",
 			err:                  serviceerror.NewInternal("internal error"),
 			expectedMetricName:   "PollActivityTaskQueue",
-			expectedCounterNames: []string{TemporalRequest, TemporalRequestFailure},
+			expectedCounterNames: []string{TemporalLongRequest, TemporalLongRequestFailure},
+			isLongPoll:           true,
 		},
 		{
 			name:                 "InvalidRequestError",
@@ -82,7 +84,9 @@ func TestMetricsInterceptor(t *testing.T) {
 				return tc.err
 			}
 
-			err := interceptor(context.Background(), tc.grpcMethod, nil, nil, nil, invoker)
+			ctx := context.WithValue(context.Background(), LongPollContextKey, tc.isLongPoll)
+
+			err := interceptor(ctx, tc.grpcMethod, nil, nil, nil, invoker)
 			if tc.err == nil {
 				assert.NoError(err)
 			} else {
