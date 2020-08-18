@@ -55,7 +55,7 @@ var _ Client = (*WorkflowClient)(nil)
 var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
-	defaultGetHistoryTimeoutInSecs = 65
+	defaultGetHistoryTimeout = 65 * time.Second
 )
 
 var (
@@ -527,7 +527,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 						grpcLongPoll(isLongPoll),
 						func(builder *grpcContextBuilder) {
 							if isLongPoll {
-								builder.Timeout = defaultGetHistoryTimeoutInSecs * time.Second
+								builder.Timeout = defaultGetHistoryTimeout
 							}
 						})
 					defer cancel()

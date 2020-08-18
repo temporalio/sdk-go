@@ -115,6 +115,8 @@ type (
 		namespace     string
 		service       workflowservice.WorkflowServiceClient
 		maxEventID    int64
+		metricsScope  tally.Scope
+		taskQueue     string
 	}
 
 	localActivityTaskPoller struct {
@@ -353,11 +355,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 
 	wtp.metricsScope.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
 
-	if response, err = wtp.RespondTaskCompleted(completedRequest, task); err != nil {
-		wtp.metricsScope.Counter(metrics.WorkflowTaskNoCompletionCounter).Inc(1)
-		return
-	}
-
+	response, err = wtp.RespondTaskCompleted(completedRequest, task)
 	return
 }
 
@@ -366,7 +364,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	// Respond task completion.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.NewTaggedScope(wtp.metricsScope).GetTaggedScope(tagWorkflowType, task.GetWorkflowType().GetName())))
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
@@ -699,11 +697,13 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
-		nextPageToken: response.NextPageToken,
 		execution:     response.WorkflowExecution,
+		nextPageToken: response.NextPageToken,
 		namespace:     wtp.namespace,
 		service:       wtp.service,
 		maxEventID:    response.GetStartedEventId(),
+		metricsScope:  wtp.metricsScope,
+		taskQueue:     wtp.taskQueueName,
 	}
 	task := &workflowTask{
 		task:            response,
@@ -719,7 +719,10 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 			h.service,
 			h.namespace,
 			h.execution,
-			h.maxEventID)
+			h.maxEventID,
+			h.metricsScope,
+			h.taskQueue,
+		)
 	}
 
 	history, token, err := h.iteratorFunc(h.nextPageToken)
@@ -744,12 +747,14 @@ func newGetHistoryPageFunc(
 	namespace string,
 	execution *commonpb.WorkflowExecution,
 	atWorkflowTaskCompletedEventID int64,
+	metricsScope tally.Scope,
+	taskQueue string,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
 	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
 		err := backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.NewTaggedScope(metricsScope).GetTaggedScope(tagTaskQueue, taskQueue)))
 				defer cancel()
 
 				var err1 error
@@ -904,7 +909,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
@@ -913,7 +918,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskFailed(grpcCtx, request)
@@ -922,7 +927,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCompleted(grpcCtx, request)

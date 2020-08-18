@@ -211,7 +211,7 @@ func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkfl
 	case reflect.Func:
 	default:
 		return fmt.Errorf(
-			"invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v",
+			"invalid type 'workflowFunc' parameter provided, it can be either worker function or function name: %v",
 			workflowFunc)
 	}
 

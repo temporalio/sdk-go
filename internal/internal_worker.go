@@ -1153,6 +1153,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		namespace:     ReplayNamespace,
 		service:       service,
 		maxEventID:    task.GetStartedEventId(),
+		metricsScope:  nil,
+		taskQueue:     taskQueue,
 	}
 	params := workerExecutionParameters{
 		Namespace: namespace,
@@ -1407,7 +1409,7 @@ func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, err
 			fnName = alias
 		}
 	default:
-		return "", fmt.Errorf("invalid type 'workflowFunc' parameter provided, it can be either worker function or name of the worker type: %v", workflowFunc)
+		return "", fmt.Errorf("invalid type 'workflowFunc' parameter provided, it can be either worker function or function name: %v", workflowFunc)
 	}
 
 	return fnName, nil
