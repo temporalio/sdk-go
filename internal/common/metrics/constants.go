@@ -67,11 +67,10 @@ const (
 	TemporalLongRequestFailure = TemporalLongRequest + "_failure"
 	TemporalLongRequestLatency = TemporalLongRequest + "_latency"
 
-	StickyCacheHit                  = TemporalMetricsPrefix + "sticky_cache_hit"
-	StickyCacheMiss                 = TemporalMetricsPrefix + "sticky_cache_miss"
-	StickyCacheTotalForcedEviction  = TemporalMetricsPrefix + "sticky_cache_total_forced_eviction"
-	StickyCacheThreadForcedEviction = TemporalMetricsPrefix + "sticky_cache_thread_forced_eviction"
-	StickyCacheSize                 = TemporalMetricsPrefix + "sticky_cache_size"
+	StickyCacheHit                 = TemporalMetricsPrefix + "sticky_cache_hit"
+	StickyCacheMiss                = TemporalMetricsPrefix + "sticky_cache_miss"
+	StickyCacheTotalForcedEviction = TemporalMetricsPrefix + "sticky_cache_total_forced_eviction"
+	StickyCacheSize                = TemporalMetricsPrefix + "sticky_cache_size"
 
 	WorkflowActiveThreadCount = TemporalMetricsPrefix + "workflow_active_thread_count"
 )

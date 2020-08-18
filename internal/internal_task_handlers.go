@@ -819,6 +819,9 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var respondEvents []*historypb.HistoryEvent
 
 	skipReplayCheck := w.skipReplayCheck()
+	replayStopWatch := w.wth.metricsScope.Timer(metrics.WorkflowTaskReplayLatency).Start()
+	replayStopWatchStopped := false
+
 	// Process events
 ProcessEvents:
 	for {
@@ -851,6 +854,11 @@ ProcessEvents:
 
 		for i, event := range reorderedEvents {
 			isInReplay := reorderedHistory.IsReplayEvent(event)
+			if !isInReplay && !replayStopWatchStopped {
+				replayStopWatch.Stop()
+				replayStopWatchStopped = true
+			}
+
 			isLast := !isInReplay && i == len(reorderedEvents)-1
 			if !skipReplayCheck && isCommandEvent(event.GetEventType()) {
 				respondEvents = append(respondEvents, event)
