@@ -31,6 +31,8 @@ import (
 	"github.com/uber-go/tally"
 )
 
+// This file contains test helpers only. They are not private because they are used by other tests.
+
 // NewMetricsScope returns a new metric scope
 func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
 	reporter := &CapturingStatsReporter{}
