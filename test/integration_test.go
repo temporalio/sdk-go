@@ -86,25 +86,11 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	var metricsScope tally.Scope
-	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
-
-	var err error
-	ts.client, err = client.NewClient(client.Options{
-		HostPort:           ts.config.ServiceAddr,
-		Namespace:          namespace,
-		Logger:             ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
-		MetricsScope:       metricsScope,
-	})
-	ts.NoError(err)
 	ts.registerNamespace()
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
-	_ = ts.metricsScopeCloser.Close()
-	ts.client.Close()
 
 	// allow the pollers to stop, and ensure there are no goroutine leaks.
 	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
@@ -131,6 +117,19 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
+	var metricsScope tally.Scope
+	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
+
+	var err error
+	ts.client, err = client.NewClient(client.Options{
+		HostPort:           ts.config.ServiceAddr,
+		Namespace:          namespace,
+		Logger:             ilog.NewDefaultLogger(),
+		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
+		MetricsScope:       metricsScope,
+	})
+	ts.NoError(err)
+
 	ts.seq++
 	ts.activities.clearInvoked()
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
@@ -150,11 +149,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
+	_ = ts.metricsScopeCloser.Close()
+	ts.client.Close()
 	ts.worker.Stop()
 }
 
 func (ts *IntegrationTestSuite) TestBasic() {
-	ts.metricsReporter.Clear()
 	var expected []string
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
@@ -174,11 +174,11 @@ func (ts *IntegrationTestSuite) TestBasic() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
-	ts.metricsReporter.Clear()
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.ActivityRetryOnError, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+
 	ts.assertMetricsCounters(
 		"temporal_StartWorkflowExecution.temporal_request", 1,
 		"temporal_workflow_task_queue_poll_succeed", 1,
@@ -775,8 +775,6 @@ func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface
 
 		actualCounterValue, counterExists := counters[expectedCounterName.(string)]
 		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
-		if expectedCounterValue != -1 {
-			ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
-		}
+		ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
 	}
 }
