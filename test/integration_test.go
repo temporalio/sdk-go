@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/tally"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
@@ -45,6 +47,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
@@ -54,14 +57,16 @@ import (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config        Config
-	client        client.Client
-	activities    *Activities
-	workflows     *Workflows
-	worker        worker.Worker
-	seq           int64
-	taskQueueName string
-	tracer        *tracingInterceptor
+	config             Config
+	client             client.Client
+	activities         *Activities
+	workflows          *Workflows
+	worker             worker.Worker
+	seq                int64
+	taskQueueName      string
+	tracer             *tracingInterceptor
+	metricsScopeCloser io.Closer
+	metricsReporter    *metrics.CapturingStatsReporter
 }
 
 const (
@@ -81,12 +86,16 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
+	var metricsScope tally.Scope
+	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
+
 	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:           ts.config.ServiceAddr,
 		Namespace:          namespace,
 		Logger:             ilog.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
+		MetricsScope:       metricsScope,
 	})
 	ts.NoError(err)
 	ts.registerNamespace()
@@ -94,6 +103,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
 	ts.Assertions = require.New(ts.T())
+	_ = ts.metricsScopeCloser.Close()
 	ts.client.Close()
 
 	// allow the pollers to stop, and ensure there are no goroutine leaks.
@@ -144,6 +154,7 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 }
 
 func (ts *IntegrationTestSuite) TestBasic() {
+	ts.metricsReporter.Clear()
 	var expected []string
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
@@ -152,13 +163,29 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	// for explanation of -fm postfix.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("Basic"))
+
+	ts.assertMetricsCounters(
+		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_workflow_task_queue_poll_succeed", 1,
+		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
+		"temporal_PollActivityTaskQueue.temporal_long_request", 3,
+		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+	)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
+	ts.metricsReporter.Clear()
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.ActivityRetryOnError, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+	ts.assertMetricsCounters(
+		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_workflow_task_queue_poll_succeed", 1,
+		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
+		"temporal_PollActivityTaskQueue.temporal_long_request", 4,
+		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+	)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
@@ -734,4 +761,22 @@ func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, w
 	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
 	return result
+}
+
+func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface{}) {
+	counters := make(map[string]int64, len(ts.metricsReporter.Counts()))
+	for _, counter := range ts.metricsReporter.Counts() {
+		counters[counter.Name()] += counter.Value()
+	}
+
+	for i := 0; i < len(keyValuePairs); i += 2 {
+		expectedCounterName := keyValuePairs[i]
+		expectedCounterValue := keyValuePairs[i+1]
+
+		actualCounterValue, counterExists := counters[expectedCounterName.(string)]
+		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
+		if expectedCounterValue != -1 {
+			ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
+		}
+	}
 }

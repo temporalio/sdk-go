@@ -91,6 +91,17 @@ func (c *CapturingStatsReporter) Counts() []CapturedCount {
 	return c.counts
 }
 
+// Clear all counters.
+func (c *CapturingStatsReporter) Clear() {
+	c.counts = nil
+	c.gauges = nil
+	c.timers = nil
+	c.histogramValueSamples = nil
+	c.histogramDurationSamples = nil
+	c.capabilities = 0
+	c.flush = 0
+}
+
 // CapturedCount has associated name, tags and value
 type CapturedCount struct {
 	name  string
