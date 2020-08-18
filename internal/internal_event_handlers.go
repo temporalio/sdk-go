@@ -110,6 +110,13 @@ type (
 		unstartedLaTasks  map[string]struct{}
 		openSessions      map[string]*SessionInfo
 
+		// LocalActivities have a separate, individual counter instead of relying on actual commandEventIDs.
+		// This is because command IDs are only incremented on activity completion, which breaks
+		// local activities that are spawned in parallel as they would all share the same command ID
+		localActivityCounterID int64
+
+		sideEffectCounterID int64
+
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
@@ -253,6 +260,16 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	}
 	s.handled = true
 	s.callback(result, err)
+}
+
+func (wc *workflowEnvironmentImpl) getNextLocalActivityID() string {
+	wc.localActivityCounterID++
+	return getStringID(wc.localActivityCounterID)
+}
+
+func (wc *workflowEnvironmentImpl) getNextSideEffectID() int64 {
+	wc.sideEffectCounterID++
+	return wc.sideEffectCounterID
 }
 
 func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
@@ -460,7 +477,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
 	return &ActivityID{
-		scheduleID: wc.GenerateSequence(),
+		scheduleID: scheduleID,
 		activityID: activityID,
 	}
 }
@@ -480,9 +497,8 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
-	activityID := wc.GenerateSequenceID()
+	activityID := wc.getNextLocalActivityID()
 	task := newLocalActivityTask(params, callback, activityID)
-
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
 	return &LocalActivityID{activityID: activityID}
@@ -612,7 +628,7 @@ func getChangeVersion(changeID string, version Version) string {
 }
 
 func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
-	sideEffectID := wc.GenerateSequence()
+	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
 		var ok bool

@@ -475,6 +475,38 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
 	ts.EqualValues(expected, "test-data-in-contexttest-data-in-context")
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivities() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-local-activities", ts.workflows.WorkflowWithParallelLocalActivities, nil))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingReplay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelLocalActivities, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-local-activities.json")
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
+	if !ts.config.IsStickyOff {
+		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
+	}
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-side-effect.json")
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-mutable-side-effects", ts.workflows.WorkflowWithParallelMutableSideEffects, nil))
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -654,6 +655,126 @@ func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context
 	return result, nil
 }
 
+func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (string, error) {
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	activities := Activities{}
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 0, i))
+	}
+
+	for i, future := range futures {
+		var activityResult int
+		if err := future.Get(ctx, &activityResult); err != nil {
+			return "", err
+		}
+
+		if activityResult != i {
+			return "", fmt.Errorf("Expected %v, Got %v", i, activityResult)
+		}
+	}
+
+	return "", nil
+}
+
+func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
+	ao := w.defaultLocalActivityOptions()
+	ao.ScheduleToCloseTimeout = 10 * time.Second
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	activities := Activities{}
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 5, i))
+	}
+
+	for i, future := range futures {
+		var activityResult int
+		if err := future.Get(ctx, &activityResult); err != nil {
+			return err
+		}
+
+		if activityResult != i {
+			return fmt.Errorf("Expected %v, Got %v", i, activityResult)
+		}
+	}
+
+	return nil
+}
+
+func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		valueToSet := i
+		future, setter := workflow.NewFuture(ctx)
+		futures = append(futures, future)
+
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+				return valueToSet
+			})
+			var sideEffectValue int
+			err := encodedValue.Get(&sideEffectValue)
+			setter.Set(sideEffectValue, err)
+		})
+	}
+
+	for i, future := range futures {
+		var sideEffectValue int
+		if err := future.Get(ctx, &sideEffectValue); err != nil {
+			return "", err
+		}
+
+		if i != sideEffectValue {
+			return "", fmt.Errorf("Expected %v, Got %v", i, sideEffectValue)
+		}
+	}
+
+	return "", nil
+}
+
+func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context) (string, error) {
+	var futures []workflow.Future
+
+	for i := 0; i < 10; i++ {
+		valueToSet := i
+		future, setter := workflow.NewFuture(ctx)
+		futures = append(futures, future)
+
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			encodedValue := workflow.MutableSideEffect(
+				ctx,
+				strconv.Itoa(valueToSet),
+				func(ctx workflow.Context) interface{} {
+					return valueToSet
+				},
+				func(a interface{}, b interface{}) bool {
+					return a == b
+				},
+			)
+
+			var sideEffectValue int
+			err := encodedValue.Get(&sideEffectValue)
+			setter.Set(sideEffectValue, err)
+		})
+	}
+
+	for i, future := range futures {
+		var sideEffectValue int
+		if err := future.Get(ctx, &sideEffectValue); err != nil {
+			return "", err
+		}
+
+		if i != sideEffectValue {
+			return "", fmt.Errorf("Expected %v, Got %v", i, sideEffectValue)
+		}
+	}
+
+	return "", nil
+}
+
 func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 
@@ -740,6 +861,10 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
+	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
+	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
+	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
+	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
