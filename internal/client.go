@@ -472,7 +472,7 @@ type (
 	// you can use CLI to describe the workflow to see the status of the activity:
 	//     temporal --do <namespace> wf desc -w <wf-id>
 	RetryPolicy struct {
-		// Backoff interval for the first retry. If coefficient is 1.0 then it is used for all retries.
+		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
 		// Required, no default value.
 		InitialInterval time.Duration
 
