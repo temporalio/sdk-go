@@ -797,7 +797,7 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	err := decodeAndAssignValue(c.dataConverter, from, to)
 	// add to metrics
 	if err != nil {
-		c.env.GetLogger().Error(fmt.Sprintf("Corrupt signal received on channel %s. Error deserializing", c.name), tagError, err)
+		c.env.GetLogger().Error(fmt.Sprintf("Deserialization error. Corrupted signal received on channel %s.", c.name), tagError, err)
 		c.env.GetMetricsScope().Counter(metrics.CorruptedSignalsCounter).Inc(1)
 	}
 	return err
@@ -1239,7 +1239,7 @@ func (w *WorkflowOptions) getSignalChannel(ctx Context, signalName string) Recei
 	if ch, ok := w.signalChannels[signalName]; ok {
 		return ch
 	}
-	ch := NewBufferedChannel(ctx, defaultSignalChannelSize)
+	ch := NewNamedBufferedChannel(ctx, signalName, defaultSignalChannelSize)
 	w.signalChannels[signalName] = ch
 	return ch
 }
