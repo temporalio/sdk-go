@@ -236,9 +236,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
-		tchCtx, cancel := newChannelContext(ctx)
+		grpcCtx, cancel := newGRPCContext(ctx)
 		defer cancel()
-		_, err := client.DescribeNamespace(tchCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
+		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
 		if err != nil {
 			switch err.(type) {
 			case *serviceerror.NotFound:
@@ -1147,14 +1147,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		PreviousStartedEventId: math.MaxInt64,
 	}
 
-	metricScope := tally.NoopScope
 	iterator := &historyIteratorImpl{
 		nextPageToken: task.NextPageToken,
 		execution:     task.WorkflowExecution,
 		namespace:     ReplayNamespace,
 		service:       service,
-		metricsScope:  metricScope,
 		maxEventID:    task.GetStartedEventId(),
+		metricsScope:  nil,
+		taskQueue:     taskQueue,
 	}
 	params := workerExecutionParameters{
 		Namespace: namespace,
@@ -1397,12 +1397,22 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, i interface{}) string {
-	result := getFunctionName(i)
-	if alias, ok := r.getWorkflowAlias(result); ok {
-		result = alias
+func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+	fnName := ""
+	fType := reflect.TypeOf(workflowFunc)
+	switch getKind(fType) {
+	case reflect.String:
+		fnName = reflect.ValueOf(workflowFunc).String()
+	case reflect.Func:
+		fnName = getFunctionName(workflowFunc)
+		if alias, ok := r.getWorkflowAlias(fnName); ok {
+			fnName = alias
+		}
+	default:
+		return "", fmt.Errorf("invalid type 'workflowFunc' parameter provided, it can be either worker function or function name: %v", workflowFunc)
 	}
-	return result
+
+	return fnName, nil
 }
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
@@ -1457,7 +1467,7 @@ func setClientDefaults(client *WorkflowClient) {
 		client.tracer = opentracing.NoopTracer{}
 	}
 	if client.metricsScope == nil {
-		client.metricsScope = metrics.NewTaggedScope(nil)
+		client.metricsScope = metrics.NewTaggedScope(tally.NoopScope)
 	}
 }
 

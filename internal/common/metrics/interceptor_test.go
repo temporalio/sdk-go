@@ -47,6 +47,7 @@ func TestMetricsInterceptor(t *testing.T) {
 		err                  error
 		expectedMetricName   string
 		expectedCounterNames []string
+		isLongPoll           bool
 	}{
 		{
 			name:                 "Success",
@@ -56,18 +57,19 @@ func TestMetricsInterceptor(t *testing.T) {
 			expectedCounterNames: []string{TemporalRequest},
 		},
 		{
-			name:                 "GenericError",
+			name:                 "GenericErrorLongPoll",
 			grpcMethod:           "/workflowservice.WorkflowService/PollActivityTaskQueue",
 			err:                  serviceerror.NewInternal("internal error"),
 			expectedMetricName:   "PollActivityTaskQueue",
-			expectedCounterNames: []string{TemporalRequest, TemporalError},
+			expectedCounterNames: []string{TemporalLongRequest, TemporalLongRequestFailure},
+			isLongPoll:           true,
 		},
 		{
 			name:                 "InvalidRequestError",
 			grpcMethod:           "/workflowservice.WorkflowService/QueryWorkflow",
 			err:                  serviceerror.NewNotFound("not found"),
 			expectedMetricName:   "QueryWorkflow",
-			expectedCounterNames: []string{TemporalRequest, TemporalInvalidRequest},
+			expectedCounterNames: []string{TemporalRequest, TemporalRequestFailure},
 		},
 	}
 
@@ -82,7 +84,9 @@ func TestMetricsInterceptor(t *testing.T) {
 				return tc.err
 			}
 
-			err := interceptor(context.Background(), tc.grpcMethod, nil, nil, nil, invoker)
+			ctx := context.WithValue(context.Background(), LongPollContextKey, tc.isLongPoll)
+
+			err := interceptor(ctx, tc.grpcMethod, nil, nil, nil, invoker)
 			if tc.err == nil {
 				assert.NoError(err)
 			} else {
@@ -136,7 +140,7 @@ func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, 
 		assert.True(find)
 	}
 	assert.Equal(1, len(reporter.timers))
-	assert.Equal(TemporalMetricsPrefix+methodName+separator+TemporalLatency, reporter.timers[0].name)
+	assert.Equal(TemporalMetricsPrefix+methodName+separator+TemporalRequestLatency, reporter.timers[0].name)
 }
 
 func assertPrometheusMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, methodName string, counterNames []string) {

@@ -37,9 +37,9 @@ import (
 
 func TestChannelBuilderOptions(t *testing.T) {
 	t.Parallel()
-	builder := &contextBuilder{Timeout: defaultRPCTimeout}
+	builder := &grpcContextBuilder{Timeout: defaultRPCTimeout}
 
-	opt1 := chanTimeout(time.Minute)
+	opt1 := grpcTimeout(time.Minute)
 	opt1(builder)
 
 	require.Equal(t, time.Minute, builder.Timeout)

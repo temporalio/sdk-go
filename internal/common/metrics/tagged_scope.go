@@ -25,27 +25,41 @@
 package metrics
 
 import (
-	"context"
-
 	"github.com/uber-go/tally"
-	"google.golang.org/grpc"
 )
 
-// NewScopeInterceptor creates new metrics scope interceptor.
-func NewScopeInterceptor(defaultScope tally.Scope) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		scope, ok := ctx.Value(ScopeContextKey).(tally.Scope)
-		if !ok || scope == nil {
-			scope = defaultScope
-		}
-		isLongPoll, ok := ctx.Value(LongPollContextKey).(bool)
-		if !ok {
-			isLongPoll = false
-		}
-		rs := newRequestScope(scope, method, isLongPoll)
-		rs.recordStart()
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		rs.recordEnd(err)
-		return err
+type (
+	// TaggedScope provides metricScope with tags
+	TaggedScope struct {
+		tally.Scope
 	}
+)
+
+// NewTaggedScope create a new TaggedScope
+func NewTaggedScope(scope tally.Scope) *TaggedScope {
+	if scope == nil {
+		scope = tally.NoopScope
+	}
+	return &TaggedScope{Scope: scope}
+}
+
+// GetTaggedScope return a scope with one or multiple tags,
+// input should be key value pairs like: GetTaggedScope(tag1, val1, tag2, val2).
+func (ts *TaggedScope) GetTaggedScope(keyValuePairs ...string) tally.Scope {
+	if ts == nil {
+		return nil
+	}
+
+	if len(keyValuePairs)%2 != 0 {
+		panic("GetTaggedScope key value are not in pairs")
+	}
+
+	tagsMap := map[string]string{}
+	for i := 0; i < len(keyValuePairs); i += 2 {
+		tagName := keyValuePairs[i]
+		tagValue := keyValuePairs[i+1]
+		tagsMap[tagName] = tagValue
+	}
+
+	return ts.Scope.Tagged(tagsMap)
 }

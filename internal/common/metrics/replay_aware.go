@@ -25,7 +25,6 @@
 package metrics
 
 import (
-	"sync"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -74,12 +73,6 @@ type (
 		recorder durationRecorder
 		clock    Clock
 	}
-
-	// TaggedScope provides metricScope with tags
-	TaggedScope struct {
-		tally.Scope
-		*sync.Map
-	}
 )
 
 // WrapScope wraps a scope and skip recording metrics when isReplay is true.
@@ -113,7 +106,7 @@ func (t *replayAwareTimer) Record(value time.Duration) {
 	t.timer.Record(value)
 }
 
-// Record a specific duration.
+// RecordDuration a specific duration.
 func (t *replayAwareTimer) RecordDuration(duration time.Duration) {
 	t.Record(duration)
 }
@@ -146,7 +139,7 @@ func (h *replayAwareHistogram) Start() tally.Stopwatch {
 	return tally.NewStopwatch(h.clock.Now(), &replayAwareStopwatchRecorder{h.isReplay, h, h.clock})
 }
 
-// StopwatchRecorder is a recorder that is called when a stopwatch is stopped with Stop().
+// RecordStopwatch is a recorder that is called when a stopwatch is stopped with Stop().
 func (r *replayAwareStopwatchRecorder) RecordStopwatch(stopwatchStart time.Time) {
 	if *r.isReplay {
 		return
@@ -196,43 +189,4 @@ func (s *replayAwareScope) SubScope(name string) tally.Scope {
 // Capabilities returns a description of metrics reporting capabilities.
 func (s *replayAwareScope) Capabilities() tally.Capabilities {
 	return s.scope.Capabilities()
-}
-
-// GetTaggedScope return a scope with one or multiple tags,
-// input should be key value pairs like: GetTaggedScope(scope, tag1, val1, tag2, val2).
-func (ts *TaggedScope) GetTaggedScope(keyValueinPairs ...string) tally.Scope {
-	if len(keyValueinPairs)%2 != 0 {
-		panic("GetTaggedScope key value are not in pairs")
-	}
-	if ts.Map == nil {
-		ts.Map = &sync.Map{}
-	}
-
-	key := ""
-	tagsMap := map[string]string{}
-	for i := 0; i < len(keyValueinPairs); i += 2 {
-		tagName := keyValueinPairs[i]
-		tagValue := keyValueinPairs[i+1]
-		key = key + tagName + ":" + tagValue + "-" // used to prevent collision of tagValue (map key) for different tagName
-		tagsMap[tagName] = tagValue
-	}
-
-	taggedScope, ok := ts.Load(key)
-	if !ok {
-		ts.Store(key, ts.Scope.Tagged(tagsMap))
-		taggedScope, _ = ts.Load(key)
-	}
-	if taggedScope == nil {
-		panic("metric scope cannot be tagged") // This should never happen
-	}
-
-	return taggedScope.(tally.Scope)
-}
-
-// NewTaggedScope create a new TaggedScope
-func NewTaggedScope(scope tally.Scope) *TaggedScope {
-	if scope == nil {
-		scope = tally.NoopScope
-	}
-	return &TaggedScope{Scope: scope, Map: &sync.Map{}}
 }

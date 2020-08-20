@@ -754,7 +754,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			weh.metricsScope.Counter(metrics.WorkflowTaskPanicCounter).Inc(1)
+			weh.metricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.logger.Error("ProcessEvent panic.",

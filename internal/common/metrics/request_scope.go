@@ -25,27 +25,57 @@
 package metrics
 
 import (
-	"context"
+	"strings"
+	"time"
 
 	"github.com/uber-go/tally"
-	"google.golang.org/grpc"
 )
 
-// NewScopeInterceptor creates new metrics scope interceptor.
-func NewScopeInterceptor(defaultScope tally.Scope) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		scope, ok := ctx.Value(ScopeContextKey).(tally.Scope)
-		if !ok || scope == nil {
-			scope = defaultScope
-		}
-		isLongPoll, ok := ctx.Value(LongPollContextKey).(bool)
-		if !ok {
-			isLongPoll = false
-		}
-		rs := newRequestScope(scope, method, isLongPoll)
-		rs.recordStart()
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		rs.recordEnd(err)
-		return err
+type (
+	requestScope struct {
+		scope      tally.Scope
+		startTime  time.Time
+		isLongPoll bool
 	}
+)
+
+func newRequestScope(scope tally.Scope, method string, isLongPoll bool) *requestScope {
+	scopeName := convertMethodToScope(method)
+	subScope := scope.SubScope(scopeName)
+
+	return &requestScope{
+		scope:      subScope,
+		startTime:  time.Now(),
+		isLongPoll: isLongPoll,
+	}
+}
+
+func (rs *requestScope) recordStart() {
+	if rs.isLongPoll {
+		rs.scope.Counter(TemporalLongRequest).Inc(1)
+	} else {
+		rs.scope.Counter(TemporalRequest).Inc(1)
+	}
+}
+
+func (rs *requestScope) recordEnd(err error) {
+	if rs.isLongPoll {
+		rs.scope.Timer(TemporalLongRequestLatency).Record(time.Since(rs.startTime))
+	} else {
+		rs.scope.Timer(TemporalRequestLatency).Record(time.Since(rs.startTime))
+	}
+
+	if err != nil {
+		if rs.isLongPoll {
+			rs.scope.Counter(TemporalLongRequestFailure).Inc(1)
+		} else {
+			rs.scope.Counter(TemporalRequestFailure).Inc(1)
+		}
+	}
+}
+
+func convertMethodToScope(method string) string {
+	// method is something like "/temporal.api.workflowservice.v1.WorkflowService/RegisterNamespace"
+	methodStart := strings.LastIndex(method, "/") + 1
+	return TemporalMetricsPrefix + method[methodStart:]
 }

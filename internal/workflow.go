@@ -143,7 +143,7 @@ type (
 		//  }
 		GetChildWorkflowExecution() Future
 
-		// SignalWorkflowByID sends a signal to the child workflow. This call will block until child workflow is started.
+		// SignalChildWorkflow sends a signal to the child workflow. This call will block until child workflow is started.
 		SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future
 	}
 
@@ -152,7 +152,7 @@ type (
 		Name string
 	}
 
-	// WorkflowExecution Details.
+	// WorkflowExecution details.
 	WorkflowExecution struct {
 		ID    string
 		RunID string
@@ -642,7 +642,10 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
-	workflowType := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	workflowType, err := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	if err != nil {
+		panic(err)
+	}
 	return i.ExecuteChildWorkflow(ctx, workflowType, args...)
 }
 
