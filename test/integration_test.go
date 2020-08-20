@@ -36,6 +36,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
@@ -301,6 +302,26 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	var queryResult string
 	ts.Nil(value.QueryResult.Get(&queryResult))
 	ts.Equal("signal-input", queryResult)
+}
+
+func (ts *IntegrationTestSuite) TestSignalWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
+	ts.Nil(err)
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
+	ts.NoError(err)
+
+	wt := &commonpb.WorkflowType{Name: "workflow-type"}
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "proto-signal", wt)
+	ts.NoError(err)
+
+	var protoValue *commonpb.WorkflowType
+	err = run.Get(ctx, &protoValue)
+	ts.NoError(err)
+	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {

@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"time"
 
+	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -543,6 +544,30 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	return nil
 }
 
+func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
+	s := workflow.NewSelector(ctx)
+
+	stringSignalChan := workflow.GetSignalChannel(ctx, "string-signal")
+	var stringSignalValue string
+	s.AddReceive(stringSignalChan, func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, &stringSignalValue)
+		workflow.GetLogger(ctx).Info("Received signal", "signal", "string-signal", "value", stringSignalValue)
+	})
+	s.Select(ctx)
+
+	protoSignalChan := workflow.GetSignalChannel(ctx, "proto-signal")
+	var protoSignalValue *commonpb.WorkflowType
+	s.AddReceive(protoSignalChan, func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, &protoSignalValue)
+		workflow.GetLogger(ctx).Info("Received signal", "signal", "proto-signal", "value", protoSignalValue)
+	})
+	s.Select(ctx)
+
+	protoSignalValue.Name = stringSignalValue
+
+	return protoSignalValue, nil
+}
+
 func (w *Workflows) RetryTimeoutStableErrorWorkflow(ctx workflow.Context) ([]string, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: 1 * time.Second,
@@ -865,6 +890,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
+	worker.RegisterWorkflow(w.SignalWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
