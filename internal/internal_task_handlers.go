@@ -906,6 +906,10 @@ ProcessEvents:
 		}
 	}
 
+	if !replayStopWatchStopped {
+		replayStopWatch.Stop()
+	}
+
 	// Non-deterministic error could happen in 2 different places:
 	//   1) the replay commands does not match to history events. This is usually due to non backwards compatible code
 	// change to workflow logic. For example, change calling one activity to a different activity.
