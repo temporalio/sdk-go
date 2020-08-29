@@ -170,7 +170,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	}
 
 	elapsed := workflow.Now(ctx).Sub(startTime)
-	if elapsed < opts.StartToCloseTimeout-opts.RetryPolicy.MaximumInterval {
+	if elapsed < opts.ScheduleToCloseTimeout-opts.RetryPolicy.MaximumInterval {
 		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not. Elapsed time: %d", elapsed.Milliseconds())
 	}
 
