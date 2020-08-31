@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 )
 
 type testStruct struct {
@@ -55,6 +56,31 @@ func TestProtoJsonPayloadConverter(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"name":"qwe"}`, s)
+}
+
+func TestProtoJsonPayloadConverterWithEnum(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	db := &commonpb.DataBlob{
+		EncodingType: enumspb.ENCODING_TYPE_PROTO3,
+		Data:         []byte("test"),
+	}
+	payload, err := pc.ToPayload(db)
+	require.NoError(t, err)
+	db2 := &commonpb.DataBlob{}
+	err = pc.FromPayload(payload, &db2)
+	require.NoError(t, err)
+	assert.Equal(t, enumspb.ENCODING_TYPE_PROTO3, db2.EncodingType)
+	assert.Equal(t, []byte("test"), db2.Data)
+
+	var db3 *commonpb.DataBlob
+	err = pc.FromPayload(payload, &db3)
+	require.NoError(t, err)
+	assert.Equal(t, enumspb.ENCODING_TYPE_PROTO3, db3.EncodingType)
+	assert.Equal(t, []byte("test"), db3.Data)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"encodingType":"Proto3","data":"dGVzdA=="}`, s)
 }
 
 func TestProtoPayloadConverter(t *testing.T) {

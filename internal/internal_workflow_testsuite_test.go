@@ -1495,20 +1495,20 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
 		actualValues = append(actualValues, wf1.Name)
-		actualValues = append(actualValues, wf2.Name)
+		actualValues = append(actualValues, wf2.EncodingType.String())
 		return &commonpb.WorkflowType{Name: "result"}, nil
 	}
 
 	input1 := commonpb.WorkflowType{Name: "input1"}
-	input2 := &commonpb.WorkflowType{Name: "input2"}
+	input2 := &commonpb.DataBlob{EncodingType: enumspb.ENCODING_TYPE_PROTO3}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 
 	s.NoError(err)
-	s.EqualValues([]string{"input1", "input2"}, actualValues)
+	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
