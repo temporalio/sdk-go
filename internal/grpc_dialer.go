@@ -31,6 +31,7 @@ import (
 	"github.com/uber-go/tally"
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -39,10 +40,10 @@ import (
 type (
 	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
 	dialParameters struct {
-		HostPort             string
-		UserOptions          ConnectionOptions
-		RequiredInterceptors []grpc.UnaryClientInterceptor
-		DefaultServiceConfig string
+		HostPort              string
+		UserConnectionOptions ConnectionOptions
+		RequiredInterceptors  []grpc.UnaryClientInterceptor
+		DefaultServiceConfig  string
 	}
 )
 
@@ -56,14 +57,27 @@ const (
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
 	grpcSecurityOptions := grpc.WithInsecure()
-	if params.UserOptions.TLS != nil {
-		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserOptions.TLS))
+	if params.UserConnectionOptions.TLS != nil {
+		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserConnectionOptions.TLS))
 	}
+
+	// gRPC maintains connection pool inside grpc.ClientConn.
+	// This connection pool has automatic reconnect feature.
+	// If connection goes does gRPC will try to reconnect using exponential backoff strategy:
+	// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.
+	// Default MaxDelay is 120 seconds which is too high.
+	// Setting it to retryPollOperationMaxInterval here will correleate with poll reconnect interval.
+	var cp = grpc.ConnectParams{
+		Backoff: backoff.DefaultConfig,
+	}
+	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
+	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
 
 	return grpc.Dial(params.HostPort,
 		grpcSecurityOptions,
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
+		grpc.WithConnectParams(cp),
 	)
 }
 
