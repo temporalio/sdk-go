@@ -54,9 +54,9 @@ const (
 
 	// defaultRPCTimeout is the default gRPC call timeout.
 	defaultRPCTimeout = 10 * time.Second
-	// minRPCTimeout is minimum gRP call timeout allowed.
+	// minRPCTimeout is minimum gRPC call timeout allowed.
 	minRPCTimeout = 1 * time.Second
-	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less then defaultRPCTimeout).
+	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less than defaultRPCTimeout).
 	maxRPCTimeout = 10 * time.Second
 )
 
