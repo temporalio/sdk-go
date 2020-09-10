@@ -62,8 +62,8 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	}
 
 	// gRPC maintains connection pool inside grpc.ClientConn.
-	// This connection pool has automatic reconnect feature.
-	// If connection goes does gRPC will try to reconnect using exponential backoff strategy:
+	// This connection pool has auto reconnect feature.
+	// If connection goes down, gRPC will try to reconnect using exponential backoff strategy:
 	// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.
 	// Default MaxDelay is 120 seconds which is too high.
 	// Setting it to retryPollOperationMaxInterval here will correlate with poll reconnect interval.
