@@ -52,7 +52,10 @@ import (
 )
 
 const (
-	pollTaskServiceTimeOut = 150 * time.Second // Server long poll is 2 * Minutes + delta
+	// Server returns empty task after dynamicconfig.MatchingLongPollExpirationInterval (default is 60 seconds).
+	// pollTaskServiceTimeOut should be dynamicconfig.MatchingLongPollExpirationInterval + some delta for full round trip to matching
+	// because empty task should be returned before timeout is expired (expired timeout counts against SLO).
+	pollTaskServiceTimeOut = 70 * time.Second
 
 	stickyWorkflowTaskScheduleToStartTimeoutSeconds = 5
 

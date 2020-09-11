@@ -559,10 +559,10 @@ func NewClient(options ClientOptions) (Client, error) {
 
 func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
-		UserOptions:          options.ConnectionOptions,
-		HostPort:             options.HostPort,
-		RequiredInterceptors: requiredInterceptors(options.MetricsScope),
-		DefaultServiceConfig: defaultServiceConfig,
+		UserConnectionOptions: options.ConnectionOptions,
+		HostPort:              options.HostPort,
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope),
+		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
 

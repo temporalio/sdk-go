@@ -52,12 +52,12 @@ const (
 	clientImplHeaderName  = "temporal-client-name"
 	clientImplHeaderValue = "temporal-go"
 
-	// defaultRPCTimeout is the default gRPC rpc call timeout
+	// defaultRPCTimeout is the default gRPC call timeout.
 	defaultRPCTimeout = 10 * time.Second
-	// minRPCTimeout is minimum rpc call timeout allowed
+	// minRPCTimeout is minimum gRPC call timeout allowed.
 	minRPCTimeout = 1 * time.Second
-	// maxRPCTimeout is maximum rpc call timeout allowed
-	maxRPCTimeout = 5 * time.Second
+	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less than defaultRPCTimeout).
+	maxRPCTimeout = 10 * time.Second
 )
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
