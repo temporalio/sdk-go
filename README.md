@@ -25,7 +25,7 @@ You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io
 
 ## Using a custom logger
 
-Although the Go SDK does not support most third-party logging solutions natively, [our friends at Banzaicloud](https://github.com/sagikazarmark) built the [adapter package logur](https://github.com/logur/logur) which makes it possible to use third party loggers with minimal overhead. Here is an example of using logur to support [Logrus](https://github.com/sirupsen/logrus):
+Although the Go SDK does not support most third-party logging solutions natively, [our friends at Banzai Cloud](https://github.com/sagikazarmark) built the [adapter package logur](https://github.com/logur/logur) which makes it possible to use third party loggers with minimal overhead. Here is an example of using logur to support [Logrus](https://github.com/sirupsen/logrus):
 
 ```go
 package main
