@@ -896,6 +896,12 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 		Details:    details,
 	}
 	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	// LocalActivity marker is added only when it completes and schedule logic never relies on GenerateSequence to
+	// create a unique activity id like in the case of ExecuteActivity.  This causes the problem as we only perform
+	// the check to increment counter to account for GetVersion special handling as part of it.  This will result
+	// in wrong IDs to be generated if there is GetVersion call before local activities.  Explicitly calling getNextID
+	// to correctly incrementing counter before adding the command.
+	h.getNextID()
 	h.addCommand(command)
 	return command
 }

@@ -359,6 +359,112 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion() {
 	require.NoError(s.T(), err)
 }
 
+func testReplayWorkflowLocalAndRemoteActivity(ctx Context) error {
+	version := GetVersion(ctx, "change_id_A", Version(3), Version(3))
+	if version != Version(3) {
+		return errors.New("Version mismatch")
+	}
+
+	localOptions := LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Second,
+	}
+	localCtx := WithLocalActivityOptions(ctx, localOptions)
+
+	err := ExecuteLocalActivity(localCtx, testActivity).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", tagError, err)
+		panic("Failed workflow")
+	}
+	err = ExecuteLocalActivity(localCtx, testActivity).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", tagError, err)
+		panic("Failed workflow")
+	}
+
+	remoteOptions := ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	}
+	remoteCtx := WithActivityOptions(ctx, remoteOptions)
+
+	actF := ExecuteActivity(remoteCtx, "testActivity")
+
+	err = ExecuteLocalActivity(localCtx, testActivity).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", tagError, err)
+		panic("Failed workflow")
+	}
+
+	err = actF.Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", tagError, err)
+		panic("Failed workflow")
+	}
+
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalAndRemoteActivity() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalAndRemoteActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventVersionMarker(5, 4, "change_id_A", Version(3)),
+		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "change_id_A", Version(3)),
+
+		createTestEventLocalActivity(7, &historypb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("1"),
+			WorkflowTaskCompletedEventId: 4,
+		}),
+		createTestEventLocalActivity(8, &historypb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("2"),
+			WorkflowTaskCompletedEventId: 4,
+		}),
+		createTestEventActivityTaskScheduled(9, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "9",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventLocalActivity(10, &historypb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("3"),
+			WorkflowTaskCompletedEventId: 4,
+		}),
+		createTestEventActivityTaskStarted(11, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 9,
+		}),
+		createTestEventActivityTaskCompleted(12, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 9,
+			StartedEventId:   11,
+		}),
+		createTestEventWorkflowTaskScheduled(13, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(14),
+		createTestEventWorkflowTaskCompleted(15, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   14,
+		}),
+
+		createTestEventWorkflowExecutionCompleted(16, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 4,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowLocalAndRemoteActivity)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
 func testReplayWorkflowGetVersionReplacedChangeID(ctx Context) error {
 	version := GetVersion(ctx, "change_id_B", DefaultVersion, Version(1))
 	if version != DefaultVersion {
