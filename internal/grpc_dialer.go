@@ -69,6 +69,7 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	// Setting it to retryPollOperationMaxInterval here will correlate with poll reconnect interval.
 	var cp = grpc.ConnectParams{
 		Backoff: backoff.DefaultConfig,
+		MinConnectTimeout: minConnectTimeout,
 	}
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval

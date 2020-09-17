@@ -49,6 +49,8 @@ import (
 const (
 	retryPollOperationInitialInterval = 20 * time.Millisecond
 	retryPollOperationMaxInterval     = 10 * time.Second
+
+	minConnectTimeout = 20 * time.Second
 )
 
 var (
