@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/uber-go/tally"
@@ -53,6 +54,9 @@ const (
 
 	// defaultServiceConfig is a default gRPC connection service config which enables DNS round-robin between IPs.
 	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
+
+	// minConnectTimeout is the minimum amount of time we are willing to give a connection to complete.
+	minConnectTimeout = 20 * time.Second
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
@@ -68,7 +72,8 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	// Default MaxDelay is 120 seconds which is too high.
 	// Setting it to retryPollOperationMaxInterval here will correlate with poll reconnect interval.
 	var cp = grpc.ConnectParams{
-		Backoff: backoff.DefaultConfig,
+		Backoff:           backoff.DefaultConfig,
+		MinConnectTimeout: minConnectTimeout,
 	}
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
