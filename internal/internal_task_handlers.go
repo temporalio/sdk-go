@@ -364,7 +364,7 @@ OrderEvents:
 	}
 
 	// shrink loaded events so it can be GCed
-	eh.loadedEvents = eh.loadedEvents[eh.currentIndex:]
+	eh.loadedEvents = append([]*historypb.HistoryEvent{nil}, eh.loadedEvents[eh.currentIndex:]...)
 	eh.currentIndex = 0
 
 	return nextEvents, markers, nil
