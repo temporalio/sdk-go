@@ -642,8 +642,8 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 				sideEffectID, keys))
 		}
 
-		// Once the Side effect has been consumed, we can free the referenced payload
-		// to save on memory pressure
+		// Once the SideEffect has been consumed, we can free the referenced payload
+		// to reduce memory pressure
 		delete(wc.sideEffectResult, sideEffectID)
 		wc.logger.Debug("SideEffect returning already calculated result.",
 			tagSideEffectID, sideEffectID)
