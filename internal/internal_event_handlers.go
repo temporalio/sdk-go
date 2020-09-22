@@ -641,6 +641,10 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			panic(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
 				sideEffectID, keys))
 		}
+
+		// Once the SideEffect has been consumed, we can free the referenced payload
+		// to reduce memory pressure
+		delete(wc.sideEffectResult, sideEffectID)
 		wc.logger.Debug("SideEffect returning already calculated result.",
 			tagSideEffectID, sideEffectID)
 	} else {
