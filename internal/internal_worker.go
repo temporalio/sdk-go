@@ -146,9 +146,6 @@ type (
 		// Defines how many concurrent workflow task executions by this worker.
 		ConcurrentWorkflowTaskExecutionSize int
 
-		// Defines rate limiting on number of workflow tasks that can be executed per second per worker.
-		WorkerWorkflowTasksPerSecond float64
-
 		// MaxConcurrentWorkflowTaskQueuePollers is the max number of pollers for workflow task queue.
 		MaxConcurrentWorkflowTaskQueuePollers int
 
@@ -283,7 +280,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 		pollerCount:       params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:        defaultPollerRate,
 		maxConcurrentTask: params.ConcurrentWorkflowTaskExecutionSize,
-		maxTaskPerSecond:  params.WorkerWorkflowTasksPerSecond,
+		maxTaskPerSecond:  defaultWorkerTaskExecutionRate,
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
@@ -1254,7 +1251,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
-		WorkerWorkflowTasksPerSecond:          options.WorkerWorkflowTasksPerSecond,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
 		MetricsScope:                          client.metricsScope,
@@ -1431,9 +1427,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxConcurrentWorkflowTaskExecutionSize == 0 {
 		options.MaxConcurrentWorkflowTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
-	}
-	if options.WorkerWorkflowTasksPerSecond == 0 {
-		options.WorkerWorkflowTasksPerSecond = defaultWorkerTaskExecutionRate
 	}
 	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
 		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
