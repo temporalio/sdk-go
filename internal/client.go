@@ -534,7 +534,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Namespace = DefaultNamespace
 	}
 
-	options.MetricsScope = tagScope(options.MetricsScope, tagNamespace, options.Namespace, clientImplHeaderName, clientImplHeaderValue)
+	options.MetricsScope = tagScope(options.MetricsScope, tagNamespace, options.Namespace, clientNameHeaderName, clientNameHeaderValue)
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -603,7 +603,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
-	options.MetricsScope = tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
+	options.MetricsScope = tagScope(options.MetricsScope, clientNameHeaderName, clientNameHeaderValue)
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort

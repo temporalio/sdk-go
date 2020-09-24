@@ -42,15 +42,10 @@ import (
 )
 
 const (
-	// clientVersionHeaderName refers to the name of the gRPC metadata header that contains the client version.
-	clientVersionHeaderName = "temporal-client-version"
-
-	// clientFeatureVersionHeaderName refers to the name of the gRPC metadata header that contains the client feature set version.
-	clientFeatureVersionHeaderName = "temporal-client-feature-version"
-
-	// clientImplHeaderName refers to the name of the gRPC metadata header that contains the client implementation.
-	clientImplHeaderName  = "temporal-client-name"
-	clientImplHeaderValue = "temporal-go"
+	clientNameHeaderName              = "client-name"
+	clientNameHeaderValue             = "temporal-go"
+	clientVersionHeaderName           = "client-version"
+	supportedServerVersionsHeaderName = "supported-server-versions"
 
 	// defaultRPCTimeout is the default gRPC call timeout.
 	defaultRPCTimeout = 10 * time.Second
@@ -135,9 +130,9 @@ func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBui
 		ParentContext: ctx,
 		Timeout:       rpcTimeout,
 		Headers: metadata.New(map[string]string{
-			clientVersionHeaderName:        SDKVersion,
-			clientFeatureVersionHeaderName: SDKFeatureVersion,
-			clientImplHeaderName:           clientImplHeaderValue,
+			clientNameHeaderName:              clientNameHeaderValue,
+			clientVersionHeaderName:           SDKVersion,
+			supportedServerVersionsHeaderName: SupportedServerVersions,
 		}),
 	}
 
