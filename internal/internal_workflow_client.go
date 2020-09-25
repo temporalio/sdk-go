@@ -70,7 +70,7 @@ type (
 		namespace          string
 		registry           *registry
 		logger             log.Logger
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		identity           string
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -225,7 +225,9 @@ func (wc *WorkflowClient) StartWorkflow(
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)))
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+				metrics.GetMetricsScopeForRPC(wc.metricsScope, workflowType.Name,
+					metrics.NoneTagValue, options.TaskQueue)))
 			defer cancel()
 
 			var err1 error
@@ -272,8 +274,8 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		fnName, _ := getWorkflowFunctionName(wc.registry, workflow)
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, fnName)
-		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
+		rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, fnName, metrics.NoneTagValue, options.TaskQueue)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
 	return &workflowRunImpl{
@@ -327,7 +329,7 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 	return backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			_, err := wc.workflowService.SignalWorkflowExecution(grpcCtx, request)
 			return err
@@ -401,7 +403,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 
 			var err1 error
@@ -414,8 +416,8 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
-		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
+		rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, workflowType.Name, metrics.NoneTagValue, options.TaskQueue)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
 	return &workflowRunImpl{
@@ -444,7 +446,7 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 
 	return backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			_, err := wc.workflowService.RequestCancelWorkflowExecution(grpcCtx, request)
 			return err
@@ -473,7 +475,7 @@ func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID stri
 
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			_, err := wc.workflowService.TerminateWorkflowExecution(grpcCtx, request)
 			return err
@@ -490,7 +492,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
 ) HistoryEventIterator {
-	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, wc.metricsScope)
+	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, metrics.GetEmptyRPCScope(wc.metricsScope))
 }
 
 func (wc *WorkflowClient) getWorkflowHistory(
@@ -499,7 +501,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	runID string,
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
-	requestMetricsScope tally.Scope,
+	rpcMetricsScope tally.Scope,
 ) HistoryEventIterator {
 	namespace := wc.namespace
 	paginate := func(nextToken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
@@ -523,7 +525,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 				func() error {
 					var err1 error
 					grpcCtx, cancel := newGRPCContext(ctx,
-						grpcMetricsScope(requestMetricsScope),
+						grpcMetricsScope(rpcMetricsScope),
 						grpcLongPoll(isLongPoll),
 						func(builder *grpcContextBuilder) {
 							if isLongPoll {
@@ -598,7 +600,9 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		}
 	}
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter)
-	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
+	// When CompleteActivity is called with task token then we don't have any of the tags available
+	rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, metrics.NoneTagValue)
+	return reportActivityComplete(ctx, wc.workflowService, request, rpcScope)
 }
 
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
@@ -620,7 +624,9 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 	}
 
 	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID, data, err, wc.dataConverter)
-	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
+	// When client call CompleteActivityByID directly then we don't have any of the tags available
+	rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, metrics.NoneTagValue)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, rpcScope)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
@@ -629,7 +635,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.identity, taskToken, data)
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsScope, wc.identity, taskToken, data)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -639,7 +645,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, namespace, workflowID, runID, activityID, data)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsScope, wc.identity, namespace, workflowID, runID, activityID, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
@@ -655,7 +661,7 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.ListClosedWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -679,7 +685,7 @@ func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.ListOpenWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -699,7 +705,7 @@ func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowser
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.ListWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -731,7 +737,8 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 					}
 				}
 			}
-			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(timeout))
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)),
+				grpcTimeout(timeout))
 			defer cancel()
 			response, err1 = wc.workflowService.ListArchivedWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -751,7 +758,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.ScanWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -771,7 +778,7 @@ func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowse
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.CountWorkflowExecutions(grpcCtx, request)
 			return err1
@@ -788,7 +795,7 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.GetSearchAttributes(grpcCtx, &workflowservice.GetSearchAttributesRequest{})
 			return err1
@@ -816,7 +823,7 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 	err := backoff.Retry(ctx,
 		func() error {
 			var err1 error
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			response, err1 = wc.workflowService.DescribeWorkflowExecution(grpcCtx, request)
 			return err1
@@ -919,7 +926,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	var resp *workflowservice.QueryWorkflowResponse
 	err := backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			var err error
 			resp, err = wc.workflowService.QueryWorkflow(grpcCtx, req)
@@ -959,7 +966,7 @@ func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue strin
 	var resp *workflowservice.DescribeTaskQueueResponse
 	err := backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(wc.metricsScope)))
 			defer cancel()
 			var err error
 			resp, err = wc.workflowService.DescribeTaskQueue(grpcCtx, request)
@@ -1001,7 +1008,7 @@ func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Heade
 func (nc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(nc.metricsScope)))
 			defer cancel()
 			var err error
 			_, err = nc.workflowService.RegisterNamespace(grpcCtx, request)
@@ -1025,7 +1032,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, name string) (*workflow
 	var response *workflowservice.DescribeNamespaceResponse
 	err := backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(nc.metricsScope)))
 			defer cancel()
 			var err error
 			response, err = nc.workflowService.DescribeNamespace(grpcCtx, request)
@@ -1045,7 +1052,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, name string) (*workflow
 func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
 	return backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(nc.metricsScope)))
 			defer cancel()
 			_, err := nc.workflowService.UpdateNamespace(grpcCtx, request)
 			return err

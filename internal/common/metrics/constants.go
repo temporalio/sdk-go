@@ -74,3 +74,23 @@ const (
 
 	WorkflowActiveThreadCount = TemporalMetricsPrefix + "workflow_active_thread_count"
 )
+
+// Metric tag keys
+const (
+	NamespaceTagName        = "namespace"
+	ClientTagName           = "client_name"
+	WorkerTypeTagName       = "worker_type"
+	WorkflowTypeNameTagName = "workflow_type"
+	ActivityTypeNameTagName = "activity_type"
+	TypeTagName             = "type"
+	TaskQueueTagName        = "taskqueue"
+	OperationTagName        = "operation"
+)
+
+// Metric tag values
+const (
+	NoneTagValue            = "none"
+	RegularActivityTagValue = "regular"
+	LocalActivityTagValue   = "local"
+	ClientTagValue          = "temporal_go"
+)

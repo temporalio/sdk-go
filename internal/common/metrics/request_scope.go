@@ -41,7 +41,7 @@ type (
 
 func newRequestScope(scope tally.Scope, method string, isLongPoll bool) *requestScope {
 	scopeName := convertMethodToScope(method)
-	subScope := scope.SubScope(scopeName)
+	subScope := getMetricsScopeForOperation(scope, scopeName)
 
 	return &requestScope{
 		scope:      subScope,

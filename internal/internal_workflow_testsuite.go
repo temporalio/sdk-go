@@ -50,7 +50,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -135,7 +134,7 @@ type (
 		mock               *mock.Mock
 		service            workflowservice.WorkflowServiceClient
 		logger             log.Logger
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		contextPropagators []ContextPropagator
 		identity           string
 		tracer             opentracing.Tracer
@@ -222,7 +221,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			taskQueueSpecificActivities: make(map[string]*taskQueueSpecificActivity),
 
 			logger:            s.logger,
-			metricsScope:      metrics.NewTaggedScope(s.scope),
+			metricsScope:      s.scope,
 			tracer:            opentracing.NoopTracer{},
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
@@ -269,7 +268,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		env.logger = ilog.NewDefaultLogger()
 	}
 	if env.metricsScope == nil {
-		env.metricsScope = metrics.NewTaggedScope(s.scope)
+		env.metricsScope = tally.NoopScope
 	}
 	env.contextPropagators = s.contextPropagators
 	env.header = s.header
@@ -1308,7 +1307,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
-		metricsScope:       metrics.NewTaggedScope(env.metricsScope),
+		metricsScope:       env.metricsScope,
 		logger:             env.logger,
 		dataConverter:      env.dataConverter,
 		tracer:             env.tracer,
