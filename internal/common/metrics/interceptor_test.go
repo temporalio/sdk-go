@@ -127,8 +127,7 @@ func TestMetricsInterceptor(t *testing.T) {
 
 func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, counterNames []string) {
 	assert.Equal(len(counterNames), len(reporter.counts))
-	for _, name := range counterNames {
-		counterName := name
+	for _, counterName := range counterNames {
 		find := false
 		// counters are not in order
 		for _, counter := range reporter.counts {

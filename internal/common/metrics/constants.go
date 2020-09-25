@@ -78,7 +78,7 @@ const (
 // Metric tag keys
 const (
 	NamespaceTagName        = "namespace"
-	ClientTagName           = "temporal_client_name"
+	ClientTagName           = "client_name"
 	WorkerTypeTagName       = "worker_type"
 	WorkflowTypeNameTagName = "workflow_type"
 	ActivityTypeNameTagName = "activity_type"
