@@ -166,11 +166,9 @@ func (ts *IntegrationTestSuite) TestBasic() {
 		ts.tracer.GetTrace("Basic"))
 
 	ts.assertMetricsCounters(
-		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_request", 5,
 		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
-		"temporal_PollActivityTaskQueue.temporal_long_request", 3,
-		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+		"temporal_long_request", 7,
 	)
 }
 
@@ -181,11 +179,9 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.EqualValues(expected, ts.activities.invoked())
 
 	ts.assertMetricsCounters(
-		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_request", 7,
 		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
-		"temporal_PollActivityTaskQueue.temporal_long_request", 4,
-		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+		"temporal_long_request", 8,
 	)
 }
 
