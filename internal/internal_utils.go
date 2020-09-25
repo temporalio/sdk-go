@@ -195,16 +195,6 @@ func InterruptCh() <-chan interface{} {
 	return ret
 }
 
-// getMetricsScopeForActivity return properly tagged tally scope for activity
-func getMetricsScopeForActivity(ts *metrics.TaggedScope, workflowType, activityType string) tally.Scope {
-	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagActivityType, activityType)
-}
-
-// getMetricsScopeForLocalActivity return properly tagged tally scope for local activity
-func getMetricsScopeForLocalActivity(ts *metrics.TaggedScope, workflowType, localActivityType string) tally.Scope {
-	return ts.GetTaggedScope(tagWorkflowType, workflowType, tagLocalActivityType, localActivityType)
-}
-
 func getStringID(intID int64) string {
 	return fmt.Sprintf("%d", intID)
 }

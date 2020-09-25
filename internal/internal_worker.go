@@ -57,7 +57,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -1314,22 +1313,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 }
 
-// tagScope with one or multiple tags, like
-// tagScope(scope, tag1, val1, tag2, val2)
-func tagScope(metricsScope tally.Scope, keyValuePairs ...string) tally.Scope {
-	if metricsScope == nil {
-		metricsScope = tally.NoopScope
-	}
-	if len(keyValuePairs)%2 != 0 {
-		panic("tagScope key value are not in pairs")
-	}
-	tagsMap := map[string]string{}
-	for i := 0; i < len(keyValuePairs); i += 2 {
-		tagsMap[keyValuePairs[i]] = keyValuePairs[i+1]
-	}
-	return metricsScope.Tagged(tagsMap)
-}
-
 func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 	testTags := getTestTags(wOptions.BackgroundActivityContext)
 	if testTags != nil {
@@ -1460,7 +1443,7 @@ func setClientDefaults(client *WorkflowClient) {
 		client.tracer = opentracing.NoopTracer{}
 	}
 	if client.metricsScope == nil {
-		client.metricsScope = metrics.NewTaggedScope(tally.NoopScope)
+		client.metricsScope = tally.NoopScope
 	}
 }
 

@@ -70,7 +70,7 @@ type (
 		namespace          string
 		registry           *registry
 		logger             log.Logger
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		identity           string
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -225,7 +225,9 @@ func (wc *WorkflowClient) StartWorkflow(
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)))
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+				metrics.GetMetricsScopeForRPC(wc.metricsScope, workflowType.Name,
+					metrics.NoneTagValue, options.TaskQueue)))
 			defer cancel()
 
 			var err1 error
@@ -272,7 +274,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		fnName, _ := getWorkflowFunctionName(wc.registry, workflow)
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, fnName)
+		requestScope := metrics.TagScope(wc.metricsScope, tagTaskQueue, options.TaskQueue, tagWorkflowType, fnName)
 		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
 	}
 
@@ -414,7 +416,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
+		requestScope := metrics.TagScope(wc.metricsScope, tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
 		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
 	}
 
@@ -598,7 +600,9 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		}
 	}
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter)
-	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
+	// When CompleteActivity is called with task token then we don't have any of the tags available
+	rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, metrics.NoneTagValue)
+	return reportActivityComplete(ctx, wc.workflowService, request, rpcScope)
 }
 
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
@@ -620,7 +624,9 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 	}
 
 	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID, data, err, wc.dataConverter)
-	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
+	// When client call CompleteActivityByID directly then we don't have any of the tags available
+	rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, metrics.NoneTagValue)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, rpcScope)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.

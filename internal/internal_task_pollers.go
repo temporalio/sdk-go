@@ -106,7 +106,7 @@ type (
 		identity            string
 		service             workflowservice.WorkflowServiceClient
 		taskHandler         ActivityTaskHandler
-		metricsScope        *metrics.TaggedScope
+		metricsScope        tally.Scope
 		logger              log.Logger
 		activitiesPerSecond float64
 	}
@@ -132,7 +132,7 @@ type (
 
 	localActivityTaskHandler struct {
 		userContext        context.Context
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		logger             log.Logger
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -367,7 +367,9 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	// Respond task completion.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.NewTaggedScope(wtp.metricsScope).GetTaggedScope(tagWorkflowType, task.GetWorkflowType().GetName())))
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+				metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
+					metrics.NoneTagValue, metrics.NoneTagValue)))
 			defer cancel()
 			var err1 error
 			switch request := completedRequest.(type) {
@@ -421,7 +423,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
-		metricsScope:       metrics.NewTaggedScope(params.MetricsScope),
+		metricsScope:       params.MetricsScope,
 		logger:             params.Logger,
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
@@ -462,7 +464,7 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivityTask) (result *localActivityResult) {
 	workflowType := task.params.WorkflowInfo.WorkflowType.Name
 	activityType := task.params.ActivityType
-	metricsScope := getMetricsScopeForLocalActivity(lath.metricsScope, workflowType, activityType)
+	metricsScope := metrics.GetMetricsScopeForLocalActivity(lath.metricsScope, workflowType, activityType)
 
 	metricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
 
@@ -757,7 +759,8 @@ func newGetHistoryPageFunc(
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
 		err := backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.NewTaggedScope(metricsScope).GetTaggedScope(tagTaskQueue, taskQueue)))
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+					metrics.GetMetricsScopeForRPC(metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, taskQueue)))
 				defer cancel()
 
 				var err1 error
@@ -808,7 +811,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		taskQueueName:       params.TaskQueue,
 		identity:            params.Identity,
 		logger:              params.Logger,
-		metricsScope:        metrics.NewTaggedScope(params.MetricsScope),
+		metricsScope:        params.MetricsScope,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
 	}
 }
@@ -869,7 +872,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	workflowType := activityTask.task.WorkflowType.GetName()
 	activityType := activityTask.task.ActivityType.GetName()
-	metricsScope := getMetricsScopeForActivity(atp.metricsScope, workflowType, activityType)
+	metricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType)
 
 	executionStartTime := time.Now()
 	// Process the activity task.
@@ -889,7 +892,8 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return errStop
 	}
 
-	reportErr := reportActivityComplete(context.Background(), atp.service, request, metricsScope)
+	rpcScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, metrics.NoneTagValue)
+	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcScope)
 	if reportErr != nil {
 		traceLog(func() {
 			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
@@ -901,7 +905,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	return nil
 }
 
-func reportActivityComplete(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, metricsScope tally.Scope) error {
+func reportActivityComplete(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, rpcScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -912,7 +916,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
@@ -921,7 +925,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskFailed(grpcCtx, request)
@@ -930,7 +934,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope))
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
@@ -940,7 +944,7 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	return reportErr
 }
 
-func reportActivityCompleteByID(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, metricsScope tally.Scope) error {
+func reportActivityCompleteByID(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, rpcScope tally.Scope) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -951,7 +955,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
@@ -960,7 +964,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
@@ -969,7 +973,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 		reportErr = backoff.Retry(ctx,
 			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx)
+				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)

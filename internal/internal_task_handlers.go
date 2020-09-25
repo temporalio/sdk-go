@@ -39,6 +39,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
+	"github.com/uber-go/tally"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -123,7 +124,7 @@ type (
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
 		namespace              string
-		metricsScope           *metrics.TaggedScope
+		metricsScope           tally.Scope
 		ppMgr                  pressurePointMgr
 		logger                 log.Logger
 		identity               string
@@ -144,7 +145,7 @@ type (
 		taskQueueName      string
 		identity           string
 		service            workflowservice.WorkflowServiceClient
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		logger             log.Logger
 		userContext        context.Context
 		registry           *registry
@@ -388,7 +389,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		namespace:              params.Namespace,
 		logger:                 params.Logger,
 		ppMgr:                  ppMgr,
-		metricsScope:           metrics.NewTaggedScope(params.MetricsScope),
+		metricsScope:           params.MetricsScope,
 		identity:               params.Identity,
 		enableLoggingInReplay:  params.EnableLoggingInReplay,
 		disableStickyExecution: params.DisableStickyExecution,
@@ -648,7 +649,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	historyIterator HistoryIterator,
 ) (workflowContext *workflowExecutionContextImpl, err error) {
-	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, task.WorkflowType.GetName())
+	metricsScope := metrics.GetMetricsScopeForWorkflow(wth.metricsScope, task.WorkflowType.GetName())
 	defer func() {
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
@@ -1450,7 +1451,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		return queryCompletedRequest
 	}
 
-	metricsScope := wth.metricsScope.GetTaggedScope(tagWorkflowType, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
+	metricsScope := metrics.GetMetricsScopeForWorkflow(wth.metricsScope, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
 
 	// fail workflow task on workflow panic
 	var workflowPanicErr *workflowPanicError
@@ -1590,7 +1591,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		identity:           params.Identity,
 		service:            service,
 		logger:             params.Logger,
-		metricsScope:       metrics.NewTaggedScope(params.MetricsScope),
+		metricsScope:       params.MetricsScope,
 		userContext:        params.UserContext,
 		registry:           registry,
 		activityProvider:   activityProvider,
@@ -1765,7 +1766,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
-	metricsScope := getMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
+	metricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
 	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, metricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
 	activityImplementation := ath.getActivity(activityType)

@@ -43,10 +43,10 @@ func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsRep
 }
 
 // NewTaggedMetricsScope return NewTaggedMetricsScope
-func NewTaggedMetricsScope() (*TaggedScope, io.Closer, *CapturingStatsReporter) {
+func NewTaggedMetricsScope() (tally.Scope, io.Closer, *CapturingStatsReporter) {
 	isReplay := false
 	scope, closer, reporter := NewMetricsScope(&isReplay)
-	return &TaggedScope{Scope: scope}, closer, reporter
+	return scope, closer, reporter
 }
 
 type realClock struct {
