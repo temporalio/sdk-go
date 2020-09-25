@@ -35,5 +35,5 @@ const (
 	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
 	// are supported by this Temporal SDK.
 	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=0.28.0 <2.0.0"
+	SupportedServerVersions = ">=0.31.0 <2.0.0"
 )
