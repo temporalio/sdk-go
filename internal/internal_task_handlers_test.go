@@ -37,6 +37,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/tally"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -1356,6 +1357,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		nil,
 		"Test_Temporal_Invoker",
 		mockService,
+		tally.NoopScope,
 		func() {},
 		0,
 		make(chan struct{}))
@@ -1378,6 +1380,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 		nil,
 		"Test_Temporal_Invoker",
 		mockService,
+		tally.NoopScope,
 		cancelHandler,
 		0,
 		make(chan struct{}))

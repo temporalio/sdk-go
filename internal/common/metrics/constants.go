@@ -77,6 +77,9 @@ const (
 
 // Metric tag keys
 const (
+	NamespaceTagName        = "namespace"
+	ClientTagName           = "temporal_client_name"
+	WorkerTypeTagName       = "worker_type"
 	WorkflowTypeNameTagName = "workflow_type"
 	ActivityTypeNameTagName = "activity_type"
 	TypeTagName             = "type"
@@ -86,7 +89,10 @@ const (
 
 // Metric tag values
 const (
-	NoneTagValue            = "none"
-	RegularActivityTagValue = "regular"
-	LocalActivityTagValue   = "local"
+	NoneTagValue               = "none"
+	RegularActivityTagValue    = "regular"
+	LocalActivityTagValue      = "local"
+	ClientTagValue             = "temporal_go"
+	ActivityWorkerTypeTagValue = ""
+	WorkflowWorkerTypeTagValue = ""
 )

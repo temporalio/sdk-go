@@ -534,7 +534,12 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Namespace = DefaultNamespace
 	}
 
+<<<<<<< HEAD
 	options.MetricsScope = metrics.TagScope(options.MetricsScope, tagNamespace, options.Namespace, clientNameHeaderName, clientNameHeaderValue)
+=======
+	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
+	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, options.Namespace)
+>>>>>>> Fixed all rpc invocations
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -603,7 +608,12 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
+<<<<<<< HEAD
 	options.MetricsScope = metrics.TagScope(options.MetricsScope, clientNameHeaderName, clientNameHeaderValue)
+=======
+	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
+	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, metrics.NoneTagValue)
+>>>>>>> Fixed all rpc invocations
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort

@@ -49,6 +49,21 @@ func TagScope(metricsScope tally.Scope, keyValuePairs ...string) tally.Scope {
 	return metricsScope.Tagged(tagsMap)
 }
 
+// GetRootScope return properly tagged tally scope with base tags included on all metric emitted by the client
+func GetRootScope(ts tally.Scope, namespace string) tally.Scope {
+	return TagScope(ts, NamespaceTagName, namespace, ClientTagName, ClientTagValue, WorkerTypeTagName, NoneTagValue)
+}
+
+// GetWorkerScope return properly tagged tally scope worker type tag
+func GetWorkerScope(ts tally.Scope, workerType string) tally.Scope {
+	return TagScope(ts, WorkerTypeTagName, workerType)
+}
+
+// GetEmptyRPCScope return properly tagged tally scope which can be used for any rpc call
+func GetEmptyRPCScope(ts tally.Scope) tally.Scope {
+	return GetMetricsScopeForRPC(ts, NoneTagValue, NoneTagValue, NoneTagValue)
+}
+
 // GetMetricsScopeForActivity return properly tagged tally scope for activity
 func GetMetricsScopeForActivity(ts tally.Scope, workflowType, activityType string) tally.Scope {
 	return TagScope(ts, WorkflowTypeNameTagName, workflowType, ActivityTypeNameTagName,

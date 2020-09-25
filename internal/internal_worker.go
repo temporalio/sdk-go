@@ -57,6 +57,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -229,10 +230,10 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
+func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
-		grpcCtx, cancel := newGRPCContext(ctx)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(metricsScope)))
 		defer cancel()
 		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
 		if err != nil {
@@ -328,7 +329,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
+	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsScope, ww.executionParameters.Namespace, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -437,7 +438,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
+	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsScope, aw.executionParameters.Namespace, aw.worker.logger)
 	if err != nil {
 		return err
 	}

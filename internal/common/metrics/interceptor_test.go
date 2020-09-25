@@ -95,7 +95,7 @@ func TestMetricsInterceptor(t *testing.T) {
 
 			// Important: close before assert.
 			assert.NoError(closer.Close())
-			assertMetrics(assert, reporter, tc.expectedMetricName, tally.DefaultSeparator, tc.expectedCounterNames)
+			assertMetrics(assert, reporter, tc.expectedCounterNames)
 		})
 	}
 
@@ -119,16 +119,16 @@ func TestMetricsInterceptor(t *testing.T) {
 
 			// Important: close before assert.
 			assert.NoError(closer.Close())
-			assertPrometheusMetrics(assert, reporter, tc.expectedMetricName, tc.expectedCounterNames)
+			assertPrometheusMetrics(assert, reporter, tc.expectedCounterNames)
 		})
 	}
 
 }
 
-func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, methodName, separator string, counterNames []string) {
+func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, counterNames []string) {
 	assert.Equal(len(counterNames), len(reporter.counts))
 	for _, name := range counterNames {
-		counterName := TemporalMetricsPrefix + methodName + separator + name
+		counterName := name
 		find := false
 		// counters are not in order
 		for _, counter := range reporter.counts {
@@ -140,11 +140,11 @@ func assertMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, 
 		assert.True(find)
 	}
 	assert.Equal(1, len(reporter.timers))
-	assert.Equal(TemporalMetricsPrefix+methodName+separator+TemporalRequestLatency, reporter.timers[0].name)
+	assert.Equal(TemporalRequestLatency, reporter.timers[0].name)
 }
 
-func assertPrometheusMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, methodName string, counterNames []string) {
-	assertMetrics(assert, reporter, methodName, "_", counterNames)
+func assertPrometheusMetrics(assert *assert.Assertions, reporter *CapturingStatsReporter, counterNames []string) {
+	assertMetrics(assert, reporter, counterNames)
 }
 
 func newPrometheusScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
