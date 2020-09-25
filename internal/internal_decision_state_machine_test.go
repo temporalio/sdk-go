@@ -173,7 +173,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	require.Equal(t, commandStateInitiated, d.getState())
 
 	// activity completed
-	h.handleActivityTaskClosed(activityID)
+	h.handleActivityTaskClosed(activityID, scheduleID)
 	require.Equal(t, commandStateCompleted, d.getState())
 }
 
@@ -230,7 +230,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
 
 	// activity canceled
-	h.handleActivityTaskCanceled(activityID)
+	h.handleActivityTaskCanceled(activityID, scheduleID)
 	require.Equal(t, commandStateCompleted, d.getState())
 	require.Equal(t, 0, len(h.getCommands(false)))
 }
@@ -265,7 +265,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
 
 	// activity completed after cancel
-	h.handleActivityTaskClosed(activityID)
+	h.handleActivityTaskClosed(activityID, scheduleID)
 	require.Equal(t, commandStateCompletedAfterCancellationCommandSent, d.getState())
 	require.Equal(t, 0, len(h.getCommands(false)))
 }
@@ -285,7 +285,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 
 	// verify that using invalid activity id will panic
 	err := runAndCatchPanic(func() {
-		h.handleActivityTaskClosed("invalid-activity-id")
+		h.handleActivityTaskClosed("invalid-activity-id", scheduleID)
 	})
 	require.NotNil(t, err)
 
@@ -296,7 +296,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 
 	// now simulate activity canceled, which is invalid transition
 	err = runAndCatchPanic(func() {
-		h.handleActivityTaskCanceled(activityID)
+		h.handleActivityTaskCanceled(activityID, scheduleID)
 	})
 	require.NotNil(t, err)
 }

@@ -965,8 +965,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event *historypb.HistoryEvent) error {
-	activityID := weh.commandsHelper.getActivityID(event)
-	command := weh.commandsHelper.handleActivityTaskClosed(activityID)
+	activityID, scheduledEventID := weh.commandsHelper.getActivityAndScheduledEventIDs(event)
+	command := weh.commandsHelper.handleActivityTaskClosed(activityID, scheduledEventID)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return nil
@@ -977,8 +977,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event 
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *historypb.HistoryEvent) error {
-	activityID := weh.commandsHelper.getActivityID(event)
-	command := weh.commandsHelper.handleActivityTaskClosed(activityID)
+	activityID, scheduledEventID := weh.commandsHelper.getActivityAndScheduledEventIDs(event)
+	command := weh.commandsHelper.handleActivityTaskClosed(activityID, scheduledEventID)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return nil
@@ -1000,8 +1000,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *historypb.HistoryEvent) error {
-	activityID := weh.commandsHelper.getActivityID(event)
-	command := weh.commandsHelper.handleActivityTaskClosed(activityID)
+	activityID, scheduledEventID := weh.commandsHelper.getActivityAndScheduledEventIDs(event)
+	command := weh.commandsHelper.handleActivityTaskClosed(activityID, scheduledEventID)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return nil
@@ -1025,8 +1025,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *historypb.HistoryEvent) error {
-	activityID := weh.commandsHelper.getActivityID(event)
-	command := weh.commandsHelper.handleActivityTaskCanceled(activityID)
+	activityID, scheduledEventID := weh.commandsHelper.getActivityAndScheduledEventIDs(event)
+	command := weh.commandsHelper.handleActivityTaskCanceled(activityID, scheduledEventID)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return nil

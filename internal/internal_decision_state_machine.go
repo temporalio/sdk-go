@@ -776,9 +776,10 @@ func (h *commandsHelper) requestCancelActivityTask(activityID string) commandSta
 	return command
 }
 
-func (h *commandsHelper) handleActivityTaskClosed(activityID string) commandStateMachine {
+func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	command.handleCompletionEvent()
+	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
 }
 
@@ -802,13 +803,14 @@ func (h *commandsHelper) handleActivityTaskCancelRequested(scheduledEventID int6
 	command.handleCancelInitiatedEvent()
 }
 
-func (h *commandsHelper) handleActivityTaskCanceled(activityID string) commandStateMachine {
+func (h *commandsHelper) handleActivityTaskCanceled(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	command.handleCanceledEvent()
+	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
 }
 
-func (h *commandsHelper) getActivityID(event *historypb.HistoryEvent) string {
+func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.HistoryEvent) (string, int64) {
 	var scheduledEventID int64 = -1
 	switch event.GetEventType() {
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
@@ -827,7 +829,7 @@ func (h *commandsHelper) getActivityID(event *historypb.HistoryEvent) string {
 	if !ok {
 		panicIllegalState(fmt.Sprintf("unable to find activityID for the event: %v", util.HistoryEventToString(event)))
 	}
-	return activityID
+	return activityID, scheduledEventID
 }
 
 func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter) commandStateMachine {
