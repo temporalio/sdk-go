@@ -72,14 +72,14 @@ func Test_TaggedScope_WithMultiTags(t *testing.T) {
 	require.Panics(t, func() { TagScope(scope, "tag") })
 }
 
-func newMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
-	reporter := &CapturingStatsReporter{}
+func newMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *capturingStatsReporter) {
+	reporter := &capturingStatsReporter{}
 	opts := tally.ScopeOptions{Reporter: reporter}
 	scope, closer := tally.NewRootScope(opts, time.Second)
 	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }
 
-func newTaggedMetricsScope() (tally.Scope, io.Closer, *CapturingStatsReporter) {
+func newTaggedMetricsScope() (tally.Scope, io.Closer, *capturingStatsReporter) {
 	isReplay := false
 	scope, closer, reporter := newMetricsScope(&isReplay)
 	return scope, closer, reporter
