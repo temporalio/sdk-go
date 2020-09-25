@@ -36,7 +36,7 @@ func TagScope(metricsScope tally.Scope, keyValuePairs ...string) tally.Scope {
 	}
 
 	if len(keyValuePairs)%2 != 0 {
-		panic("GetTaggedScope key value are not in pairs")
+		panic("TagScope key value are not in pairs")
 	}
 
 	tagsMap := map[string]string{}
