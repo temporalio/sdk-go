@@ -89,10 +89,8 @@ const (
 
 // Metric tag values
 const (
-	NoneTagValue               = "none"
-	RegularActivityTagValue    = "regular"
-	LocalActivityTagValue      = "local"
-	ClientTagValue             = "temporal_go"
-	ActivityWorkerTypeTagValue = ""
-	WorkflowWorkerTypeTagValue = ""
+	NoneTagValue            = "none"
+	RegularActivityTagValue = "regular"
+	LocalActivityTagValue   = "local"
+	ClientTagValue          = "temporal_go"
 )
