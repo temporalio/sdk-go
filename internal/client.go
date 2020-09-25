@@ -534,12 +534,8 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Namespace = DefaultNamespace
 	}
 
-<<<<<<< HEAD
-	options.MetricsScope = metrics.TagScope(options.MetricsScope, tagNamespace, options.Namespace, clientNameHeaderName, clientNameHeaderValue)
-=======
 	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
 	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, options.Namespace)
->>>>>>> Fixed all rpc invocations
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
