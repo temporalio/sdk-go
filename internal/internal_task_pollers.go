@@ -203,8 +203,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 	var result interface{}
 
 	doneC := make(chan struct{})
-	ctx, cancel := newGRPCContext(context.Background(), grpcMetricsScope(metrics.GetEmptyRPCScope(bp.metricsScope)),
-		grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
+	ctx, cancel := newGRPCContext(context.Background(), grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
 
 	go func() {
 		result, err = pollFunc(ctx)
@@ -322,7 +321,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 }
 
 func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
-	grpcCtx, cancel := newGRPCContext(context.Background(), grpcMetricsScope(metrics.GetEmptyRPCScope(wtp.metricsScope)))
+	grpcCtx, cancel := newGRPCContext(context.Background())
 	defer cancel()
 	// WorkflowType information is not available on reset sticky task.  Emit using base scope.
 	wtp.metricsScope.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)

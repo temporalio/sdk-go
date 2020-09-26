@@ -57,7 +57,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -233,7 +232,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(metricsScope)))
+		grpcCtx, cancel := newGRPCContext(ctx)
 		defer cancel()
 		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
 		if err != nil {

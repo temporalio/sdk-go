@@ -1876,7 +1876,7 @@ func recordActivityHeartbeat(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(metricsScope)))
+			grpcCtx, cancel := newGRPCContext(ctx)
 			defer cancel()
 
 			var err error
@@ -1910,7 +1910,7 @@ func recordActivityHeartbeatByID(
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	heartbeatErr := backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metrics.GetEmptyRPCScope(metricsScope)))
+			grpcCtx, cancel := newGRPCContext(ctx)
 			defer cancel()
 
 			var err error
