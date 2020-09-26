@@ -73,6 +73,7 @@ func LocalSleep(_ context.Context, delay time.Duration) error {
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
 	a.append("heartbeatAndSleep")
+	activity.GetLogger(ctx).Info("Running HeartbeatAndSleep activity")
 	if activity.HasHeartbeatDetails(ctx) {
 		var prev int
 		if err := activity.GetHeartbeatDetails(ctx, &prev); err == nil {

@@ -158,24 +158,24 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 }
 
 func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, error) {
-	opts := w.defaultActivityOptionsWithRetry()
+	opts := workflow.ActivityOptions{
+		ScheduleToStartTimeout: 10 * time.Second,
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    3 * time.Second,
+		HeartbeatTimeout:       time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 1.0,
+			MaximumAttempts:    3,
+		},
+	}
 	opts.HeartbeatTimeout = time.Second
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	var result int
-	startTime := workflow.Now(ctx)
-	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 2*time.Second).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 3*time.Second).Get(ctx, &result)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
-	}
-
-	elapsed := workflow.Now(ctx).Sub(startTime)
-
-	// We keep retrying the activity until either schedule-to-close has elapsed or the next scheduled retry
-	// takes us beyond the schedule-to-close time limit. Therefore, if retry on HB happened, we expected
-	// elapsed time to be at least the value below.
-	if elapsed < opts.ScheduleToCloseTimeout-opts.RetryPolicy.MaximumInterval {
-		return nil, fmt.Errorf("expected activity to be retried on failure, but it was not. Elapsed time: %d", elapsed.Milliseconds())
 	}
 
 	var timeoutErr *temporal.TimeoutError
