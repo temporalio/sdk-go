@@ -9,7 +9,7 @@
 Clone this repo into the preferred location.
 
 ```bash
-git clone git@github.com:temporalio/go-sdk.git
+git clone git@github.com:temporalio/sdk-go.git
 ```
 
 or
@@ -18,7 +18,7 @@ or
 go get -u go.temporal.io/sdk
 ```
 
-See [samples](https://github.com/temporalio/temporal-go-samples) to get started. 
+See [samples](https://github.com/temporalio/samples-go) to get started. 
 
 Documentation is available [here](https://docs.temporal.io/docs/go-quick-start). 
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
