@@ -41,7 +41,7 @@ func main() {
 }
 ```
 
-Most of the popular logging solutions have existing adapters in logur. If you're curious about which adapters are available, here is a helpful link: https://github.com/logur?q=adapter-&type=&language=
+Most of the popular logging solutions have existing adapters in logur. If you're curious about which adapters are available, here is a helpful [link](https://github.com/logur?q=adapter-).
 
 ## Contributing
 We'd love your help in making the Temporal Go SDK great. Please review our [contribution guidelines](CONTRIBUTING.md).
