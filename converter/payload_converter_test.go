@@ -78,7 +78,7 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, int64(12), wt3.BirthDay)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"name":"qwe", "birthDay":"12"}`, s)
+	assert.Equal(t, `{"name":"qwe","birthDay":"12"}`, s)
 }
 
 func TestProtoJsonPayloadConverterWithEnum(t *testing.T) {
