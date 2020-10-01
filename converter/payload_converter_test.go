@@ -25,6 +25,7 @@
 package converter
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +39,7 @@ type testStruct struct {
 	Age  int
 }
 
-func TestProtoJsonPayloadConverter(t *testing.T) {
+func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := &commonpb.WorkflowType{Name: "qwe"}
@@ -56,6 +57,28 @@ func TestProtoJsonPayloadConverter(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"name":"qwe"}`, s)
+}
+
+func TestProtoJsonPayloadConverter_Google(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := &GoogleGenerated{Name: "qwe", BirthDay: 12}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := &GoogleGenerated{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+	assert.Equal(t, int64(12), wt2.BirthDay)
+
+	var wt3 *GoogleGenerated
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+	assert.Equal(t, int64(12), wt3.BirthDay)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"name":"qwe", "birthDay":"12"}`, s)
 }
 
 func TestProtoJsonPayloadConverterWithEnum(t *testing.T) {
@@ -83,7 +106,7 @@ func TestProtoJsonPayloadConverterWithEnum(t *testing.T) {
 	assert.Equal(t, `{"encodingType":"Proto3","data":"dGVzdA=="}`, s)
 }
 
-func TestProtoPayloadConverter(t *testing.T) {
+func TestProtoPayloadConverter_Gogo(t *testing.T) {
 	pc := NewProtoPayloadConverter()
 
 	wt := &commonpb.WorkflowType{Name: "qwe"}
@@ -95,6 +118,26 @@ func TestProtoPayloadConverter(t *testing.T) {
 	assert.Equal(t, "qwe", wt2.Name)
 
 	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt3.Name)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, "CgNxd2U", s)
+}
+
+func TestProtoPayloadConverter_Google(t *testing.T) {
+	pc := NewProtoPayloadConverter()
+
+	wt := &GoogleGenerated{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+	wt2 := &GoogleGenerated{}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
+
+	var wt3 *GoogleGenerated
 	err = pc.FromPayload(payload, &wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
@@ -121,4 +164,17 @@ func TestJsonPayloadConverter(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, "{Age:0 Name:qwe}", s)
+}
+
+func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := &commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	wt2 := commonpb.WorkflowType{} // Note: there is no &
+	err = pc.FromPayload(payload, &wt2)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrValueIsNotPointer))
 }

@@ -47,4 +47,6 @@ var (
 	ErrValueDoesntImplementProtoMessage = errors.New("value doesn't implement proto.Message")
 	// ErrValueDoesntImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
 	ErrValueDoesntImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
+	// ErrValueIsNotPointer is returned when value is not a pointer.
+	ErrValueIsNotPointer = errors.New("value is not a pointer")
 )
