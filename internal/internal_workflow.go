@@ -1192,6 +1192,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	if newOptions.DataConverter == nil {
 		newOptions.DataConverter = converter.GetDefaultDataConverter()
 	}
+
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 

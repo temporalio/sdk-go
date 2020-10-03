@@ -55,6 +55,7 @@ const (
 	timeoutInSeconds      = 20
 	workflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	testHeader            = "test-header"
+	testHeader2           = "test-header2"
 )
 
 // historyEventIteratorSuite
@@ -1015,7 +1016,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
-		return "result"
+		panic("this is just a stub")
 	}
 
 	createResponse := &workflowservice.StartWorkflowExecutionResponse{
@@ -1025,37 +1026,6 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
-	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
-}
-
-func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = NewServiceClient(s.service, nil, ClientOptions{
-		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
-	})
-	client, ok := s.client.(*WorkflowClient)
-	s.True(ok)
-	options := StartWorkflowOptions{
-		ID:                       workflowID,
-		TaskQueue:                taskqueue,
-		WorkflowExecutionTimeout: timeoutInSeconds,
-		WorkflowTaskTimeout:      timeoutInSeconds,
-	}
-	f1 := func(ctx Context, r []byte) error {
-		value := ctx.Value(contextKey(testHeader))
-		if val, ok := value.([]byte); ok {
-			s.Equal("test-data", string(val))
-			return nil
-		}
-		return fmt.Errorf("context did not propagate to workflow")
-	}
-
-	createResponse := &workflowservice.StartWorkflowExecutionResponse{
-		RunId: runID,
-	}
-	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
-
-	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1072,7 +1042,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	input := []byte("test")
 
@@ -1111,7 +1081,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
@@ -1145,7 +1115,7 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
