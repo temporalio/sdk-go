@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -133,7 +132,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewStringMapPropagator([]string{testContextKey2}),
 		},
 		MetricsScope: metricsScope,
-		Tracer:       opentracing.GlobalTracer(),
 	})
 	ts.NoError(err)
 
@@ -656,6 +654,7 @@ func (ts *IntegrationTestSuite) TestContextPropagator() {
 		"child_propagatedValue1", "child_propagatedValue2", "child_activity_propagatedValue1", "child_activity_propagatedValue2",
 	}, propagatedValues)
 }
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)

@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 
 	"github.com/opentracing/opentracing-go"
 	commonpb "go.temporal.io/api/common/v1"
@@ -45,7 +46,11 @@ func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
 	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
 		var decodedValue string
 		err := converter.GetDefaultDataConverter().FromPayload(v, &decodedValue)
-		if err != nil {
+		// This func will be called for all headers (not only tracing specific ones).
+		// All tracing headers are strings and they MUST be decoded to `string`.
+		// If some header can't be decoded to `string` it means that it is not tracing but something else header.
+		// It is not an error from tracer prospective, so just pass it to handler and let handler handle it.
+		if err != nil && !errors.Is(err, converter.ErrUnableToDecode) {
 			return err
 		}
 		return handler(k, decodedValue)
