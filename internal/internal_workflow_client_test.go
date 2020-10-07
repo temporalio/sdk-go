@@ -119,36 +119,34 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
+	for key, _ := range s.keys {
+		value, err := reader.Get(key)
+		if err != nil {
+			return ctx, err
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = context.WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = WithValue(ctx, contextKey(key), decodedValue)
+	for key, _ := range s.keys {
+		value, err := reader.Get(key)
+		if err != nil {
+			return ctx, err
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }

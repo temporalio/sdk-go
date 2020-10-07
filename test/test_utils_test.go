@@ -32,8 +32,6 @@ import (
 	"strings"
 	"time"
 
-	commonpb "go.temporal.io/api/common/v1"
-
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
@@ -103,7 +101,8 @@ func WaitForTCP(timeout time.Duration, addr string) error {
 
 // stringMapPropagator propagates the list of keys across a workflow,
 // interpreting the payloads as strings.
-// BORROWED FROM 'internal' PACKAGE TESTS.
+// TODO: BORROWED FROM 'internal' PACKAGE TESTS.
+// TODO: remove code duplication.
 type stringMapPropagator struct {
 	keys map[string]struct{}
 }
@@ -152,36 +151,34 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer wo
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
+	for key, _ := range s.keys {
+		value, err := reader.Get(key)
+		if err != nil {
+			return ctx, err
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = context.WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = workflow.WithValue(ctx, contextKey(key), decodedValue)
+	for key, _ := range s.keys {
+		value, err := reader.Get(key)
+		if err != nil {
+			return ctx, err
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = workflow.WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }

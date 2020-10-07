@@ -29,7 +29,6 @@ import (
 	"errors"
 
 	"github.com/opentracing/opentracing-go"
-	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -161,15 +160,13 @@ func (t *tracingContextPropagator) writeSpanContextToHeader(spanContext opentrac
 }
 
 func (t *tracingContextPropagator) readSpanContextFromHeader(hr HeaderReader) (opentracing.SpanContext, error) {
-	var tracerData map[string]string
-	err := hr.ForEachKey(func(key string, tracerPayload *commonpb.Payload) error {
-		if key == tracerHeaderKey {
-			err := converter.GetDefaultDataConverter().FromPayload(tracerPayload, &tracerData)
-			return err
-		}
-		return nil
-	})
+	tracerPayload, err := hr.Get(tracerHeaderKey)
+	if err != nil {
+		return nil, err
+	}
 
+	var tracerData map[string]string
+	err = converter.GetDefaultDataConverter().FromPayload(tracerPayload, &tracerData)
 	if err != nil {
 		return nil, err
 	}

@@ -26,6 +26,8 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	commonpb "go.temporal.io/api/common/v1"
 )
@@ -37,6 +39,7 @@ type HeaderWriter interface {
 
 // HeaderReader is an interface to read information from temporal headers
 type HeaderReader interface {
+	Get(string) (*commonpb.Payload, error)
 	ForEachKey(handler func(string, *commonpb.Payload) error) error
 }
 
@@ -72,6 +75,17 @@ func (hr *headerReader) ForEachKey(handler func(string, *commonpb.Payload) error
 		}
 	}
 	return nil
+}
+
+func (hr *headerReader) Get(key string) (*commonpb.Payload, error) {
+	if hr.header == nil {
+		return nil, errors.New("header is nil")
+	}
+	if value, ok := hr.header.Fields[key]; ok {
+		return value, nil
+	}
+
+	return nil, fmt.Errorf("key %s doesn't exist in header fields", key)
 }
 
 // NewHeaderReader returns a header reader interface
