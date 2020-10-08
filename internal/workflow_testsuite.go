@@ -216,6 +216,7 @@ func (t *TestActivityEnvironment) SetContextPropagators(contextPropagators []Con
 	return t
 }
 
+// SetHeader sets header.
 func (t *TestActivityEnvironment) SetHeader(header *commonpb.Header) {
 	t.impl.header = header
 }
@@ -514,6 +515,7 @@ func (e *TestWorkflowEnvironment) SetContextPropagators(contextPropagators []Con
 	return e
 }
 
+// SetHeader sets header.
 func (e *TestWorkflowEnvironment) SetHeader(header *commonpb.Header) {
 	e.impl.header = header
 }
