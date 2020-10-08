@@ -291,7 +291,7 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError("Heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
+	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.

@@ -115,7 +115,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
+	timeoutErr := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
 	require.False(t, timeoutErr.HasLastHeartbeatDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.LastHeartbeatDetails(&data))
@@ -555,10 +555,10 @@ func Test_IsRetryable(t *testing.T) {
 	require.False(IsRetryable(NewCanceledError(), nil))
 	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.True(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
-	require.False(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
-	require.False(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
-	require.True(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
 	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
 	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
@@ -646,9 +646,9 @@ func Test_convertErrorToFailure_PanicError(t *testing.T) {
 func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
+	err := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Timeout", f.GetMessage())
+	require.Equal("timeout", f.GetMessage())
 	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(convertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()), f.GetCause())
 	require.Equal(f.GetCause(), convertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()))
@@ -656,7 +656,7 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err2, &timeoutErr))
-	require.Equal("Timeout (type: Heartbeat): cool error (type: coolError, retryable: true)", timeoutErr.Error())
+	require.Equal("timeout (type: Heartbeat): cool error (type: coolError, retryable: true)", timeoutErr.Error())
 	require.Equal(err.TimeoutType(), timeoutErr.TimeoutType())
 }
 
@@ -866,9 +866,9 @@ func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	require := require.New(t)
 	f := &failurepb.Failure{
-		Message: "Timeout",
+		Message: "timeout",
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
-			TimeoutType:          enumspb.TIMEOUT_TYPE_HEARTBEAT,
+			TimeoutType:          enumspb.TIMEOUT_TYPE_START_TO_CLOSE,
 			LastHeartbeatDetails: nil,
 		}},
 	}
@@ -876,8 +876,8 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	err := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	require.Equal("Timeout (type: Heartbeat)", timeoutErr.Error())
-	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+	require.Equal("timeout (type: StartToClose)", timeoutErr.Error())
+	require.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 }
 
 func Test_convertFailureToError_ServerFailure(t *testing.T) {

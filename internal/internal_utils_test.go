@@ -127,13 +127,13 @@ func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
-	timeoutErr1 := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil, val)
+	timeoutErr1 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil, val)
 	failure := convertErrorToFailure(timeoutErr1, dc)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())
 	require.Equal(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, failure.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 
-	timeoutErr2 := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, testErrorDetails4)
+	timeoutErr2 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
 	failure = convertErrorToFailure(timeoutErr2, dc)
