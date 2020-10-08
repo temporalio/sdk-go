@@ -250,7 +250,7 @@ var (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(msg, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
@@ -893,7 +893,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), "unknown failure", false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {

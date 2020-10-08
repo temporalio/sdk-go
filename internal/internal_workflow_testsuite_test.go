@@ -2338,7 +2338,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	attempt1Count := 1
 	activityFailedFn := func(ctx context.Context) (string, error) {
 		attempt1Count++
-		return "", NewApplicationError("bad-bug", "badBugType", true, nil)
+		return "", NewApplicationError("bad-bug", "", true, nil)
 	}
 
 	attempt2Count := 1
@@ -2373,7 +2373,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 		err = errors.Unwrap(activityErr)
 		var badBug *ApplicationError
 		s.True(errors.As(err, &badBug))
-		s.Equal("bad-bug (type: badBugType, retryable: false)", badBug.Error())
+		s.Equal("bad-bug", badBug.Error())
 
 		var result string
 		err = ExecuteActivity(ctx, activityFn).Get(ctx, &result)
