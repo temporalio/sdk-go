@@ -175,7 +175,7 @@ func TestHeaderReader_Get(t *testing.T) {
 				},
 			},
 			"key1",
-			false,
+			true,
 		},
 		{
 			"invalid key",
@@ -186,19 +186,13 @@ func TestHeaderReader_Get(t *testing.T) {
 				},
 			},
 			"key3",
-			true,
-		},
-		{
-			"nil header",
-			nil,
-			"",
-			true,
+			false,
 		},
 		{
 			"nil fields",
 			&commonpb.Header{},
-			"",
-			true,
+			"key1",
+			false,
 		},
 	}
 
@@ -215,4 +209,10 @@ func TestHeaderReader_Get(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("nil panic", func(t *testing.T) {
+		reader := NewHeaderReader(nil)
+		assert.Panics(t, func() { reader.Get("") })
+	})
+
 }
