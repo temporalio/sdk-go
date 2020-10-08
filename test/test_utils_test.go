@@ -148,12 +148,13 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer wo
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
 	for _, key := range s.keys {
-		value, err := reader.Get(key)
-		if err != nil {
-			return ctx, err
+		value, ok := reader.Get(key)
+		if !ok {
+			// If key that should be propagated doesn't exist in the header, ignore the key.
+			continue
 		}
 		var decodedValue string
-		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
 		if err != nil {
 			return ctx, err
 		}
@@ -165,12 +166,13 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.Heade
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
 	for _, key := range s.keys {
-		value, err := reader.Get(key)
-		if err != nil {
-			return ctx, err
+		value, ok := reader.Get(key)
+		if !ok {
+			// If key that should be propagated doesn't exist in the header, ignore the key.
+			continue
 		}
 		var decodedValue string
-		err = converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
 		if err != nil {
 			return ctx, err
 		}

@@ -161,10 +161,10 @@ func TestHeaderReader_ForEachKey(t *testing.T) {
 func TestHeaderReader_Get(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		header  *commonpb.Header
-		key     string
-		isError bool
+		name         string
+		header       *commonpb.Header
+		key          string
+		headerExists bool
 	}{
 		{
 			"valid key",
@@ -207,11 +207,11 @@ func TestHeaderReader_Get(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader := NewHeaderReader(test.header)
-			_, err := reader.Get(test.key)
-			if test.isError {
-				assert.Error(t, err)
+			_, headerExist := reader.Get(test.key)
+			if test.headerExists {
+				assert.True(t, headerExist)
 			} else {
-				assert.NoError(t, err)
+				assert.False(t, headerExist)
 			}
 		})
 	}

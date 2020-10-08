@@ -111,8 +111,8 @@ func (t *tracingContextPropagator) Extract(
 	ctx context.Context,
 	hr HeaderReader,
 ) (context.Context, error) {
-	spanContext, err := t.readSpanContextFromHeader(hr)
-	if err != nil {
+	spanContext := t.readSpanContextFromHeader(hr)
+	if spanContext == nil {
 		return ctx, nil
 	}
 	return context.WithValue(ctx, activeSpanContextKey, spanContext), nil
@@ -135,8 +135,8 @@ func (t *tracingContextPropagator) ExtractToWorkflow(
 	ctx Context,
 	hr HeaderReader,
 ) (Context, error) {
-	spanContext, err := t.readSpanContextFromHeader(hr)
-	if err != nil {
+	spanContext := t.readSpanContextFromHeader(hr)
+	if spanContext == nil {
 		return ctx, nil
 	}
 	return contextWithSpan(ctx, spanContext), nil
@@ -159,22 +159,22 @@ func (t *tracingContextPropagator) writeSpanContextToHeader(spanContext opentrac
 	return nil
 }
 
-func (t *tracingContextPropagator) readSpanContextFromHeader(hr HeaderReader) (opentracing.SpanContext, error) {
-	tracerPayload, err := hr.Get(tracerHeaderKey)
-	if err != nil {
-		return nil, err
+func (t *tracingContextPropagator) readSpanContextFromHeader(hr HeaderReader) opentracing.SpanContext {
+	tracerPayload, tracerExist := hr.Get(tracerHeaderKey)
+	if !tracerExist {
+		return nil
 	}
 
 	var tracerData map[string]string
-	err = converter.GetDefaultDataConverter().FromPayload(tracerPayload, &tracerData)
+	err := converter.GetDefaultDataConverter().FromPayload(tracerPayload, &tracerData)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{tracerData})
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
-	return spanContext, nil
+	return spanContext
 }
