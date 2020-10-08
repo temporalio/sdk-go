@@ -739,7 +739,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.True(ok)
 	var applicationErr2 *ApplicationError
 	s.True(errors.As(err, &applicationErr2))
-	s.Equal(applicationError.message, applicationErr2.message)
+	s.Equal(applicationError.msg, applicationErr2.msg)
 	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }

@@ -121,7 +121,7 @@ type (
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		temporalError
-		message      string
+		msg          string
 		errType      string
 		nonRetryable bool
 		cause        error
@@ -131,6 +131,7 @@ type (
 	// TimeoutError returned when activity or child workflow timed out.
 	TimeoutError struct {
 		temporalError
+		msg                  string
 		timeoutType          enumspb.TimeoutType
 		lastHeartbeatDetails converter.EncodedValues
 		cause                error
@@ -174,7 +175,7 @@ type (
 	// ServerError can be returned from server.
 	ServerError struct {
 		temporalError
-		message      string
+		msg          string
 		nonRetryable bool
 		cause        error
 	}
@@ -216,6 +217,7 @@ type (
 	}
 
 	temporalError struct {
+		messenger
 		originalFailure *failurepb.Failure
 	}
 
@@ -223,9 +225,16 @@ type (
 		setFailure(*failurepb.Failure)
 		failure() *failurepb.Failure
 	}
+
+	messenger interface {
+		message() string
+	}
 )
 
 var (
+	// Should be "errorString".
+	goErrType = reflect.TypeOf(errors.New("")).Elem().Name()
+
 	// ErrNoData is returned when trying to extract strong typed data while there is no data available.
 	ErrNoData = errors.New("no data available")
 
@@ -241,9 +250,9 @@ var (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(message, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+func NewApplicationError(msg, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
 	applicationErr := &ApplicationError{
-		message:      message,
+		msg:          msg,
 		errType:      errType,
 		nonRetryable: nonRetryable,
 		cause:        cause}
@@ -263,19 +272,24 @@ func NewApplicationError(message, errType string, nonRetryable bool, cause error
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(timeoutType enumspb.TimeoutType, cause error, lastHeatbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
+	return newTimeoutError("Timeout", timeoutType, cause, lastHeartbeatDetails...)
+}
+
+func newTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
 	timeoutErr := &TimeoutError{
+		msg:         msg,
 		timeoutType: timeoutType,
 		cause:       cause,
 	}
 
-	if len(lastHeatbeatDetails) == 1 {
-		if d, ok := lastHeatbeatDetails[0].(*EncodedValues); ok {
+	if len(lastHeartbeatDetails) == 1 {
+		if d, ok := lastHeartbeatDetails[0].(*EncodedValues); ok {
 			timeoutErr.lastHeartbeatDetails = d
 			return timeoutErr
 		}
 	}
-	timeoutErr.lastHeartbeatDetails = ErrorDetailsValues(lastHeatbeatDetails)
+	timeoutErr.lastHeartbeatDetails = ErrorDetailsValues(lastHeartbeatDetails)
 	return timeoutErr
 }
 
@@ -295,8 +309,8 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 }
 
 // NewServerError create new instance of *ServerError with message.
-func NewServerError(message string, nonRetryable bool, cause error) *ServerError {
-	return &ServerError{message: message, nonRetryable: nonRetryable, cause: cause}
+func NewServerError(msg string, nonRetryable bool, cause error) *ServerError {
+	return &ServerError{msg: msg, nonRetryable: nonRetryable, cause: cause}
 }
 
 // NewActivityError creates ActivityError instance.
@@ -406,9 +420,20 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
 
-// Error from error interface
+// Error from error interface.
 func (e *ApplicationError) Error() string {
-	return e.message
+	msg := e.message()
+	if e.errType != "" {
+		msg = fmt.Sprintf("%s (type: %s, retryable: %v)", msg, e.errType, !e.nonRetryable)
+	}
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
+}
+
+func (e *ApplicationError) message() string {
+	return e.msg
 }
 
 // Type returns error type represented as string.
@@ -443,7 +468,15 @@ func (e *ApplicationError) Unwrap() error {
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("TimeoutType: %v, Cause: %v", e.timeoutType, e.cause)
+	msg := fmt.Sprintf("%s (type: %v)", e.message(), e.timeoutType)
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
+}
+
+func (e *TimeoutError) message() string {
+	return e.msg
 }
 
 func (e *TimeoutError) Unwrap() error {
@@ -470,6 +503,10 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 
 // Error from error interface
 func (e *CanceledError) Error() string {
+	return e.message()
+}
+
+func (e *CanceledError) message() string {
 	return "Canceled"
 }
 
@@ -496,6 +533,10 @@ func newWorkflowPanicError(value interface{}, stackTrace string) *workflowPanicE
 
 // Error from error interface
 func (e *PanicError) Error() string {
+	return e.message()
+}
+
+func (e *PanicError) message() string {
 	return fmt.Sprintf("%v", e.value)
 }
 
@@ -516,7 +557,11 @@ func (e *workflowPanicError) StackTrace() string {
 
 // Error from error interface
 func (e *ContinueAsNewError) Error() string {
-	return "ContinueAsNew"
+	return e.message()
+}
+
+func (e *ContinueAsNewError) message() string {
+	return "Continue as new"
 }
 
 // WorkflowType return WorkflowType of the new run
@@ -536,6 +581,10 @@ func newTerminatedError() *TerminatedError {
 
 // Error from error interface
 func (e *TerminatedError) Error() string {
+	return e.message()
+}
+
+func (e *TerminatedError) message() string {
 	return "Terminated"
 }
 
@@ -551,7 +600,15 @@ func (e *UnknownExternalWorkflowExecutionError) Error() string {
 
 // Error from error interface
 func (e *ServerError) Error() string {
-	return e.message
+	msg := e.message()
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
+}
+
+func (e *ServerError) message() string {
+	return e.msg
 }
 
 func (e *ServerError) Unwrap() error {
@@ -559,7 +616,15 @@ func (e *ServerError) Unwrap() error {
 }
 
 func (e *ActivityError) Error() string {
-	return fmt.Sprintf("activity task error (scheduledEventID: %d, startedEventID: %d, identity: %s): %v", e.scheduledEventID, e.startedEventID, e.identity, e.cause)
+	msg := fmt.Sprintf("%s (type: %s, scheduledEventID: %d, startedEventID: %d, identity: %s)", e.message(), e.activityType.GetName(), e.scheduledEventID, e.startedEventID, e.identity)
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
+}
+
+func (e *ActivityError) message() string {
+	return "Activity task error"
 }
 
 func (e *ActivityError) Unwrap() error {
@@ -568,8 +633,16 @@ func (e *ActivityError) Unwrap() error {
 
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
-	return fmt.Sprintf("child workflow execution error (workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d, workflowType: %s): %v",
-		e.workflowID, e.runID, e.initiatedEventID, e.startedEventID, e.workflowType, e.cause)
+	msg := fmt.Sprintf("%s (type: %s, workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d)",
+		e.message(), e.workflowType, e.workflowID, e.runID, e.initiatedEventID, e.startedEventID)
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
+}
+
+func (e *ChildWorkflowExecutionError) message() string {
+	return "Child workflow execution error"
 }
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
@@ -578,8 +651,12 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 
 // Error from error interface
 func (e *WorkflowExecutionError) Error() string {
-	return fmt.Sprintf("workflow execution error (workflowID: %s, runID: %s, workflowType: %s): %v",
-		e.workflowID, e.runID, e.workflowType, e.cause)
+	msg := fmt.Sprintf("workflow execution error (type: %s, workflowID: %s, runID: %s)",
+		e.workflowType, e.workflowID, e.runID)
+	if e.cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.cause)
+	}
+	return msg
 }
 
 func (e *WorkflowExecutionError) Unwrap() error {
@@ -645,6 +722,10 @@ func getErrType(err error) string {
 	for t = reflect.TypeOf(err); t.Kind() == reflect.Ptr; t = t.Elem() {
 	}
 
+	if t.Name() == goErrType {
+		return ""
+	}
+
 	return t.Name()
 }
 
@@ -661,8 +742,13 @@ func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fai
 	}
 
 	failure := &failurepb.Failure{
-		Source:  "GoSDK",
-		Message: err.Error(),
+		Source: "GoSDK",
+	}
+
+	if m, ok := err.(messenger); ok && m != nil {
+		failure.Message = m.message()
+	} else {
+		failure.Message = err.Error()
 	}
 
 	switch err := err.(type) {
@@ -769,7 +855,8 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 	} else if failure.GetTimeoutFailureInfo() != nil {
 		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
 		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		err = NewTimeoutError(
+		err = newTimeoutError(
+			failure.GetMessage(),
 			timeoutFailureInfo.GetTimeoutType(),
 			convertFailureToError(failure.GetCause(), dc),
 			lastHeartbeatDetails)
@@ -806,7 +893,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "unknown failure", false, convertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {
