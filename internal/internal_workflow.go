@@ -497,7 +497,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	for _, ctxProp := range env.GetContextPropagators() {
 		var err error
 		if rootCtx, err = ctxProp.ExtractToWorkflow(rootCtx, NewHeaderReader(header)); err != nil {
-			panic(fmt.Sprintf("Unable to propagate context %v", err))
+			panic(fmt.Sprintf("Unable to propagate context: %v", err))
 		}
 	}
 

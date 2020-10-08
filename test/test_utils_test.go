@@ -104,22 +104,18 @@ func WaitForTCP(timeout time.Duration, addr string) error {
 // TODO: BORROWED FROM 'internal' PACKAGE TESTS.
 // TODO: remove code duplication.
 type stringMapPropagator struct {
-	keys map[string]struct{}
+	keys []string
 }
 
 // NewStringMapPropagator returns a context propagator that propagates a set of
 // string key-value pairs across a workflow
 func NewStringMapPropagator(keys []string) workflow.ContextPropagator {
-	keyMap := make(map[string]struct{}, len(keys))
-	for _, key := range keys {
-		keyMap[key] = struct{}{}
-	}
-	return &stringMapPropagator{keyMap}
+	return &stringMapPropagator{keys}
 }
 
 // Inject injects values from context into headers for propagation
 func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.HeaderWriter) error {
-	for key := range s.keys {
+	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
@@ -135,7 +131,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.Header
 
 // InjectFromWorkflow injects values from context into headers for propagation
 func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflow.HeaderWriter) error {
-	for key := range s.keys {
+	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
@@ -151,7 +147,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer wo
 
 // Extract extracts values from headers and puts them into context
 func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
-	for key, _ := range s.keys {
+	for _, key := range s.keys {
 		value, err := reader.Get(key)
 		if err != nil {
 			return ctx, err
@@ -168,7 +164,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.Heade
 
 // ExtractToWorkflow extracts values from headers and puts them into context
 func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
-	for key, _ := range s.keys {
+	for _, key := range s.keys {
 		value, err := reader.Get(key)
 		if err != nil {
 			return ctx, err

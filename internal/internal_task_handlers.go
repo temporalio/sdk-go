@@ -1801,7 +1801,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	for _, ctxProp := range ath.contextPropagators {
 		var err error
 		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(t.Header)); err != nil {
-			return nil, fmt.Errorf("unable to propagate context %v", err)
+			return nil, fmt.Errorf("unable to propagate context: %w", err)
 		}
 	}
 

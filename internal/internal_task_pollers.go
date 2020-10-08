@@ -496,7 +496,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			result = &localActivityResult{
 				task:   task,
 				result: nil,
-				err:    fmt.Errorf("unable to propagate context %v", err),
+				err:    fmt.Errorf("unable to propagate context: %w", err),
 			}
 			return result
 		}
