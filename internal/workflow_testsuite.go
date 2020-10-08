@@ -216,6 +216,10 @@ func (t *TestActivityEnvironment) SetContextPropagators(contextPropagators []Con
 	return t
 }
 
+func (t *TestActivityEnvironment) SetHeader(header *commonpb.Header) {
+	t.impl.header = header
+}
+
 // SetTestTimeout sets the wall clock timeout for this activity test run. When test timeout happen, it means activity is
 // taking too long.
 func (t *TestActivityEnvironment) SetTestTimeout(idleTimeout time.Duration) *TestActivityEnvironment {
@@ -502,6 +506,16 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
 	e.impl.setDataConverter(dataConverter)
 	return e
+}
+
+// SetContextPropagators sets context propagators.
+func (e *TestWorkflowEnvironment) SetContextPropagators(contextPropagators []ContextPropagator) *TestWorkflowEnvironment {
+	e.impl.setContextPropagators(contextPropagators)
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetHeader(header *commonpb.Header) {
+	e.impl.header = header
 }
 
 // SetIdentity sets identity.

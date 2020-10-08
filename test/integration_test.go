@@ -76,6 +76,7 @@ const (
 	namespaceCacheRefreshInterval = 20 * time.Second
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
+	testContextKey3               = "test-context-key3"
 )
 
 func TestIntegrationSuite(t *testing.T) {
@@ -646,6 +647,7 @@ func (ts *IntegrationTestSuite) TestContextPropagator() {
 	// Propagate values using different context propagators.
 	ctx = context.WithValue(ctx, contextKey(testContextKey1), "propagatedValue1")
 	ctx = context.WithValue(ctx, contextKey(testContextKey2), "propagatedValue2")
+	ctx = context.WithValue(ctx, contextKey(testContextKey3), "non-propagatedValue")
 	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-context-propagator"), ts.workflows.ContextPropagator, &propagatedValues, true)
 	ts.NoError(err)
 	// One copy from workflow and one copy from activity * 2 for child workflow

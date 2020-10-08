@@ -85,12 +85,12 @@ func (hr *headerReader) Get(key string) (*commonpb.Payload, error) {
 		return value, nil
 	}
 
-	return nil, fmt.Errorf("key %s doesn't exist in header fields", key)
+	return nil, fmt.Errorf("key %q doesn't exist in header fields", key)
 }
 
 // NewHeaderReader returns a header reader interface
 func NewHeaderReader(header *commonpb.Header) HeaderReader {
-	return &headerReader{header}
+	return &headerReader{header: header}
 }
 
 type headerWriter struct {
@@ -109,5 +109,5 @@ func NewHeaderWriter(header *commonpb.Header) HeaderWriter {
 	if header != nil && header.Fields == nil {
 		header.Fields = make(map[string]*commonpb.Payload)
 	}
-	return &headerWriter{header}
+	return &headerWriter{header: header}
 }
