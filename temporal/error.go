@@ -219,7 +219,7 @@ func IsPanicError(err error) bool {
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
 func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...interface{}) *TimeoutError {
-	return internal.NewTimeoutError(timeoutType, lastErr, details...)
+	return internal.NewTimeoutError("Test timeout", timeoutType, lastErr, details...)
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance

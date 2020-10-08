@@ -562,7 +562,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_TIMEOUT, NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
+			return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_TIMEOUT, NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskQueue)
 		st := getStackTraceRaw(topLine, 7, 0)
@@ -1392,7 +1392,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 				activityID,
 				activityType,
 				enumspb.RETRY_STATE_TIMEOUT,
-				NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded),
+				NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, context.DeadlineExceeded),
 			)
 			activityHandle.callback(nil, err)
 		} else {

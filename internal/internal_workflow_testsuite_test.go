@@ -3035,7 +3035,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
+		return NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {

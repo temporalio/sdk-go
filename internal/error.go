@@ -272,11 +272,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
-	return newTimeoutError("Timeout", timeoutType, cause, lastHeartbeatDetails...)
-}
-
-func newTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
 		timeoutType: timeoutType,
@@ -295,7 +291,7 @@ func newTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
-	return NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
+	return NewTimeoutError("Heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
@@ -507,7 +503,7 @@ func (e *CanceledError) Error() string {
 }
 
 func (e *CanceledError) message() string {
-	return "Canceled"
+	return "canceled"
 }
 
 // HasDetails return if this error has strong typed detail data.
@@ -561,7 +557,7 @@ func (e *ContinueAsNewError) Error() string {
 }
 
 func (e *ContinueAsNewError) message() string {
-	return "Continue as new"
+	return "continue as new"
 }
 
 // WorkflowType return WorkflowType of the new run
@@ -585,7 +581,7 @@ func (e *TerminatedError) Error() string {
 }
 
 func (e *TerminatedError) message() string {
-	return "Terminated"
+	return "terminated"
 }
 
 // newUnknownExternalWorkflowExecutionError creates UnknownExternalWorkflowExecutionError instance
@@ -595,7 +591,7 @@ func newUnknownExternalWorkflowExecutionError() *UnknownExternalWorkflowExecutio
 
 // Error from error interface
 func (e *UnknownExternalWorkflowExecutionError) Error() string {
-	return "UnknownExternalWorkflowExecution"
+	return "unknown external workflow execution"
 }
 
 // Error from error interface
@@ -624,7 +620,7 @@ func (e *ActivityError) Error() string {
 }
 
 func (e *ActivityError) message() string {
-	return "Activity task error"
+	return "activity error"
 }
 
 func (e *ActivityError) Unwrap() error {
@@ -642,7 +638,7 @@ func (e *ChildWorkflowExecutionError) Error() string {
 }
 
 func (e *ChildWorkflowExecutionError) message() string {
-	return "Child workflow execution error"
+	return "child workflow execution error"
 }
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
@@ -855,7 +851,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 	} else if failure.GetTimeoutFailureInfo() != nil {
 		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
 		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		err = newTimeoutError(
+		err = NewTimeoutError(
 			failure.GetMessage(),
 			timeoutFailureInfo.GetTimeoutType(),
 			convertFailureToError(failure.GetCause(), dc),

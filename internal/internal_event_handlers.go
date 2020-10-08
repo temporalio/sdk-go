@@ -1341,7 +1341,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
+		NewTimeoutError("Child workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

@@ -115,7 +115,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
+	timeoutErr := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
 	require.False(t, timeoutErr.HasLastHeartbeatDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.LastHeartbeatDetails(&data))
@@ -555,10 +555,10 @@ func Test_IsRetryable(t *testing.T) {
 	require.False(IsRetryable(NewCanceledError(), nil))
 	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
 	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
 	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
@@ -603,7 +603,7 @@ func Test_convertErrorToFailure_CanceledError(t *testing.T) {
 
 	err := NewCanceledError("details", 2208)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Canceled", f.GetMessage())
+	require.Equal("canceled", f.GetMessage())
 	require.Equal([]byte(`"details"`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[1].GetData())
 	require.Nil(f.GetCause())
@@ -646,7 +646,7 @@ func Test_convertErrorToFailure_PanicError(t *testing.T) {
 func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
+	err := NewTimeoutError("Timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
 	require.Equal("Timeout", f.GetMessage())
 	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
@@ -665,7 +665,7 @@ func Test_convertErrorToFailure_TerminateError(t *testing.T) {
 
 	err := newTerminatedError()
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Terminated", f.GetMessage())
+	require.Equal("terminated", f.GetMessage())
 	require.Nil(f.GetCause())
 
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
@@ -695,7 +695,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Activity task error", f.GetMessage())
+	require.Equal("activity error", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
 	require.Equal(int64(22), f.GetActivityFailureInfo().GetStartedEventId())
 	require.Equal("alex", f.GetActivityFailureInfo().GetIdentity())
@@ -722,7 +722,7 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Child workflow execution error", f.GetMessage())
+	require.Equal("child workflow execution error", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
