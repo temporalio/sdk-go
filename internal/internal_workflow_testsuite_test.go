@@ -66,7 +66,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.header = &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
-	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
+	s.contextPropagators = []ContextPropagator{NewKeysPropagator([]string{"test"})}
 }
 
 func TestUnitTestSuite(t *testing.T) {
@@ -414,7 +414,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
-	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
 	env.RegisterActivity(activityWithUserContext)
 	blob, err := env.ExecuteActivity(activityWithUserContext)
@@ -1656,7 +1656,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
-	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
 	env.RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(testWorkflowContext)
@@ -1699,7 +1699,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
 		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data")},
 	})
-	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterWorkflow(childWorkflowFn)

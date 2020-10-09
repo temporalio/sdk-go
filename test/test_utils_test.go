@@ -99,22 +99,22 @@ func WaitForTCP(timeout time.Duration, addr string) error {
 	}
 }
 
-// stringMapPropagator propagates the list of keys across a workflow,
+// keysPropagator propagates the list of keys across a workflow,
 // interpreting the payloads as strings.
 // TODO: BORROWED FROM 'internal' PACKAGE TESTS.
 // TODO: remove code duplication.
-type stringMapPropagator struct {
+type keysPropagator struct {
 	keys []string
 }
 
-// NewStringMapPropagator returns a context propagator that propagates a set of
+// NewKeysPropagator returns a context propagator that propagates a set of
 // string key-value pairs across a workflow
-func NewStringMapPropagator(keys []string) workflow.ContextPropagator {
-	return &stringMapPropagator{keys}
+func NewKeysPropagator(keys []string) workflow.ContextPropagator {
+	return &keysPropagator{keys}
 }
 
 // Inject injects values from context into headers for propagation
-func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.HeaderWriter) error {
+func (s *keysPropagator) Inject(ctx context.Context, writer workflow.HeaderWriter) error {
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
@@ -130,7 +130,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer workflow.Header
 }
 
 // InjectFromWorkflow injects values from context into headers for propagation
-func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflow.HeaderWriter) error {
+func (s *keysPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflow.HeaderWriter) error {
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
@@ -146,7 +146,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx workflow.Context, writer wo
 }
 
 // Extract extracts values from headers and puts them into context
-func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
+func (s *keysPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
 	for _, key := range s.keys {
 		value, ok := reader.Get(key)
 		if !ok {
@@ -164,7 +164,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader workflow.Heade
 }
 
 // ExtractToWorkflow extracts values from headers and puts them into context
-func (s *stringMapPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
+func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
 	for _, key := range s.keys {
 		value, ok := reader.Get(key)
 		if !ok {

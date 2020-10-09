@@ -129,8 +129,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Namespace: namespace,
 		Logger:    ilog.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{
-			NewStringMapPropagator([]string{testContextKey1}),
-			NewStringMapPropagator([]string{testContextKey2}),
+			NewKeysPropagator([]string{testContextKey1}),
+			NewKeysPropagator([]string{testContextKey2}),
 		},
 		MetricsScope: metricsScope,
 	})

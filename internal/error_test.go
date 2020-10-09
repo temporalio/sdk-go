@@ -500,7 +500,7 @@ func Test_ContinueAsNewError(t *testing.T) {
 
 	s := &WorkflowTestSuite{
 		header:             header,
-		contextPropagators: []ContextPropagator{NewStringMapPropagator([]string{"test"})},
+		contextPropagators: []ContextPropagator{NewKeysPropagator([]string{"test"})},
 	}
 	wfEnv := s.NewTestWorkflowEnvironment()
 	wfEnv.RegisterWorkflowWithOptions(continueAsNewWorkflowFn, RegisterWorkflowOptions{

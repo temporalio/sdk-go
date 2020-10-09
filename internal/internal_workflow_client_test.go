@@ -68,20 +68,20 @@ type (
 	}
 )
 
-// stringMapPropagator propagates the list of keys across a workflow,
+// keysPropagator propagates the list of keys across a workflow,
 // interpreting the payloads as strings.
-type stringMapPropagator struct {
+type keysPropagator struct {
 	keys []string
 }
 
-// NewStringMapPropagator returns a context propagator that propagates a set of
+// NewKeysPropagator returns a context propagator that propagates a set of
 // string key-value pairs across a workflow
-func NewStringMapPropagator(keys []string) ContextPropagator {
-	return &stringMapPropagator{keys}
+func NewKeysPropagator(keys []string) ContextPropagator {
+	return &keysPropagator{keys}
 }
 
 // Inject injects values from context into headers for propagation
-func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) error {
+func (s *keysPropagator) Inject(ctx context.Context, writer HeaderWriter) error {
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
@@ -97,7 +97,7 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 }
 
 // InjectFromWorkflow injects values from context into headers for propagation
-func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWriter) error {
+func (s *keysPropagator) InjectFromWorkflow(ctx Context, writer HeaderWriter) error {
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
@@ -113,7 +113,7 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 }
 
 // Extract extracts values from headers and puts them into context
-func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
+func (s *keysPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
 	for _, key := range s.keys {
 		value, ok := reader.Get(key)
 		if !ok {
@@ -131,7 +131,7 @@ func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) 
 }
 
 // ExtractToWorkflow extracts values from headers and puts them into context
-func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
+func (s *keysPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
 	for _, key := range s.keys {
 		value, ok := reader.Get(key)
 		if !ok {
