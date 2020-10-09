@@ -41,7 +41,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -1228,10 +1227,22 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	err := serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
-	childWorkflow.handle(nil, err)
+	if attributes.GetCause() == enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS {
+		err := NewChildWorkflowExecutionError(
+			attributes.GetNamespace(),
+			attributes.GetWorkflowId(),
+			"",
+			attributes.GetWorkflowType().GetName(),
+			attributes.GetInitiatedEventId(),
+			0,
+			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
+			errors.New("workflow execution already started"),
+		)
+		childWorkflow.handle(nil, err)
+		return nil
+	}
 
-	return nil
+	return fmt.Errorf("unknown cause: %v", attributes.GetCause())
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(event *historypb.HistoryEvent) error {
@@ -1330,7 +1341,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTimedO
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
+		NewTimeoutError("Child workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

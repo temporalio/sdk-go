@@ -115,7 +115,7 @@ func Test_ActivityNotRegistered(t *testing.T) {
 }
 
 func Test_TimeoutError(t *testing.T) {
-	timeoutErr := NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
+	timeoutErr := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil)
 	require.False(t, timeoutErr.HasLastHeartbeatDetails())
 	var data string
 	require.Equal(t, ErrNoData, timeoutErr.LastHeartbeatDetails(&data))
@@ -538,7 +538,7 @@ func Test_GetErrorType(t *testing.T) {
 	require := require.New(t)
 	err := errors.New("some error")
 	errType := getErrType(err)
-	require.Equal("errorString", errType)
+	require.Equal("", errType)
 
 	err = coolError{}
 	errType = getErrType(err)
@@ -555,10 +555,10 @@ func Test_IsRetryable(t *testing.T) {
 	require.False(IsRetryable(NewCanceledError(), nil))
 	require.False(IsRetryable(newWorkflowPanicError("", ""), nil))
 
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
-	require.False(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
-	require.True(IsRetryable(NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil), nil))
+	require.False(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil), nil))
+	require.True(IsRetryable(NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil), nil))
 
 	require.False(IsRetryable(NewApplicationError("", "", true, nil), nil))
 	require.True(IsRetryable(NewApplicationError("", "", false, nil), nil))
@@ -585,13 +585,13 @@ func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
 	require.Equal("cause error", f.GetCause().GetMessage())
-	require.Equal("errorString", f.GetCause().GetApplicationFailureInfo().GetType())
+	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
 	require.Nil(f.GetCause().GetCause())
 
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var applicationErr *ApplicationError
 	require.True(errors.As(err2, &applicationErr))
-	require.Equal(err.Error(), applicationErr.Error())
+	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
 
 	err2 = errors.Unwrap(err2)
 	require.True(errors.As(err2, &applicationErr))
@@ -603,7 +603,7 @@ func Test_convertErrorToFailure_CanceledError(t *testing.T) {
 
 	err := NewCanceledError("details", 2208)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Canceled", f.GetMessage())
+	require.Equal("canceled", f.GetMessage())
 	require.Equal([]byte(`"details"`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[1].GetData())
 	require.Nil(f.GetCause())
@@ -646,9 +646,9 @@ func Test_convertErrorToFailure_PanicError(t *testing.T) {
 func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	require := require.New(t)
 
-	err := NewTimeoutError(enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
+	err := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("TimeoutType: Heartbeat, Cause: cool error", f.GetMessage())
+	require.Equal("timeout", f.GetMessage())
 	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(convertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()), f.GetCause())
 	require.Equal(f.GetCause(), convertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()))
@@ -656,7 +656,7 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err2, &timeoutErr))
-	require.Equal(err.Error(), timeoutErr.Error())
+	require.Equal("timeout (type: Heartbeat): cool error (type: coolError, retryable: true)", timeoutErr.Error())
 	require.Equal(err.TimeoutType(), timeoutErr.TimeoutType())
 }
 
@@ -665,7 +665,7 @@ func Test_convertErrorToFailure_TerminateError(t *testing.T) {
 
 	err := newTerminatedError()
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("Terminated", f.GetMessage())
+	require.Equal("terminated", f.GetMessage())
 	require.Nil(f.GetCause())
 
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
@@ -685,7 +685,7 @@ func Test_convertErrorToFailure_ServerError(t *testing.T) {
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var serverErr *ServerError
 	require.True(errors.As(err2, &serverErr))
-	require.Equal(err.Error(), serverErr.Error())
+	require.Equal("message: cool error (type: coolError, retryable: true)", serverErr.Error())
 	require.Equal(err.nonRetryable, serverErr.nonRetryable)
 }
 
@@ -695,7 +695,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("activity task error (scheduledEventID: 8, startedEventID: 22, identity: alex): app err", f.GetMessage())
+	require.Equal("activity error", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
 	require.Equal(int64(22), f.GetActivityFailureInfo().GetStartedEventId())
 	require.Equal("alex", f.GetActivityFailureInfo().GetIdentity())
@@ -722,7 +722,7 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	f := convertErrorToFailure(err, converter.GetDefaultDataConverter())
-	require.Equal("child workflow execution error (workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22, workflowType: wfType): app err", f.GetMessage())
+	require.Equal("child workflow execution error", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
@@ -748,7 +748,7 @@ func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	err2 := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var coolErr *ApplicationError
 	require.True(errors.As(err2, &coolErr))
-	require.Equal(err.Error(), coolErr.Error())
+	require.Equal("cool error (type: coolError, retryable: true)", coolErr.Error())
 	require.Equal("coolError", coolErr.Type())
 }
 
@@ -796,7 +796,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	err = convertFailureToError(f, converter.GetDefaultDataConverter())
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
-	require.Equal("message", applicationErr.Error())
+	require.Equal("message (type: MyCoolType, retryable: false): cause message (type: UnknownType, retryable: true)", applicationErr.Error())
 	require.Equal("MyCoolType", applicationErr.Type())
 	require.Equal(true, applicationErr.NonRetryable())
 	var str string
@@ -807,7 +807,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 
 	err = errors.Unwrap(err)
 	require.True(errors.As(err, &applicationErr))
-	require.Equal("cause message", applicationErr.Error())
+	require.Equal("cause message (type: UnknownType, retryable: true)", applicationErr.Error())
 	require.Equal("UnknownType", applicationErr.Type())
 	require.Equal(false, applicationErr.NonRetryable())
 
@@ -836,7 +836,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	err = convertFailureToError(f, converter.GetDefaultDataConverter())
 	var coolErr *ApplicationError
 	require.True(errors.As(err, &coolErr))
-	require.Equal("message", coolErr.Error())
+	require.Equal("message (type: CoolError, retryable: true)", coolErr.Error())
 	require.Equal("CoolError", coolErr.Type())
 	require.Equal(false, coolErr.NonRetryable())
 }
@@ -866,8 +866,9 @@ func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	require := require.New(t)
 	f := &failurepb.Failure{
+		Message: "timeout",
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
-			TimeoutType:          enumspb.TIMEOUT_TYPE_HEARTBEAT,
+			TimeoutType:          enumspb.TIMEOUT_TYPE_START_TO_CLOSE,
 			LastHeartbeatDetails: nil,
 		}},
 	}
@@ -875,8 +876,8 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	err := convertFailureToError(f, converter.GetDefaultDataConverter())
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	require.Equal("TimeoutType: Heartbeat, Cause: <nil>", timeoutErr.Error())
-	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+	require.Equal("timeout (type: StartToClose)", timeoutErr.Error())
+	require.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 }
 
 func Test_convertFailureToError_ServerFailure(t *testing.T) {
@@ -923,7 +924,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
 	require.NotNil(applicationErr.originalFailure)
-	applicationErr.message = "errors are immutable, message can't be changed"
+	applicationErr.msg = "errors are immutable, message can't be changed"
 	applicationErr.errType = "ApplicationError (is ignored)"
 	applicationErr.nonRetryable = false
 
