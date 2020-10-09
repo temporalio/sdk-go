@@ -26,42 +26,50 @@ package internal
 
 import (
 	"context"
+	"errors"
 
 	"github.com/opentracing/opentracing-go"
-	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
 
+const (
+	tracerHeaderKey = "_tracer-data"
+)
+
 type tracingReader struct {
-	reader HeaderReader
+	tracerData map[string]string
 }
 
 // This is important requirement for t.tracer.Extract to work.
-var _ opentracing.TextMapReader = (*tracingReader)(nil)
+var _ opentracing.TextMapReader = tracingReader{}
 
 func (t tracingReader) ForeachKey(handler func(key, val string) error) error {
-	return t.reader.ForEachKey(func(k string, v *commonpb.Payload) error {
-		var decodedValue string
-		err := converter.GetDefaultDataConverter().FromPayload(v, &decodedValue)
+	if t.tracerData == nil {
+		return errors.New("tracerData is not set")
+	}
+
+	for key, val := range t.tracerData {
+		err := handler(key, val)
 		if err != nil {
 			return err
 		}
-		return handler(k, decodedValue)
-	})
+	}
+	return nil
 }
 
 type tracingWriter struct {
-	writer HeaderWriter
+	tracerData map[string]string
 }
 
 // This is important requirement for t.tracer.Inject to work.
-var _ opentracing.TextMapWriter = (*tracingWriter)(nil)
+var _ opentracing.TextMapWriter = tracingWriter{}
 
 func (t tracingWriter) Set(key, val string) {
-	encodedValue, _ := converter.GetDefaultDataConverter().ToPayload(val)
-	t.writer.Set(key, encodedValue)
+	if t.tracerData != nil {
+		t.tracerData[key] = val
+	}
 }
 
 // tracingContextPropagator implements the ContextPropagator interface for
@@ -95,16 +103,16 @@ func (t *tracingContextPropagator) Inject(
 	if span == nil {
 		return nil
 	}
-	return t.tracer.Inject(span.Context(), opentracing.TextMap, tracingWriter{hw})
+
+	return t.writeSpanContextToHeader(span.Context(), hw)
 }
 
 func (t *tracingContextPropagator) Extract(
 	ctx context.Context,
 	hr HeaderReader,
 ) (context.Context, error) {
-	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{hr})
-	if err != nil {
-		// did not find a tracing span, just return the current context
+	spanContext := t.readSpanContextFromHeader(hr)
+	if spanContext == nil {
 		return ctx, nil
 	}
 	return context.WithValue(ctx, activeSpanContextKey, spanContext), nil
@@ -119,17 +127,54 @@ func (t *tracingContextPropagator) InjectFromWorkflow(
 	if spanContext == nil {
 		return nil
 	}
-	return t.tracer.Inject(spanContext, opentracing.TextMap, tracingWriter{hw})
+
+	return t.writeSpanContextToHeader(spanContext, hw)
 }
 
 func (t *tracingContextPropagator) ExtractToWorkflow(
 	ctx Context,
 	hr HeaderReader,
 ) (Context, error) {
-	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{hr})
-	if err != nil {
-		// did not find a tracing span, just return the current context
+	spanContext := t.readSpanContextFromHeader(hr)
+	if spanContext == nil {
 		return ctx, nil
 	}
 	return contextWithSpan(ctx, spanContext), nil
+}
+
+func (t *tracingContextPropagator) writeSpanContextToHeader(spanContext opentracing.SpanContext, hw HeaderWriter) error {
+	tracerData := make(map[string]string)
+
+	err := t.tracer.Inject(spanContext, opentracing.TextMap, tracingWriter{tracerData})
+	if err != nil {
+		return err
+	}
+
+	tracerPayload, err := converter.GetDefaultDataConverter().ToPayload(tracerData)
+	if err != nil {
+		return err
+	}
+
+	hw.Set(tracerHeaderKey, tracerPayload)
+	return nil
+}
+
+func (t *tracingContextPropagator) readSpanContextFromHeader(hr HeaderReader) opentracing.SpanContext {
+	tracerPayload, tracerExist := hr.Get(tracerHeaderKey)
+	if !tracerExist {
+		return nil
+	}
+
+	var tracerData map[string]string
+	err := converter.GetDefaultDataConverter().FromPayload(tracerPayload, &tracerData)
+	if err != nil {
+		return nil
+	}
+
+	spanContext, err := t.tracer.Extract(opentracing.TextMap, tracingReader{tracerData})
+	if err != nil {
+		return nil
+	}
+
+	return spanContext
 }

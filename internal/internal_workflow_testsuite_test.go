@@ -66,7 +66,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.header = &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
-	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
+	s.contextPropagators = []ContextPropagator{NewKeysPropagator([]string{"test"})}
 }
 
 func TestUnitTestSuite(t *testing.T) {
@@ -408,15 +408,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 		return "", errors.New("value not found from ctx")
 	}
 
-	s.SetHeader(&commonpb.Header{
+	env := s.NewTestActivityEnvironment()
+	env.SetHeader(&commonpb.Header{
 		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
-	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activityWithUserContext)
-	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	blob, err := env.ExecuteActivity(activityWithUserContext)
 	s.NoError(err)
 	var value string
@@ -1650,14 +1650,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 		return nil
 	}
 
-	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	s.SetHeader(&commonpb.Header{
+	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
 		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
-	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(testWorkflowContext)
 
@@ -1694,16 +1694,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
 		return nil
 	}
 
-	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	testPayload, err := converter.GetDefaultDataConverter().ToPayload("test-data")
-	s.NoError(err)
-
-	s.SetHeader(&commonpb.Header{
-		Fields: map[string]*commonpb.Payload{
-			testHeader: testPayload},
-	})
-
 	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data")},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterWorkflow(childWorkflowFn)
 	env.ExecuteWorkflow(workflowFn)

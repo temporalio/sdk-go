@@ -106,7 +106,7 @@ func encodeString(t *testing.T, s string) *commonpb.Payload {
 	return p
 }
 
-func TestHeaderReader(t *testing.T) {
+func TestHeaderReader_ForEachKey(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
@@ -156,4 +156,63 @@ func TestHeaderReader(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHeaderReader_Get(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		header       *commonpb.Header
+		key          string
+		headerExists bool
+	}{
+		{
+			"valid key",
+			&commonpb.Header{
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
+				},
+			},
+			"key1",
+			true,
+		},
+		{
+			"invalid key",
+			&commonpb.Header{
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString(t, "val1"),
+					"key2": encodeString(t, "val2"),
+				},
+			},
+			"key3",
+			false,
+		},
+		{
+			"nil fields",
+			&commonpb.Header{},
+			"key1",
+			false,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			reader := NewHeaderReader(test.header)
+			_, headerExist := reader.Get(test.key)
+			if test.headerExists {
+				assert.True(t, headerExist)
+			} else {
+				assert.False(t, headerExist)
+			}
+		})
+	}
+
+	t.Run("nil panic", func(t *testing.T) {
+		reader := NewHeaderReader(nil)
+		assert.Panics(t, func() { reader.Get("") })
+	})
+
 }

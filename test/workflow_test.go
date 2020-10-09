@@ -674,7 +674,7 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 
 func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
-	ctx = workflow.WithValue(ctx, contextKey(testContextKey), "test-data-in-context")
+	ctx = workflow.WithValue(ctx, contextKey(testContextKey1), "test-data-in-context")
 	activities := Activities{}
 	var result string
 	err := workflow.ExecuteLocalActivity(ctx, activities.DuplicateStringInContext).Get(ctx, &result)
@@ -860,6 +860,51 @@ func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, e
 	return []string{activityAResult, activityBResult}, nil
 }
 
+func (w *Workflows) ContextPropagator(ctx workflow.Context, startChild bool) ([]string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var result []string
+
+	if val1 := ctx.Value(contextKey(testContextKey1)); val1 != nil {
+		if val1s, ok := val1.(string); ok {
+			result = append(result, val1s)
+		} else {
+			return nil, fmt.Errorf("%s key is not propagated to workflow", testContextKey1)
+		}
+	}
+
+	if val2 := ctx.Value(contextKey(testContextKey2)); val2 != nil {
+		if val2s, ok := val2.(string); ok {
+			result = append(result, val2s)
+		} else {
+			return nil, fmt.Errorf("%s key is not propagated to workflow", testContextKey2)
+		}
+	}
+
+	var a Activities
+	var activityResult []string
+	if err := workflow.ExecuteActivity(ctx, a.PropagateActivity).Get(ctx, &activityResult); err != nil {
+		return nil, err
+	}
+	result = append(result, activityResult...)
+
+	// Now test child workflow also.
+	if startChild {
+		ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+			WorkflowExecutionTimeout: 9 * time.Second,
+			WorkflowTaskTimeout:      5 * time.Second,
+		})
+		var childResult []string
+		if err := workflow.ExecuteChildWorkflow(ctx, w.ContextPropagator, false).Get(ctx, &childResult); err != nil {
+			return nil, err
+		}
+		for _, cr := range childResult {
+			result = append(result, "child_"+cr)
+		}
+	}
+
+	return result, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -880,6 +925,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
+	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
 	worker.RegisterWorkflow(w.IDReusePolicy)

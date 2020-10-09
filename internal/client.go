@@ -658,7 +658,8 @@ func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
 
-// checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+// checkHealth checks service health using gRPC health check:
+// https://github.com/grpc/grpc/blob/master/doc/health-checking.md
 func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
 	if options.DisableHealthCheck {
 		return nil

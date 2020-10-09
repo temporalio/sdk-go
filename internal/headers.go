@@ -37,6 +37,7 @@ type HeaderWriter interface {
 
 // HeaderReader is an interface to read information from temporal headers
 type HeaderReader interface {
+	Get(string) (*commonpb.Payload, bool)
 	ForEachKey(handler func(string, *commonpb.Payload) error) error
 }
 
@@ -74,9 +75,17 @@ func (hr *headerReader) ForEachKey(handler func(string, *commonpb.Payload) error
 	return nil
 }
 
+func (hr *headerReader) Get(key string) (*commonpb.Payload, bool) {
+	if hr.header == nil {
+		panic("headerReader.header is nil")
+	}
+	payload, ok := hr.header.Fields[key]
+	return payload, ok
+}
+
 // NewHeaderReader returns a header reader interface
 func NewHeaderReader(header *commonpb.Header) HeaderReader {
-	return &headerReader{header}
+	return &headerReader{header: header}
 }
 
 type headerWriter struct {
@@ -95,5 +104,5 @@ func NewHeaderWriter(header *commonpb.Header) HeaderWriter {
 	if header != nil && header.Fields == nil {
 		header.Fields = make(map[string]*commonpb.Payload)
 	}
-	return &headerWriter{header}
+	return &headerWriter{header: header}
 }
