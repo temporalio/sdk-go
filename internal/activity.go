@@ -106,11 +106,16 @@ type (
 		// Optional: default empty string
 		ActivityID string
 
-		// RetryPolicy specify how to retry activity if error happens.
-		// See more details about RetryPolicy on the doc for RetryPolicy.
-		// Optional: default is a server side provided retry policy. The default server side policy
-		// (which can be overridden by the dynamic config) is InitialInterval of 1 second, BackoffCoefficient of 2.0
-		// and MaximumInterval of 100 times InitialInterval. To disable retries set MaximumAttempts to 1.
+		// RetryPolicy specifies how to retry an Activity if an error occurs.
+		// More details are available at docs.temporal.io.
+		// RetryPolicy is optional. If one is not specified a default RetryPolicy is provided by the server.
+		// The default RetryPolicy provided by the server specifies:
+		// - InitialInterval of 1 second
+		// - BackoffCoefficient of 2.0
+		// - MaximumInterval of 100 x InitialInterval
+		// - MaximumAttempts of 0 (unlimited)
+		// To disable retries set MaximumAttempts to 1.
+		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
 	}
 
