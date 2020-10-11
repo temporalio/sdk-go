@@ -41,7 +41,7 @@ type (
 
 func newRequestScope(scope tally.Scope, method string, isLongPoll bool) *requestScope {
 	scopeName := convertMethodToScope(method)
-	subScope := scope.SubScope(scopeName)
+	subScope := getMetricsScopeForOperation(scope, scopeName)
 
 	return &requestScope{
 		scope:      subScope,
@@ -77,5 +77,5 @@ func (rs *requestScope) recordEnd(err error) {
 func convertMethodToScope(method string) string {
 	// method is something like "/temporal.api.workflowservice.v1.WorkflowService/RegisterNamespace"
 	methodStart := strings.LastIndex(method, "/") + 1
-	return TemporalMetricsPrefix + method[methodStart:]
+	return method[methodStart:]
 }

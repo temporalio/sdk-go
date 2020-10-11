@@ -70,7 +70,7 @@ type (
 		namespace          string
 		registry           *registry
 		logger             log.Logger
-		metricsScope       *metrics.TaggedScope
+		metricsScope       tally.Scope
 		identity           string
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -225,7 +225,9 @@ func (wc *WorkflowClient) StartWorkflow(
 	// Start creating workflow request.
 	err = backoff.Retry(ctx,
 		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)))
+			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+				metrics.GetMetricsScopeForRPC(wc.metricsScope, workflowType.Name,
+					metrics.NoneTagValue, options.TaskQueue)))
 			defer cancel()
 
 			var err1 error
@@ -272,8 +274,8 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		fnName, _ := getWorkflowFunctionName(wc.registry, workflow)
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, fnName)
-		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
+		rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, fnName, metrics.NoneTagValue, options.TaskQueue)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
 	return &workflowRunImpl{
@@ -414,8 +416,8 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		requestScope := wc.metricsScope.GetTaggedScope(tagTaskQueue, options.TaskQueue, tagWorkflowType, workflowType.Name)
-		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, requestScope)
+		rpcScope := metrics.GetMetricsScopeForRPC(wc.metricsScope, workflowType.Name, metrics.NoneTagValue, options.TaskQueue)
+		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
 	return &workflowRunImpl{
@@ -499,7 +501,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	runID string,
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
-	requestMetricsScope tally.Scope,
+	rpcMetricsScope tally.Scope,
 ) HistoryEventIterator {
 	namespace := wc.namespace
 	paginate := func(nextToken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
@@ -523,7 +525,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 				func() error {
 					var err1 error
 					grpcCtx, cancel := newGRPCContext(ctx,
-						grpcMetricsScope(requestMetricsScope),
+						grpcMetricsScope(rpcMetricsScope),
 						grpcLongPoll(isLongPoll),
 						func(builder *grpcContextBuilder) {
 							if isLongPoll {
@@ -629,7 +631,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.identity, taskToken, data)
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsScope, wc.identity, taskToken, data)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -639,7 +641,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, namespace, workflowID, runID, activityID, data)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsScope, wc.identity, namespace, workflowID, runID, activityID, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
@@ -1149,7 +1151,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
-		err = NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
+		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
 		workflowRun.currentRunID = attributes.GetNewExecutionRunId()

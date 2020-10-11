@@ -29,8 +29,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gogo/protobuf/proto"
+	gogoproto "github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/internal/common/util"
 )
@@ -46,13 +47,32 @@ func NewProtoPayloadConverter() *ProtoPayloadConverter {
 
 // ToPayload converts single proto value to payload.
 func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	if valueProto, ok := value.(proto.Marshaler); ok {
-		data, err := valueProto.Marshal()
+	// Proto golang structs might be generated with 4 different protoc plugin versions:
+	//   1. github.com/golang/protobuf - ~v1.3.5 is the most recent pre-APIv2 version of APIv1.
+	//   2. github.com/golang/protobuf - ^v1.4.0 is a version of APIv1 implemented in terms of APIv2.
+	//   3. google.golang.org/protobuf - ^v1.20.0 is APIv2.
+	//   4. github.com/gogo/protobuf - any version.
+	// Case 1 is not supported.
+	// Cases 2 and 3 implements proto.Message and are the same in this context.
+	// Case 4 implements gogoproto.Message.
+	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
+
+	if valueProto, ok := value.(proto.Message); ok {
+		byteSlice, err := proto.Marshal(valueProto)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+		}
+		return newPayload(byteSlice, c), nil
+	}
+
+	if valueGogoProto, ok := value.(gogoproto.Marshaler); ok {
+		data, err := valueGogoProto.Marshal()
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 		}
 		return newPayload(data, c), nil
 	}
+
 	return nil, nil
 }
 
@@ -63,21 +83,36 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
+	if value.Kind() != reflect.Ptr {
+		return ErrValueIsNotPointer
+	}
+
 	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
-	protoUnmarshaler, ok := protoValue.(proto.Unmarshaler)
-	if !ok {
+	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Unmarshaler)
+	protoMessage, isProtoMessage := protoValue.(proto.Message)
+	if !isGogoProtoMessage && !isProtoMessage {
 		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueDoesntImplementProtoUnmarshaler)
 	}
 
 	// If nil is passed create new instance
 	if util.IsInterfaceNil(protoValue) {
-		protoType := value.Type().Elem()                                 // i.e. commonpb.WorkflowType
-		newProtoValue := reflect.New(protoType)                          // is of type i.e. *commonpb.WorkflowType
-		protoUnmarshaler = newProtoValue.Interface().(proto.Unmarshaler) // type assertion will always succeed
-		value.Set(newProtoValue)                                         // Set newly created value back to passed valuePtr
+		protoType := value.Type().Elem()        // i.e. commonpb.WorkflowType
+		newProtoValue := reflect.New(protoType) // is of type i.e. *commonpb.WorkflowType
+		if isProtoMessage {
+			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion will always succeed
+		} else if isGogoProtoMessage {
+			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Unmarshaler) // type assertion will always succeed
+		}
+		value.Set(newProtoValue) // set newly created value back to passed valuePtr
 	}
 
-	err := protoUnmarshaler.Unmarshal(payload.GetData())
+	var err error
+	if isProtoMessage {
+		err = proto.Unmarshal(payload.GetData(), protoMessage)
+	} else if isGogoProtoMessage {
+		err = gogoProtoMessage.Unmarshal(payload.GetData())
+	}
+
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
 	}
@@ -87,7 +122,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 // ToString converts payload object into human readable string.
 func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
-	// We can't do anything beter here.
+	// We can't do anything better here.
 	return base64.RawStdEncoding.EncodeToString(payload.GetData())
 }
 

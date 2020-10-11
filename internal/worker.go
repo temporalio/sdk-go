@@ -83,12 +83,6 @@ type (
 		// default: defaultMaxConcurrentTaskExecutionSize(1k)
 		MaxConcurrentWorkflowTaskExecutionSize int
 
-		// Optional: Sets the rate limiting on number of workflow tasks that can be executed per second per
-		// worker. This can be used to limit resources used by the worker.
-		// The zero value of this uses the default value.
-		// default: 100k
-		WorkerWorkflowTasksPerSecond float64
-
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve workflow tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.

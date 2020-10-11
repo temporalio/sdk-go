@@ -74,7 +74,9 @@ const (
 	ctxTimeout                    = 15 * time.Second
 	namespace                     = "integration-test-namespace"
 	namespaceCacheRefreshInterval = 20 * time.Second
-	testContextKey                = "test-context-key"
+	testContextKey1               = "test-context-key1"
+	testContextKey2               = "test-context-key2"
+	testContextKey3               = "test-context-key3"
 )
 
 func TestIntegrationSuite(t *testing.T) {
@@ -123,11 +125,14 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	ts.client, err = client.NewClient(client.Options{
-		HostPort:           ts.config.ServiceAddr,
-		Namespace:          namespace,
-		Logger:             ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{NewStringMapPropagator([]string{testContextKey})},
-		MetricsScope:       metricsScope,
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ContextPropagators: []workflow.ContextPropagator{
+			NewKeysPropagator([]string{testContextKey1}),
+			NewKeysPropagator([]string{testContextKey2}),
+		},
+		MetricsScope: metricsScope,
 	})
 	ts.NoError(err)
 
@@ -166,11 +171,9 @@ func (ts *IntegrationTestSuite) TestBasic() {
 		ts.tracer.GetTrace("Basic"))
 
 	ts.assertMetricsCounters(
-		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_request", 5,
 		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
-		"temporal_PollActivityTaskQueue.temporal_long_request", 3,
-		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+		"temporal_long_request", 7,
 	)
 }
 
@@ -181,11 +184,9 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.EqualValues(expected, ts.activities.invoked())
 
 	ts.assertMetricsCounters(
-		"temporal_StartWorkflowExecution.temporal_request", 1,
+		"temporal_request", 7,
 		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_RespondWorkflowTaskCompleted.temporal_request", 1,
-		"temporal_PollActivityTaskQueue.temporal_long_request", 4,
-		"temporal_PollWorkflowTaskQueue.temporal_long_request", 3,
+		"temporal_long_request", 8,
 	)
 }
 
@@ -366,7 +367,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("Workflow execution already started", applicationErr.Error())
+	ts.Equal("workflow execution already started", applicationErr.Error())
 	ts.False(applicationErr.NonRetryable())
 }
 
@@ -385,7 +386,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("Workflow execution already started", applicationErr.Error())
+	ts.Equal("workflow execution already started", applicationErr.Error())
 	ts.False(applicationErr.NonRetryable())
 }
 
@@ -640,6 +641,22 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	ts.EqualValues([]string{"activityA completed", "activityB completed"}, result)
 }
 
+func (ts *IntegrationTestSuite) TestContextPropagator() {
+	var propagatedValues []string
+	ctx := context.Background()
+	// Propagate values using different context propagators.
+	ctx = context.WithValue(ctx, contextKey(testContextKey1), "propagatedValue1")
+	ctx = context.WithValue(ctx, contextKey(testContextKey2), "propagatedValue2")
+	ctx = context.WithValue(ctx, contextKey(testContextKey3), "non-propagatedValue")
+	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-context-propagator"), ts.workflows.ContextPropagator, &propagatedValues, true)
+	ts.NoError(err)
+	// One copy from workflow and one copy from activity * 2 for child workflow
+	ts.EqualValues([]string{
+		"propagatedValue1", "propagatedValue2", "activity_propagatedValue1", "activity_propagatedValue2",
+		"child_propagatedValue1", "child_propagatedValue2", "child_activity_propagatedValue1", "child_activity_propagatedValue2",
+	}, propagatedValues)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -675,13 +692,16 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	options := ts.startWorkflowOptions(wfID)
-	return ts.executeWorkflowWithOption(options, wfFunc, retValPtr, args...)
+	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
 }
-
 func (ts *IntegrationTestSuite) executeWorkflowWithOption(
 	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
+}
+
+func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
+	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
 	if err != nil {

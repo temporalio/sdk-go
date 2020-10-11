@@ -534,7 +534,8 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Namespace = DefaultNamespace
 	}
 
-	options.MetricsScope = tagScope(options.MetricsScope, tagNamespace, options.Namespace, clientImplHeaderName, clientImplHeaderValue)
+	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
+	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, options.Namespace)
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -592,7 +593,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
 		registry:           newRegistry(),
-		metricsScope:       metrics.NewTaggedScope(options.MetricsScope),
+		metricsScope:       options.MetricsScope,
 		logger:             options.Logger,
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
@@ -603,7 +604,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
-	options.MetricsScope = tagScope(options.MetricsScope, clientImplHeaderName, clientImplHeaderValue)
+	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
+	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, metrics.NoneTagValue)
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -656,7 +658,8 @@ func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
 
-// checkHealth checks service health using gRPC health check: // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+// checkHealth checks service health using gRPC health check:
+// https://github.com/grpc/grpc/blob/master/doc/health-checking.md
 func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
 	if options.DisableHealthCheck {
 		return nil

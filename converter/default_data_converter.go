@@ -28,10 +28,11 @@ var (
 	defaultDataConverter = NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
-		// Only one proto converter should be used.
-		// Although they check for different interfaces (proto.Message and proto.Marshaler) all proto messages implements both interfaces.
+
+		// Only one proto converter (JSON or regular) should be used because they check for the same proto.Message interface.
 		NewProtoJSONPayloadConverter(),
 		// NewProtoPayloadConverter(),
+
 		NewJSONPayloadConverter(),
 	)
 )

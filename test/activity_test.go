@@ -73,6 +73,7 @@ func LocalSleep(_ context.Context, delay time.Duration) error {
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
 	a.append("heartbeatAndSleep")
+	activity.GetLogger(ctx).Info("Running HeartbeatAndSleep activity")
 	if activity.HasHeartbeatDetails(ctx) {
 		var prev int
 		if err := activity.GetHeartbeatDetails(ctx, &prev); err == nil {
@@ -117,7 +118,7 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 }
 
 func (a *Activities) DuplicateStringInContext(ctx context.Context) (string, error) {
-	originalString := ctx.Value(contextKey(testContextKey))
+	originalString := ctx.Value(contextKey(testContextKey1))
 	if originalString == nil {
 		return "", fmt.Errorf("context did not propagate to activity")
 	}
@@ -174,6 +175,28 @@ func (a *Activities) GetMemoAndSearchAttr(_ context.Context, memo, searchAttr st
 func (a *Activities) AsyncComplete(ctx context.Context, input string) error {
 	a.append("asyncComplete")
 	return activity.ErrResultPending
+}
+
+func (a *Activities) PropagateActivity(ctx context.Context) ([]string, error) {
+	var result []string
+
+	if val1 := ctx.Value(contextKey(testContextKey1)); val1 != nil {
+		if val1s, ok := val1.(string); ok {
+			result = append(result, "activity_"+val1s)
+		} else {
+			return nil, fmt.Errorf("%s key is not propagated to activity", testContextKey1)
+		}
+	}
+
+	if val2 := ctx.Value(contextKey(testContextKey2)); val2 != nil {
+		if val2s, ok := val2.(string); ok {
+			result = append(result, "activity_"+val2s)
+		} else {
+			return nil, fmt.Errorf("%s key is not propagated to activity", testContextKey2)
+		}
+	}
+
+	return result, nil
 }
 
 func (a *Activities) register(worker worker.Worker) {

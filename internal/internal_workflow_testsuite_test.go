@@ -66,7 +66,7 @@ func (s *WorkflowTestSuiteUnitTest) SetupSuite() {
 	s.header = &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{"test": encodeString(s.T(), "test-data")},
 	}
-	s.contextPropagators = []ContextPropagator{NewStringMapPropagator([]string{"test"})}
+	s.contextPropagators = []ContextPropagator{NewKeysPropagator([]string{"test"})}
 }
 
 func TestUnitTestSuite(t *testing.T) {
@@ -408,15 +408,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithHeaderContext() {
 		return "", errors.New("value not found from ctx")
 	}
 
-	s.SetHeader(&commonpb.Header{
+	env := s.NewTestActivityEnvironment()
+	env.SetHeader(&commonpb.Header{
 		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
-	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activityWithUserContext)
-	env.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
 	blob, err := env.ExecuteActivity(activityWithUserContext)
 	s.NoError(err)
 	var value string
@@ -1495,20 +1495,20 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.WorkflowType) (*commonpb.WorkflowType, error) {
+	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
 		actualValues = append(actualValues, wf1.Name)
-		actualValues = append(actualValues, wf2.Name)
+		actualValues = append(actualValues, wf2.EncodingType.String())
 		return &commonpb.WorkflowType{Name: "result"}, nil
 	}
 
 	input1 := commonpb.WorkflowType{Name: "input1"}
-	input2 := &commonpb.WorkflowType{Name: "input2"}
+	input2 := &commonpb.DataBlob{EncodingType: enumspb.ENCODING_TYPE_PROTO3}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
 	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
 
 	s.NoError(err)
-	s.EqualValues([]string{"input1", "input2"}, actualValues)
+	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
@@ -1650,14 +1650,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeaderContext() {
 		return nil
 	}
 
-	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	s.SetHeader(&commonpb.Header{
+	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
 		Fields: map[string]*commonpb.Payload{
 			testHeader: encodeString(s.T(), "test-data"),
 		},
 	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
 
-	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.ExecuteWorkflow(testWorkflowContext)
 
@@ -1694,16 +1694,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowContextPropagation() {
 		return nil
 	}
 
-	s.SetContextPropagators([]ContextPropagator{NewStringMapPropagator([]string{testHeader})})
-	testPayload, err := converter.GetDefaultDataConverter().ToPayload("test-data")
-	s.NoError(err)
-
-	s.SetHeader(&commonpb.Header{
-		Fields: map[string]*commonpb.Payload{
-			testHeader: testPayload},
-	})
-
 	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data")},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterWorkflow(childWorkflowFn)
 	env.ExecuteWorkflow(workflowFn)
@@ -3035,7 +3032,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
 		count++
-		return NewTimeoutError(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
+		return NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil, testErrorDetails1)
 	}
 
 	timeoutWf := func(ctx Context) error {

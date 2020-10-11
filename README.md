@@ -1,4 +1,4 @@
-# Temporal Go SDK [![Build Status](https://badge.buildkite.com/ce6df3b1a8b375270261ae70fb2d2756af298fef3a0dac4d20.svg?theme=github&branch=master)](https://buildkite.com/temporal/temporal-go-client) [![Coverage Status](https://coveralls.io/repos/github/temporalio/temporal-go-sdk/badge.svg?branch=master)](https://coveralls.io/github/temporalio/temporal-go-sdk?branch=master) [![GoDoc](https://pkg.go.dev/go.temporal.io/sdk?status.svg)](https://pkg.go.dev/go.temporal.io/sdk)
+# Temporal Go SDK [![Build Status](https://badge.buildkite.com/ce6df3b1a8b375270261ae70fb2d2756af298fef3a0dac4d20.svg?theme=github&branch=master)](https://buildkite.com/temporal/temporal-go-client) [![Coverage Status](https://coveralls.io/repos/github/temporalio/temporal-go-sdk/badge.svg?branch=master)](https://coveralls.io/github/temporalio/temporal-go-sdk?branch=master) [![PkgGoDev](https://pkg.go.dev/badge/go.temporal.io/sdk)](https://pkg.go.dev/go.temporal.io/sdk)
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
@@ -9,7 +9,7 @@
 Clone this repo into the preferred location.
 
 ```bash
-git clone git@github.com:temporalio/go-sdk.git
+git clone git@github.com:temporalio/sdk-go.git
 ```
 
 or
@@ -18,7 +18,7 @@ or
 go get -u go.temporal.io/sdk
 ```
 
-See [samples](https://github.com/temporalio/temporal-go-samples) to get started. 
+See [samples](https://github.com/temporalio/samples-go) to get started. 
 
 Documentation is available [here](https://docs.temporal.io/docs/go-quick-start). 
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
@@ -41,7 +41,7 @@ func main() {
 }
 ```
 
-Most of the popular logging solutions have existing adapters in logur. If you're curious about which adapters are available, here is a helpful link: https://github.com/logur?q=adapter-&type=&language=
+Most of the popular logging solutions have existing adapters in logur. If you're curious about which adapters are available, here is a helpful [link](https://github.com/logur?q=adapter-).
 
 ## Contributing
 We'd love your help in making the Temporal Go SDK great. Please review our [contribution guidelines](CONTRIBUTING.md).

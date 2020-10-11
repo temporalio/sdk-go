@@ -33,6 +33,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -41,7 +42,6 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	iconverter "go.temporal.io/sdk/internal/converter"
 )
@@ -68,25 +68,21 @@ type (
 	}
 )
 
-// stringMapPropagator propagates the list of keys across a workflow,
+// keysPropagator propagates the list of keys across a workflow,
 // interpreting the payloads as strings.
-type stringMapPropagator struct {
-	keys map[string]struct{}
+type keysPropagator struct {
+	keys []string
 }
 
-// NewStringMapPropagator returns a context propagator that propagates a set of
+// NewKeysPropagator returns a context propagator that propagates a set of
 // string key-value pairs across a workflow
-func NewStringMapPropagator(keys []string) ContextPropagator {
-	keyMap := make(map[string]struct{}, len(keys))
-	for _, key := range keys {
-		keyMap[key] = struct{}{}
-	}
-	return &stringMapPropagator{keyMap}
+func NewKeysPropagator(keys []string) ContextPropagator {
+	return &keysPropagator{keys}
 }
 
 // Inject injects values from context into headers for propagation
-func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) error {
-	for key := range s.keys {
+func (s *keysPropagator) Inject(ctx context.Context, writer HeaderWriter) error {
+	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
@@ -101,8 +97,8 @@ func (s *stringMapPropagator) Inject(ctx context.Context, writer HeaderWriter) e
 }
 
 // InjectFromWorkflow injects values from context into headers for propagation
-func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWriter) error {
-	for key := range s.keys {
+func (s *keysPropagator) InjectFromWorkflow(ctx Context, writer HeaderWriter) error {
+	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
 			return fmt.Errorf("unable to extract key from context %v", key)
@@ -117,37 +113,37 @@ func (s *stringMapPropagator) InjectFromWorkflow(ctx Context, writer HeaderWrite
 }
 
 // Extract extracts values from headers and puts them into context
-func (s *stringMapPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = context.WithValue(ctx, contextKey(key), decodedValue)
+func (s *keysPropagator) Extract(ctx context.Context, reader HeaderReader) (context.Context, error) {
+	for _, key := range s.keys {
+		value, ok := reader.Get(key)
+		if !ok {
+			// If key that should be propagated doesn't exist in the header, ignore the key.
+			continue
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = context.WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }
 
 // ExtractToWorkflow extracts values from headers and puts them into context
-func (s *stringMapPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
-	if err := reader.ForEachKey(func(key string, value *commonpb.Payload) error {
-		if _, ok := s.keys[key]; ok {
-			var decodedValue string
-			err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
-			if err != nil {
-				return err
-			}
-			ctx = WithValue(ctx, contextKey(key), decodedValue)
+func (s *keysPropagator) ExtractToWorkflow(ctx Context, reader HeaderReader) (Context, error) {
+	for _, key := range s.keys {
+		value, ok := reader.Get(key)
+		if !ok {
+			// If key that should be propagated doesn't exist in the header, ignore the key.
+			continue
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		var decodedValue string
+		err := converter.GetDefaultDataConverter().FromPayload(value, &decodedValue)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
 }
@@ -335,7 +331,7 @@ func (s *workflowRunSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
-	metricsScope := metrics.NewTaggedScope(nil)
+	metricsScope := tally.NoopScope
 	options := ClientOptions{
 		MetricsScope: metricsScope,
 		Identity:     identity,
@@ -739,7 +735,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.True(ok)
 	var applicationErr2 *ApplicationError
 	s.True(errors.As(err, &applicationErr2))
-	s.Equal(applicationError.message, applicationErr2.message)
+	s.Equal(applicationError.msg, applicationErr2.msg)
 	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }
@@ -1015,7 +1011,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
-		return "result"
+		panic("this is just a stub")
 	}
 
 	createResponse := &workflowservice.StartWorkflowExecutionResponse{
@@ -1025,37 +1021,6 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 
 	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
-	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
-}
-
-func (s *workflowClientTestSuite) TestStartWorkflow_WithContext() {
-	s.client = NewServiceClient(s.service, nil, ClientOptions{
-		ContextPropagators: []ContextPropagator{NewStringMapPropagator([]string{testHeader})},
-	})
-	client, ok := s.client.(*WorkflowClient)
-	s.True(ok)
-	options := StartWorkflowOptions{
-		ID:                       workflowID,
-		TaskQueue:                taskqueue,
-		WorkflowExecutionTimeout: timeoutInSeconds,
-		WorkflowTaskTimeout:      timeoutInSeconds,
-	}
-	f1 := func(ctx Context, r []byte) error {
-		value := ctx.Value(contextKey(testHeader))
-		if val, ok := value.([]byte); ok {
-			s.Equal("test-data", string(val))
-			return nil
-		}
-		return fmt.Errorf("context did not propagate to workflow")
-	}
-
-	createResponse := &workflowservice.StartWorkflowExecutionResponse{
-		RunId: runID,
-	}
-	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
-
-	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
@@ -1072,7 +1037,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 	f1 := func(ctx Context, r []byte) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	input := []byte("test")
 
@@ -1111,7 +1076,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
@@ -1145,7 +1110,7 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 		SearchAttributes:         searchAttributes,
 	}
 	wf := func(ctx Context) string {
-		return "result"
+		panic("this is just a stub")
 	}
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 

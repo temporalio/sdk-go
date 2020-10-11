@@ -34,42 +34,43 @@ import (
 )
 
 func Test_TaggedScope(t *testing.T) {
-	taggedScope, closer, reporter := NewTaggedMetricsScope()
-	scope := taggedScope.GetTaggedScope("tag1", "val1")
-	scope.Counter("test-name").Inc(3)
+	scope, closer, reporter := NewTaggedMetricsScope()
+	taggedScope := TagScope(scope, "tag1", "val1")
+	taggedScope.Counter("test-name").Inc(3)
 	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 	require.Equal(t, int64(3), reporter.Counts()[0].Value())
 
-	taggedScope, closer, reporter = NewTaggedMetricsScope()
-	scope = taggedScope.GetTaggedScope("tag2", "val1")
-	scope.Counter("test-name").Inc(2)
+	scope, closer, reporter = NewTaggedMetricsScope()
+	taggedScope = TagScope(scope, "tag2", "val1")
+	taggedScope.Counter("test-name").Inc(2)
 
-	scope2 := taggedScope.GetTaggedScope("tag2", "val1")
-	scope2.Counter("test-name").Inc(1)
+	taggedScope2 := TagScope(scope, "tag2", "val1")
+	taggedScope2.Counter("test-name").Inc(1)
 	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.Counts()))
 	require.Equal(t, int64(3), reporter.Counts()[0].Value())
 }
 
 func Test_TaggedScope_WithMultiTags(t *testing.T) {
-	taggedScope, closer, reporter := newTaggedMetricsScope()
-	scope := taggedScope.GetTaggedScope("tag1", "val1", "tag2", "val2")
-	scope.Counter("test-name").Inc(3)
+	scope, closer, reporter := newTaggedMetricsScope()
+	taggedScope := TagScope(scope, "tag1", "val1", "tag2", "val2")
+	taggedScope.Counter("test-name").Inc(3)
 	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.counts))
 	require.Equal(t, int64(3), reporter.counts[0].value)
 
-	taggedScope, closer, reporter = newTaggedMetricsScope()
-	scope = taggedScope.GetTaggedScope("tag2", "val1", "tag3", "val3")
-	scope.Counter("test-name").Inc(2)
-	scope2 := taggedScope.GetTaggedScope("tag2", "val1", "tag3", "val3")
+	scope, closer, reporter = newTaggedMetricsScope()
+	taggedScope = TagScope(scope, "tag2", "val1", "tag3", "val3")
+	taggedScope.Counter("test-name").Inc(2)
+	scope2 := TagScope(scope, "tag2", "val1", "tag3", "val3")
 	scope2.Counter("test-name").Inc(1)
 	_ = closer.Close()
 	require.Equal(t, 1, len(reporter.counts))
 	require.Equal(t, int64(3), reporter.counts[0].value)
 
-	require.Panics(t, func() { taggedScope.GetTaggedScope("tag") })
+	//lint:ignore SA5012 We test exactly for this for this
+	require.Panics(t, func() { TagScope(scope, "tag") })
 }
 
 func newMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *capturingStatsReporter) {
@@ -79,8 +80,8 @@ func newMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *capturingStatsRep
 	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }
 
-func newTaggedMetricsScope() (*TaggedScope, io.Closer, *capturingStatsReporter) {
+func newTaggedMetricsScope() (tally.Scope, io.Closer, *capturingStatsReporter) {
 	isReplay := false
 	scope, closer, reporter := newMetricsScope(&isReplay)
-	return &TaggedScope{Scope: scope}, closer, reporter
+	return scope, closer, reporter
 }

@@ -1853,7 +1853,6 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
 		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
 		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
-		WorkerWorkflowTasksPerSecond:          defaultWorkerTaskExecutionRate,
 		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
@@ -1899,7 +1898,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		MaxConcurrentWorkflowTaskPollers:        11,
 		MaxConcurrentActivityTaskPollers:        12,
 		WorkerLocalActivitiesPerSecond:          222,
-		WorkerWorkflowTasksPerSecond:            111,
 		WorkerActivitiesPerSecond:               99,
 		StickyScheduleToStartTimeout:            555 * time.Minute,
 		BackgroundActivityContext:               context.Background(),
@@ -1918,7 +1916,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		ConcurrentActivityExecutionSize:       options.MaxConcurrentActivityExecutionSize,
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
-		WorkerWorkflowTasksPerSecond:          options.WorkerWorkflowTasksPerSecond,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
@@ -1945,7 +1942,6 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
 	require.Equal(t, paramsA.ConcurrentWorkflowTaskExecutionSize, paramsB.ConcurrentWorkflowTaskExecutionSize)
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
-	require.Equal(t, paramsA.WorkerWorkflowTasksPerSecond, paramsB.WorkerWorkflowTasksPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
 	require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)

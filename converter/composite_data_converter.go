@@ -41,7 +41,7 @@ type (
 // NewCompositeDataConverter creates new instance of CompositeDataConverter from ordered list of PayloadConverters.
 // Order is important here because during serialization DataConverter will try PayloadsConverters in
 // that order until PayloadConverter returns non nil payload.
-// Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it),
+// Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it).
 func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
 	dc := &CompositeDataConverter{
 		payloadConverters: make(map[string]PayloadConverter, len(payloadConverters)),

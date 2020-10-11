@@ -57,7 +57,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -146,9 +145,6 @@ type (
 		// Defines how many concurrent workflow task executions by this worker.
 		ConcurrentWorkflowTaskExecutionSize int
 
-		// Defines rate limiting on number of workflow tasks that can be executed per second per worker.
-		WorkerWorkflowTasksPerSecond float64
-
 		// MaxConcurrentWorkflowTaskQueuePollers is the max number of pollers for workflow task queue.
 		MaxConcurrentWorkflowTaskQueuePollers int
 
@@ -233,7 +229,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 // It returns an error, if the server returns an EntityNotExist or BadRequest error
 // On any other transient error, this method will just return success
-func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, namespace string, logger log.Logger) error {
+func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
 	ctx := context.Background()
 	descNamespaceOp := func() error {
 		grpcCtx, cancel := newGRPCContext(ctx)
@@ -283,7 +279,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 		pollerCount:       params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:        defaultPollerRate,
 		maxConcurrentTask: params.ConcurrentWorkflowTaskExecutionSize,
-		maxTaskPerSecond:  params.WorkerWorkflowTasksPerSecond,
+		maxTaskPerSecond:  defaultWorkerTaskExecutionRate,
 		taskWorker:        poller,
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
@@ -332,7 +328,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.Namespace, ww.worker.logger)
+	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsScope, ww.executionParameters.Namespace, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -441,7 +437,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.Namespace, aw.worker.logger)
+	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsScope, aw.executionParameters.Namespace, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -1254,7 +1250,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
-		WorkerWorkflowTasksPerSecond:          options.WorkerWorkflowTasksPerSecond,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
 		MetricsScope:                          client.metricsScope,
@@ -1316,22 +1311,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		registry:       registry,
 		stopC:          make(chan struct{}),
 	}
-}
-
-// tagScope with one or multiple tags, like
-// tagScope(scope, tag1, val1, tag2, val2)
-func tagScope(metricsScope tally.Scope, keyValuePairs ...string) tally.Scope {
-	if metricsScope == nil {
-		metricsScope = tally.NoopScope
-	}
-	if len(keyValuePairs)%2 != 0 {
-		panic("tagScope key value are not in pairs")
-	}
-	tagsMap := map[string]string{}
-	for i := 0; i < len(keyValuePairs); i += 2 {
-		tagsMap[keyValuePairs[i]] = keyValuePairs[i+1]
-	}
-	return metricsScope.Tagged(tagsMap)
 }
 
 func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
@@ -1432,9 +1411,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.MaxConcurrentWorkflowTaskExecutionSize == 0 {
 		options.MaxConcurrentWorkflowTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
 	}
-	if options.WorkerWorkflowTasksPerSecond == 0 {
-		options.WorkerWorkflowTasksPerSecond = defaultWorkerTaskExecutionRate
-	}
 	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
 		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
 	}
@@ -1467,7 +1443,7 @@ func setClientDefaults(client *WorkflowClient) {
 		client.tracer = opentracing.NoopTracer{}
 	}
 	if client.metricsScope == nil {
-		client.metricsScope = metrics.NewTaggedScope(tally.NoopScope)
+		client.metricsScope = tally.NoopScope
 	}
 }
 
