@@ -271,7 +271,8 @@ pattern, extra care needs to be taken to ensure the child workflow is started be
 
 	cwo := workflow.ChildWorkflowOptions{
 		// Do not terminate when parent closes.
-		ParentClosePolicy: client.ParentClosePolicyAbandon,
+		// assumes import enumspb "go.temporal.io/api/enums/v1"
+		ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
