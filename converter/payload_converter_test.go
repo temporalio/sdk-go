@@ -174,5 +174,5 @@ func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
 	wt2 := commonpb.WorkflowType{} // Note: there is no &
 	err = pc.FromPayload(payload, &wt2)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValueIsNotPointer))
+	assert.True(t, errors.Is(err, ErrProtoStructIsNotPointer))
 }

@@ -92,14 +92,14 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	}
 
 	if value.Kind() != reflect.Ptr {
-		return ErrValueIsNotPointer
+		return ErrProtoStructIsNotPointer
 	}
 
 	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueDoesntImplementProtoMessage)
+		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueNotImplementProtoMessage)
 	}
 
 	// If nil is passed create new instance

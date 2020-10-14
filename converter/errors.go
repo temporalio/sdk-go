@@ -43,10 +43,10 @@ var (
 	ErrUnableToSetValue = errors.New("unable to set value")
 	// ErrUnableToFindConverter is returned when unable to find converter.
 	ErrUnableToFindConverter = errors.New("unable to find converter")
-	// ErrValueDoesntImplementProtoMessage is returned when value doesn't implement proto.Message.
-	ErrValueDoesntImplementProtoMessage = errors.New("value doesn't implement proto.Message")
-	// ErrValueDoesntImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
-	ErrValueDoesntImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
-	// ErrValueIsNotPointer is returned when value is not a pointer.
-	ErrValueIsNotPointer = errors.New("value is not a pointer")
+	// ErrValueNotImplementProtoMessage is returned when value doesn't implement proto.Message.
+	ErrValueNotImplementProtoMessage = errors.New("value doesn't implement proto.Message")
+	// ErrValueNotImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
+	ErrValueNotImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
+	// ErrProtoStructIsNotPointer is returned when proto value is not a pointer.
+	ErrProtoStructIsNotPointer = errors.New("proto struct is not a pointer: proto serialization interface is implemented on pointer receiver only")
 )
