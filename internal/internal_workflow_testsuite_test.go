@@ -1137,6 +1137,23 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockPanic() {
 	oldLogger := s.GetLogger()
 	s.SetLogger(ilog.NewNopLogger()) // use no-op logger to avoid noisy logging by panic
 	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).Panic("mock-panic")
+	env.RegisterWorkflow(testWorkflowHello)
+	env.RegisterActivity(testActivityHello)
+	env.ExecuteWorkflow(testWorkflowHello)
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	s.Contains(err.Error(), "mock-panic")
+	env.AssertExpectations(s.T())
+	s.SetLogger(oldLogger) // restore original logger
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_MockPanicThoughRun() {
+	// mock panic, verify that the panic won't be swallowed by our panic handler to detect unexpected mock call.
+	oldLogger := s.GetLogger()
+	s.SetLogger(ilog.NewNopLogger()) // use no-op logger to avoid noisy logging by panic
+	env := s.NewTestWorkflowEnvironment()
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).
 		Return("hello_mock_panic", nil).
 		Run(func(args mock.Arguments) {
