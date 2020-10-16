@@ -1,4 +1,4 @@
-FROM golang:1.14
+FROM golang:1.15
 
 RUN mkdir -p /go/src/go.temporal.io/sdk
 WORKDIR /go/src/go.temporal.io/sdk
