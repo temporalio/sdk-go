@@ -1626,7 +1626,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 		i.lastDetailsToReport = &details
 		return nil
 	}
- 
+
 	isActivityCanceled, err := i.internalHeartBeat(details)
 
 	// If the activity is canceled, the activity can ignore the cancellation and do its work
