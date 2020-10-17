@@ -1144,7 +1144,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockPanic() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.Error(err)
-	s.Contains(err.Error(), "mock-panic")
+	var panicErr *PanicError
+	s.True(errors.As(err, &panicErr))
+	s.Equal(panicErr.Error(), "mock-panic")
 	env.AssertExpectations(s.T())
 	s.SetLogger(oldLogger) // restore original logger
 }
@@ -1165,7 +1167,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockPanicThoughRun() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.Error(err)
-	s.Contains(err.Error(), "mock-panic")
+	var panicErr *PanicError
+	s.True(errors.As(err, &panicErr))
+	s.Equal(panicErr.Error(), "mock-panic")
 	env.AssertExpectations(s.T())
 	s.SetLogger(oldLogger) // restore original logger
 }
