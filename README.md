@@ -20,7 +20,7 @@ go get -u go.temporal.io/sdk
 
 See [samples](https://github.com/temporalio/samples-go) to get started. 
 
-Documentation is available [here](https://docs.temporal.io/docs/go-quick-start). 
+Documentation is available [here](https://docs.temporal.io/docs/get-started). 
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
 
 ## Using a custom logger
