@@ -558,6 +558,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	// ensure activityFn is registered to defaultTestTaskQueue
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskQueue, env.GetDataConverter())
+	activityHandle := &testActivityHandle{callback: func(result *commonpb.Payloads, err error) {}, activityType: parameters.ActivityType.Name}
+	env.setActivityHandle(scheduleTaskAttr.GetActivityId(), activityHandle)
+
 	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
 	if err != nil {
 		if err == context.DeadlineExceeded {
