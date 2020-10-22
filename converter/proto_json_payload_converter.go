@@ -34,8 +34,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-
-	"go.temporal.io/sdk/internal/common/util"
 )
 
 // ProtoJSONPayloadConverter converts proto objects to/from JSON.
@@ -64,21 +62,28 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	// Case 4 implements gogoproto.Message.
 	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
-	if valueProto, ok := value.(proto.Message); ok {
-		byteSlice, err := protojson.Marshal(valueProto)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+	builtPointer := false
+	for {
+		if valueProto, ok := value.(proto.Message); ok {
+			byteSlice, err := protojson.Marshal(valueProto)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(byteSlice, c), nil
 		}
-		return newPayload(byteSlice, c), nil
-	}
-
-	if valueGogoProto, ok := value.(gogoproto.Message); ok {
-		var buf bytes.Buffer
-		err := c.gogoMarshaler.Marshal(&buf, valueGogoProto)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+		if valueGogoProto, ok := value.(gogoproto.Message); ok {
+			var buf bytes.Buffer
+			err := c.gogoMarshaler.Marshal(&buf, valueGogoProto)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(buf.Bytes(), c), nil
 		}
-		return newPayload(buf.Bytes(), c), nil
+		if builtPointer {
+			break
+		}
+		value = pointerTo(value)
+		builtPointer = true
 	}
 
 	return nil, nil
@@ -91,19 +96,23 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
-	if value.Kind() != reflect.Ptr {
-		return ErrProtoStructIsNotPointer
+	protoValue := value.Interface() // protoValue is of pointer type i.e. *commonpb.WorkflowType
+
+	syntheticPointer := false
+	if value.Kind() != reflect.Ptr { // protoValue is of value type i.e. commonpb.WorkflowType
+		value = valueOfPointerTo(protoValue)
+		protoValue = value.Interface() // protoValue is of pointer type now i.e. *commonpb.WorkflowType
+		syntheticPointer = true
 	}
 
-	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
 		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueNotImplementProtoMessage)
 	}
 
-	// If nil is passed create new instance
-	if util.IsInterfaceNil(protoValue) {
+	if value.IsNil() {
+		// If nil is passed create new instance
 		protoType := value.Type().Elem()        // i.e. commonpb.WorkflowType
 		newProtoValue := reflect.New(protoType) // is of type i.e. *commonpb.WorkflowType
 		if isProtoMessage {
@@ -123,6 +132,10 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)
+	}
+
+	if syntheticPointer {
+		reflect.ValueOf(valuePtr).Elem().Set(value.Elem())
 	}
 
 	return nil

@@ -54,23 +54,30 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	//   4. github.com/gogo/protobuf - any version.
 	// Case 1 is not supported.
 	// Cases 2 and 3 implements proto.Message and are the same in this context.
-	// Case 4 implements gogoproto.Message.
-	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
+	// Case 4 implements gogoproto.Marshaler.
+	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Marshaler.
 
-	if valueProto, ok := value.(proto.Message); ok {
-		byteSlice, err := proto.Marshal(valueProto)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+	builtPointer := false
+	for {
+		if valueProto, ok := value.(proto.Message); ok {
+			byteSlice, err := proto.Marshal(valueProto)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(byteSlice, c), nil
 		}
-		return newPayload(byteSlice, c), nil
-	}
-
-	if valueGogoProto, ok := value.(gogoproto.Marshaler); ok {
-		data, err := valueGogoProto.Marshal()
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+		if valueGogoProto, ok := value.(gogoproto.Marshaler); ok {
+			data, err := valueGogoProto.Marshal()
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(data, c), nil
 		}
-		return newPayload(data, c), nil
+		if builtPointer {
+			break
+		}
+		value = pointerTo(value)
+		builtPointer = true
 	}
 
 	return nil, nil

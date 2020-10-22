@@ -25,7 +25,6 @@
 package converter
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -167,12 +166,11 @@ func TestJsonPayloadConverter(t *testing.T) {
 func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
-	wt := &commonpb.WorkflowType{Name: "qwe"}
+	wt := commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)
 	require.NoError(t, err)
 
 	wt2 := commonpb.WorkflowType{} // Note: there is no &
 	err = pc.FromPayload(payload, &wt2)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrProtoStructIsNotPointer))
+	assert.Equal(t, "qwe", wt2.Name)
 }
