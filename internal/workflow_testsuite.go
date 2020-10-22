@@ -475,6 +475,12 @@ func (c *MockCallWrapper) Return(returnArguments ...interface{}) *MockCallWrappe
 	return c
 }
 
+// Panic specifies if the function call should fail and the panic message
+func (c *MockCallWrapper) Panic(msg string) *MockCallWrapper {
+	c.call.Panic(msg)
+	return c
+}
+
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
