@@ -97,7 +97,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	}
 
 	value := originalValue
-	// In case if value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
+	// In case if original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
 	if originalValue.Kind() != reflect.Ptr {
 		value = pointerTo(originalValue.Interface())
 	}
@@ -109,16 +109,14 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		return fmt.Errorf("value: %v of type: %T: %w", originalValue, originalValue, ErrValueNotImplementProtoMessage)
 	}
 
+	// If case if original value is nil, create new instance.
 	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
-		// If nil is passed then create new instance.
-		protoType := originalValue.Type().Elem() // i.e. commonpb.WorkflowType
-		newProtoValue := reflect.New(protoType)  // is of pointer type (i.e. *commonpb.WorkflowType)
+		newProtoValue := newOfSameType(originalValue)
 		if isProtoMessage {
 			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion must always succeed
 		} else if isGogoProtoMessage {
 			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Message) // type assertion must always succeed
 		}
-		originalValue.Set(newProtoValue) // set newly created value back to passed valuePtr
 	}
 
 	var err error

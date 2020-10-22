@@ -33,3 +33,10 @@ func pointerTo(val interface{}) reflect.Value {
 	valPtr.Elem().Set(reflect.ValueOf(val))
 	return valPtr
 }
+
+func newOfSameType(val reflect.Value) reflect.Value {
+	valType := val.Type().Elem()     // i.e. commonpb.WorkflowType
+	newValue := reflect.New(valType) // is of pointer type (i.e. *commonpb.WorkflowType)
+	val.Set(newValue)                // set newly created value back to passed value
+	return newValue
+}
