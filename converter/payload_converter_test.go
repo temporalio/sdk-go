@@ -191,7 +191,46 @@ func TestProtoJsonPayloadConverter_Google_NotPointer(t *testing.T) {
 	assert.Equal(t, "qwe", wt2.Name)
 }
 
-func TestProtoJsonPayloadConverter_Error(t *testing.T) {
+func TestProtoJsonPayloadConverter_ToPayload_Errors(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	var wt1 *commonpb.WorkflowType
+	_, err := pc.ToPayload(wt1)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to encode: Marshal called with nil", err.Error())
+	assert.True(t, errors.Is(err, ErrUnableToEncode))
+
+	var wt2 interface{}
+	payload, err := pc.ToPayload(wt2)
+	assert.NoError(t, err)
+	assert.Nil(t, payload)
+
+	var wt3 *interface{}
+	payload, err = pc.ToPayload(wt3)
+	assert.NoError(t, err)
+	assert.Nil(t, payload)
+}
+
+func TestJsonPayloadConverter_ToPayload_Errors(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	var wt1 *testStruct
+	payload, err := pc.ToPayload(wt1)
+	assert.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	var wt2 interface{}
+	payload, err = pc.ToPayload(wt2)
+	assert.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	var wt3 *interface{}
+	payload, err = pc.ToPayload(wt3)
+	assert.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+}
+
+func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
@@ -201,8 +240,8 @@ func TestProtoJsonPayloadConverter_Error(t *testing.T) {
 	var wt2 *int
 	err = pc.FromPayload(payload, &wt2)
 	assert.Error(t, err)
-	assert.Equal(t, "type: *int: value doesn't implement proto.Message", err.Error())
-	assert.True(t, errors.Is(err, ErrValueNotImplementProtoMessage))
+	assert.Equal(t, "type: *int: type doesn't implement proto.Message", err.Error())
+	assert.True(t, errors.Is(err, ErrTypeNotImplementProtoMessage))
 
 	var wt3 *commonpb.WorkflowType
 	err = pc.FromPayload(payload, wt3)
@@ -245,4 +284,66 @@ func TestProtoJsonPayloadConverter_Error(t *testing.T) {
 	assert.Equal(t, "type: *interface {}: unable to set value", err.Error())
 	assert.True(t, errors.Is(err, ErrUnableToSetValue))
 
+	// supported by JSON serializer but not by ProtoJson
+	var wt7 interface{}
+	err = pc.FromPayload(payload, &wt7)
+	assert.Error(t, err)
+	assert.Equal(t, "type: <nil>: type doesn't implement proto.Message", err.Error())
+	assert.True(t, errors.Is(err, ErrTypeNotImplementProtoMessage))
+}
+
+func TestJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	wt := testStruct{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	var wt2 *int
+	err = pc.FromPayload(payload, &wt2)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to decode: json: cannot unmarshal object into Go value of type int", err.Error())
+
+	var wt3 *testStruct
+	err = pc.FromPayload(payload, wt3)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil *converter.testStruct)", err.Error())
+
+	// But 31, 32, and 33 work
+	var wt31 testStruct
+	err = pc.FromPayload(payload, &wt31)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt31.Name)
+
+	wt32 := &testStruct{}
+	err = pc.FromPayload(payload, wt32)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt32.Name)
+
+	var wt33 *testStruct
+	wt33 = &testStruct{}
+	err = pc.FromPayload(payload, wt33)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt33.Name)
+
+	var wt4 testStruct
+	err = pc.FromPayload(payload, wt4)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(non-pointer converter.testStruct)", err.Error())
+
+	var wt5 interface{}
+	err = pc.FromPayload(payload, wt5)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil)", err.Error())
+
+	var wt6 *interface{}
+	err = pc.FromPayload(payload, wt6)
+	assert.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil *interface {})", err.Error())
+
+	// supported by JSON serializer (wt7 will be map[string]interface{})
+	var wt7 interface{}
+	err = pc.FromPayload(payload, &wt7)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt7.(map[string]interface{})["Name"])
 }

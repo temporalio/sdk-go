@@ -43,10 +43,10 @@ var (
 	ErrUnableToSetValue = errors.New("unable to set value")
 	// ErrUnableToFindConverter is returned when unable to find converter.
 	ErrUnableToFindConverter = errors.New("unable to find converter")
-	// ErrValueNotImplementProtoMessage is returned when value doesn't implement proto.Message.
-	ErrValueNotImplementProtoMessage = errors.New("value doesn't implement proto.Message")
-	// ErrValueNotImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
-	ErrValueNotImplementProtoUnmarshaler = errors.New("value doesn't implement proto.Unmarshaler")
+	// ErrTypeNotImplementProtoMessage is returned when value doesn't implement proto.Message.
+	ErrTypeNotImplementProtoMessage = errors.New("type doesn't implement proto.Message")
+	// ErrTypeNotImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
+	ErrTypeNotImplementProtoUnmarshaler = errors.New("type doesn't implement proto.Unmarshaler")
 	// ErrValuePtrIsNotPointer is returned when proto value is not a pointer.
 	ErrValuePtrIsNotPointer = errors.New("not a pointer type")
 )

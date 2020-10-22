@@ -57,6 +57,11 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	// Case 4 implements gogoproto.Message.
 	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
+	// Bypass nil values
+	if value == nil {
+		return nil, nil
+	}
+
 	builtPointer := false
 	for {
 		if valueProto, ok := value.(proto.Message); ok {
@@ -98,7 +103,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Unmarshaler)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueNotImplementProtoUnmarshaler)
+		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrTypeNotImplementProtoUnmarshaler)
 	}
 
 	// If nil is passed create new instance

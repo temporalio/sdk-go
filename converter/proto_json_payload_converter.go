@@ -62,6 +62,11 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	// Case 4 implements gogoproto.Message.
 	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
+	// Bypass nil values
+	if value == nil {
+		return nil, nil
+	}
+
 	builtPointer := false
 	for {
 		if valueProto, ok := value.(proto.Message); ok {
@@ -103,7 +108,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	value := originalValue
 	// In case if original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Ptr && originalValue.Kind() != reflect.Interface {
 		value = pointerTo(originalValue.Interface())
 	}
 
@@ -111,7 +116,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("type: %T: %w", protoValue, ErrValueNotImplementProtoMessage)
+		return fmt.Errorf("type: %T: %w", protoValue, ErrTypeNotImplementProtoMessage)
 	}
 
 	// If case if original value is nil, create new instance.
