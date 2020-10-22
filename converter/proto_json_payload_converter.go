@@ -106,16 +106,17 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", originalValue, originalValue, ErrValueNotImplementProtoMessage)
+		return fmt.Errorf("value: %v of type: %T: %w", originalValue, protoValue, ErrValueNotImplementProtoMessage)
 	}
 
 	// If case if original value is nil, create new instance.
 	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
-		newProtoValue := newOfSameType(originalValue)
+		value = newOfSameType(originalValue)
+		protoValue = value.Interface()
 		if isProtoMessage {
-			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion must always succeed
+			protoMessage = protoValue.(proto.Message) // type assertion must always succeed
 		} else if isGogoProtoMessage {
-			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Message) // type assertion must always succeed
+			gogoProtoMessage = protoValue.(gogoproto.Message) // type assertion must always succeed
 		}
 	}
 

@@ -25,6 +25,7 @@
 package converter
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -164,7 +165,7 @@ func TestJsonPayloadConverter(t *testing.T) {
 	assert.Equal(t, "{Age:0 Name:qwe}", s)
 }
 
-func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
+func TestProtoJsonPayloadConverter_Gogo_NotPointer(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
@@ -174,4 +175,32 @@ func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
 	wt2 := commonpb.WorkflowType{} // Note: there is no &
 	err = pc.FromPayload(payload, &wt2)
 	assert.Equal(t, "qwe", wt2.Name)
+}
+
+func TestProtoJsonPayloadConverter_Google_NotPointer(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := GoV2{
+		Name: "qwe",
+	}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	wt2 := GoV2{} // Note: there is no &
+	err = pc.FromPayload(payload, &wt2)
+	assert.Equal(t, "qwe", wt2.Name)
+}
+
+func TestProtoJsonPayloadConverter_Error(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	var wt2 *int
+	err = pc.FromPayload(payload, &wt2)
+	assert.Error(t, err)
+	assert.Equal(t, "value: <nil> of type: *int: value doesn't implement proto.Message", err.Error())
+	assert.True(t, errors.Is(err, ErrValueNotImplementProtoMessage))
 }
