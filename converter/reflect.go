@@ -28,11 +28,7 @@ import (
 	"reflect"
 )
 
-func pointerTo(val interface{}) interface{} {
-	return valueOfPointerTo(val).Interface()
-}
-
-func valueOfPointerTo(val interface{}) reflect.Value {
+func pointerTo(val interface{}) reflect.Value {
 	valPtr := reflect.New(reflect.TypeOf(val))
 	valPtr.Elem().Set(reflect.ValueOf(val))
 	return valPtr

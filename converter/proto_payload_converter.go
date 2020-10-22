@@ -76,7 +76,7 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 		if builtPointer {
 			break
 		}
-		value = pointerTo(value)
+		value = pointerTo(value).Interface()
 		builtPointer = true
 	}
 
