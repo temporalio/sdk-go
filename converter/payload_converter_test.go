@@ -65,6 +65,7 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 
 	var wt4 historypb.HistoryEvent
 	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
 	assert.Equal(t, int64(1978), wt3.EventId)
 
 	s := pc.ToString(payload)
@@ -259,7 +260,7 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt32.Name)
 
-	var wt33 *commonpb.WorkflowType
+	var wt33 *commonpb.WorkflowType //lint:ignore S1021 as it indicates exactly this case
 	wt33 = &commonpb.WorkflowType{}
 	err = pc.FromPayload(payload, wt33)
 	require.NoError(t, err)
@@ -319,7 +320,7 @@ func TestJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt32.Name)
 
-	var wt33 *testStruct
+	var wt33 *testStruct //lint:ignore S1021 as it indicates exactly this case
 	wt33 = &testStruct{}
 	err = pc.FromPayload(payload, wt33)
 	require.NoError(t, err)
