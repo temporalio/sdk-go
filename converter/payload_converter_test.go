@@ -203,4 +203,16 @@ func TestProtoJsonPayloadConverter_Error(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "value: <nil> of type: *int: value doesn't implement proto.Message", err.Error())
 	assert.True(t, errors.Is(err, ErrValueNotImplementProtoMessage))
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, wt3)
+	assert.Error(t, err)
+	assert.Equal(t, "type: *common.WorkflowType: unable to set value", err.Error())
+	assert.True(t, errors.Is(err, ErrUnableToSetValue))
+
+	// var wt4 commonpb.WorkflowType
+	// err = pc.FromPayload(payload, wt4)
+	// assert.Error(t, err)
+	// assert.Equal(t, "type: common.WorkflowType: unable to set value", err.Error())
+	// assert.True(t, errors.Is(err, ErrUnableToSetValue))
 }
