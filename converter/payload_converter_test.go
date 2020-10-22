@@ -201,7 +201,7 @@ func TestProtoJsonPayloadConverter_Error(t *testing.T) {
 	var wt2 *int
 	err = pc.FromPayload(payload, &wt2)
 	assert.Error(t, err)
-	assert.Equal(t, "value: <nil> of type: *int: value doesn't implement proto.Message", err.Error())
+	assert.Equal(t, "type: *int: value doesn't implement proto.Message", err.Error())
 	assert.True(t, errors.Is(err, ErrValueNotImplementProtoMessage))
 
 	var wt3 *commonpb.WorkflowType
@@ -210,9 +210,39 @@ func TestProtoJsonPayloadConverter_Error(t *testing.T) {
 	assert.Equal(t, "type: *common.WorkflowType: unable to set value", err.Error())
 	assert.True(t, errors.Is(err, ErrUnableToSetValue))
 
-	// var wt4 commonpb.WorkflowType
-	// err = pc.FromPayload(payload, wt4)
-	// assert.Error(t, err)
-	// assert.Equal(t, "type: common.WorkflowType: unable to set value", err.Error())
-	// assert.True(t, errors.Is(err, ErrUnableToSetValue))
+	// But 31, 32, and 33 work
+	var wt31 commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt31)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt31.Name)
+
+	wt32 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, wt32)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt32.Name)
+
+	var wt33 *commonpb.WorkflowType
+	wt33 = &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, wt33)
+	assert.NoError(t, err)
+	assert.Equal(t, "qwe", wt33.Name)
+
+	var wt4 commonpb.WorkflowType
+	err = pc.FromPayload(payload, wt4)
+	assert.Error(t, err)
+	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
+
+	var wt5 interface{}
+	err = pc.FromPayload(payload, wt5)
+	assert.Error(t, err)
+	assert.Equal(t, "type: <nil>: not a pointer type", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
+
+	var wt6 *interface{}
+	err = pc.FromPayload(payload, wt6)
+	assert.Error(t, err)
+	assert.Equal(t, "type: *interface {}: unable to set value", err.Error())
+	assert.True(t, errors.Is(err, ErrUnableToSetValue))
+
 }

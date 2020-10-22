@@ -54,8 +54,8 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 	//   4. github.com/gogo/protobuf - any version.
 	// Case 1 is not supported.
 	// Cases 2 and 3 implements proto.Message and are the same in this context.
-	// Case 4 implements gogoproto.Marshaler.
-	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Marshaler.
+	// Case 4 implements gogoproto.Message.
+	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
 	builtPointer := false
 	for {
@@ -91,7 +91,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	}
 
 	if value.Kind() != reflect.Ptr {
-		return ErrProtoStructIsNotPointer
+		return ErrValuePtrIsNotPointer
 	}
 
 	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType

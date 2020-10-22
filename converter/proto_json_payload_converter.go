@@ -91,7 +91,12 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 
 // FromPayload converts single proto value from payload.
 func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	originalValue := reflect.ValueOf(valuePtr).Elem()
+	originalValue := reflect.ValueOf(valuePtr)
+	if originalValue.Kind() != reflect.Ptr {
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
+	}
+
+	originalValue = originalValue.Elem()
 	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
@@ -106,7 +111,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", originalValue, protoValue, ErrValueNotImplementProtoMessage)
+		return fmt.Errorf("type: %T: %w", protoValue, ErrValueNotImplementProtoMessage)
 	}
 
 	// If case if original value is nil, create new instance.
