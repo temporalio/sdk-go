@@ -25,6 +25,7 @@
 package converter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -89,7 +90,7 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, int64(12), wt3.BirthDay)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"name":"qwe", "birthDay":"12", "type":"TYPEV2_R", "valueS":"asd"}`, s)
+	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
 }
 
 func TestProtoPayloadConverter_Gogo(t *testing.T) {

@@ -91,35 +91,34 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 
 // FromPayload converts single proto value from payload.
 func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	value := reflect.ValueOf(valuePtr).Elem()
-	if !value.CanSet() {
+	originalValue := reflect.ValueOf(valuePtr).Elem()
+	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
-	syntheticPointer := false
+	value := originalValue
 	// In case if value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
-	if value.Kind() != reflect.Ptr {
-		value = pointerTo(value.Interface())
-		syntheticPointer = true
+	if originalValue.Kind() != reflect.Ptr {
+		value = pointerTo(originalValue.Interface())
 	}
 
 	protoValue := value.Interface() // protoValue is for sure of pointer type (i.e. *commonpb.WorkflowType).
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueNotImplementProtoMessage)
+		return fmt.Errorf("value: %v of type: %T: %w", originalValue, originalValue, ErrValueNotImplementProtoMessage)
 	}
 
-	if value.IsNil() {
+	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
 		// If nil is passed then create new instance.
-		protoType := value.Type().Elem()        // i.e. commonpb.WorkflowType
-		newProtoValue := reflect.New(protoType) // is of pointer type (i.e. *commonpb.WorkflowType)
+		protoType := originalValue.Type().Elem() // i.e. commonpb.WorkflowType
+		newProtoValue := reflect.New(protoType)  // is of pointer type (i.e. *commonpb.WorkflowType)
 		if isProtoMessage {
 			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion must always succeed
 		} else if isGogoProtoMessage {
 			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Message) // type assertion must always succeed
 		}
-		value.Set(newProtoValue) // set newly created value back to passed valuePtr
+		originalValue.Set(newProtoValue) // set newly created value back to passed valuePtr
 	}
 
 	var err error
@@ -128,9 +127,9 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	} else if isGogoProtoMessage {
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
 	}
-	// If pointer synthetic pointer (was created with reflection) then set value back to where valuePtr points to.
-	if syntheticPointer {
-		reflect.ValueOf(valuePtr).Elem().Set(value.Elem())
+	// If original value wasn't a pointer then set value back to where valuePtr points to.
+	if originalValue.Kind() != reflect.Ptr {
+		originalValue.Set(value.Elem())
 	}
 
 	if err != nil {
