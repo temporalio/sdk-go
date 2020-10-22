@@ -45,8 +45,6 @@ var (
 	ErrUnableToFindConverter = errors.New("unable to find converter")
 	// ErrTypeNotImplementProtoMessage is returned when value doesn't implement proto.Message.
 	ErrTypeNotImplementProtoMessage = errors.New("type doesn't implement proto.Message")
-	// ErrTypeNotImplementProtoUnmarshaler is returned when value doesn't implement proto.Unmarshaler.
-	ErrTypeNotImplementProtoUnmarshaler = errors.New("type doesn't implement proto.Unmarshaler")
 	// ErrValuePtrIsNotPointer is returned when proto value is not a pointer.
 	ErrValuePtrIsNotPointer = errors.New("not a pointer type")
 )

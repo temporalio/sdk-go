@@ -63,6 +63,10 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1978), wt3.EventId)
 
+	var wt4 historypb.HistoryEvent
+	err = pc.FromPayload(payload, &wt4)
+	assert.Equal(t, int64(1978), wt3.EventId)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"}}`, s)
 }
@@ -90,6 +94,12 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, "qwe", wt3.Name)
 	assert.Equal(t, int64(12), wt3.BirthDay)
 
+	var wt4 GoV2
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+	assert.Equal(t, int64(12), wt4.BirthDay)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
 }
@@ -116,6 +126,11 @@ func TestProtoPayloadConverter_Gogo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1978), wt3.EventId)
 
+	var wt4 historypb.HistoryEvent
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1978), wt4.EventId)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, "CLoPGAhqBAgCGAI", s)
 }
@@ -141,6 +156,11 @@ func TestProtoPayloadConverter_Google(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
 
+	var wt4 GoV2
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, "CgNxd2UQDDgBQgNhc2Q", s)
 }
@@ -161,34 +181,13 @@ func TestJsonPayloadConverter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
 
+	var wt4 testStruct
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, "{Age:0 Name:qwe}", s)
-}
-
-func TestProtoJsonPayloadConverter_Gogo_NotPointer(t *testing.T) {
-	pc := NewProtoJSONPayloadConverter()
-
-	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
-	require.NoError(t, err)
-
-	wt2 := commonpb.WorkflowType{} // Note: there is no &
-	err = pc.FromPayload(payload, &wt2)
-	assert.Equal(t, "qwe", wt2.Name)
-}
-
-func TestProtoJsonPayloadConverter_Google_NotPointer(t *testing.T) {
-	pc := NewProtoJSONPayloadConverter()
-
-	wt := GoV2{
-		Name: "qwe",
-	}
-	payload, err := pc.ToPayload(wt)
-	require.NoError(t, err)
-
-	wt2 := GoV2{} // Note: there is no &
-	err = pc.FromPayload(payload, &wt2)
-	assert.Equal(t, "qwe", wt2.Name)
 }
 
 func TestProtoJsonPayloadConverter_ToPayload_Errors(t *testing.T) {

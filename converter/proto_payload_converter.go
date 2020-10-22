@@ -32,8 +32,6 @@ import (
 	gogoproto "github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/proto"
-
-	"go.temporal.io/sdk/internal/common/util"
 )
 
 // ProtoPayloadConverter converts proto objects to protobuf binary format.
@@ -90,39 +88,49 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 
 // FromPayload converts single proto value from payload.
 func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	value := reflect.ValueOf(valuePtr).Elem()
-	if !value.CanSet() {
+	originalValue := reflect.ValueOf(valuePtr)
+	if originalValue.Kind() != reflect.Ptr {
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
+	}
+
+	originalValue = originalValue.Elem()
+	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
-	if value.Kind() != reflect.Ptr {
-		return ErrValuePtrIsNotPointer
+	value := originalValue
+	// In case if original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
+	if originalValue.Kind() != reflect.Ptr && originalValue.Kind() != reflect.Interface {
+		value = pointerTo(originalValue.Interface())
 	}
 
-	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
-	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Unmarshaler)
+	protoValue := value.Interface() // protoValue is for sure of pointer type (i.e. *commonpb.WorkflowType).
+	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrTypeNotImplementProtoUnmarshaler)
+		return fmt.Errorf("type: %T: %w", protoValue, ErrTypeNotImplementProtoMessage)
 	}
 
-	// If nil is passed create new instance
-	if util.IsInterfaceNil(protoValue) {
-		protoType := value.Type().Elem()        // i.e. commonpb.WorkflowType
-		newProtoValue := reflect.New(protoType) // is of type i.e. *commonpb.WorkflowType
+	// If case if original value is nil, create new instance.
+	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
+		value = newOfSameType(originalValue)
+		protoValue = value.Interface()
 		if isProtoMessage {
-			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion will always succeed
+			protoMessage = protoValue.(proto.Message) // type assertion must always succeed
 		} else if isGogoProtoMessage {
-			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Unmarshaler) // type assertion will always succeed
+			gogoProtoMessage = protoValue.(gogoproto.Message) // type assertion must always succeed
 		}
-		value.Set(newProtoValue) // set newly created value back to passed valuePtr
 	}
 
 	var err error
 	if isProtoMessage {
 		err = proto.Unmarshal(payload.GetData(), protoMessage)
 	} else if isGogoProtoMessage {
-		err = gogoProtoMessage.Unmarshal(payload.GetData())
+		err = gogoproto.Unmarshal(payload.GetData(), gogoProtoMessage)
+	}
+	// If original value wasn't a pointer then set value back to where valuePtr points to.
+	if originalValue.Kind() != reflect.Ptr {
+		originalValue.Set(value.Elem())
 	}
 
 	if err != nil {
