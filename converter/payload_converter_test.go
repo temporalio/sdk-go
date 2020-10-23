@@ -191,27 +191,52 @@ func TestJsonPayloadConverter(t *testing.T) {
 	assert.Equal(t, "{Age:0 Name:qwe}", s)
 }
 
-func TestProtoJsonPayloadConverter_ToPayload_Errors(t *testing.T) {
+func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
-	var wt1 *commonpb.WorkflowType
-	_, err := pc.ToPayload(wt1)
-	require.Error(t, err)
-	assert.Equal(t, "unable to encode: Marshal called with nil", err.Error())
-	assert.True(t, errors.Is(err, ErrUnableToEncode))
-
-	var wt2 interface{}
-	payload, err := pc.ToPayload(wt2)
+	var wt1 *GoV2
+	payload, err := pc.ToPayload(wt1)
 	require.NoError(t, err)
-	assert.Nil(t, payload)
+	assert.Equal(t, "null", string(payload.Data))
 
-	var wt3 *interface{}
+	wt1 = &GoV2{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
+	require.NoError(t, err)
+	assert.Nil(t, wt1)
+
+	var wt2 *commonpb.WorkflowType
+	payload, err = pc.ToPayload(wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt2 = &commonpb.WorkflowType{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Nil(t, wt2)
+
+	var wt3 interface{}
 	payload, err = pc.ToPayload(wt3)
 	require.NoError(t, err)
-	assert.Nil(t, payload)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
 }
 
-func TestJsonPayloadConverter_ToPayload_Errors(t *testing.T) {
+func TestJsonPayloadConverter_NilToPayload(t *testing.T) {
 	pc := NewJSONPayloadConverter()
 
 	var wt1 *testStruct
@@ -219,15 +244,31 @@ func TestJsonPayloadConverter_ToPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
 
-	var wt2 interface{}
-	payload, err = pc.ToPayload(wt2)
+	wt1 = &testStruct{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
 	require.NoError(t, err)
-	assert.Equal(t, "null", string(payload.Data))
+	assert.Nil(t, wt1)
 
-	var wt3 *interface{}
+	var wt3 interface{}
 	payload, err = pc.ToPayload(wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
 }
 
 func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {

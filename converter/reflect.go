@@ -40,3 +40,8 @@ func newOfSameType(val reflect.Value) reflect.Value {
 	val.Set(newValue)                // set newly created value back to passed value
 	return newValue
 }
+
+func isInterfaceNil(i interface{}) bool {
+	v := reflect.ValueOf(i)
+	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
+}

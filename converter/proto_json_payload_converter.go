@@ -26,6 +26,7 @@ package converter
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -41,6 +42,10 @@ type ProtoJSONPayloadConverter struct {
 	gogoMarshaler   gogojsonpb.Marshaler
 	gogoUnmarshaler gogojsonpb.Unmarshaler
 }
+
+var (
+	jsonNil, _ = json.Marshal(nil)
+)
 
 // NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
@@ -62,9 +67,8 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	// Case 4 implements gogoproto.Message.
 	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
-	// Bypass nil values
-	if value == nil {
-		return nil, nil
+	if isInterfaceNil(value) {
+		return newPayload(jsonNil, c), nil
 	}
 
 	builtPointer := false
@@ -104,6 +108,11 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	originalValue = originalValue.Elem()
 	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
+	}
+
+	if bytes.Equal(payload.GetData(), jsonNil) {
+		originalValue.Set(reflect.Zero(originalValue.Type()))
+		return nil
 	}
 
 	value := originalValue
