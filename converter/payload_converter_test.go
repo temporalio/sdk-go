@@ -236,7 +236,7 @@ func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	assert.Nil(t, wt4)
 }
 
-func TestJsonPayloadConverter_NilToPayload(t *testing.T) {
+func TestJsonPayloadConverter_Nil(t *testing.T) {
 	pc := NewJSONPayloadConverter()
 
 	var wt1 *testStruct
@@ -263,6 +263,41 @@ func TestJsonPayloadConverter_NilToPayload(t *testing.T) {
 	payload, err = pc.ToPayload(wt4)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
+}
+
+func TestNilPayloadConverter(t *testing.T) {
+	pc := NewNilPayloadConverter()
+
+	var wt1 *testStruct
+	payload, err := pc.ToPayload(wt1)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
+
+	wt1 = &testStruct{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
+	require.NoError(t, err)
+	assert.Nil(t, wt1)
+
+	var wt3 interface{}
+	payload, err = pc.ToPayload(wt3)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
 
 	i := interface{}(123)
 	wt4 = &i
