@@ -25,26 +25,23 @@
 package converter
 
 import (
-	"errors"
+	"reflect"
 )
 
-var (
-	// ErrMetadataIsNotSet is returned when metadata is not set.
-	ErrMetadataIsNotSet = errors.New("metadata is not set")
-	// ErrEncodingIsNotSet is returned when payload encoding metadata is not set.
-	ErrEncodingIsNotSet = errors.New("payload encoding metadata is not set")
-	// ErrEncodingIsNotSupported is returned when payload encoding is not supported.
-	ErrEncodingIsNotSupported = errors.New("payload encoding is not supported")
-	// ErrUnableToEncode is returned when unable to encode.
-	ErrUnableToEncode = errors.New("unable to encode")
-	// ErrUnableToDecode is returned when unable to decode.
-	ErrUnableToDecode = errors.New("unable to decode")
-	// ErrUnableToSetValue is returned when unable to set value.
-	ErrUnableToSetValue = errors.New("unable to set value")
-	// ErrUnableToFindConverter is returned when unable to find converter.
-	ErrUnableToFindConverter = errors.New("unable to find converter")
-	// ErrTypeNotImplementProtoMessage is returned when value doesn't implement proto.Message.
-	ErrTypeNotImplementProtoMessage = errors.New("type doesn't implement proto.Message")
-	// ErrValuePtrIsNotPointer is returned when proto value is not a pointer.
-	ErrValuePtrIsNotPointer = errors.New("not a pointer type")
-)
+func pointerTo(val interface{}) reflect.Value {
+	valPtr := reflect.New(reflect.TypeOf(val))
+	valPtr.Elem().Set(reflect.ValueOf(val))
+	return valPtr
+}
+
+func newOfSameType(val reflect.Value) reflect.Value {
+	valType := val.Type().Elem()     // is value type (i.e. commonpb.WorkflowType)
+	newValue := reflect.New(valType) // is of pointer type (i.e. *commonpb.WorkflowType)
+	val.Set(newValue)                // set newly created value back to passed value
+	return newValue
+}
+
+func isInterfaceNil(i interface{}) bool {
+	v := reflect.ValueOf(i)
+	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
+}

@@ -3007,6 +3007,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProgress() {
 	s.Equal(lastProgress+1, newProgress)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeat() {
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(testActivityHeartbeat)
+	v, err := env.ExecuteActivity(testActivityHeartbeat, "result", 1*time.Millisecond)
+	s.NoError(err)
+	var result string
+	err = v.Get(&result)
+	s.NoError(err)
+	s.Equal("heartbeat_result", result)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 	fn := func(ctx context.Context) error {
 		runtime.Goexit() // usually this is called by t.FailNow(), but can't call FailNow here since that would mark the test as failed.

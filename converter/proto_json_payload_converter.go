@@ -26,6 +26,7 @@ package converter
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -34,8 +35,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-
-	"go.temporal.io/sdk/internal/common/util"
 )
 
 // ProtoJSONPayloadConverter converts proto objects to/from JSON.
@@ -43,6 +42,10 @@ type ProtoJSONPayloadConverter struct {
 	gogoMarshaler   gogojsonpb.Marshaler
 	gogoUnmarshaler gogojsonpb.Unmarshaler
 }
+
+var (
+	jsonNil, _ = json.Marshal(nil)
+)
 
 // NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
@@ -64,21 +67,32 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	// Case 4 implements gogoproto.Message.
 	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
 
-	if valueProto, ok := value.(proto.Message); ok {
-		byteSlice, err := protojson.Marshal(valueProto)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
-		}
-		return newPayload(byteSlice, c), nil
+	if isInterfaceNil(value) {
+		return newPayload(jsonNil, c), nil
 	}
 
-	if valueGogoProto, ok := value.(gogoproto.Message); ok {
-		var buf bytes.Buffer
-		err := c.gogoMarshaler.Marshal(&buf, valueGogoProto)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+	builtPointer := false
+	for {
+		if valueProto, ok := value.(proto.Message); ok {
+			byteSlice, err := protojson.Marshal(valueProto)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(byteSlice, c), nil
 		}
-		return newPayload(buf.Bytes(), c), nil
+		if valueGogoProto, ok := value.(gogoproto.Message); ok {
+			var buf bytes.Buffer
+			err := c.gogoMarshaler.Marshal(&buf, valueGogoProto)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
+			}
+			return newPayload(buf.Bytes(), c), nil
+		}
+		if builtPointer {
+			break
+		}
+		value = pointerTo(value).Interface()
+		builtPointer = true
 	}
 
 	return nil, nil
@@ -86,32 +100,43 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 
 // FromPayload converts single proto value from payload.
 func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	value := reflect.ValueOf(valuePtr).Elem()
-	if !value.CanSet() {
+	originalValue := reflect.ValueOf(valuePtr)
+	if originalValue.Kind() != reflect.Ptr {
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
+	}
+
+	originalValue = originalValue.Elem()
+	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
 
-	if value.Kind() != reflect.Ptr {
-		return ErrValueIsNotPointer
+	if bytes.Equal(payload.GetData(), jsonNil) {
+		originalValue.Set(reflect.Zero(originalValue.Type()))
+		return nil
 	}
 
-	protoValue := value.Interface() // protoValue is of type i.e. *commonpb.WorkflowType
+	value := originalValue
+	// In case if original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
+	if originalValue.Kind() != reflect.Ptr && originalValue.Kind() != reflect.Interface {
+		value = pointerTo(originalValue.Interface())
+	}
+
+	protoValue := value.Interface() // protoValue is for sure of pointer type (i.e. *commonpb.WorkflowType).
 	gogoProtoMessage, isGogoProtoMessage := protoValue.(gogoproto.Message)
 	protoMessage, isProtoMessage := protoValue.(proto.Message)
 	if !isGogoProtoMessage && !isProtoMessage {
-		return fmt.Errorf("value: %v of type: %T: %w", value, value, ErrValueDoesntImplementProtoMessage)
+		return fmt.Errorf("type: %T: %w", protoValue, ErrTypeNotImplementProtoMessage)
 	}
 
-	// If nil is passed create new instance
-	if util.IsInterfaceNil(protoValue) {
-		protoType := value.Type().Elem()        // i.e. commonpb.WorkflowType
-		newProtoValue := reflect.New(protoType) // is of type i.e. *commonpb.WorkflowType
+	// If case if original value is nil, create new instance.
+	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
+		value = newOfSameType(originalValue)
+		protoValue = value.Interface()
 		if isProtoMessage {
-			protoMessage = newProtoValue.Interface().(proto.Message) // type assertion will always succeed
+			protoMessage = protoValue.(proto.Message) // type assertion must always succeed
 		} else if isGogoProtoMessage {
-			gogoProtoMessage = newProtoValue.Interface().(gogoproto.Message) // type assertion will always succeed
+			gogoProtoMessage = protoValue.(gogoproto.Message) // type assertion must always succeed
 		}
-		value.Set(newProtoValue) // set newly created value back to passed valuePtr
 	}
 
 	var err error
@@ -119,6 +144,10 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 		err = protojson.Unmarshal(payload.GetData(), protoMessage)
 	} else if isGogoProtoMessage {
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
+	}
+	// If original value wasn't a pointer then set value back to where valuePtr points to.
+	if originalValue.Kind() != reflect.Ptr {
+		originalValue.Set(value.Elem())
 	}
 
 	if err != nil {

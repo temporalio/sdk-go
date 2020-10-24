@@ -26,6 +26,7 @@ package converter
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,6 +63,11 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1978), wt3.EventId)
 
+	var wt4 historypb.HistoryEvent
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1978), wt3.EventId)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"}}`, s)
 }
@@ -89,8 +95,14 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, "qwe", wt3.Name)
 	assert.Equal(t, int64(12), wt3.BirthDay)
 
+	var wt4 GoV2
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+	assert.Equal(t, int64(12), wt4.BirthDay)
+
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, s)
+	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
 }
 
 func TestProtoPayloadConverter_Gogo(t *testing.T) {
@@ -114,6 +126,11 @@ func TestProtoPayloadConverter_Gogo(t *testing.T) {
 	err = pc.FromPayload(payload, &wt3)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1978), wt3.EventId)
+
+	var wt4 historypb.HistoryEvent
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1978), wt4.EventId)
 
 	s := pc.ToString(payload)
 	assert.Equal(t, "CLoPGAhqBAgCGAI", s)
@@ -140,6 +157,11 @@ func TestProtoPayloadConverter_Google(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
 
+	var wt4 GoV2
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, "CgNxd2UQDDgBQgNhc2Q", s)
 }
@@ -160,19 +182,244 @@ func TestJsonPayloadConverter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
 
+	var wt4 testStruct
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt4.Name)
+
 	s := pc.ToString(payload)
 	assert.Equal(t, "{Age:0 Name:qwe}", s)
 }
 
-func TestProtoJsonPayloadConverter_NotPointer(t *testing.T) {
+func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
-	wt := &commonpb.WorkflowType{Name: "qwe"}
+	var wt1 *GoV2
+	payload, err := pc.ToPayload(wt1)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt1 = &GoV2{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
+	require.NoError(t, err)
+	assert.Nil(t, wt1)
+
+	var wt2 *commonpb.WorkflowType
+	payload, err = pc.ToPayload(wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt2 = &commonpb.WorkflowType{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt2)
+	require.NoError(t, err)
+	assert.Nil(t, wt2)
+
+	var wt3 interface{}
+	payload, err = pc.ToPayload(wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
+}
+
+func TestJsonPayloadConverter_Nil(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	var wt1 *testStruct
+	payload, err := pc.ToPayload(wt1)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt1 = &testStruct{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
+	require.NoError(t, err)
+	assert.Nil(t, wt1)
+
+	var wt3 interface{}
+	payload, err = pc.ToPayload(wt3)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(payload.Data))
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
+}
+
+func TestNilPayloadConverter(t *testing.T) {
+	pc := NewNilPayloadConverter()
+
+	var wt1 *testStruct
+	payload, err := pc.ToPayload(wt1)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
+
+	wt1 = &testStruct{Name: "qwe"}
+	err = pc.FromPayload(payload, &wt1)
+	require.NoError(t, err)
+	assert.Nil(t, wt1)
+
+	var wt3 interface{}
+	payload, err = pc.ToPayload(wt3)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
+
+	wt3 = 123
+	err = pc.FromPayload(payload, &wt3)
+	require.NoError(t, err)
+	assert.Nil(t, wt3)
+
+	var wt4 *interface{}
+	payload, err = pc.ToPayload(wt4)
+	require.NoError(t, err)
+	assert.Nil(t, payload.Data)
+
+	i := interface{}(123)
+	wt4 = &i
+	err = pc.FromPayload(payload, &wt4)
+	require.NoError(t, err)
+	assert.Nil(t, wt4)
+}
+
+func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+
+	wt := commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)
 	require.NoError(t, err)
 
-	wt2 := commonpb.WorkflowType{} // Note: there is no &
+	var wt2 *int
 	err = pc.FromPayload(payload, &wt2)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValueIsNotPointer))
+	assert.Equal(t, "type: *int: type doesn't implement proto.Message", err.Error())
+	assert.True(t, errors.Is(err, ErrTypeNotImplementProtoMessage))
+
+	var wt3 *commonpb.WorkflowType
+	err = pc.FromPayload(payload, wt3)
+	require.Error(t, err)
+	assert.Equal(t, "type: *common.WorkflowType: unable to set value", err.Error())
+	assert.True(t, errors.Is(err, ErrUnableToSetValue))
+
+	// But 31, 32, and 33 work
+	var wt31 commonpb.WorkflowType
+	err = pc.FromPayload(payload, &wt31)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt31.Name)
+
+	wt32 := &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, wt32)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt32.Name)
+
+	var wt33 *commonpb.WorkflowType //lint:ignore S1021 as it indicates exactly this case
+	wt33 = &commonpb.WorkflowType{}
+	err = pc.FromPayload(payload, wt33)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt33.Name)
+
+	var wt4 commonpb.WorkflowType
+	err = pc.FromPayload(payload, wt4)
+	require.Error(t, err)
+	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
+
+	var wt5 interface{}
+	err = pc.FromPayload(payload, wt5)
+	require.Error(t, err)
+	assert.Equal(t, "type: <nil>: not a pointer type", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
+
+	var wt6 *interface{}
+	err = pc.FromPayload(payload, wt6)
+	require.Error(t, err)
+	assert.Equal(t, "type: *interface {}: unable to set value", err.Error())
+	assert.True(t, errors.Is(err, ErrUnableToSetValue))
+
+	// supported by JSON serializer but not by ProtoJson
+	var wt7 interface{}
+	err = pc.FromPayload(payload, &wt7)
+	require.Error(t, err)
+	assert.Equal(t, "type: <nil>: type doesn't implement proto.Message", err.Error())
+	assert.True(t, errors.Is(err, ErrTypeNotImplementProtoMessage))
+}
+
+func TestJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
+	pc := NewJSONPayloadConverter()
+
+	wt := testStruct{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	var wt2 *int
+	err = pc.FromPayload(payload, &wt2)
+	require.Error(t, err)
+	assert.Equal(t, "unable to decode: json: cannot unmarshal object into Go value of type int", err.Error())
+
+	var wt3 *testStruct
+	err = pc.FromPayload(payload, wt3)
+	require.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil *converter.testStruct)", err.Error())
+
+	// But 31, 32, and 33 work
+	var wt31 testStruct
+	err = pc.FromPayload(payload, &wt31)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt31.Name)
+
+	wt32 := &testStruct{}
+	err = pc.FromPayload(payload, wt32)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt32.Name)
+
+	var wt33 *testStruct //lint:ignore S1021 as it indicates exactly this case
+	wt33 = &testStruct{}
+	err = pc.FromPayload(payload, wt33)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt33.Name)
+
+	var wt4 testStruct
+	err = pc.FromPayload(payload, wt4)
+	require.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(non-pointer converter.testStruct)", err.Error())
+
+	var wt5 interface{}
+	err = pc.FromPayload(payload, wt5)
+	require.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil)", err.Error())
+
+	var wt6 *interface{}
+	err = pc.FromPayload(payload, wt6)
+	require.Error(t, err)
+	assert.Equal(t, "unable to decode: json: Unmarshal(nil *interface {})", err.Error())
+
+	// supported by JSON serializer (wt7 will be map[string]interface{})
+	var wt7 interface{}
+	err = pc.FromPayload(payload, &wt7)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt7.(map[string]interface{})["Name"])
 }
