@@ -72,7 +72,6 @@ func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 		s = strings.TrimSuffix(s, "]")
 		s = fmt.Sprintf("{%s}", s)
 	}
-
 	return s
 }
 

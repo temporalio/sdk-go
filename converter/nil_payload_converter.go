@@ -29,8 +29,6 @@ import (
 	"reflect"
 
 	commonpb "go.temporal.io/api/common/v1"
-
-	"go.temporal.io/sdk/internal/common/util"
 )
 
 // NilPayloadConverter doesn't set Data field in payload.
@@ -44,7 +42,7 @@ func NewNilPayloadConverter() *NilPayloadConverter {
 
 // ToPayload converts single nil value to payload.
 func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	if util.IsInterfaceNil(value) {
+	if isInterfaceNil(value) {
 		return newPayload(nil, c), nil
 	}
 	return nil, nil
@@ -52,11 +50,17 @@ func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, e
 
 // FromPayload converts single nil value from payload.
 func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr interface{}) error {
-	value := reflect.ValueOf(valuePtr).Elem()
-	if !value.CanSet() {
+	originalValue := reflect.ValueOf(valuePtr)
+	if originalValue.Kind() != reflect.Ptr {
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
+	}
+
+	originalValue = originalValue.Elem()
+	if !originalValue.CanSet() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
 	}
-	value.Set(reflect.Zero(value.Type()))
+
+	originalValue.Set(reflect.Zero(originalValue.Type()))
 	return nil
 }
 
