@@ -106,14 +106,16 @@ type (
 		// Optional: default empty string
 		ActivityID string
 
-		// RetryPolicy specify how to retry activity if error happens. When RetryPolicy.ExpirationInterval is specified
-		// and it is larger than the activity's ScheduleToStartTimeout, then the ExpirationInterval will override activity's
-		// ScheduleToStartTimeout. This is to avoid retrying on ScheduleToStartTimeout error which only happen when worker
-		// is not picking up the task within the timeout. Retrying ScheduleToStartTimeout does not make sense as it just
-		// mark the task as failed and create a new task and put back in the queue waiting worker to pick again. Temporal
-		// server also make sure the ScheduleToStartTimeout will not be larger than the workflow's timeout.
-		// Same apply to ScheduleToCloseTimeout. See more details about RetryPolicy on the doc for RetryPolicy.
-		// Optional: default is no retry
+		// RetryPolicy specifies how to retry an Activity if an error occurs.
+		// More details are available at docs.temporal.io.
+		// RetryPolicy is optional. If one is not specified a default RetryPolicy is provided by the server.
+		// The default RetryPolicy provided by the server specifies:
+		// - InitialInterval of 1 second
+		// - BackoffCoefficient of 2.0
+		// - MaximumInterval of 100 x InitialInterval
+		// - MaximumAttempts of 0 (unlimited)
+		// To disable retries set MaximumAttempts to 1.
+		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
 	}
 
