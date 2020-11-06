@@ -1019,9 +1019,9 @@ func (nc *namespaceClient) Register(ctx context.Context, request *workflowservic
 //	- EntityNotExistsError
 //	- BadRequestError
 //	- InternalServiceError
-func (nc *namespaceClient) Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error) {
+func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*workflowservice.DescribeNamespaceResponse, error) {
 	request := &workflowservice.DescribeNamespaceRequest{
-		Name: name,
+		Namespace: namespace,
 	}
 
 	var response *workflowservice.DescribeNamespaceResponse
