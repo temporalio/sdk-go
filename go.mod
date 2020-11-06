@@ -20,7 +20,7 @@ require (
 	github.com/uber-go/tally v3.3.17+incompatible
 	github.com/uber/jaeger-client-go v2.23.1+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.temporal.io/api v1.1.1-0.20201102165954-7c55c58b053e
+	go.temporal.io/api v1.1.1-0.20201104024306-2ac4ba734346
 	go.uber.org/atomic v1.7.0
 	go.uber.org/goleak v1.0.0
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect

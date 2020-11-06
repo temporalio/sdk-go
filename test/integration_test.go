@@ -662,10 +662,9 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	name := namespace
 	retention := 1 * time.Hour * 24
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                             name,
+		Namespace:                        namespace,
 		WorkflowExecutionRetentionPeriod: &retention,
 	})
 	client.Close()
