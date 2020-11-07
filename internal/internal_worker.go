@@ -234,7 +234,7 @@ func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsS
 	descNamespaceOp := func() error {
 		grpcCtx, cancel := newGRPCContext(ctx)
 		defer cancel()
-		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Name: namespace})
+		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
 		if err != nil {
 			switch err.(type) {
 			case *serviceerror.NotFound:
