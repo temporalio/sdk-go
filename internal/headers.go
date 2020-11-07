@@ -77,7 +77,7 @@ func (hr *headerReader) ForEachKey(handler func(string, *commonpb.Payload) error
 
 func (hr *headerReader) Get(key string) (*commonpb.Payload, bool) {
 	if hr.header == nil {
-		panic("headerReader.header is nil")
+		return nil, false
 	}
 	payload, ok := hr.header.Fields[key]
 	return payload, ok
