@@ -43,4 +43,5 @@ const (
 	tagQueryType         = "QueryType"
 	tagResult            = "Result"
 	tagError             = "Error"
+	tagStackTrace        = "StackTrace"
 )

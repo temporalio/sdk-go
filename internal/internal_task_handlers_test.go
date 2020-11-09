@@ -961,15 +961,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
-	t.NoError(err)
-	t.NotNil(request)
-	r, ok := request.(*workflowservice.RespondWorkflowTaskFailedRequest)
+	_, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	t.Error(err)
+	_, ok := err.(*workflowPanicError)
 	t.True(ok)
-	t.EqualValues(enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, r.Cause)
-	t.NotNil(r.GetFailure().GetApplicationFailureInfo())
-	t.Equal("PanicError", r.GetFailure().GetApplicationFailureInfo().GetType())
-	t.Equal("panicError", r.GetFailure().GetMessage())
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {

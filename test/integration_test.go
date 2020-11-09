@@ -143,6 +143,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	options := worker.Options{
 		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
+		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
 
 	if strings.Contains(ts.T().Name(), "Session") {
@@ -175,6 +176,32 @@ func (ts *IntegrationTestSuite) TestBasic() {
 		"temporal_workflow_task_queue_poll_succeed", 1,
 		"temporal_long_request", 7,
 	)
+}
+
+func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
+	var expected []string
+	wfOpts := ts.startWorkflowOptions("test-panic")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	wfOpts.WorkflowRunTimeout = 5 * time.Minute
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.Panicked, &expected)
+	ts.Error(err)
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
+	ts.True(ok)
+	ts.True(strings.Contains(applicationErr.Error(), "simulated"))
+}
+
+func (ts *IntegrationTestSuite) TestDeadlockDetection() {
+	var expected []string
+	wfOpts := ts.startWorkflowOptions("test-deadlock")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	wfOpts.WorkflowRunTimeout = 5 * time.Minute
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.Deadlocked, &expected)
+	ts.Error(err)
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
+	ts.True(ok)
+	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
