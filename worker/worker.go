@@ -42,6 +42,30 @@ type (
 	// Worker hosts workflow and activity implementations.
 	// Use worker.New(...) to create an instance.
 	Worker interface {
+		Registry
+
+		// Start the worker in a non-blocking fashion.
+		Start() error
+
+		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
+		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
+		// Pass nil to stop the worker with external Stop() call.
+		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
+		// Returns error only if worker fails to start.
+		Run(interruptCh <-chan interface{}) error
+
+		// Stop the worker.
+		Stop()
+	}
+
+	// Registry exposes registration functions to consumers.
+	Registry interface {
+		WorkflowRegistry
+		ActivityRegistry
+	}
+
+	// WorkflowRegistry exposes workflow registration functions to consumers.
+	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
 		// A workflow takes a workflow.Context and input and returns a (result, error) or just error.
 		// Examples:
@@ -62,7 +86,10 @@ type (
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+	}
 
+	// ActivityRegistry exposes activity registration functions to consumers.
+	ActivityRegistry interface {
 		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
 		// An activity function takes a context and input and returns a (result, error) or just error.
 		//
@@ -111,19 +138,6 @@ type (
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
-
-		// Start the worker in a non-blocking fashion.
-		Start() error
-
-		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
-		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
-		// Pass nil to stop the worker with external Stop() call.
-		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-		// Returns error only if worker fails to start.
-		Run(interruptCh <-chan interface{}) error
-
-		// Stop the worker.
-		Stop()
 	}
 
 	// WorkflowReplayer supports replaying a workflow from its event history.

@@ -194,6 +194,12 @@ func TestHeaderReader_Get(t *testing.T) {
 			"key1",
 			false,
 		},
+		{
+			"nil headers",
+			nil,
+			"key1",
+			false,
+		},
 	}
 
 	for _, test := range tests {
@@ -209,10 +215,4 @@ func TestHeaderReader_Get(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("nil panic", func(t *testing.T) {
-		reader := NewHeaderReader(nil)
-		assert.Panics(t, func() { reader.Get("") })
-	})
-
 }

@@ -80,9 +80,8 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	name := namespace
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Name:                             name,
+		Namespace:                        namespace,
 		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
 	})
 	defer client.Close()
