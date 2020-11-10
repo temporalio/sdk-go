@@ -739,6 +739,8 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 		}),
+		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(10),
 	}
 	params := workerExecutionParameters{
 		Namespace:           testNamespace,
@@ -753,13 +755,13 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		previousStartedEventID int64
 		isResultErr            bool
 	}{
-		{0, 0, false},
-		{0, 3, false},
-		{10, 0, true},
-		{10, 6, true},
+		{10, 6, false},
+		{15, 10, true},
 	}
 
 	for i, tc := range testCases {
+		cacheSize := getWorkflowCache().Size()
+
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
 		// Cut the workflow task scheduled ans started events
@@ -774,11 +776,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 			t.Error(err, "testcase %v failed", i)
 			t.Nil(request)
 			t.Contains(err.Error(), "premature end of stream")
-			t.EqualValues(getWorkflowCache().Size(), 0)
+			t.EqualValues(getWorkflowCache().Size(), cacheSize)
 			continue
 		}
 
 		t.NoError(err, "testcase %v failed", i)
+		t.EqualValues(getWorkflowCache().Size(), cacheSize+1)
 	}
 }
 
@@ -961,15 +964,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
-	t.NoError(err)
-	t.NotNil(request)
-	r, ok := request.(*workflowservice.RespondWorkflowTaskFailedRequest)
+	_, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	t.Error(err)
+	_, ok := err.(*workflowPanicError)
 	t.True(ok)
-	t.EqualValues(enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, r.Cause)
-	t.NotNil(r.GetFailure().GetApplicationFailureInfo())
-	t.Equal("PanicError", r.GetFailure().GetApplicationFailureInfo().GetType())
-	t.Equal("panicError", r.GetFailure().GetMessage())
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {

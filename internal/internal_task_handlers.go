@@ -789,10 +789,11 @@ processWorkflowLoop:
 						startTime,
 					)
 					if err != nil {
-						return nil, &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						return
 					}
 					if workflowTask == nil {
-						return nil, nil
+						return
 					}
 
 					continue processWorkflowLoop
@@ -811,7 +812,9 @@ processWorkflowLoop:
 			break processWorkflowLoop
 		}
 	}
-	return response, err
+	errRet = err
+	completeRequest = response
+	return
 }
 
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
@@ -926,37 +929,46 @@ ProcessEvents:
 	// activity task completed), but the corresponding workflow code that start the event has been removed. In that case
 	// the replay of that event will panic on the command state machine and the workflow will be marked as completed
 	// with the panic error.
-	var nonDeterministicErr error
+	var panicError error
 	if !skipReplayCheck && !w.isWorkflowCompleted {
 		// check if commands from reply matches to the history events
 		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
-			nonDeterministicErr = err
+			panicError = err
 		}
 	}
-	if nonDeterministicErr == nil && w.err != nil {
-		if panicErr, ok := w.err.(*PanicError); ok && panicErr.value != nil {
-			if _, isStateMachinePanic := panicErr.value.(stateMachineIllegalStatePanic); isStateMachinePanic {
-				nonDeterministicErr = panicErr
-			}
+	if panicError == nil && w.err != nil {
+		if panicErr, ok := w.err.(*workflowPanicError); ok {
+			panicError = panicErr
 		}
 	}
 
-	if nonDeterministicErr != nil {
-		w.wth.logger.Error("non-deterministic-error",
-			tagWorkflowType, task.WorkflowType.GetName(),
-			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-			tagRunID, task.WorkflowExecution.GetRunId(),
-			tagError, nonDeterministicErr)
+	if panicError != nil {
+		if panicErr, ok := w.err.(*workflowPanicError); ok {
+			w.wth.logger.Error("workflow-panic",
+				tagWorkflowType, task.WorkflowType.GetName(),
+				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.WorkflowExecution.GetRunId(),
+				tagError, panicError,
+				tagStackTrace, panicErr.StackTrace())
+		} else {
+			w.wth.logger.Error("workflow-panic",
+				tagWorkflowType, task.WorkflowType.GetName(),
+				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.WorkflowExecution.GetRunId(),
+				tagError, panicError)
+		}
 
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
 			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewApplicationError("Non-determimistic error cause workflow to fail due to FailWorkflow workflow panic policy.", "", false, nonDeterministicErr))
+			eventHandler.Complete(nil, NewApplicationError(
+				"Workflow failed on panic due to FailWorkflow workflow panic policy",
+				"", false, panicError))
 		case BlockWorkflow:
 			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or
 			// workflow timeout.
-			return nil, nonDeterministicErr
+			return nil, panicError
 		default:
 			panic("unknown mismatched workflow history policy.")
 		}
@@ -1453,19 +1465,6 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 
 	metricsScope := metrics.GetMetricsScopeForWorkflow(wth.metricsScope, eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name)
-
-	// fail workflow task on workflow panic
-	var workflowPanicErr *workflowPanicError
-	if errors.As(workflowContext.err, &workflowPanicErr) {
-		// Workflow panic
-		metricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
-		wth.logger.Error("Workflow panic.",
-			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-			tagRunID, task.WorkflowExecution.GetRunId(),
-			"PanicError", workflowPanicErr.Error(),
-			"PanicStack", workflowPanicErr.StackTrace())
-		return errorToFailWorkflowTask(task.TaskToken, workflowContext.err, wth.identity, wth.dataConverter)
-	}
 
 	// complete workflow task
 	var closeCommand *commandpb.Command

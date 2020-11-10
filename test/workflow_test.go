@@ -65,6 +65,16 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
+func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
+	// Simulates deadlock. Never call time.Sleep in production code!
+	time.Sleep(2 * time.Second)
+	return []string{}, nil
+}
+
+func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
+	panic("simulated")
+}
+
 func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
 	startTime := workflow.Now(ctx)
@@ -913,6 +923,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.Deadlocked)
+	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.BasicSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)

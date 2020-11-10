@@ -855,7 +855,13 @@ func (s *coroutineState) call() {
 	s.unblock <- func(status string, stackDepth int) bool {
 		return false // unblock
 	}
-	<-s.aboutToBlock
+	select {
+	case <-s.aboutToBlock:
+	case <-time.After(1 * time.Second):
+		s.closed = true
+		panic(fmt.Sprintf("Potential deadlock detected: "+
+			"workflow goroutine \"%v\" didn't yield for over a second", s.name))
+	}
 }
 
 func (s *coroutineState) close() {

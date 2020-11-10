@@ -116,9 +116,10 @@ type (
 		BackgroundActivityContext context.Context
 
 		// Optional: Sets how workflow worker deals with non-deterministic history events
-		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow definition changes).
-		// default: BlockWorkflow, which just logs error but reply nothing back to server
-		NonDeterministicWorkflowPolicy WorkflowPanicPolicy
+		// (presumably arising from non-deterministic workflow definitions or non-backward compatible workflow
+		// definition changes) and other panics raised from workflow code.
+		// default: BlockWorkflow, which just logs error but doesn't fail workflow.
+		WorkflowPanicPolicy WorkflowPanicPolicy
 
 		// Optional: worker graceful stop timeout
 		// default: 0s

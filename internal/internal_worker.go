@@ -1260,7 +1260,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		DisableStickyExecution:                options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
-		WorkflowPanicPolicy:                   options.NonDeterministicWorkflowPolicy,
+		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
 		DataConverter:                         client.dataConverter,
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,

@@ -760,10 +760,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 			weh.metricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
-			weh.logger.Error("ProcessEvent panic.",
-				"PanicError", fmt.Sprintf("%v", p),
-				"PanicStack", st)
-
 			weh.Complete(nil, newWorkflowPanicError(p, st))
 		}
 	}()
