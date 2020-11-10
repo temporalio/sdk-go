@@ -116,5 +116,5 @@ func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-history.json")
 	require.Error(s.T(), err)
-	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow failed with failure"))
+	require.True(s.T(), strings.Contains(err.Error(), "nondeterministic workflow definition"))
 }

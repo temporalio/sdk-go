@@ -789,10 +789,11 @@ processWorkflowLoop:
 						startTime,
 					)
 					if err != nil {
-						return nil, &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						return
 					}
 					if workflowTask == nil {
-						return nil, nil
+						return
 					}
 
 					continue processWorkflowLoop
@@ -811,7 +812,9 @@ processWorkflowLoop:
 			break processWorkflowLoop
 		}
 	}
-	return response, err
+	errRet = err
+	completeRequest = response
+	return
 }
 
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
