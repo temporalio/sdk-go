@@ -333,7 +333,12 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 
 	fv := reflect.ValueOf(f.value)
 	if fv.IsValid() {
-		rf.Elem().Set(fv)
+		// fix the PanicError when the return value is pointer
+		if fv.Kind() == reflect.Ptr {
+			rf.Elem().Set(fv.Elem())
+		} else {
+			rf.Elem().Set(fv)
+		}
 	}
 	return f.err
 }
