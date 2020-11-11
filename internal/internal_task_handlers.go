@@ -944,14 +944,14 @@ ProcessEvents:
 
 	if panicError != nil {
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
-			w.wth.logger.Error("workflow-panic",
+			w.wth.logger.Error("Workflow panic",
 				tagWorkflowType, task.WorkflowType.GetName(),
 				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 				tagRunID, task.WorkflowExecution.GetRunId(),
 				tagError, panicError,
 				tagStackTrace, panicErr.StackTrace())
 		} else {
-			w.wth.logger.Error("workflow-panic",
+			w.wth.logger.Error("Workflow panic",
 				tagWorkflowType, task.WorkflowType.GetName(),
 				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 				tagRunID, task.WorkflowExecution.GetRunId(),

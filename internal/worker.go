@@ -148,7 +148,9 @@ type (
 )
 
 // WorkflowPanicPolicy is used for configuring how worker deals with workflow
-// mismatched history events (presumably arising from non-deterministic workflow definitions).
+// code panicking which includes non backwards compatible changes to the workflow code without appropriate
+// versioning (see workflow.GetVersion).
+// The default behavior is to block workflow execution until the problem is fixed.
 type WorkflowPanicPolicy int
 
 const (

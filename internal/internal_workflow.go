@@ -860,7 +860,7 @@ func (s *coroutineState) call() {
 	case <-time.After(1 * time.Second):
 		s.closed = true
 		panic(fmt.Sprintf("Potential deadlock detected: "+
-			"workflow goroutine \"%v\" didn't yield for over a second", s.name))
+			"workflow goroutine %q didn't yield for over a second", s.name))
 	}
 }
 
