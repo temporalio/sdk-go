@@ -92,8 +92,8 @@ github.com/uber/jaeger-client-go v2.23.1+incompatible/go.mod h1:WVhlPFC8FDjOFMMW
 github.com/uber/jaeger-lib v2.2.0+incompatible h1:MxZXOiR2JuoANZ3J6DE/U0kSFv/eJ/GfSYVCjK7dyaw=
 github.com/uber/jaeger-lib v2.2.0+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
-go.temporal.io/api v1.1.1-0.20201104024306-2ac4ba734346 h1:T9u7ptebvSfZ9dhtlo1xFOrDLNFQYdPNOGTRDngMjjU=
-go.temporal.io/api v1.1.1-0.20201104024306-2ac4ba734346/go.mod h1:yOc7xX03usCg0Vh9qV0eQHwWqcEiFbfNpVCUyH7ieKo=
+go.temporal.io/api v1.2.0 h1:b1NhvRWk/1GKRZYxtSPvbVJ1pfmTJ+zjCaPXmnBFf8U=
+go.temporal.io/api v1.2.0/go.mod h1:yOc7xX03usCg0Vh9qV0eQHwWqcEiFbfNpVCUyH7ieKo=
 go.uber.org/atomic v1.7.0 h1:ADUqmZGgLDDfbSL9ZmPxKTybcoEYHgpYfELNoN+7hsw=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/goleak v1.0.0 h1:qsup4IcBdlmsnGfqyLl4Ntn3C2XCCuKAE7DwHpScyUo=
