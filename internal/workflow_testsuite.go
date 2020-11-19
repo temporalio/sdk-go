@@ -737,7 +737,7 @@ func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 	e.impl.setLastCompletionResult(result)
 }
 
-// SetLastFailure sets the result to be returned from workflow.GetLastCompletionResult().
+// SetLastFailure sets the result to be returned from workflow.GetLastFailure().
 func (e *TestWorkflowEnvironment) SetLastFailure(failure failure.Failure) {
 	e.impl.setLastFailure(failure)
 }
