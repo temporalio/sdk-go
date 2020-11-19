@@ -633,13 +633,13 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
 		lastCompletionResult:     attributes.LastCompletionResult,
-		lastFailure:             attributes.ContinuedFailure,
-		CronSchedule:            attributes.CronSchedule,
-		ContinuedExecutionRunID: attributes.ContinuedExecutionRunId,
-		ParentWorkflowNamespace: attributes.ParentWorkflowNamespace,
-		ParentWorkflowExecution: parentWorkflowExecution,
-		Memo:                    attributes.Memo,
-		SearchAttributes:        attributes.SearchAttributes,
+		lastFailure:              attributes.ContinuedFailure,
+		CronSchedule:             attributes.CronSchedule,
+		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
+		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
+		ParentWorkflowExecution:  parentWorkflowExecution,
+		Memo:                     attributes.Memo,
+		SearchAttributes:         attributes.SearchAttributes,
 	}
 
 	wfStartTime := common.TimeValue(h.Events[0].GetEventTime())
