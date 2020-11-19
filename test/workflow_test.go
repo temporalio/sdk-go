@@ -915,6 +915,32 @@ func (w *Workflows) ContextPropagator(ctx workflow.Context, startChild bool) ([]
 	return result, nil
 }
 
+const CronFailMsg = "dying on purpose"
+
+func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
+	retme := 0
+
+	if workflow.HasLastCompletionResult(ctx) {
+		var lastres int
+		if err := workflow.GetLastCompletionResult(ctx, &lastres); err == nil {
+			retme = lastres + 1
+		}
+	}
+
+	if retme == 2 && workflow.HasLastFailure(ctx) {
+		lastfail := workflow.GetLastFailure(ctx)
+		if lastfail.Message != CronFailMsg {
+			return -3, errors.New("incorrect message in latest failure")
+		}
+		return 3, temporal.NewCanceledError("finished OK")
+	}
+	if retme == 2 {
+		return -1, errors.New(CronFailMsg)
+	}
+
+	return retme, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -953,6 +979,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.SignalWorkflow)
+	worker.RegisterWorkflow(w.CronWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

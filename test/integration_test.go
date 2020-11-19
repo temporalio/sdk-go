@@ -684,6 +684,20 @@ func (ts *IntegrationTestSuite) TestContextPropagator() {
 	}, propagatedValues)
 }
 
+const CronWorkflowID = "test-cron"
+
+func (ts *IntegrationTestSuite) TestCron() {
+	var expected int
+	err := ts.executeWorkflow(CronWorkflowID, ts.workflows.CronWorkflow, &expected)
+	// Workflow finishes itself by cancelling
+	ts.Error(err)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
+	var errDeets *string
+	ts.NoError(canceledErr.Details(&errDeets))
+	ts.EqualValues("finished OK", *errDeets)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -748,13 +762,19 @@ func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
 }
 
 func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
-	return client.StartWorkflowOptions{
+	var wfOptions = client.StartWorkflowOptions{
 		ID:                       wfID,
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
+	// REVIEW: Putting this here feels a bit lame, but plumbing arguments down through `executeWorkflow`
+	//  feels like a lot of change that almost all the tests don't need. Thoughts?
+	if wfID == CronWorkflowID {
+		wfOptions.CronSchedule = "@every 1s"
+	}
+	return wfOptions
 }
 
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {

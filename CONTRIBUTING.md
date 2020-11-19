@@ -34,8 +34,14 @@ commit messages. Read it, follow it, learn it, love it.
 
 ## Testing
 
-Run all the tests with coverage and race detector enabled:
+Run all the tests (including integration tests, requiring you are running a server locally) with coverage and race
+detector enabled:
 
 ```bash
 make test
+```
+
+To run just the unit tests:
+```bash
+make unit-test
 ```

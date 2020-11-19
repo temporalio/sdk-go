@@ -26,6 +26,7 @@ package workflow
 
 import (
 	"github.com/uber-go/tally"
+	"go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -402,6 +403,22 @@ func HasLastCompletionResult(ctx Context) bool {
 // See TestWorkflowEnvironment.SetLastCompletionResult() for unit test support.
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
+}
+
+// HasLastFailure checks if there is a failure in any previous run. This is used in combination with cron schedule. A
+// workflow can be started with an optional cron schedule. If a cron workflow has a previous run which failed at some
+// point, HasLastFailure() checks if there is failure data available from a previous run.
+func HasLastFailure(ctx Context) bool {
+	return internal.HasLastFailure(ctx)
+}
+
+// GetLastFailure extracts the latest failure from any from previous run for this cron workflow, if one has failed. This
+// is used in combination with cron schedule. A workflow can be started with an optional cron schedule. If a cron
+// workflow has a previous run which failed at some point, GetLastFailure() returns that failure data.
+//
+// See TestWorkflowEnvironment.SetLastFailure() for unit test support.
+func GetLastFailure(ctx Context) *failure.Failure {
+	return internal.GetLastFailure(ctx)
 }
 
 // UpsertSearchAttributes is used to add or update workflow search attributes.

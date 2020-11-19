@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"testing"
@@ -734,6 +735,11 @@ func (e *TestWorkflowEnvironment) SetActivityTaskQueue(taskqueue string, activit
 // SetLastCompletionResult sets the result to be returned from workflow.GetLastCompletionResult().
 func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 	e.impl.setLastCompletionResult(result)
+}
+
+// SetLastFailure sets the result to be returned from workflow.GetLastCompletionResult().
+func (e *TestWorkflowEnvironment) SetLastFailure(failure failure.Failure) {
+	e.impl.setLastFailure(failure)
 }
 
 // SetMemoOnStart sets the memo when start workflow.

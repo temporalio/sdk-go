@@ -27,6 +27,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"time"
@@ -737,6 +738,7 @@ type WorkflowInfo struct {
 	Namespace                string
 	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
 	lastCompletionResult     *commonpb.Payloads
+	lastFailure              *failure.Failure
 	CronSchedule             string
 	ContinuedExecutionRunID  string
 	ParentWorkflowNamespace  string
@@ -1363,6 +1365,32 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 
 	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
+}
+
+// HasLastFailure checks if there is a failure in any previous run. This is used in combination with cron schedule. A
+// workflow can be started with an optional cron schedule. If a cron workflow has a previous run which failed at some
+// point, HasLastFailure() checks if there is failure data available from a previous run.
+func HasLastFailure(ctx Context) bool {
+	i := getWorkflowOutboundCallsInterceptor(ctx)
+	return i.HasLastFailure(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) HasLastFailure(ctx Context) bool {
+	info := wc.GetWorkflowInfo(ctx)
+	return info.lastFailure != nil
+}
+
+// GetLastFailure extracts the latest failure from any from previous run for this cron workflow, if one has failed. This
+// is used in combination with cron schedule. A workflow can be started with an optional cron schedule. If a cron
+// workflow has a previous run which failed at some point, GetLastFailure() returns that failure data.
+func GetLastFailure(ctx Context) *failure.Failure {
+	i := getWorkflowOutboundCallsInterceptor(ctx)
+	return i.GetLastFailure(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) GetLastFailure(ctx Context) *failure.Failure {
+	info := wc.GetWorkflowInfo(ctx)
+	return info.lastFailure
 }
 
 // WithActivityOptions adds all options to the copy of the context.

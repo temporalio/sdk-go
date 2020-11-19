@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	failurepb "go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"sync"
@@ -2233,6 +2234,10 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 		panic(err)
 	}
 	env.workflowInfo.lastCompletionResult = data
+}
+
+func (env *testWorkflowEnvironmentImpl) setLastFailure(failure failurepb.Failure) {
+	env.workflowInfo.lastFailure = &failure
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {
