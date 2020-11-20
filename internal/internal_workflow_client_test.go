@@ -28,6 +28,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	workflowpb "go.temporal.io/api/workflow/v1"
+	ilog "go.temporal.io/sdk/internal/log"
 	"testing"
 	"time"
 
@@ -335,6 +337,7 @@ func (s *workflowRunSuite) SetupTest() {
 	options := ClientOptions{
 		MetricsScope: metricsScope,
 		Identity:     identity,
+		Logger:       ilog.NewNopLogger(),
 	}
 	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
 	s.dataConverter = converter.GetDefaultDataConverter()
@@ -932,6 +935,20 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 	err := workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
 	s.Equal(workflowResult, decodedResult)
+}
+
+// Verify that when `GetWorkflow` is called with no run ID, the current run ID is populated
+func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
+	execution := &commonpb.WorkflowExecution{RunId: runID}
+	describeResp := &workflowservice.DescribeWorkflowExecutionResponse{
+		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Execution: execution}}
+	s.workflowServiceClient.EXPECT().DescribeWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+	workflowRunNoRunId := s.workflowClient.GetWorkflow(
+		context.Background(),
+		workflowID,
+		"",
+	)
+	s.Equal(runID, workflowRunNoRunId.GetRunID())
 }
 
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {

@@ -293,10 +293,22 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 // reaches the end state, such as workflow finished successfully or timeout.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
+func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+	}
+
+	// The ID may not actually have been set - if not, we have to ask the server for info about the workflow execution
+	// and extract run id from there. This is definitely less efficient than it could be if there was a more specific
+	// rpc method for this, or if there were more granular history filters - in which case it could be extracted from
+	// the `iterFn` inside of `workflowRunImpl`
+	if runID == "" {
+		execData, err := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
+		if err != nil {
+			wc.logger.Error("error while fetching workflow execution info", err)
+		}
+		runID = execData.GetWorkflowExecutionInfo().GetExecution().RunId
 	}
 
 	return &workflowRunImpl{
