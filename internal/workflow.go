@@ -27,7 +27,6 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"time"
@@ -36,6 +35,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -1367,22 +1367,10 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 	return encodedVal.Get(d...)
 }
 
-// HasLastFailure checks if there is a failure in any previous run. This is used in combination with cron schedule. A
-// workflow can be started with an optional cron schedule. If a cron workflow has a previous run which failed at some
-// point, HasLastFailure() checks if there is failure data available from a previous run.
-func HasLastFailure(ctx Context) bool {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
-	return i.HasLastFailure(ctx)
-}
-
-func (wc *workflowEnvironmentInterceptor) HasLastFailure(ctx Context) bool {
-	info := wc.GetWorkflowInfo(ctx)
-	return info.lastFailure != nil
-}
-
-// GetLastFailure extracts the latest failure from any from previous run for this cron workflow, if one has failed. This
-// is used in combination with cron schedule. A workflow can be started with an optional cron schedule. If a cron
-// workflow has a previous run which failed at some point, GetLastFailure() returns that failure data.
+// GetLastFailure extracts the latest failure from any from previous run for this workflow, if one has failed. If none
+// have failed, nil is returned.
+//
+// See TestWorkflowEnvironment.SetLastFailure() for unit test support.
 func GetLastFailure(ctx Context) *failure.Failure {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	return i.GetLastFailure(ctx)

@@ -27,11 +27,12 @@ package internal
 import (
 	"context"
 	"fmt"
-	"go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"go.temporal.io/api/failure/v1"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/mock"

@@ -927,7 +927,7 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 		}
 	}
 
-	if retme == 2 && workflow.HasLastFailure(ctx) {
+	if retme == 2 {
 		lastfail := workflow.GetLastFailure(ctx)
 		if lastfail.Message != CronFailMsg {
 			return -3, errors.New("incorrect message in latest failure")

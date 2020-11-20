@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.temporal.io/api/failure/v1"
 	"runtime"
 	"sync"
 	"testing"
@@ -41,6 +40,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
 
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -2983,18 +2983,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastResult() {
 	s.Equal(lastResult+1, result)
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastFailure() {
+func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
 	const failstr = "Some previous failure"
 	cronWorkflow := func(ctx Context) (int, error) {
-		if HasLastFailure(ctx) {
-			var lastfail = GetLastFailure(ctx)
-			if lastfail.Message != failstr {
-				return 1, errors.New("last failure had unexpected message")
-			}
-
-			return 0, nil
+		var lastfail = GetLastFailure(ctx)
+		if lastfail.Message != failstr {
+			return 1, errors.New("last failure had unexpected message")
 		}
-		return 1, errors.New("expected to find a last failure but didn't")
+
+		return 0, nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()

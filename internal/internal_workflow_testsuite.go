@@ -28,11 +28,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	failurepb "go.temporal.io/api/failure/v1"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+
+	failurepb "go.temporal.io/api/failure/v1"
 
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"

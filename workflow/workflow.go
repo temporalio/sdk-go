@@ -405,16 +405,8 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
 
-// HasLastFailure checks if there is a failure in any previous run. This is used in combination with cron schedule. A
-// workflow can be started with an optional cron schedule. If a cron workflow has a previous run which failed at some
-// point, HasLastFailure() checks if there is failure data available from a previous run.
-func HasLastFailure(ctx Context) bool {
-	return internal.HasLastFailure(ctx)
-}
-
-// GetLastFailure extracts the latest failure from any from previous run for this cron workflow, if one has failed. This
-// is used in combination with cron schedule. A workflow can be started with an optional cron schedule. If a cron
-// workflow has a previous run which failed at some point, GetLastFailure() returns that failure data.
+// GetLastFailure extracts the latest failure from any from previous run for this workflow, if one has failed. If none
+// have failed, nil is returned.
 //
 // See TestWorkflowEnvironment.SetLastFailure() for unit test support.
 func GetLastFailure(ctx Context) *failure.Failure {
