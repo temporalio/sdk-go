@@ -943,12 +943,12 @@ func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
 	describeResp := &workflowservice.DescribeWorkflowExecutionResponse{
 		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Execution: execution}}
 	s.workflowServiceClient.EXPECT().DescribeWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
-	workflowRunNoRunId := s.workflowClient.GetWorkflow(
+	workflowRunNoRunID := s.workflowClient.GetWorkflow(
 		context.Background(),
 		workflowID,
 		"",
 	)
-	s.Equal(runID, workflowRunNoRunId.GetRunID())
+	s.Equal(runID, workflowRunNoRunID.GetRunID())
 }
 
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
