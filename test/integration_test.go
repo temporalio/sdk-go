@@ -769,8 +769,6 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
-	// REVIEW: Putting this here feels a bit lame, but plumbing arguments down through `executeWorkflow`
-	//  feels like a lot of change that almost all the tests don't need. Thoughts?
 	if wfID == CronWorkflowID {
 		wfOptions.CronSchedule = "@every 1s"
 	}

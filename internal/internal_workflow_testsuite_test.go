@@ -37,10 +37,10 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
 
-	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -2996,7 +2996,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
 
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(cronWorkflow)
-	env.SetLastFailure(failure.Failure{
+	env.SetLastFailure(failurepb.Failure{
 		Message: failstr,
 	})
 	env.ExecuteWorkflow(cronWorkflow)

@@ -26,7 +26,8 @@ package workflow
 
 import (
 	"github.com/uber-go/tally"
-	"go.temporal.io/api/failure/v1"
+
+	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -409,7 +410,7 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 // have failed, nil is returned.
 //
 // See TestWorkflowEnvironment.SetLastFailure() for unit test support.
-func GetLastFailure(ctx Context) *failure.Failure {
+func GetLastFailure(ctx Context) *failurepb.Failure {
 	return internal.GetLastFailure(ctx)
 }
 
