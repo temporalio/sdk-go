@@ -28,10 +28,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	workflowpb "go.temporal.io/api/workflow/v1"
-	ilog "go.temporal.io/sdk/internal/log"
 	"testing"
 	"time"
+
+	workflowpb "go.temporal.io/api/workflow/v1"
+	ilog "go.temporal.io/sdk/internal/log"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
