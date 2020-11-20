@@ -2238,7 +2238,7 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 }
 
 func (env *testWorkflowEnvironmentImpl) setLastFailure(failure *failurepb.Failure) {
-	env.workflowInfo.lastFailure = failure
+	env.workflowInfo.lastFailure = convertFailureToError(failure, env.GetDataConverter())
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {

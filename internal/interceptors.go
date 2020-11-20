@@ -29,8 +29,6 @@ import (
 
 	"github.com/uber-go/tally"
 
-	failurepb "go.temporal.io/api/failure/v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -88,7 +86,7 @@ type WorkflowOutboundCallsInterceptor interface {
 	IsReplaying(ctx Context) bool
 	HasLastCompletionResult(ctx Context) bool
 	GetLastCompletionResult(ctx Context, d ...interface{}) error
-	GetLastFailure(ctx Context) *failurepb.Failure
+	GetLastFailure(ctx Context) error
 }
 
 var _ WorkflowOutboundCallsInterceptor = (*WorkflowOutboundCallsInterceptorBase)(nil)
@@ -222,6 +220,6 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetLastCompletionResult(ctx Conte
 }
 
 // GetLastFailure forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) GetLastFailure(ctx Context) *failurepb.Failure {
+func (t *WorkflowOutboundCallsInterceptorBase) GetLastFailure(ctx Context) error {
 	return t.Next.GetLastFailure(ctx)
 }

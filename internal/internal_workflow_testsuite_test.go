@@ -2987,8 +2987,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
 	const failstr = "Some previous failure"
 	cronWorkflow := func(ctx Context) (int, error) {
 		var lastfail = GetLastFailure(ctx)
-		if lastfail.Message != failstr {
-			return 1, errors.New("last failure had unexpected message")
+		if lastfail == nil || lastfail.Error() != failstr {
+			return 1, errors.New("last failure did not contain expected message")
 		}
 
 		return 0, nil
