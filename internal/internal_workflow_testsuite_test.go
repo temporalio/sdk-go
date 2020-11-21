@@ -37,7 +37,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.uber.org/atomic"
 
@@ -2984,7 +2983,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastResult() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
-	const failstr = "Some previous failure"
+	const failstr = "some previous failure"
 	cronWorkflow := func(ctx Context) (int, error) {
 		var lastfail = GetLastFailure(ctx)
 		if lastfail == nil || lastfail.Error() != failstr {
@@ -2996,9 +2995,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
 
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(cronWorkflow)
-	env.SetLastFailure(failurepb.Failure{
-		Message: failstr,
-	})
+	env.SetLastFailure(errors.New(failstr))
 	env.ExecuteWorkflow(cronWorkflow)
 
 	s.True(env.IsWorkflowCompleted())
