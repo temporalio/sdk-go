@@ -33,8 +33,6 @@ import (
 	"sync"
 	"time"
 
-	failurepb "go.temporal.io/api/failure/v1"
-
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
 	"github.com/opentracing/opentracing-go"
@@ -2237,8 +2235,8 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 	env.workflowInfo.lastCompletionResult = data
 }
 
-func (env *testWorkflowEnvironmentImpl) setLastFailure(failure *failurepb.Failure) {
-	env.workflowInfo.lastFailure = convertFailureToError(failure, env.GetDataConverter())
+func (env *testWorkflowEnvironmentImpl) setLastFailure(failure error) {
+	env.workflowInfo.lastFailure = failure
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {

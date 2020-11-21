@@ -37,7 +37,6 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -738,8 +737,8 @@ func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 }
 
 // SetLastFailure sets the result to be returned from workflow.GetLastFailure().
-func (e *TestWorkflowEnvironment) SetLastFailure(failure failurepb.Failure) {
-	e.impl.setLastFailure(&failure)
+func (e *TestWorkflowEnvironment) SetLastFailure(failure error) {
+	e.impl.setLastFailure(failure)
 }
 
 // SetMemoOnStart sets the memo when start workflow.
