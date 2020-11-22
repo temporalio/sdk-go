@@ -787,20 +787,20 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID Activit
 }
 
 // RequestCancelTimer request to cancel timer on this testWorkflowEnvironmentImpl.
-func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID string) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	env.logger.Debug("RequestCancelTimer", tagTimerID, timerID)
-	timerHandle, ok := env.timers[timerID]
+	timerHandle, ok := env.timers[timerID.id]
 	if !ok {
 		env.logger.Debug("RequestCancelTimer failed, TimerID not exists.", tagTimerID, timerID)
 		return
 	}
 
-	delete(env.timers, timerID)
+	delete(env.timers, timerID.id)
 	timerHandle.timer.Stop()
 	timerHandle.env.postCallback(func() {
 		timerHandle.callback(nil, NewCanceledError())
 		if timerHandle.env.onTimerCanceledListener != nil {
-			timerHandle.env.onTimerCanceledListener(timerID)
+			timerHandle.env.onTimerCanceledListener(timerID.id)
 		}
 	}, true)
 }
@@ -1852,19 +1852,19 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	return task
 }
 
-func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback ResultHandler, notifyListener bool) *TimerInfo {
+func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback ResultHandler, notifyListener bool) TimerID {
 	nextID := env.nextID()
-	timerInfo := &TimerInfo{timerID: getStringID(nextID)}
+	timerID := TimerID{id: getStringID(nextID)}
 	timer := env.mockClock.AfterFunc(d, func() {
-		delete(env.timers, timerInfo.timerID)
+		delete(env.timers, timerID.id)
 		env.postCallback(func() {
 			callback(nil, nil)
 			if notifyListener && env.onTimerFiredListener != nil {
-				env.onTimerFiredListener(timerInfo.timerID)
+				env.onTimerFiredListener(timerID.id)
 			}
 		}, true)
 	})
-	env.timers[timerInfo.timerID] = &testTimerHandle{
+	env.timers[timerID.id] = &testTimerHandle{
 		env:            env,
 		callback:       callback,
 		timer:          timer,
@@ -1874,12 +1874,12 @@ func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback Resul
 		timerID:        nextID,
 	}
 	if notifyListener && env.onTimerScheduledListener != nil {
-		env.onTimerScheduledListener(timerInfo.timerID, d)
+		env.onTimerScheduledListener(timerID.id, d)
 	}
-	return timerInfo
+	return timerID
 }
 
-func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerInfo {
+func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) TimerID {
 	return env.newTimer(d, callback, true)
 }
 

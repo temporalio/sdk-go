@@ -159,19 +159,19 @@ func (i ActivityID) String() string {
 	return i.id
 }
 
-// Parse returns ActivityID constructed from its string representation.
+// ParseActivityID returns ActivityID constructed from its string representation.
 // The string representation should be obtained through ActivityID.String()
-func (i ActivityID) Parse(v string) (ActivityID, error) {
-	return ActivityID{id: v}, nil
+func ParseActivityID(id string) (ActivityID, error) {
+	return ActivityID{id: id}, nil
 }
 
 func (i LocalActivityID) String() string {
 	return i.id
 }
 
-// Parse returns LocalActivityID constructed from its string representation.
+// ParseLocalActivityID returns LocalActivityID constructed from its string representation.
 // The string representation should be obtained through LocalActivityID.String()
-func (i LocalActivityID) Parse(v string) (LocalActivityID, error) {
+func ParseLocalActivityID(v string) (LocalActivityID, error) {
 	return LocalActivityID{id: v}, nil
 }
 
