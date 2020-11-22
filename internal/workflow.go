@@ -470,7 +470,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	if cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if ctx.Err() == ErrCanceled {
-				wc.env.RequestCancelActivity(a.activityID)
+				wc.env.RequestCancelActivity(a.ActivityID)
 			}
 			return false
 		}

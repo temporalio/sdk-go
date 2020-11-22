@@ -51,7 +51,7 @@ type (
 
 	// ActivityID uniquely identifies an activity execution
 	ActivityID struct {
-		activityID string
+		ActivityID string
 	}
 
 	// LocalActivityID uniquely identifies a local activity execution

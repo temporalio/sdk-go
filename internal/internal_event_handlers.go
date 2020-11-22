@@ -476,7 +476,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
 	return &ActivityID{
-		activityID: activityID,
+		ActivityID: activityID,
 	}
 }
 
