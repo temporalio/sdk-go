@@ -1003,7 +1003,6 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
 	activityInfo := &ActivityID{
-		scheduleID: scheduleID,
 		activityID: activityID,
 	}
 	if err != nil {

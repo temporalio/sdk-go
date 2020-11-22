@@ -51,7 +51,6 @@ type (
 
 	// ActivityID uniquely identifies an activity execution
 	ActivityID struct {
-		scheduleID int64
 		activityID string
 	}
 
