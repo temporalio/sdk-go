@@ -783,7 +783,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 	return command
 }
 
-func (h *commandsHelper) handleActivityTaskScheduled(scheduledEventID int64, activityID string) {
+func (h *commandsHelper) handleActivityTaskScheduled(activityID string, scheduledEventID int64) {
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
 		panicMsg := fmt.Sprintf("lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
 			scheduledEventID, activityID)

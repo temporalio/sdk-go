@@ -278,7 +278,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) error {
-		activityID := string(r.TaskToken)
+		activityID := ActivityID{ID: string(r.TaskToken)}
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID)
 		env.locker.Unlock()
@@ -559,17 +559,18 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	// ensure activityFn is registered to defaultTestTaskQueue
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskQueue, env.GetDataConverter())
 	activityHandle := &testActivityHandle{callback: func(result *commonpb.Payloads, err error) {}, activityType: parameters.ActivityType.Name}
-	env.setActivityHandle(scheduleTaskAttr.GetActivityId(), activityHandle)
+	activityID := ActivityID{ID: scheduleTaskAttr.GetActivityId()}
+	env.setActivityHandle(activityID, activityHandle)
 
 	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
-			return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_TIMEOUT, NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
+			return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_TIMEOUT, NewTimeoutError("Activity timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, err))
 		}
 		topLine := fmt.Sprintf("activity for %s [panic]:", defaultTestTaskQueue)
 		st := getStackTraceRaw(topLine, 7, 0)
-		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, newPanicError(err.Error(), st))
+		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, newPanicError(err.Error(), st))
 	}
 
 	if result == ErrActivityResultPending {
@@ -579,9 +580,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	switch request := result.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		details := newEncodedValues(request.Details, env.GetDataConverter())
-		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, NewCanceledError(details))
+		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, NewCanceledError(details))
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, env.wrapActivityError(scheduleTaskAttr.ActivityId, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
+		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -619,7 +620,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
 		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
-		return nil, env.wrapActivityError(task.activityID, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
+		return nil, env.wrapActivityError(ActivityID{ID: task.activityID}, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
 	}
 	return newEncodedValue(result.result, env.GetDataConverter()), nil
 }
@@ -768,7 +769,7 @@ func (env *testWorkflowEnvironmentImpl) postCallback(cb func(), startWorkflowTas
 	env.callbackChannel <- testCallbackHandle{callback: cb, startWorkflowTask: startWorkflowTask, env: env}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID string) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
 	handle, ok := env.getActivityHandle(activityID)
 	if !ok {
 		env.logger.Debug("RequestCancelActivity failed, Activity not exists or already completed.", tagActivityID, activityID)
@@ -951,7 +952,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		}
 	}
 
-	activityID := string(taskToken)
+	activityID := ActivityID{ID: string(taskToken)}
 	env.postCallback(func() {
 		activityHandle, ok := env.getActivityHandle(activityID)
 		if !ok {
@@ -982,7 +983,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 	return env.contextPropagators
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
+func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 
 	scheduleID := env.nextID()
@@ -991,7 +992,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
-	activityID := scheduleTaskAttr.GetActivityId()
+	activityID := ActivityID{ID: scheduleTaskAttr.GetActivityId()}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
@@ -1002,12 +1003,9 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
-	activityInfo := &ActivityID{
-		ActivityID: activityID,
-	}
 	if err != nil {
 		callback(nil, err)
-		return activityInfo
+		return activityID
 	}
 	task := newTestActivityTask(
 		defaultTestWorkflowID,
@@ -1048,7 +1046,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 		result = env.executeActivityWithRetryForTest(taskHandler, parameters, task)
 	}()
 
-	return activityInfo
+	return activityID
 }
 
 // Copy of the server function func (v *commandAttrValidator) validateActivityScheduleAttributes
@@ -1201,23 +1199,23 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 	return nil
 }
 
-func (env *testWorkflowEnvironmentImpl) getActivityHandle(activityID string) (*testActivityHandle, bool) {
-	handle, ok := env.activities[env.makeUniqueID(activityID)]
+func (env *testWorkflowEnvironmentImpl) getActivityHandle(activityID ActivityID) (*testActivityHandle, bool) {
+	handle, ok := env.activities[env.makeUniqueActivityID(activityID)]
 	return handle, ok
 }
 
-func (env *testWorkflowEnvironmentImpl) setActivityHandle(activityID string, handle *testActivityHandle) {
-	env.activities[env.makeUniqueID(activityID)] = handle
+func (env *testWorkflowEnvironmentImpl) setActivityHandle(activityID ActivityID, handle *testActivityHandle) {
+	env.activities[env.makeUniqueActivityID(activityID)] = handle
 }
 
-func (env *testWorkflowEnvironmentImpl) deleteHandle(activityID string) {
-	delete(env.activities, env.makeUniqueID(activityID))
+func (env *testWorkflowEnvironmentImpl) deleteHandle(activityID ActivityID) {
+	delete(env.activities, env.makeUniqueActivityID(activityID))
 }
 
-func (env *testWorkflowEnvironmentImpl) makeUniqueID(id string) string {
+func (env *testWorkflowEnvironmentImpl) makeUniqueActivityID(id ActivityID) string {
 	// ActivityID is unique per workflow, but different workflow could have same activityID.
 	// Make the key unique globally as we share the same collection for all running workflows in test.
-	return fmt.Sprintf("%v_%v", env.WorkflowInfo().WorkflowExecution.RunID, id)
+	return fmt.Sprintf("%v_%v", env.WorkflowInfo().WorkflowExecution.RunID, id.ID)
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
@@ -1253,7 +1251,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 				env.registerDelayedCallback(func() {
 					env.runningCount++
 					task.Attempt = task.GetAttempt() + 1
-					activityID := string(task.TaskToken)
+					activityID := ActivityID{ID: string(task.TaskToken)}
 					if ah, ok := env.getActivityHandle(activityID); ok {
 						task.HeartbeatDetails = ah.heartbeatDetails
 					}
@@ -1292,7 +1290,7 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
+func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
 	activityID := getStringID(env.nextID())
 	ae := &activityExecutor{name: getActivityFunctionName(env.registry, params.ActivityFn), fn: params.ActivityFn}
 	if at, _ := getValidatedActivityFunction(params.ActivityFn, params.InputArgs, env.registry); at != nil {
@@ -1327,11 +1325,11 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		}, false)
 	}()
 
-	return &LocalActivityID{activityID: activityID}
+	return LocalActivityID{ID: activityID}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
-	task, ok := env.localActivities[activityID]
+func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID LocalActivityID) {
+	task, ok := env.localActivities[activityID.ID]
 	if !ok {
 		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", tagActivityID, activityID)
 		return
@@ -1340,7 +1338,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID st
 	task.cancel()
 }
 
-func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, result interface{}, activityType string,
+func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID ActivityID, result interface{}, activityType string,
 	dataConverter converter.DataConverter) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
 		tagActivityID, activityID, tagActivityType, activityType)
@@ -1362,7 +1360,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 		return
 	}
 
-	delete(env.activities, activityID)
+	delete(env.activities, activityID.ID)
 
 	var blob *commonpb.Payloads
 	var err error
@@ -1413,7 +1411,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID string, 
 	env.startWorkflowTask()
 }
 
-func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID, activityType string, retryState enumspb.RetryState, activityErr error) error {
+func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID ActivityID, activityType string, retryState enumspb.RetryState, activityErr error) error {
 	if activityErr == nil {
 		return nil
 	}
@@ -1423,26 +1421,26 @@ func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID, activityTy
 		0,
 		env.identity,
 		&commonpb.ActivityType{Name: activityType},
-		activityID,
+		activityID.ID,
 		retryState,
 		activityErr,
 	)
 }
 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
-	activityID := result.task.activityID
+	activityID := ActivityID{ID: result.task.activityID}
 	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
 	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, result.result),
 		tagActivityID, activityID, tagActivityType, activityType)
 
 	activityInfo := env.getActivityInfo(activityID, activityType)
-	task, ok := env.localActivities[activityID]
+	task, ok := env.localActivities[activityID.ID]
 	if !ok {
 		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or canceled.",
 			tagActivityID, activityID)
 		return
 	}
-	delete(env.localActivities, activityID)
+	delete(env.localActivities, activityID.ID)
 	// If error is present do not return value
 	if result.err != nil && result.result != nil {
 		result.result = nil
@@ -2153,11 +2151,11 @@ func (env *testWorkflowEnvironmentImpl) nextID() int64 {
 	return activityID
 }
 
-func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID, activityType string) *ActivityInfo {
+func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID ActivityID, activityType string) *ActivityInfo {
 	return &ActivityInfo{
-		ActivityID:        activityID,
+		ActivityID:        activityID.ID,
 		ActivityType:      ActivityType{Name: activityType},
-		TaskToken:         []byte(activityID),
+		TaskToken:         []byte(activityID.ID),
 		WorkflowExecution: env.workflowInfo.WorkflowExecution,
 		Attempt:           1,
 	}

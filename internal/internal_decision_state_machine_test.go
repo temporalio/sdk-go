@@ -169,7 +169,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, commands[0].GetCommandType())
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(scheduleID, activityID)
+	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateInitiated, d.getState())
 
 	// activity completed
@@ -223,7 +223,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	require.Equal(t, 0, len(h.getCommands(true)))
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(scheduleID, activityID)
+	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -258,7 +258,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, 0, len(h.getCommands(true)))
 
 	// activity scheduled
-	h.handleActivityTaskScheduled(scheduleID, activityID)
+	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -292,7 +292,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	// send schedule command
 	h.getCommands(true)
 	// activity scheduled
-	h.handleActivityTaskScheduled(scheduleID, activityID)
+	h.handleActivityTaskScheduled(activityID, scheduleID)
 
 	// now simulate activity canceled, which is invalid transition
 	err = runAndCatchPanic(func() {

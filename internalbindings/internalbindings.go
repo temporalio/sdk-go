@@ -50,7 +50,7 @@ type (
 	WorkflowOptions = internal.WorkflowOptions
 	// ExecuteActivityParams activity invocation parameters
 	ExecuteActivityParams = internal.ExecuteActivityParams
-	// ExecuteActivityParams activity invocation parameters
+	// ExecuteLocalActivityParams local activity invocation parameters
 	ExecuteLocalActivityParams = internal.ExecuteLocalActivityParams
 	// ActivityID uniquely identifies activity
 	ActivityID = internal.ActivityID

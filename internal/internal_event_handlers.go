@@ -445,7 +445,7 @@ func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandT
 	}
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID {
+func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	scheduleID := wc.GenerateSequence()
 	if parameters.ActivityID == "" {
@@ -475,13 +475,11 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		tagActivityID, activityID,
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
-	return &ActivityID{
-		ActivityID: activityID,
-	}
+	return ActivityID{ID: activityID}
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
-	command := wc.commandsHelper.requestCancelActivityTask(activityID)
+func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
+	command := wc.commandsHelper.requestCancelActivityTask(activityID.ID)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return
@@ -494,12 +492,12 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID string) {
 	wc.logger.Debug("RequestCancelActivity", tagActivityID, activityID)
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID {
+func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
 	activityID := wc.getNextLocalActivityID()
 	task := newLocalActivityTask(params, callback, activityID)
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
-	return &LocalActivityID{activityID: activityID}
+	return LocalActivityID{ID: activityID}
 }
 
 func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
@@ -518,8 +516,8 @@ func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActiv
 	return task
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelLocalActivity(activityID string) {
-	if task, ok := wc.pendingLaTasks[activityID]; ok {
+func (wc *workflowEnvironmentImpl) RequestCancelLocalActivity(activityID LocalActivityID) {
+	if task, ok := wc.pendingLaTasks[activityID.ID]; ok {
 		task.cancel()
 	}
 }
@@ -797,7 +795,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		weh.commandsHelper.handleActivityTaskScheduled(
-			event.GetEventId(), event.GetActivityTaskScheduledEventAttributes().GetActivityId())
+			event.GetActivityTaskScheduledEventAttributes().GetActivityId(), event.GetEventId())
 
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 		// No Operation
