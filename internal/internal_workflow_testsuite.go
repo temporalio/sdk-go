@@ -278,7 +278,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 
 	mockHeartbeatFn := func(c context.Context, r *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) error {
-		activityID := ActivityID{ID: string(r.TaskToken)}
+		activityID := ActivityID{id: string(r.TaskToken)}
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID)
 		env.locker.Unlock()
@@ -559,7 +559,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	// ensure activityFn is registered to defaultTestTaskQueue
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskQueue, env.GetDataConverter())
 	activityHandle := &testActivityHandle{callback: func(result *commonpb.Payloads, err error) {}, activityType: parameters.ActivityType.Name}
-	activityID := ActivityID{ID: scheduleTaskAttr.GetActivityId()}
+	activityID := ActivityID{id: scheduleTaskAttr.GetActivityId()}
 	env.setActivityHandle(activityID, activityHandle)
 
 	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
@@ -620,7 +620,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
 		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
-		return nil, env.wrapActivityError(ActivityID{ID: task.activityID}, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
+		return nil, env.wrapActivityError(ActivityID{id: task.activityID}, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
 	}
 	return newEncodedValue(result.result, env.GetDataConverter()), nil
 }
@@ -952,7 +952,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		}
 	}
 
-	activityID := ActivityID{ID: string(taskToken)}
+	activityID := ActivityID{id: string(taskToken)}
 	env.postCallback(func() {
 		activityHandle, ok := env.getActivityHandle(activityID)
 		if !ok {
@@ -992,7 +992,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	} else {
 		scheduleTaskAttr.ActivityId = parameters.ActivityID
 	}
-	activityID := ActivityID{ID: scheduleTaskAttr.GetActivityId()}
+	activityID := ActivityID{id: scheduleTaskAttr.GetActivityId()}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
@@ -1215,7 +1215,7 @@ func (env *testWorkflowEnvironmentImpl) deleteHandle(activityID ActivityID) {
 func (env *testWorkflowEnvironmentImpl) makeUniqueActivityID(id ActivityID) string {
 	// ActivityID is unique per workflow, but different workflow could have same activityID.
 	// Make the key unique globally as we share the same collection for all running workflows in test.
-	return fmt.Sprintf("%v_%v", env.WorkflowInfo().WorkflowExecution.RunID, id.ID)
+	return fmt.Sprintf("%v_%v", env.WorkflowInfo().WorkflowExecution.RunID, id.id)
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
@@ -1251,7 +1251,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 				env.registerDelayedCallback(func() {
 					env.runningCount++
 					task.Attempt = task.GetAttempt() + 1
-					activityID := ActivityID{ID: string(task.TaskToken)}
+					activityID := ActivityID{id: string(task.TaskToken)}
 					if ah, ok := env.getActivityHandle(activityID); ok {
 						task.HeartbeatDetails = ah.heartbeatDetails
 					}
@@ -1325,11 +1325,11 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		}, false)
 	}()
 
-	return LocalActivityID{ID: activityID}
+	return LocalActivityID{id: activityID}
 }
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID LocalActivityID) {
-	task, ok := env.localActivities[activityID.ID]
+	task, ok := env.localActivities[activityID.id]
 	if !ok {
 		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", tagActivityID, activityID)
 		return
@@ -1360,7 +1360,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 		return
 	}
 
-	delete(env.activities, activityID.ID)
+	delete(env.activities, activityID.id)
 
 	var blob *commonpb.Payloads
 	var err error
@@ -1421,26 +1421,26 @@ func (env *testWorkflowEnvironmentImpl) wrapActivityError(activityID ActivityID,
 		0,
 		env.identity,
 		&commonpb.ActivityType{Name: activityType},
-		activityID.ID,
+		activityID.id,
 		retryState,
 		activityErr,
 	)
 }
 
 func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localActivityResult) {
-	activityID := ActivityID{ID: result.task.activityID}
+	activityID := ActivityID{id: result.task.activityID}
 	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
 	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, result.result),
 		tagActivityID, activityID, tagActivityType, activityType)
 
 	activityInfo := env.getActivityInfo(activityID, activityType)
-	task, ok := env.localActivities[activityID.ID]
+	task, ok := env.localActivities[activityID.id]
 	if !ok {
 		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or canceled.",
 			tagActivityID, activityID)
 		return
 	}
-	delete(env.localActivities, activityID.ID)
+	delete(env.localActivities, activityID.id)
 	// If error is present do not return value
 	if result.err != nil && result.result != nil {
 		result.result = nil
@@ -2153,9 +2153,9 @@ func (env *testWorkflowEnvironmentImpl) nextID() int64 {
 
 func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID ActivityID, activityType string) *ActivityInfo {
 	return &ActivityInfo{
-		ActivityID:        activityID.ID,
+		ActivityID:        activityID.id,
 		ActivityType:      ActivityType{Name: activityType},
-		TaskToken:         []byte(activityID.ID),
+		TaskToken:         []byte(activityID.id),
 		WorkflowExecution: env.workflowInfo.WorkflowExecution,
 		Attempt:           1,
 	}

@@ -475,11 +475,11 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		tagActivityID, activityID,
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
-	return ActivityID{ID: activityID}
+	return ActivityID{id: activityID}
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
-	command := wc.commandsHelper.requestCancelActivityTask(activityID.ID)
+	command := wc.commandsHelper.requestCancelActivityTask(activityID.id)
 	activity := command.getData().(*scheduledActivity)
 	if activity.handled {
 		return
@@ -497,7 +497,7 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActiv
 	task := newLocalActivityTask(params, callback, activityID)
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
-	return LocalActivityID{ID: activityID}
+	return LocalActivityID{id: activityID}
 }
 
 func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
@@ -517,7 +517,7 @@ func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActiv
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelLocalActivity(activityID LocalActivityID) {
-	if task, ok := wc.pendingLaTasks[activityID.ID]; ok {
+	if task, ok := wc.pendingLaTasks[activityID.id]; ok {
 		task.cancel()
 	}
 }

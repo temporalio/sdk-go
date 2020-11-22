@@ -51,12 +51,12 @@ type (
 
 	// ActivityID uniquely identifies an activity execution
 	ActivityID struct {
-		ID string
+		id string
 	}
 
 	// LocalActivityID uniquely identifies a local activity execution
 	LocalActivityID struct {
-		ID string
+		id string
 	}
 
 	// ExecuteActivityOptions option for executing an activity
@@ -156,11 +156,23 @@ const (
 )
 
 func (i ActivityID) String() string {
-	return i.ID
+	return i.id
+}
+
+// Parse returns ActivityID constructed from its string representation.
+// The string representation should be obtained through ActivityID.String()
+func (i ActivityID) Parse(v string) (ActivityID, error) {
+	return ActivityID{id: v}, nil
 }
 
 func (i LocalActivityID) String() string {
-	return i.ID
+	return i.id
+}
+
+// Parse returns LocalActivityID constructed from its string representation.
+// The string representation should be obtained through LocalActivityID.String()
+func (i LocalActivityID) Parse(v string) (LocalActivityID, error) {
+	return LocalActivityID{id: v}, nil
 }
 
 func getActivityEnv(ctx context.Context) *activityEnvironment {

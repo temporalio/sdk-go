@@ -50,12 +50,14 @@ type (
 	WorkflowOptions = internal.WorkflowOptions
 	// ExecuteActivityParams activity invocation parameters
 	ExecuteActivityParams = internal.ExecuteActivityParams
-	// ExecuteLocalActivityParams local activity invocation parameters
-	ExecuteLocalActivityParams = internal.ExecuteLocalActivityParams
 	// ActivityID uniquely identifies activity
 	ActivityID = internal.ActivityID
 	// ExecuteActivityOptions option for executing an activity
 	ExecuteActivityOptions = internal.ExecuteActivityOptions
+	// ExecuteLocalActivityParams local activity invocation parameters
+	ExecuteLocalActivityParams = internal.ExecuteLocalActivityParams
+	// ActivityID uniquely identifies activity
+	LocalActivityID = internal.LocalActivityID
 	// ExecuteLocalActivityOptions options for executing a local activity
 	ExecuteLocalActivityOptions = internal.ExecuteLocalActivityOptions
 	// ActivityType type of activity
