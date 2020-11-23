@@ -54,10 +54,16 @@ type (
 	ActivityID = internal.ActivityID
 	// ExecuteActivityOptions option for executing an activity
 	ExecuteActivityOptions = internal.ExecuteActivityOptions
+	// ExecuteLocalActivityParams local activity invocation parameters
+	ExecuteLocalActivityParams = internal.ExecuteLocalActivityParams
+	// LocalActivityID uniquely identifies a local activity
+	LocalActivityID = internal.LocalActivityID
 	// ExecuteLocalActivityOptions options for executing a local activity
 	ExecuteLocalActivityOptions = internal.ExecuteLocalActivityOptions
 	// ActivityType type of activity
 	ActivityType = internal.ActivityType
 	// ResultHandler result handler function
 	ResultHandler = internal.ResultHandler
+	// TimerID uniquely identifies timer
+	TimerID = internal.TimerID
 )
