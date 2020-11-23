@@ -31,9 +31,9 @@ import (
 // All code in this file is private to the package.
 
 type (
-	// TimerID contains id of the timer
-	TimerID struct {
-		id string
+	// TimerInfo contains id of the timer
+	TimerInfo struct {
+		timerID string
 	}
 
 	// WorkflowTimerClient wraps the async workflow timer functionality.
@@ -45,22 +45,11 @@ type (
 
 		// NewTimer - Creates a new timer that will fire callback after d(resolution is in seconds).
 		// The callback indicates the error(TimerCanceledError) if the timer is canceled.
-		// Result is empty if callback fired immediately which happens if d <= 0
-		NewTimer(d time.Duration, callback ResultHandler) TimerID
+		NewTimer(d time.Duration, callback ResultHandler) *TimerInfo
 
 		// RequestCancelTimer - Requests cancel of a timer, this one doesn't wait for cancellation request
 		// to complete, instead invokes the ResultHandler with TimerCanceledError
 		// If the timer is not started then it is a no-operation.
-		RequestCancelTimer(timerID TimerID)
+		RequestCancelTimer(timerID string)
 	}
 )
-
-func (i TimerID) String() string {
-	return i.id
-}
-
-// ParseTimerID returns TimerID constructed from its string representation.
-// The string representation should be obtained through TimerID.String()
-func ParseTimerID(id string) (TimerID, error) {
-	return TimerID{id: id}, nil
-}

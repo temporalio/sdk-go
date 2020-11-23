@@ -815,7 +815,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	timerID := wc.env.NewTimer(d, func(r *commonpb.Payloads, e error) {
+	t := wc.env.NewTimer(d, func(r *commonpb.Payloads, e error) {
 		settable.Set(nil, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -823,10 +823,10 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 		}
 	})
 
-	if !future.IsReady() && cancellable {
+	if t != nil && cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
 			if !future.IsReady() {
-				wc.env.RequestCancelTimer(timerID)
+				wc.env.RequestCancelTimer(t.timerID)
 			}
 			return false
 		}
