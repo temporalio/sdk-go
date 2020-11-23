@@ -534,7 +534,7 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 	return wc.currentReplayTime
 }
 
-func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerInfo {
+func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerID {
 	if d < 0 {
 		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
@@ -556,10 +556,10 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 		tagTimerID, startTimerAttr.GetTimerId(),
 		"Duration", d)
 
-	return &TimerInfo{timerID: timerID}
+	return &TimerID{id: timerID}
 }
 
-func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID string) {
+func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	command := wc.commandsHelper.cancelTimer(timerID)
 	timer := command.getData().(*scheduledTimer)
 	if timer.handled {

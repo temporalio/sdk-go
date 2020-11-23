@@ -1090,8 +1090,8 @@ func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttri
 	return command
 }
 
-func (h *commandsHelper) cancelTimer(timerID string) commandStateMachine {
-	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID.id))
 	command.cancel()
 	return command
 }

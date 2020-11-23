@@ -64,4 +64,6 @@ type (
 	ActivityType = internal.ActivityType
 	// ResultHandler result handler function
 	ResultHandler = internal.ResultHandler
+	// TimerID uniquely identifies timer
+	TimerID = internal.TimerID
 )
