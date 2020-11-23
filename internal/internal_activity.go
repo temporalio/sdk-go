@@ -51,13 +51,12 @@ type (
 
 	// ActivityID uniquely identifies an activity execution
 	ActivityID struct {
-		scheduleID int64
-		activityID string
+		id string
 	}
 
 	// LocalActivityID uniquely identifies a local activity execution
 	LocalActivityID struct {
-		activityID string
+		id string
 	}
 
 	// ExecuteActivityOptions option for executing an activity
@@ -107,19 +106,19 @@ type (
 		// The ExecuteActivity schedules an activity with a callback handler.
 		// If the activity failed to complete the callback error would indicate the failure
 		// and it can be one of ActivityTaskFailedError, ActivityTaskTimeoutError, ActivityTaskCanceledError
-		ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) *ActivityID
+		ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID
 
 		// This only initiates cancel request for activity. if the activity is configured to not WaitForCancellation then
 		// it would invoke the callback handler immediately with error code ActivityTaskCanceledError.
 		// If the activity is not running(either scheduled or started) then it is a no-operation.
-		RequestCancelActivity(activityID string)
+		RequestCancelActivity(activityID ActivityID)
 	}
 
 	// LocalActivityClient for requesting local activity execution
 	LocalActivityClient interface {
-		ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) *LocalActivityID
+		ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID
 
-		RequestCancelLocalActivity(activityID string)
+		RequestCancelLocalActivity(activityID LocalActivityID)
 	}
 
 	activityEnvironment struct {
@@ -155,6 +154,26 @@ const (
 	activityOptionsContextKey      contextKey = "activityOptions"
 	localActivityOptionsContextKey contextKey = "localActivityOptions"
 )
+
+func (i ActivityID) String() string {
+	return i.id
+}
+
+// ParseActivityID returns ActivityID constructed from its string representation.
+// The string representation should be obtained through ActivityID.String()
+func ParseActivityID(id string) (ActivityID, error) {
+	return ActivityID{id: id}, nil
+}
+
+func (i LocalActivityID) String() string {
+	return i.id
+}
+
+// ParseLocalActivityID returns LocalActivityID constructed from its string representation.
+// The string representation should be obtained through LocalActivityID.String()
+func ParseLocalActivityID(v string) (LocalActivityID, error) {
+	return LocalActivityID{id: v}, nil
+}
 
 func getActivityEnv(ctx context.Context) *activityEnvironment {
 	env := ctx.Value(activityEnvContextKey)
