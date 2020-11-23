@@ -45,7 +45,7 @@ type (
 
 		// NewTimer - Creates a new timer that will fire callback after d(resolution is in seconds).
 		// The callback indicates the error(TimerCanceledError) if the timer is canceled.
-		// Result is empty if callback fired immediately if d == 0
+		// Result is empty if callback fired immediately which happens if d <= 0
 		NewTimer(d time.Duration, callback ResultHandler) TimerID
 
 		// RequestCancelTimer - Requests cancel of a timer, this one doesn't wait for cancellation request
