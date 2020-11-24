@@ -737,8 +737,8 @@ func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
 }
 
 // SetLastError sets the result to be returned from workflow.GetLastError().
-func (e *TestWorkflowEnvironment) SetLastError(failure error) {
-	e.impl.setLastError(failure)
+func (e *TestWorkflowEnvironment) SetLastError(err error) {
+	e.impl.setLastError(err)
 }
 
 // SetMemoOnStart sets the memo when start workflow.
