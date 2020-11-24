@@ -34,6 +34,7 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -737,6 +738,7 @@ type WorkflowInfo struct {
 	Namespace                string
 	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
 	lastCompletionResult     *commonpb.Payloads
+	lastFailure              *failurepb.Failure
 	CronSchedule             string
 	ContinuedExecutionRunID  string
 	ParentWorkflowNamespace  string
@@ -1363,6 +1365,20 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 
 	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
+}
+
+// GetLastError extracts the latest failure from any from previous run for this workflow, if one has failed. If none
+// have failed, nil is returned.
+//
+// See TestWorkflowEnvironment.SetLastError() for unit test support.
+func GetLastError(ctx Context) error {
+	i := getWorkflowOutboundCallsInterceptor(ctx)
+	return i.GetLastError(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
+	info := wc.GetWorkflowInfo(ctx)
+	return convertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
 
 // WithActivityOptions adds all options to the copy of the context.
