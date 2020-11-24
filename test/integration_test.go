@@ -689,7 +689,7 @@ const CronWorkflowID = "test-cron"
 func (ts *IntegrationTestSuite) TestFailurePropagation() {
 	var expected int
 	err := ts.executeWorkflow(CronWorkflowID, ts.workflows.CronWorkflow, &expected)
-	// Workflow finishes itself by cancelling
+	// Workflow asks to be cancelled
 	ts.Error(err)
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))

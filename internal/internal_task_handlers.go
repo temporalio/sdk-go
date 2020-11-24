@@ -633,7 +633,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
 		lastCompletionResult:     attributes.LastCompletionResult,
-		lastFailure:              convertFailureToError(attributes.ContinuedFailure, wth.dataConverter),
+		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
 		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
 		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
