@@ -86,7 +86,7 @@ type WorkflowOutboundCallsInterceptor interface {
 	IsReplaying(ctx Context) bool
 	HasLastCompletionResult(ctx Context) bool
 	GetLastCompletionResult(ctx Context, d ...interface{}) error
-	GetLastFailure(ctx Context) error
+	GetLastError(ctx Context) error
 }
 
 var _ WorkflowOutboundCallsInterceptor = (*WorkflowOutboundCallsInterceptorBase)(nil)
@@ -219,7 +219,7 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetLastCompletionResult(ctx Conte
 	return t.Next.GetLastCompletionResult(ctx, d...)
 }
 
-// GetLastFailure forwards to t.Next
-func (t *WorkflowOutboundCallsInterceptorBase) GetLastFailure(ctx Context) error {
-	return t.Next.GetLastFailure(ctx)
+// GetLastError forwards to t.Next
+func (t *WorkflowOutboundCallsInterceptorBase) GetLastError(ctx Context) error {
+	return t.Next.GetLastError(ctx)
 }

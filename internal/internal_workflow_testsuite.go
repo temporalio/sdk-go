@@ -2232,7 +2232,7 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 	env.workflowInfo.lastCompletionResult = data
 }
 
-func (env *testWorkflowEnvironmentImpl) setLastFailure(failure error) {
+func (env *testWorkflowEnvironmentImpl) setLastError(failure error) {
 	env.workflowInfo.lastFailure = convertErrorToFailure(failure, env.dataConverter)
 }
 

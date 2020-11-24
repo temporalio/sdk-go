@@ -1367,16 +1367,16 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 	return encodedVal.Get(d...)
 }
 
-// GetLastFailure extracts the latest failure from any from previous run for this workflow, if one has failed. If none
+// GetLastError extracts the latest failure from any from previous run for this workflow, if one has failed. If none
 // have failed, nil is returned.
 //
-// See TestWorkflowEnvironment.SetLastFailure() for unit test support.
-func GetLastFailure(ctx Context) error {
+// See TestWorkflowEnvironment.SetLastError() for unit test support.
+func GetLastError(ctx Context) error {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
-	return i.GetLastFailure(ctx)
+	return i.GetLastError(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetLastFailure(ctx Context) error {
+func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
 	info := wc.GetWorkflowInfo(ctx)
 	return convertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
