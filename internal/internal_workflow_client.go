@@ -47,6 +47,7 @@ import (
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
+	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
 )
 
@@ -113,7 +114,7 @@ type (
 		workflowFn    interface{}
 		workflowID    string
 		firstRunID    string
-		currentRunID  string
+		currentRunID  *util.OnceCell
 		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
 		dataConverter converter.DataConverter
 		registry      *registry
@@ -278,11 +279,12 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
+	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
 		workflowFn:    workflow,
 		workflowID:    workflowID,
 		firstRunID:    runID,
-		currentRunID:  runID,
+		currentRunID:  &curRunIDCell,
 		iterFn:        iterFn,
 		dataConverter: wc.dataConverter,
 		registry:      wc.registry,
@@ -293,16 +295,34 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 // reaches the end state, such as workflow finished successfully or timeout.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
-func (wc *WorkflowClient) GetWorkflow(_ context.Context, workflowID string, runID string) WorkflowRun {
+func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
 
+	// The ID may not actually have been set - if not, we have to (lazily) ask the server for info about the workflow
+	// execution and extract run id from there. This is definitely less efficient than it could be if there was a more
+	// specific rpc method for this, or if there were more granular history filters - in which case it could be
+	// extracted from the `iterFn` inside of `workflowRunImpl`
+	var runIDCell util.OnceCell
+	if runID == "" {
+		fetcher := func() string {
+			execData, err := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
+			if err != nil {
+				wc.logger.Error("error while fetching workflow execution info", err)
+			}
+			return execData.GetWorkflowExecutionInfo().GetExecution().RunId
+		}
+		runIDCell = util.LazyOnceCell(fetcher)
+	} else {
+		runIDCell = util.PopulatedOnceCell(runID)
+	}
+
 	return &workflowRunImpl{
 		workflowID:    workflowID,
 		firstRunID:    runID,
-		currentRunID:  runID,
+		currentRunID:  &runIDCell,
 		iterFn:        iterFn,
 		dataConverter: wc.dataConverter,
 		registry:      wc.registry,
@@ -420,11 +440,12 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return wc.getWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
 	}
 
+	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
 	return &workflowRunImpl{
 		workflowFn:    workflowFunc,
 		workflowID:    workflowID,
 		firstRunID:    response.GetRunId(),
-		currentRunID:  response.GetRunId(),
+		currentRunID:  &curRunIDCell,
 		iterFn:        iterFn,
 		dataConverter: wc.dataConverter,
 		registry:      wc.registry,
@@ -1112,7 +1133,7 @@ func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
 }
 
 func (workflowRun *workflowRunImpl) GetRunID() string {
-	return workflowRun.firstRunID
+	return workflowRun.currentRunID.Get()
 }
 
 func (workflowRun *workflowRunImpl) GetID() string {
@@ -1121,7 +1142,7 @@ func (workflowRun *workflowRunImpl) GetID() string {
 
 func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{}) error {
 
-	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID)
+	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
 	}
@@ -1154,7 +1175,8 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
-		workflowRun.currentRunID = attributes.GetNewExecutionRunId()
+		curRunID := util.PopulatedOnceCell(attributes.GetNewExecutionRunId())
+		workflowRun.currentRunID = &curRunID
 		return workflowRun.Get(ctx, valuePtr)
 	default:
 		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
@@ -1163,7 +1185,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	fnName, _ := getWorkflowFunctionName(workflowRun.registry, workflowRun.workflowFn)
 	err = NewWorkflowExecutionError(
 		workflowRun.workflowID,
-		workflowRun.currentRunID,
+		workflowRun.currentRunID.Get(),
 		fnName,
 		err)
 
