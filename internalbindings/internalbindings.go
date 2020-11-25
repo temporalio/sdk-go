@@ -60,6 +60,10 @@ type (
 	LocalActivityID = internal.LocalActivityID
 	// ExecuteLocalActivityOptions options for executing a local activity
 	ExecuteLocalActivityOptions = internal.ExecuteLocalActivityOptions
+	// LocalActivityResultHandler that returns local activity result
+	LocalActivityResultHandler = internal.LocalActivityResultHandler
+	// LocalActivityResultWrapper contains result of a local activity
+	LocalActivityResultWrapper = internal.LocalActivityResultWrapper
 	// ActivityType type of activity
 	ActivityType = internal.ActivityType
 	// ResultHandler result handler function
