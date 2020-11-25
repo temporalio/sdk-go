@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"sync"
 	"testing"
@@ -709,6 +710,29 @@ func (ts *IntegrationTestSuite) TestFailurePropagation() {
 	var errDeets *string
 	ts.NoError(canceledErr.Details(&errDeets))
 	ts.EqualValues("finished OK", *errDeets)
+}
+
+func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandDoesNotCausePanic() {
+	const wfID = "test-timer-cancel-concurrent-with-other-cmd"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.WorkflowTaskTimeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.CancelTimerConcurrentWithOtherCommandWorkflow)
+	ts.Nil(err)
+	if err != nil {
+		log.Fatalln("Unable to execute workflow", err)
+	}
+
+	err = ts.client.SignalWorkflow(context.Background(), wfID, "", "signal", "signal-value")
+	if err != nil {
+		log.Fatalln("Unable to signal workflow", err)
+	}
+
+	var result string
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

@@ -960,6 +960,45 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	return retme, nil
 }
 
+func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (string, error) {
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	logger := workflow.GetLogger(ctx)
+	logger.Info("CancelTimerConcurrentWithOtherCommandWorkflow workflow started")
+
+	childCtx, cancelHandler := workflow.WithCancel(ctx)
+	selector := workflow.NewSelector(ctx)
+
+	var result string
+	var err error
+	var a Activities
+	selector.AddReceive(workflow.GetSignalChannel(childCtx, "signal"), func(c workflow.ReceiveChannel, more bool) {
+		var signal string
+		if channelActive := c.Receive(ctx, &signal); channelActive {
+			cancelHandler() // in this case the timer will be canceled
+			err = workflow.ExecuteActivity(ctx, a.Echo, 0, 1).Get(ctx, &result)
+		}
+	})
+	selector.AddFuture(workflow.NewTimer(childCtx, time.Second*5), func(future workflow.Future) {
+		err = fmt.Errorf("timeout reached, no signal within allowed duration")
+	})
+	// Block until finished
+	selector.Select(ctx)
+
+	if err != nil {
+		logger.Error("Activity failed.", "Error", err)
+		return "", err
+	}
+
+	logger.Info("HelloWorld workflow completed.", "result", result)
+
+	return result, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1000,6 +1039,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
+	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
