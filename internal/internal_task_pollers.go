@@ -153,7 +153,7 @@ type (
 
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
-		taskCh:   make(chan *localActivityTask, 1000),
+		taskCh:   make(chan *localActivityTask, 100000),
 		resultCh: make(chan interface{}),
 		stopCh:   stopCh,
 	}
