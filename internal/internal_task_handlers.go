@@ -936,6 +936,14 @@ ProcessEvents:
 			panicError = err
 		}
 	}
+
+	return w.applyPanicPolicy(workflowTask, panicError)
+}
+
+func (w *workflowExecutionContextImpl) applyPanicPolicy(workflowTask *workflowTask, panicError error) (interface{}, error) {
+	task := workflowTask.task
+	eventHandler := w.getEventHandler()
+
 	if panicError == nil && w.err != nil {
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			panicError = panicErr
@@ -982,12 +990,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 		return nil, nil // nothing to do here as we are retrying...
 	}
 
-	err := w.getEventHandler().ProcessLocalActivityResult(lar)
-	if err != nil {
-		return nil, err
-	}
-
-	return w.CompleteWorkflowTask(workflowTask, true), nil
+	return w.applyPanicPolicy(workflowTask, w.getEventHandler().ProcessLocalActivityResult(lar))
 }
 
 func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResult) bool {
