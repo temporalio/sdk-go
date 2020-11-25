@@ -71,6 +71,25 @@ func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	return []string{}, nil
 }
 
+var isDeadlockedWithLocalActivityFirstAttempt bool = true
+
+func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string, error) {
+
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	})
+
+	_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, time.Second*2).Get(laCtx, nil)
+
+	if isDeadlockedWithLocalActivityFirstAttempt {
+		// Simulates deadlock. Never call time.Sleep in production code!
+		time.Sleep(2 * time.Second)
+		isDeadlockedWithLocalActivityFirstAttempt = false
+	}
+
+	return []string{}, nil
+}
+
 func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
@@ -950,6 +969,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
+	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.BasicSession)
 	worker.RegisterWorkflow(w.CancelActivity)
