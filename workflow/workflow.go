@@ -404,6 +404,14 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
 
+// GetLastError extracts the latest failure from any from previous run for this workflow, if one has failed. If none
+// have failed, nil is returned.
+//
+// See TestWorkflowEnvironment.SetLastError() for unit test support.
+func GetLastError(ctx Context) error {
+	return internal.GetLastError(ctx)
+}
+
 // UpsertSearchAttributes is used to add or update workflow search attributes.
 // The search attributes can be used in query of List/Scan/Count workflow APIs.
 // The key and value type must be registered on temporal server side;
