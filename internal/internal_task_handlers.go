@@ -782,31 +782,40 @@ processWorkflowLoop:
 			for {
 				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteWorkflowTaskComplete) * float32(workflowContext.workflowInfo.WorkflowTaskTimeout))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
-				select {
-				case <-time.After(delayDuration):
-					// force complete, call the workflow task heartbeat function
-					workflowTask, err = heartbeatFunc(
-						workflowContext.CompleteWorkflowTask(workflowTask, false),
-						startTime,
-					)
-					if err != nil {
-						errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
-						return
-					}
-					if workflowTask == nil {
-						return
+
+			heartbeatLoop:
+				for {
+					if delayDuration <= 0 {
+						// force complete, call the workflow task heartbeat function
+						workflowTask, err = heartbeatFunc(
+							workflowContext.CompleteWorkflowTask(workflowTask, false),
+							startTime,
+						)
+						if err != nil {
+							errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+							return
+						}
+						if workflowTask == nil {
+							return
+						}
+
+						continue processWorkflowLoop
 					}
 
-					continue processWorkflowLoop
+					select {
+					case <-time.After(delayDuration):
+						delayDuration = 0
+						continue heartbeatLoop
 
-				case lar := <-workflowTask.laResultCh:
-					// local activity result ready
-					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
-					if err == nil && response == nil {
-						// workflow task is not done yet, still waiting for more local activities
-						continue waitLocalActivityLoop
+					case lar := <-workflowTask.laResultCh:
+						// local activity result ready
+						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
+						if err == nil && response == nil {
+							// workflow task is not done yet, still waiting for more local activities
+							continue waitLocalActivityLoop
+						}
+						break processWorkflowLoop
 					}
-					break processWorkflowLoop
 				}
 			}
 		} else {
