@@ -719,15 +719,10 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.CancelTimerConcurrentWithOtherCommandWorkflow)
+	run, err := ts.client.SignalWithStartWorkflow(ctx, wfID, "signal", "", wfOpts, ts.workflows.CancelTimerConcurrentWithOtherCommandWorkflow)
 	ts.Nil(err)
 	if err != nil {
 		log.Fatalln("Unable to execute workflow", err)
-	}
-
-	err = ts.client.SignalWorkflow(context.Background(), wfID, "", "signal", "signal-value")
-	if err != nil {
-		log.Fatalln("Unable to signal workflow", err)
 	}
 
 	var result int
