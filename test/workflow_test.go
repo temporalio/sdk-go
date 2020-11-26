@@ -960,7 +960,7 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	return retme, nil
 }
 
-func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (string, error) {
+func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (int, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -973,7 +973,7 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 	childCtx, cancelHandler := workflow.WithCancel(ctx)
 	selector := workflow.NewSelector(ctx)
 
-	var result string
+	var result int
 	var err error
 	var a Activities
 	selector.AddReceive(workflow.GetSignalChannel(childCtx, "signal"), func(c workflow.ReceiveChannel, more bool) {
@@ -991,7 +991,7 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 
 	if err != nil {
 		logger.Error("Activity failed.", "Error", err)
-		return "", err
+		return 0, err
 	}
 
 	logger.Info("HelloWorld workflow completed.", "result", result)

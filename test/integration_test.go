@@ -730,7 +730,7 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 		log.Fatalln("Unable to signal workflow", err)
 	}
 
-	var result string
+	var result int
 	err = run.Get(ctx, &result)
 	ts.NoError(err)
 }
