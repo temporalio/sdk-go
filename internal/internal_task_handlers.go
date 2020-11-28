@@ -773,6 +773,14 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}()
 
 	var response interface{}
+
+	var heartbeatTimer *time.Timer
+	defer func() {
+		if heartbeatTimer != nil {
+			heartbeatTimer.Stop()
+		}
+	}()
+
 processWorkflowLoop:
 	for {
 		startTime := time.Now()
@@ -786,6 +794,11 @@ processWorkflowLoop:
 			heartbeatLoop:
 				for {
 					if delayDuration <= 0 {
+						if heartbeatTimer != nil {
+							heartbeatTimer.Stop()
+							heartbeatTimer = nil
+						}
+
 						// force complete, call the workflow task heartbeat function
 						workflowTask, err = heartbeatFunc(
 							workflowContext.CompleteWorkflowTask(workflowTask, false),
@@ -802,8 +815,12 @@ processWorkflowLoop:
 						continue processWorkflowLoop
 					}
 
+					if heartbeatTimer == nil {
+						heartbeatTimer = time.NewTimer(delayDuration)
+					}
+
 					select {
-					case <-time.After(delayDuration):
+					case <-heartbeatTimer.C:
 						delayDuration = 0
 						continue heartbeatLoop
 

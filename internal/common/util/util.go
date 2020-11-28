@@ -57,10 +57,13 @@ func AwaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 		close(doneC)
 	}()
 
+	timer := time.NewTimer(timeout)
+	defer func() { timer.Stop() }()
+
 	select {
 	case <-doneC:
 		return true
-	case <-time.After(timeout):
+	case <-timer.C:
 		return false
 	}
 }
