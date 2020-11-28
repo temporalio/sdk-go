@@ -794,8 +794,10 @@ processWorkflowLoop:
 			heartbeatLoop:
 				for {
 					if delayDuration <= 0 {
-						heartbeatTimer.Stop()
-						heartbeatTimer = nil
+						if heartbeatTimer != nil {
+							heartbeatTimer.Stop()
+							heartbeatTimer = nil
+						}
 
 						// force complete, call the workflow task heartbeat function
 						workflowTask, err = heartbeatFunc(
