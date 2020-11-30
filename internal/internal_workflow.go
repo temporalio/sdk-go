@@ -855,9 +855,13 @@ func (s *coroutineState) call() {
 	s.unblock <- func(status string, stackDepth int) bool {
 		return false // unblock
 	}
+
+	deadlockTimer := time.NewTimer(time.Second)
+	defer func() { deadlockTimer.Stop() }()
+
 	select {
 	case <-s.aboutToBlock:
-	case <-time.After(1 * time.Second):
+	case <-deadlockTimer.C:
 		s.closed.Store(true)
 		panic(fmt.Sprintf("Potential deadlock detected: "+
 			"workflow goroutine %q didn't yield for over a second", s.name))
