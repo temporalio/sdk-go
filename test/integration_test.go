@@ -29,7 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 	"testing"
@@ -722,7 +721,7 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 	run, err := ts.client.SignalWithStartWorkflow(ctx, wfID, "signal", "", wfOpts, ts.workflows.CancelTimerConcurrentWithOtherCommandWorkflow)
 	ts.Nil(err)
 	if err != nil {
-		log.Fatalln("Unable to execute workflow", err)
+		ilog.NewDefaultLogger().Error("Unable to execute workflow {}", err)
 	}
 
 	var result int
