@@ -542,6 +542,13 @@ func (ts *IntegrationTestSuite) TestCancelTimer() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
+	var wfResult string
+	err := ts.executeWorkflow("test-cancel-timer-after-activity", ts.workflows.CancelTimerAfterActivity, &wfResult)
+	ts.NoError(err)
+	ts.EqualValues("HELLO", wfResult)
+}
+
 func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)

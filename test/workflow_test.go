@@ -499,6 +499,23 @@ func (w *Workflows) CancelTimer(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpper"}, nil
 }
 
+func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, error) {
+	timerCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+
+	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
+	// Start an activity
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	})
+	var res string
+	err := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, &res)
+	// Cancel timer
+	cancelFunc1()
+
+	return res, err
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -1015,6 +1032,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
 	worker.RegisterWorkflow(w.CancelTimer)
+	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
