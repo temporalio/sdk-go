@@ -372,6 +372,9 @@ func (d *commandStateMachineBase) cancel() {
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case commandStateCreated:
 		d.moveState(commandStateCompleted, eventCancel)
+		// We must decrement the next id, because we haven't yet sent the command to the server, and now we're
+		// out-of-sync
+		d.helper.decrementNextCommandEventID()
 	case commandStateCommandSent:
 		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
 	case commandStateInitiated:
@@ -707,6 +710,10 @@ func newCommandsHelper() *commandsHelper {
 
 func (h *commandsHelper) incrementNextCommandEventID() {
 	h.nextCommandEventID++
+}
+
+func (h *commandsHelper) decrementNextCommandEventID() {
+	h.nextCommandEventID--
 }
 
 func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStartedEventID int64) {
