@@ -74,6 +74,9 @@ type (
 		history []string
 		data    interface{}
 		helper  *commandsHelper
+		// If set to true, we haven't yet sent the command itself, but we already know we will want to send a cancel
+		// command once we do.
+		shouldCancel bool
 	}
 
 	activityCommandStateMachine struct {
@@ -352,12 +355,12 @@ func (d *commandStateMachineBase) moveState(newState commandState, event string)
 	d.state = newState
 	d.history = append(d.history, newState.String())
 
-	//if newState == commandStateCompleted {
-	//	if elem, ok := d.helper.commands[d.getID()]; ok {
-	//		d.helper.orderedCommands.Remove(elem)
-	//		delete(d.helper.commands, d.getID())
-	//	}
-	//}
+	if newState == commandStateCompleted {
+		if elem, ok := d.helper.commands[d.getID()]; ok {
+			d.helper.orderedCommands.Remove(elem)
+			delete(d.helper.commands, d.getID())
+		}
+	}
 }
 
 func (d stateMachineIllegalStatePanic) String() string {
@@ -377,17 +380,24 @@ func (d *commandStateMachineBase) handleCommandSent() {
 	switch d.state {
 	case commandStateCreated:
 		d.moveState(commandStateCommandSent, eventCommandSent)
+		//if d.shouldCancel {
+		//	d.cancel()
+		//}
 	}
 }
 
 func (d *commandStateMachineBase) cancel() {
+
 	switch d.state {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case commandStateCreated:
-		d.moveState(commandStateCancellationCommandSent, eventCancel)
+		// TODO: Need to send original command *then* cancel command, how?
+		// Don't change states. Indicate we should craft and send a cancel command as soon as
+		// we have sent this command.
+		d.shouldCancel = true
 	case commandStateCommandSent:
-		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
+		d.moveState(commandStateCancellationCommandSent, eventCancel)
 	case commandStateInitiated:
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
 		// cancel doesn't add new command, therefore addCommand is not called.
@@ -402,7 +412,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 	switch d.state {
 	case commandStateCommandSent:
 		d.moveState(commandStateInitiated, eventInitiated)
-	case commandStateCanceledBeforeInitiated:
+	case commandStateCanceledBeforeInitiated, commandStateCancellationCommandSent:
 		d.moveState(commandStateCanceledAfterInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
@@ -454,7 +464,7 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case commandStateCancellationCommandSent:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
@@ -500,7 +510,17 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *timerCommandStateMachine) cancel() {
-	d.canceled = true
+	// TODO: Equals is probably wrong here.
+	if d.state == commandStateCommandSent && d.shouldCancel {
+		attribs := &commandpb.CancelTimerCommandAttributes{
+			TimerId: d.attributes.TimerId,
+		}
+		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
+		d.helper.addCommand(cancelCmd)
+		d.helper.getCommand(makeCommandID(commandTypeCancelTimer, d.attributes.TimerId))
+		d.shouldCancel = false
+	}
+
 	d.commandStateMachineBase.cancel()
 }
 
@@ -514,6 +534,10 @@ func (d *timerCommandStateMachine) handleCommandSent() {
 		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
 		d.commandStateMachineBase.handleCommandSent()
+	}
+
+	if d.shouldCancel {
+		d.cancel()
 	}
 }
 
@@ -768,7 +792,8 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	}
 	// Move the last update command state machine to the back of the list.
 	// Otherwise commands (like timer cancellations) can end up out of order.
-	h.orderedCommands.MoveToBack(command)
+	// TODO: This is weird
+	//h.orderedCommands.MoveToBack(command)
 	return command.Value.(commandStateMachine)
 }
 
@@ -1116,17 +1141,10 @@ func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttri
 }
 
 func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
-	attribs := &commandpb.CancelTimerCommandAttributes{
-		TimerId: timerID.id,
-	}
-	cancelCmd := h.newCancelTimerCommandStateMachine(attribs)
-	h.addCommand(cancelCmd)
-
-	// Fetch the original timer command state machine and notify it of the cancellation
-	command := h.getCommand(makeCommandID(commandTypeCancelTimer, timerID.id))
+	command := h.getCommand(makeCommandID(commandTypeTimer, timerID.id))
 	command.cancel()
 
-	return cancelCmd
+	return command
 }
 
 func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {

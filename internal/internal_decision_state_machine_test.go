@@ -46,9 +46,9 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 	d := h.startTimer(attributes)
 	require.Equal(t, commandStateCreated, d.getState())
 	h.cancelTimer(TimerID{timerID})
-	require.Equal(t, commandStateCompleted, d.getState())
+	require.Equal(t, commandStateCancellationCommandSent, d.getState())
 	commands := h.getCommands(true)
-	require.Equal(t, 0, len(commands))
+	require.Equal(t, 1, len(commands))
 }
 
 func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
