@@ -509,10 +509,11 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 		StartToCloseTimeout:    5 * time.Second,
 	})
 	var res string
-	err := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, &res)
+	fut := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
 	// Cancel timer
 	cancelFunc1()
 
+	err := fut.Get(activityCtx2, &res)
 	return res, err
 }
 

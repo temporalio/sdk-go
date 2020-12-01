@@ -88,6 +88,11 @@ type (
 		canceled   bool
 	}
 
+	cancelTimerCommandStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.CancelTimerCommandAttributes
+	}
+
 	childWorkflowCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.StartChildWorkflowExecutionCommandAttributes
@@ -154,6 +159,7 @@ const (
 	commandTypeTimer                  commandType = 4
 	commandTypeSignal                 commandType = 5
 	commandTypeUpsertSearchAttributes commandType = 6
+	commandTypeCancelTimer            commandType = 7
 )
 
 const (
@@ -265,6 +271,14 @@ func (h *commandsHelper) newTimerCommandStateMachine(attributes *commandpb.Start
 	}
 }
 
+func (h *commandsHelper) newCancelTimerCommandStateMachine(attributes *commandpb.CancelTimerCommandAttributes) *cancelTimerCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeCancelTimer, attributes.GetTimerId())
+	return &cancelTimerCommandStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+	}
+}
+
 func (h *commandsHelper) newChildWorkflowCommandStateMachine(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) *childWorkflowCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeChildWorkflow, attributes.GetWorkflowId())
 	return &childWorkflowCommandStateMachine{
@@ -338,12 +352,12 @@ func (d *commandStateMachineBase) moveState(newState commandState, event string)
 	d.state = newState
 	d.history = append(d.history, newState.String())
 
-	if newState == commandStateCompleted {
-		if elem, ok := d.helper.commands[d.getID()]; ok {
-			d.helper.orderedCommands.Remove(elem)
-			delete(d.helper.commands, d.getID())
-		}
-	}
+	//if newState == commandStateCompleted {
+	//	if elem, ok := d.helper.commands[d.getID()]; ok {
+	//		d.helper.orderedCommands.Remove(elem)
+	//		delete(d.helper.commands, d.getID())
+	//	}
+	//}
 }
 
 func (d stateMachineIllegalStatePanic) String() string {
@@ -371,10 +385,7 @@ func (d *commandStateMachineBase) cancel() {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case commandStateCreated:
-		d.moveState(commandStateCompleted, eventCancel)
-		// We must decrement the next id, because we haven't yet sent the command to the server, and now we're
-		// out-of-sync
-		d.helper.decrementNextCommandEventID()
+		d.moveState(commandStateCancellationCommandSent, eventCancel)
 	case commandStateCommandSent:
 		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
 	case commandStateInitiated:
@@ -517,6 +528,17 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
 			TimerId: d.attributes.TimerId,
 		}}
+		return command
+	default:
+		return nil
+	}
+}
+
+func (d *cancelTimerCommandStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
+		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: d.attributes}
 		return command
 	default:
 		return nil
@@ -710,10 +732,6 @@ func newCommandsHelper() *commandsHelper {
 
 func (h *commandsHelper) incrementNextCommandEventID() {
 	h.nextCommandEventID++
-}
-
-func (h *commandsHelper) decrementNextCommandEventID() {
-	h.nextCommandEventID--
 }
 
 func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStartedEventID int64) {
@@ -1098,9 +1116,17 @@ func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttri
 }
 
 func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
-	command := h.getCommand(makeCommandID(commandTypeTimer, timerID.id))
+	attribs := &commandpb.CancelTimerCommandAttributes{
+		TimerId: timerID.id,
+	}
+	cancelCmd := h.newCancelTimerCommandStateMachine(attribs)
+	h.addCommand(cancelCmd)
+
+	// Fetch the original timer command state machine and notify it of the cancellation
+	command := h.getCommand(makeCommandID(commandTypeCancelTimer, timerID.id))
 	command.cancel()
-	return command
+
+	return cancelCmd
 }
 
 func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
