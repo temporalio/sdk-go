@@ -523,7 +523,7 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *activityCommandStateMachine) cancel() {
-	println("Calling cancel child activity id: ", d.id.String())
+	println("Calling cancel activity id: ", d.id.String())
 	switch d.state {
 	case commandStateCreated, commandStateCommandSent:
 		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
@@ -531,7 +531,6 @@ func (d *activityCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
-		d.helper.getCommand(makeCommandID(commandTypeRequestCancelActivityTask, strconv.FormatInt(d.scheduleID, 10)))
 		d.shouldCancel = false
 	}
 
@@ -547,7 +546,6 @@ func (d *timerCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
-		d.helper.getCommand(makeCommandID(commandTypeCancelTimer, d.attributes.TimerId))
 		d.shouldCancel = false
 	}
 
@@ -796,6 +794,7 @@ func newCommandsHelper() *commandsHelper {
 }
 
 func (h *commandsHelper) incrementNextCommandEventID() {
+	println("Incremending cmd ID, was ", h.nextCommandEventID)
 	h.nextCommandEventID++
 }
 
@@ -831,10 +830,6 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}
-	// Move the last update command state machine to the back of the list.
-	// Otherwise commands (like timer cancellations) can end up out of order.
-	// TODO: This is... probably uneeded now?
-	//h.orderedCommands.MoveToBack(command)
 	return command.Value.(commandStateMachine)
 }
 
