@@ -27,6 +27,7 @@ package internal
 import (
 	"container/list"
 	"fmt"
+	"strconv"
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
@@ -85,10 +86,14 @@ type (
 		attributes *commandpb.ScheduleActivityTaskCommandAttributes
 	}
 
+	cancelActivityStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.RequestCancelActivityTaskCommandAttributes
+	}
+
 	timerCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.StartTimerCommandAttributes
-		canceled   bool
 	}
 
 	cancelTimerCommandStateMachine struct {
@@ -152,17 +157,19 @@ const (
 	commandStateCancellationCommandSent               commandState = 7
 	commandStateCompletedAfterCancellationCommandSent commandState = 8
 	commandStateCompleted                             commandState = 9
+	commandStateCanceledBeforeSent                    commandState = 10
 )
 
 const (
-	commandTypeActivity               commandType = 0
-	commandTypeChildWorkflow          commandType = 1
-	commandTypeCancellation           commandType = 2
-	commandTypeMarker                 commandType = 3
-	commandTypeTimer                  commandType = 4
-	commandTypeSignal                 commandType = 5
-	commandTypeUpsertSearchAttributes commandType = 6
-	commandTypeCancelTimer            commandType = 7
+	commandTypeActivity                  commandType = 0
+	commandTypeChildWorkflow             commandType = 1
+	commandTypeCancellation              commandType = 2
+	commandTypeMarker                    commandType = 3
+	commandTypeTimer                     commandType = 4
+	commandTypeSignal                    commandType = 5
+	commandTypeUpsertSearchAttributes    commandType = 6
+	commandTypeCancelTimer               commandType = 7
+	commandTypeRequestCancelActivityTask commandType = 8
 )
 
 const (
@@ -213,6 +220,8 @@ func (d commandState) String() string {
 		return "CompletedAfterCancellationCommandSent"
 	case commandStateCompleted:
 		return "Completed"
+	case commandStateCanceledBeforeSent:
+		return "CanceledBeforeSent"
 	default:
 		return "Unknown"
 	}
@@ -232,6 +241,10 @@ func (d commandType) String() string {
 		return "Timer"
 	case commandTypeSignal:
 		return "Signal"
+	case commandTypeCancelTimer:
+		return "CancelTimer"
+	case commandTypeRequestCancelActivityTask:
+		return "RequestCancelActivityTask"
 	default:
 		return "Unknown"
 	}
@@ -262,6 +275,14 @@ func (h *commandsHelper) newActivityCommandStateMachine(
 	return &activityCommandStateMachine{
 		commandStateMachineBase: base,
 		scheduleID:              scheduleID,
+		attributes:              attributes,
+	}
+}
+
+func (h *commandsHelper) newCancelActivityStateMachine(attributes *commandpb.RequestCancelActivityTaskCommandAttributes) *cancelActivityStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeRequestCancelActivityTask, strconv.FormatInt(attributes.GetScheduledEventId(), 10))
+	return &cancelActivityStateMachine{
+		commandStateMachineBase: base,
 		attributes:              attributes,
 	}
 }
@@ -380,29 +401,20 @@ func (d *commandStateMachineBase) handleCommandSent() {
 	switch d.state {
 	case commandStateCreated:
 		d.moveState(commandStateCommandSent, eventCommandSent)
-		//if d.shouldCancel {
-		//	d.cancel()
-		//}
 	}
 }
 
 func (d *commandStateMachineBase) cancel() {
-
+	println("Called cancel in state", d.state.String())
 	switch d.state {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case commandStateCreated:
-		// TODO: Need to send original command *then* cancel command, how?
-		// Don't change states. Indicate we should craft and send a cancel command as soon as
-		// we have sent this command.
-		d.shouldCancel = true
+		d.moveState(commandStateCanceledBeforeSent, eventCancel)
 	case commandStateCommandSent:
 		d.moveState(commandStateCancellationCommandSent, eventCancel)
 	case commandStateInitiated:
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
-		// cancel doesn't add new command, therefore addCommand is not called.
-		// But *CancelRequested event is still being added to the history, therefore counter needs to be incremented.
-		d.helper.incrementNextCommandEventID()
 	default:
 		d.failStateTransition(eventCancel)
 	}
@@ -412,7 +424,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 	switch d.state {
 	case commandStateCommandSent:
 		d.moveState(commandStateInitiated, eventInitiated)
-	case commandStateCanceledBeforeInitiated, commandStateCancellationCommandSent:
+	case commandStateCanceledBeforeInitiated, commandStateCanceledBeforeSent, commandStateCancellationCommandSent:
 		d.moveState(commandStateCanceledAfterInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
@@ -421,7 +433,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 
 func (d *commandStateMachineBase) handleInitiationFailedEvent() {
 	switch d.state {
-	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated:
+	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated, commandStateCancellationCommandSent:
 		d.moveState(commandStateCompleted, eventInitiationFailed)
 	default:
 		d.failStateTransition(eventInitiationFailed)
@@ -463,8 +475,9 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 }
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
+	println("Handle cancel in", d.state.String())
 	switch d.state {
-	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCanceledBeforeSent:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
@@ -478,7 +491,7 @@ func (d *commandStateMachineBase) String() string {
 
 func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case commandStateCreated:
+	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		return command
@@ -509,9 +522,26 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 	d.failStateTransition(eventCancelFailed)
 }
 
+func (d *activityCommandStateMachine) cancel() {
+	println("Calling cancel child activity id: ", d.id.String())
+	switch d.state {
+	case commandStateCreated, commandStateCommandSent:
+		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
+			ScheduledEventId: d.scheduleID,
+		}
+		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
+		d.helper.addCommand(cancelCmd)
+		d.helper.getCommand(makeCommandID(commandTypeRequestCancelActivityTask, strconv.FormatInt(d.scheduleID, 10)))
+		d.shouldCancel = false
+	}
+
+	d.commandStateMachineBase.cancel()
+}
+
 func (d *timerCommandStateMachine) cancel() {
-	// TODO: Equals is probably wrong here.
-	if d.state == commandStateCommandSent && d.shouldCancel {
+	println("Calling cancel timer id: ", d.id.String())
+	switch d.state {
+	case commandStateCreated, commandStateCommandSent:
 		attribs := &commandpb.CancelTimerCommandAttributes{
 			TimerId: d.attributes.TimerId,
 		}
@@ -525,7 +555,7 @@ func (d *timerCommandStateMachine) cancel() {
 }
 
 func (d *timerCommandStateMachine) isDone() bool {
-	return d.state == commandStateCompleted || d.canceled
+	return d.state == commandStateCompleted
 }
 
 func (d *timerCommandStateMachine) handleCommandSent() {
@@ -541,9 +571,20 @@ func (d *timerCommandStateMachine) handleCommandSent() {
 	}
 }
 
-func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
+func (d *cancelActivityStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
 	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
+		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: d.attributes}
+		return command
+	default:
+		return nil
+	}
+}
+
+func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
 		return command
@@ -618,10 +659,10 @@ func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *childWorkflowCommandStateMachine) cancel() {
+	println("Calling cancel child workflow id: ", d.id.String())
 	switch d.state {
 	case commandStateStarted:
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
-		d.helper.incrementNextCommandEventID()
 	default:
 		d.commandStateMachineBase.cancel()
 	}
@@ -792,7 +833,7 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	}
 	// Move the last update command state machine to the back of the list.
 	// Otherwise commands (like timer cancellations) can end up out of order.
-	// TODO: This is weird
+	// TODO: This is... probably uneeded now?
 	//h.orderedCommands.MoveToBack(command)
 	return command.Value.(commandStateMachine)
 }

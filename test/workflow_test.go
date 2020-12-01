@@ -413,7 +413,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity A Failed.", "Error", err)
 			return
 		}
 
@@ -434,7 +434,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity B Failed.", "Error", err)
 		}
 	})
 
@@ -451,7 +451,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity C Failed.", "Error", err)
 		}
 	})
 
