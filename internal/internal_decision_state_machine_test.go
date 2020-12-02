@@ -234,8 +234,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
-	require.Equal(t, 1, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, 0, len(commands))
 
 	// activity canceled
 	h.handleActivityTaskCanceled(activityID, scheduleID)
@@ -271,8 +270,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
-	require.Equal(t, 1, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, 0, len(commands))
 
 	// activity completed after cancel
 	h.handleActivityTaskClosed(activityID, scheduleID)

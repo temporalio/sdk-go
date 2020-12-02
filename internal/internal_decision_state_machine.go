@@ -496,11 +496,17 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		return command
 	case commandStateCanceledAfterInitiated:
-		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
-		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
-			ScheduledEventId: d.scheduleID,
-		}}
-		return command
+		println("Act cmd get: ", d.id.String(), " sched: ", d.scheduleID)
+		if d.shouldCancel {
+			command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
+			command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
+				ScheduledEventId: d.scheduleID,
+			}}
+			// TODO: ? DO I even need to create the command in cancel?
+			d.shouldCancel = false
+			return command
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -523,7 +529,7 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *activityCommandStateMachine) cancel() {
-	println("Calling cancel activity id: ", d.id.String())
+	println("Calling cancel activity id: ", d.id.String(), "schid: ", d.scheduleID)
 	switch d.state {
 	case commandStateCreated, commandStateCommandSent:
 		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
@@ -794,7 +800,7 @@ func newCommandsHelper() *commandsHelper {
 }
 
 func (h *commandsHelper) incrementNextCommandEventID() {
-	println("Incremending cmd ID, was ", h.nextCommandEventID)
+	println("Incrementing cmd ID, was ", h.nextCommandEventID)
 	h.nextCommandEventID++
 }
 
