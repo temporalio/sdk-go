@@ -780,17 +780,17 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(9),
 		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{}),
-		createTestEventActivityTaskScheduled(11, &historypb.ActivityTaskScheduledEventAttributes{
-			ActivityId:   "11",
+		createTestEventTimerCanceled(11, 5),
+		createTestEventActivityTaskScheduled(12, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "12",
 			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 		}),
-		createTestEventTimerCanceled(12, 5),
 		createTestEventActivityTaskStarted(13, &historypb.ActivityTaskStartedEventAttributes{
-			ScheduledEventId: 11,
+			ScheduledEventId: 12,
 		}),
 		createTestEventActivityTaskCompleted(14, &historypb.ActivityTaskCompletedEventAttributes{
-			ScheduledEventId: 11,
+			ScheduledEventId: 12,
 			StartedEventId:   13,
 		}),
 		createTestEventWorkflowTaskScheduled(15, &historypb.WorkflowTaskScheduledEventAttributes{}),

@@ -100,10 +100,8 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	// The timer ends up being started after we issued a cancel command
 	h.handleTimerStarted(timerID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
-	// We should still attempt to cancel it
 	commands = h.getCommands(true)
-	require.Equal(t, 1, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[0].GetCommandType())
+	require.Equal(t, 0, len(commands))
 	// Oops it completed anyway, fine, we're done.
 	h.handleTimerClosed(timerID)
 	require.Equal(t, commandStateCompletedAfterCancellationCommandSent, d.getState())
@@ -152,8 +150,8 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
 	require.Equal(t, 2, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[0].GetCommandType())
-	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, commands[1].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[1].GetCommandType())
 }
 
 func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {

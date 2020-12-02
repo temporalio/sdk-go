@@ -77,6 +77,7 @@ type (
 		helper  *commandsHelper
 		// If set to true, we haven't yet sent the command itself, but we already know we will want to send a cancel
 		// command once we do.
+		// TODO: This is not needed I think
 		shouldCancel bool
 	}
 
@@ -547,9 +548,10 @@ func (d *activityCommandStateMachine) cancel() {
 }
 
 func (d *timerCommandStateMachine) cancel() {
-	println("Calling cancel timer id: ", d.id.String())
+	println("Calling cancel timer id: ", d.id.String(), "in state", d.state.String(),
+		"should cancel", d.shouldCancel)
 	switch d.state {
-	case commandStateCreated, commandStateCommandSent:
+	case commandStateCreated, commandStateCommandSent, commandStateInitiated:
 		attribs := &commandpb.CancelTimerCommandAttributes{
 			TimerId: d.attributes.TimerId,
 		}
@@ -595,12 +597,12 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
 		return command
-	case commandStateCanceledAfterInitiated:
-		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
-		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
-			TimerId: d.attributes.TimerId,
-		}}
-		return command
+	//case commandStateCanceledAfterInitiated:
+	//	command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
+	//	command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
+	//		TimerId: d.attributes.TimerId,
+	//	}}
+	//	return command
 	default:
 		return nil
 	}
@@ -672,9 +674,7 @@ func (d *childWorkflowCommandStateMachine) cancel() {
 	case commandStateStarted:
 		println("Moved to canceled after started")
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
-		// TODO: If this exists, child workflow works but timer cancel fails.
-		//  if it doesnt, other way around. OR NOT ?!?!?!?!
-		//d.helper.incrementNextCommandEventID()
+		d.helper.incrementNextCommandEventID()
 	default:
 		d.commandStateMachineBase.cancel()
 	}
