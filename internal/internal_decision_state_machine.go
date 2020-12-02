@@ -75,10 +75,6 @@ type (
 		history []string
 		data    interface{}
 		helper  *commandsHelper
-		// If set to true, we haven't yet sent the command itself, but we already know we will want to send a cancel
-		// command once we do.
-		// TODO: This is not needed I think
-		shouldCancel bool
 	}
 
 	activityCommandStateMachine struct {
@@ -406,7 +402,6 @@ func (d *commandStateMachineBase) handleCommandSent() {
 }
 
 func (d *commandStateMachineBase) cancel() {
-	println("Called cancel in state", d.state.String())
 	switch d.state {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
@@ -457,7 +452,6 @@ func (d *commandStateMachineBase) handleCompletionEvent() {
 }
 
 func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
-	println("Handle cancel initiated in", d.state.String())
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
 	case commandStateCancellationCommandSent:
@@ -477,7 +471,6 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 }
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
-	println("Handle cancel in", d.state.String())
 	switch d.state {
 	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCanceledBeforeSent:
 		d.moveState(commandStateCompleted, eventCanceled)
@@ -497,20 +490,6 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		return command
-	case commandStateCanceledAfterInitiated:
-		// TODO Maybe can delete this whole branch -- not without some changes
-		println("Act cmd get: ", d.id.String(), " sched: ", d.scheduleID)
-		if d.shouldCancel {
-			println("Doing the cancel")
-			command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
-			command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
-				ScheduledEventId: d.scheduleID,
-			}}
-			// TODO: ? DO I even need to create the command in cancel?
-			d.shouldCancel = false
-			return command
-		}
-		return nil
 	default:
 		return nil
 	}
@@ -533,7 +512,6 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *activityCommandStateMachine) cancel() {
-	println("Calling cancel activity id: ", d.id.String(), "schid: ", d.scheduleID)
 	switch d.state {
 	case commandStateCreated, commandStateCommandSent:
 		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
@@ -541,15 +519,12 @@ func (d *activityCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
-		d.shouldCancel = false
 	}
 
 	d.commandStateMachineBase.cancel()
 }
 
 func (d *timerCommandStateMachine) cancel() {
-	println("Calling cancel timer id: ", d.id.String(), "in state", d.state.String(),
-		"should cancel", d.shouldCancel)
 	switch d.state {
 	case commandStateCreated, commandStateCommandSent, commandStateInitiated:
 		attribs := &commandpb.CancelTimerCommandAttributes{
@@ -557,7 +532,6 @@ func (d *timerCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
-		d.shouldCancel = false
 	}
 
 	d.commandStateMachineBase.cancel()
@@ -573,10 +547,6 @@ func (d *timerCommandStateMachine) handleCommandSent() {
 		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
 		d.commandStateMachineBase.handleCommandSent()
-	}
-
-	if d.shouldCancel {
-		d.cancel()
 	}
 }
 
@@ -597,12 +567,6 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
 		return command
-	//case commandStateCanceledAfterInitiated:
-	//	command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
-	//	command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
-	//		TimerId: d.attributes.TimerId,
-	//	}}
-	//	return command
 	default:
 		return nil
 	}
@@ -641,7 +605,6 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 func (d *childWorkflowCommandStateMachine) handleCommandSent() {
 	switch d.state {
 	case commandStateCanceledAfterStarted:
-		println("Child workflow handle command sent in canceled after started")
 		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
 		d.commandStateMachineBase.handleCommandSent()
@@ -669,10 +632,8 @@ func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *childWorkflowCommandStateMachine) cancel() {
-	println("Calling cancel child workflow id: ", d.id.String(), " state ", d.state.String())
 	switch d.state {
 	case commandStateStarted:
-		println("Moved to canceled after started")
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
 		d.helper.incrementNextCommandEventID()
 	default:
@@ -808,7 +769,6 @@ func newCommandsHelper() *commandsHelper {
 }
 
 func (h *commandsHelper) incrementNextCommandEventID() {
-	println("Incrementing cmd ID, was", h.nextCommandEventID)
 	h.nextCommandEventID++
 }
 
@@ -1064,7 +1024,6 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		}
 		// targeting child workflow
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
-		println("Targeting child workflow")
 		command.cancel()
 		return command
 	}
@@ -1093,10 +1052,8 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 
 func (h *commandsHelper) handleRequestCancelExternalWorkflowExecutionInitiated(initiatedeventID int64, workflowID, cancellationID string) {
 	if h.isCancelExternalWorkflowEventForChildWorkflow(cancellationID) {
-		println("Cancel child")
 		// this is cancellation for child workflow only
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
-		fmt.Printf("Command: %T\n", command)
 		command.handleCancelInitiatedEvent()
 	} else {
 		// this is cancellation for external workflow
@@ -1245,7 +1202,6 @@ func (h *commandsHelper) getCommands(markAsSent bool) []*commandpb.Command {
 		}
 
 		if markAsSent {
-			println("Sent command", command.String())
 			d.handleCommandSent()
 		}
 
