@@ -866,29 +866,30 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 		createTestEventWorkflowTaskStarted(13),
 		createTestEventWorkflowTaskCompleted(14, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
-		createTestEventActivityTaskScheduled(15, &historypb.ActivityTaskScheduledEventAttributes{
-			ActivityId:   "15",
-			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
-			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-		}),
-		createTestEventRequestCancelExternalWorkflowExecutionInitiated(16, &historypb.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
+		createTestEventRequestCancelExternalWorkflowExecutionInitiated(15, &historypb.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
 			WorkflowTaskCompletedEventId: 14,
 			WorkflowExecution:            &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
 		}),
+
+		createTestEventActivityTaskScheduled(16, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "16",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
 		createTestEventExternalWorkflowExecutionCancelRequested(17, &historypb.ExternalWorkflowExecutionCancelRequestedEventAttributes{
 			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
-			InitiatedEventId:  16,
+			InitiatedEventId:  15,
 		}),
 		createTestEventWorkflowTaskScheduled(18, &historypb.WorkflowTaskScheduledEventAttributes{}),
 
 		createTestEventActivityTaskStarted(19, &historypb.ActivityTaskStartedEventAttributes{
-			ScheduledEventId: 15,
+			ScheduledEventId: 16,
 		}),
 		createTestEventWorkflowTaskStarted(20),
 		createTestEventWorkflowTaskCompleted(21, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
 		createTestEventActivityTaskCompleted(22, &historypb.ActivityTaskCompletedEventAttributes{
-			ScheduledEventId: 15,
+			ScheduledEventId: 16,
 			StartedEventId:   19,
 		}),
 

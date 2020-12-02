@@ -456,6 +456,7 @@ func (d *commandStateMachineBase) handleCompletionEvent() {
 }
 
 func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
+	println("Handle cancel initiated in", d.state.String())
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
 	case commandStateCancellationCommandSent:
@@ -496,8 +497,10 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		return command
 	case commandStateCanceledAfterInitiated:
+		// TODO Maybe can delete this whole branch -- not without some changes
 		println("Act cmd get: ", d.id.String(), " sched: ", d.scheduleID)
 		if d.shouldCancel {
+			println("Doing the cancel")
 			command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
 			command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
 				ScheduledEventId: d.scheduleID,
@@ -636,6 +639,7 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 func (d *childWorkflowCommandStateMachine) handleCommandSent() {
 	switch d.state {
 	case commandStateCanceledAfterStarted:
+		println("Child workflow handle command sent in canceled after started")
 		d.moveState(commandStateCancellationCommandSent, eventCommandSent)
 	default:
 		d.commandStateMachineBase.handleCommandSent()
@@ -663,10 +667,14 @@ func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 }
 
 func (d *childWorkflowCommandStateMachine) cancel() {
-	println("Calling cancel child workflow id: ", d.id.String())
+	println("Calling cancel child workflow id: ", d.id.String(), " state ", d.state.String())
 	switch d.state {
 	case commandStateStarted:
+		println("Moved to canceled after started")
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
+		// TODO: If this exists, child workflow works but timer cancel fails.
+		//  if it doesnt, other way around. OR NOT ?!?!?!?!
+		//d.helper.incrementNextCommandEventID()
 	default:
 		d.commandStateMachineBase.cancel()
 	}
@@ -800,7 +808,7 @@ func newCommandsHelper() *commandsHelper {
 }
 
 func (h *commandsHelper) incrementNextCommandEventID() {
-	println("Incrementing cmd ID, was ", h.nextCommandEventID)
+	println("Incrementing cmd ID, was", h.nextCommandEventID)
 	h.nextCommandEventID++
 }
 
@@ -1056,6 +1064,7 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		}
 		// targeting child workflow
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		println("Targeting child workflow")
 		command.cancel()
 		return command
 	}
@@ -1084,8 +1093,10 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 
 func (h *commandsHelper) handleRequestCancelExternalWorkflowExecutionInitiated(initiatedeventID int64, workflowID, cancellationID string) {
 	if h.isCancelExternalWorkflowEventForChildWorkflow(cancellationID) {
+		println("Cancel child")
 		// this is cancellation for child workflow only
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		fmt.Printf("Command: %T\n", command)
 		command.handleCancelInitiatedEvent()
 	} else {
 		// this is cancellation for external workflow
@@ -1234,6 +1245,7 @@ func (h *commandsHelper) getCommands(markAsSent bool) []*commandpb.Command {
 		}
 
 		if markAsSent {
+			println("Sent command", command.String())
 			d.handleCommandSent()
 		}
 
