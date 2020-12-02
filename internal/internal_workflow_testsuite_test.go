@@ -2982,6 +2982,26 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronHasLastResult() {
 	s.Equal(lastResult+1, result)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_CronGetLastFailure() {
+	const failstr = "some previous failure"
+	cronWorkflow := func(ctx Context) (int, error) {
+		var lastfail = GetLastError(ctx)
+		if lastfail == nil || lastfail.Error() != failstr {
+			return 1, errors.New("last failure did not contain expected message")
+		}
+
+		return 0, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(cronWorkflow)
+	env.SetLastError(errors.New(failstr))
+	env.ExecuteWorkflow(cronWorkflow)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProgress() {
 	activityFn := func(ctx context.Context) (int, error) {
 		var progress int

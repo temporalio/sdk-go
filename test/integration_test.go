@@ -204,6 +204,19 @@ func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
 }
 
+func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
+	var expected []string
+	wfOpts := ts.startWorkflowOptions("test-deadlock-local-activity")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	wfOpts.WorkflowRunTimeout = 5 * time.Minute
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.DeadlockedWithLocalActivity, &expected)
+	ts.Error(err)
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
+	ts.True(ok)
+	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+}
+
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.ActivityRetryOnError, &expected)
@@ -684,6 +697,20 @@ func (ts *IntegrationTestSuite) TestContextPropagator() {
 	}, propagatedValues)
 }
 
+const CronWorkflowID = "test-cron"
+
+func (ts *IntegrationTestSuite) TestFailurePropagation() {
+	var expected int
+	err := ts.executeWorkflow(CronWorkflowID, ts.workflows.CronWorkflow, &expected)
+	// Workflow asks to be cancelled
+	ts.Error(err)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
+	var errDeets *string
+	ts.NoError(canceledErr.Details(&errDeets))
+	ts.EqualValues("finished OK", *errDeets)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -748,13 +775,17 @@ func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
 }
 
 func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
-	return client.StartWorkflowOptions{
+	var wfOptions = client.StartWorkflowOptions{
 		ID:                       wfID,
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
+	if wfID == CronWorkflowID {
+		wfOptions.CronSchedule = "@every 1s"
+	}
+	return wfOptions
 }
 
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {

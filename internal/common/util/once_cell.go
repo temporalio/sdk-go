@@ -24,52 +24,46 @@
 
 package util
 
-import (
-	"reflect"
-	"sync"
-	"time"
-)
+import "sync"
 
-// MergeDictoRight copies the contents of src to dest
-func MergeDictoRight(src map[string]string, dest map[string]string) {
-	for k, v := range src {
-		dest[k] = v
+// A OnceCell attempts to match the semantics of Rust's `OnceCell`, but only stores strings, since that's what's needed
+// at the moment. Could be changed to use interface{} to be generic.
+type OnceCell struct {
+	// Ensures we only call the fetcher one time
+	once sync.Once
+	// Stores the result of calling fetcher
+	value   string
+	fetcher func() string
+}
+
+// Get fetches the value in the cell, calling the fetcher function if it has not yet been called
+func (oc *OnceCell) Get() string {
+	oc.once.Do(func() {
+		res := oc.fetcher()
+		oc.value = res
+	})
+	return oc.value
+}
+
+// PopulatedOnceCell creates an already-initialized cell
+func PopulatedOnceCell(value string) OnceCell {
+	return OnceCell{
+		once:  sync.Once{},
+		value: value,
+		fetcher: func() string {
+			return value
+		},
 	}
 }
 
-// MergeDicts creates a union of the two dicts
-func MergeDicts(dic1 map[string]string, dic2 map[string]string) (resultDict map[string]string) {
-	resultDict = make(map[string]string)
-	MergeDictoRight(dic1, resultDict)
-	MergeDictoRight(dic2, resultDict)
-	return
-}
+type fetcher func() string
 
-// AwaitWaitGroup calls Wait on the given wait
-// Returns true if the Wait() call succeeded before the timeout
-// Returns false if the Wait() did not return before the timeout
-func AwaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
-
-	doneC := make(chan struct{})
-
-	go func() {
-		wg.Wait()
-		close(doneC)
-	}()
-
-	timer := time.NewTimer(timeout)
-	defer func() { timer.Stop() }()
-
-	select {
-	case <-doneC:
-		return true
-	case <-timer.C:
-		return false
+// LazyOnceCell creates a cell with no initial value, the provided function will be called once and only once the first
+// time OnceCell.Get is called
+func LazyOnceCell(fetcher fetcher) OnceCell {
+	return OnceCell{
+		once:    sync.Once{},
+		value:   "",
+		fetcher: fetcher,
 	}
-}
-
-// IsInterfaceNil check if interface is nil
-func IsInterfaceNil(i interface{}) bool {
-	v := reflect.ValueOf(i)
-	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }

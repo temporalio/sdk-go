@@ -71,6 +71,25 @@ func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	return []string{}, nil
 }
 
+var isDeadlockedWithLocalActivityFirstAttempt bool = true
+
+func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string, error) {
+
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	})
+
+	_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, time.Second*2).Get(laCtx, nil)
+
+	if isDeadlockedWithLocalActivityFirstAttempt {
+		// Simulates deadlock. Never call time.Sleep in production code!
+		time.Sleep(2 * time.Second)
+		isDeadlockedWithLocalActivityFirstAttempt = false
+	}
+
+	return []string{}, nil
+}
+
 func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
@@ -915,6 +934,32 @@ func (w *Workflows) ContextPropagator(ctx workflow.Context, startChild bool) ([]
 	return result, nil
 }
 
+const CronFailMsg = "dying on purpose"
+
+func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
+	retme := 0
+
+	if workflow.HasLastCompletionResult(ctx) {
+		var lastres int
+		if err := workflow.GetLastCompletionResult(ctx, &lastres); err == nil {
+			retme = lastres + 1
+		}
+	}
+
+	lastfail := workflow.GetLastError(ctx)
+	if retme == 2 && lastfail != nil {
+		if lastfail.Error() != CronFailMsg {
+			return -3, errors.New("incorrect message in latest failure")
+		}
+		return 3, temporal.NewCanceledError("finished OK")
+	}
+	if retme == 2 {
+		return -1, errors.New(CronFailMsg)
+	}
+
+	return retme, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -924,6 +969,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
+	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.BasicSession)
 	worker.RegisterWorkflow(w.CancelActivity)
@@ -953,6 +999,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.SignalWorkflow)
+	worker.RegisterWorkflow(w.CronWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

@@ -155,7 +155,7 @@ type (
 		aboutToBlock chan bool        // used to notify dispatcher that coroutine that owns this context is about to block
 		unblock      chan unblockFunc // used to notify coroutine that it should continue executing.
 		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
-		closed       bool             // indicates that owning coroutine has finished execution
+		closed       atomic.Bool      // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
 		panicError   *workflowPanicError // non nil if coroutine had unhandled panic
 	}
@@ -855,22 +855,26 @@ func (s *coroutineState) call() {
 	s.unblock <- func(status string, stackDepth int) bool {
 		return false // unblock
 	}
+
+	deadlockTimer := time.NewTimer(time.Second)
+	defer func() { deadlockTimer.Stop() }()
+
 	select {
 	case <-s.aboutToBlock:
-	case <-time.After(1 * time.Second):
-		s.closed = true
+	case <-deadlockTimer.C:
+		s.closed.Store(true)
 		panic(fmt.Sprintf("Potential deadlock detected: "+
 			"workflow goroutine %q didn't yield for over a second", s.name))
 	}
 }
 
 func (s *coroutineState) close() {
-	s.closed = true
+	s.closed.Store(true)
 	s.aboutToBlock <- true
 }
 
 func (s *coroutineState) exit() {
-	if !s.closed {
+	if !s.closed.Load() {
 		s.unblock <- func(status string, stackDepth int) bool {
 			runtime.Goexit()
 			return true
@@ -879,7 +883,7 @@ func (s *coroutineState) exit() {
 }
 
 func (s *coroutineState) stackTrace() string {
-	if s.closed {
+	if s.closed.Load() {
 		return ""
 	}
 	stackCh := make(chan string, 1)
@@ -941,13 +945,13 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err error) {
 		lastSequence := d.sequence
 		for i := 0; i < len(d.coroutines); i++ {
 			c := d.coroutines[i]
-			if !c.closed {
+			if !c.closed.Load() {
 				// TODO: Support handling of panic in a coroutine by dispatcher.
 				// TODO: Dump all outstanding coroutines if one of them panics
 				c.call()
 			}
 			// c.call() can close the context so check again
-			if c.closed {
+			if c.closed.Load() {
 				// remove the closed one from the slice
 				d.coroutines = append(d.coroutines[:i],
 					d.coroutines[i+1:]...)
@@ -958,7 +962,7 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err error) {
 				allBlocked = false
 
 			} else {
-				allBlocked = allBlocked && (c.keptBlocked || c.closed)
+				allBlocked = allBlocked && (c.keptBlocked || c.closed.Load())
 			}
 		}
 		// Set allBlocked to false if new coroutines where created
@@ -988,7 +992,7 @@ func (d *dispatcherImpl) Close() {
 	d.mutex.Unlock()
 	for i := 0; i < len(d.coroutines); i++ {
 		c := d.coroutines[i]
-		if !c.closed {
+		if !c.closed.Load() {
 			c.exit()
 		}
 	}
@@ -998,7 +1002,7 @@ func (d *dispatcherImpl) StackTrace() string {
 	var result string
 	for i := 0; i < len(d.coroutines); i++ {
 		c := d.coroutines[i]
-		if !c.closed {
+		if !c.closed.Load() {
 			if len(result) > 0 {
 				result += "\n\n"
 			}

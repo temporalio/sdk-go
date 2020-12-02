@@ -633,6 +633,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
 		lastCompletionResult:     attributes.LastCompletionResult,
+		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
 		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
 		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
@@ -772,6 +773,14 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	}()
 
 	var response interface{}
+
+	var heartbeatTimer *time.Timer
+	defer func() {
+		if heartbeatTimer != nil {
+			heartbeatTimer.Stop()
+		}
+	}()
+
 processWorkflowLoop:
 	for {
 		startTime := time.Now()
@@ -781,31 +790,49 @@ processWorkflowLoop:
 			for {
 				deadlineToTrigger := time.Duration(float32(ratioToForceCompleteWorkflowTaskComplete) * float32(workflowContext.workflowInfo.WorkflowTaskTimeout))
 				delayDuration := time.Until(startTime.Add(deadlineToTrigger))
-				select {
-				case <-time.After(delayDuration):
-					// force complete, call the workflow task heartbeat function
-					workflowTask, err = heartbeatFunc(
-						workflowContext.CompleteWorkflowTask(workflowTask, false),
-						startTime,
-					)
-					if err != nil {
-						errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
-						return
-					}
-					if workflowTask == nil {
-						return
+
+			heartbeatLoop:
+				for {
+					if delayDuration <= 0 {
+						if heartbeatTimer != nil {
+							heartbeatTimer.Stop()
+							heartbeatTimer = nil
+						}
+
+						// force complete, call the workflow task heartbeat function
+						workflowTask, err = heartbeatFunc(
+							workflowContext.CompleteWorkflowTask(workflowTask, false),
+							startTime,
+						)
+						if err != nil {
+							errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+							return
+						}
+						if workflowTask == nil {
+							return
+						}
+
+						continue processWorkflowLoop
 					}
 
-					continue processWorkflowLoop
-
-				case lar := <-workflowTask.laResultCh:
-					// local activity result ready
-					response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
-					if err == nil && response == nil {
-						// workflow task is not done yet, still waiting for more local activities
-						continue waitLocalActivityLoop
+					if heartbeatTimer == nil {
+						heartbeatTimer = time.NewTimer(delayDuration)
 					}
-					break processWorkflowLoop
+
+					select {
+					case <-heartbeatTimer.C:
+						delayDuration = 0
+						continue heartbeatLoop
+
+					case lar := <-workflowTask.laResultCh:
+						// local activity result ready
+						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
+						if err == nil && response == nil {
+							// workflow task is not done yet, still waiting for more local activities
+							continue waitLocalActivityLoop
+						}
+						break processWorkflowLoop
+					}
 				}
 			}
 		} else {
@@ -929,52 +956,15 @@ ProcessEvents:
 	// activity task completed), but the corresponding workflow code that start the event has been removed. In that case
 	// the replay of that event will panic on the command state machine and the workflow will be marked as completed
 	// with the panic error.
-	var panicError error
+	var workflowError error
 	if !skipReplayCheck && !w.isWorkflowCompleted {
 		// check if commands from reply matches to the history events
 		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
-			panicError = err
-		}
-	}
-	if panicError == nil && w.err != nil {
-		if panicErr, ok := w.err.(*workflowPanicError); ok {
-			panicError = panicErr
+			workflowError = err
 		}
 	}
 
-	if panicError != nil {
-		if panicErr, ok := w.err.(*workflowPanicError); ok {
-			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagError, panicError,
-				tagStackTrace, panicErr.StackTrace())
-		} else {
-			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagError, panicError)
-		}
-
-		switch w.wth.workflowPanicPolicy {
-		case FailWorkflow:
-			// complete workflow with custom error will fail the workflow
-			eventHandler.Complete(nil, NewApplicationError(
-				"Workflow failed on panic due to FailWorkflow workflow panic policy",
-				"", false, panicError))
-		case BlockWorkflow:
-			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
-			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or
-			// workflow timeout.
-			return nil, panicError
-		default:
-			panic("unknown mismatched workflow history policy.")
-		}
-	}
-
-	return w.CompleteWorkflowTask(workflowTask, true), nil
+	return w.applyWorkflowPanicPolicy(workflowTask, workflowError)
 }
 
 func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error) {
@@ -982,9 +972,48 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 		return nil, nil // nothing to do here as we are retrying...
 	}
 
-	err := w.getEventHandler().ProcessLocalActivityResult(lar)
-	if err != nil {
-		return nil, err
+	return w.applyWorkflowPanicPolicy(workflowTask, w.getEventHandler().ProcessLocalActivityResult(lar))
+}
+
+func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *workflowTask, workflowError error) (interface{}, error) {
+	task := workflowTask.task
+
+	if workflowError == nil && w.err != nil {
+		if panicErr, ok := w.err.(*workflowPanicError); ok {
+			workflowError = panicErr
+		}
+	}
+
+	if workflowError != nil {
+		if panicErr, ok := w.err.(*workflowPanicError); ok {
+			w.wth.logger.Error("Workflow panic",
+				tagWorkflowType, task.WorkflowType.GetName(),
+				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.WorkflowExecution.GetRunId(),
+				tagError, workflowError,
+				tagStackTrace, panicErr.StackTrace())
+		} else {
+			w.wth.logger.Error("Workflow panic",
+				tagWorkflowType, task.WorkflowType.GetName(),
+				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.WorkflowExecution.GetRunId(),
+				tagError, workflowError)
+		}
+
+		switch w.wth.workflowPanicPolicy {
+		case FailWorkflow:
+			// complete workflow with custom error will fail the workflow
+			w.getEventHandler().Complete(nil, NewApplicationError(
+				"Workflow failed on panic due to FailWorkflow workflow panic policy",
+				"", false, workflowError))
+		case BlockWorkflow:
+			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
+			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or
+			// workflow timeout.
+			return nil, workflowError
+		default:
+			panic("unknown mismatched workflow history policy.")
+		}
 	}
 
 	return w.CompleteWorkflowTask(workflowTask, true), nil
