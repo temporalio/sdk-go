@@ -622,6 +622,15 @@ func (d *childWorkflowCommandStateMachine) handleStartedEvent() {
 	}
 }
 
+func (d *childWorkflowCommandStateMachine) handleInitiatedEvent() {
+	switch d.state {
+	case commandStateCancellationCommandSent:
+		d.failStateTransition(eventInitiated)
+	default:
+		d.commandStateMachineBase.handleInitiatedEvent()
+	}
+}
+
 func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 	switch d.state {
 	case commandStateCancellationCommandSent:

@@ -444,12 +444,11 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
 	require.Equal(t, commandStateCancellationCommandSent, d.getState())
 
-	// TODO REVIEW: This is valid now. Is that a real problem?
 	// invalid: child workflow initiated again
-	//err = runAndCatchPanic(func() {
-	//	h.handleStartChildWorkflowExecutionInitiated(workflowID)
-	//})
-	//require.NotNil(t, err)
+	err = runAndCatchPanic(func() {
+		h.handleStartChildWorkflowExecutionInitiated(workflowID)
+	})
+	require.NotNil(t, err)
 
 	// child workflow completed
 	h.handleChildWorkflowExecutionClosed(workflowID)
