@@ -34,7 +34,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -105,10 +104,7 @@ type (
 		workflowInfo      *WorkflowInfo
 		wth               *workflowTaskHandlerImpl
 
-		// eventHandler is changed to a atomic.Value as a temporally bug fix for local activity
-		// retry issue (github issue #915). Therefore, when accessing/modifying this field, the
-		// mutex should still be held.
-		eventHandler atomic.Value
+		eventHandler *workflowExecutionEventHandler
 
 		isWorkflowCompleted bool
 		result              *commonpb.Payloads
@@ -494,15 +490,10 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 }
 
 func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEventHandlerImpl {
-	eventHandler := w.eventHandler.Load()
-	if eventHandler == nil {
+	if w.eventHandler == nil {
 		return nil
 	}
-	eventHandlerImpl, ok := eventHandler.(*workflowExecutionEventHandlerImpl)
-	if !ok {
-		panic("unknown type for workflow execution event handler")
-	}
-	return eventHandlerImpl
+	return (*w.eventHandler).(*workflowExecutionEventHandlerImpl)
 }
 
 func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
@@ -569,7 +560,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 		// Set isReplay to true to prevent user code in defer guarded by !isReplaying() from running
 		eventHandler.isReplay = true
 		eventHandler.Close()
-		w.eventHandler.Store((*workflowExecutionEventHandlerImpl)(nil))
+		w.eventHandler = nil
 	}
 }
 
@@ -586,7 +577,9 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.contextPropagators,
 		w.wth.tracer,
 	)
-	w.eventHandler.Store(eventHandler)
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.eventHandler = &eventHandler
 }
 
 func resetHistory(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) (*historypb.History, error) {
