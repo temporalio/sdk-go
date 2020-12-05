@@ -154,6 +154,7 @@ type (
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
+		namespace          string
 	}
 
 	// history wrapper method to help information about events.
@@ -1628,6 +1629,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		workerStopCh:       params.WorkerStopChannel,
 		contextPropagators: params.ContextPropagators,
 		tracer:             params.Tracer,
+		namespace:          params.Namespace,
 	}
 }
 
@@ -1643,6 +1645,7 @@ type temporalInvoker struct {
 	lastDetailsToReport **commonpb.Payloads
 	closeCh             chan struct{}
 	workerStopChannel   <-chan struct{}
+	namespace           string
 }
 
 func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching bool) error {
@@ -1761,6 +1764,7 @@ func newServiceInvoker(
 	cancelHandler func(),
 	heartBeatTimeout time.Duration,
 	workerStopChannel <-chan struct{},
+	namespace string,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:         taskToken,
@@ -1771,6 +1775,7 @@ func newServiceInvoker(
 		heartBeatTimeout:  heartBeatTimeout,
 		closeCh:           make(chan struct{}),
 		workerStopChannel: workerStopChannel,
+		namespace:         namespace,
 	}
 }
 
@@ -1790,7 +1795,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
-	invoker := newServiceInvoker(t.TaskToken, ath.identity, ath.service, ath.metricsScope, cancel, common.DurationValue(t.GetHeartbeatTimeout()), ath.workerStopCh)
+	invoker := newServiceInvoker(
+		t.TaskToken, ath.identity, ath.service, ath.metricsScope, cancel, common.DurationValue(t.GetHeartbeatTimeout()),
+		ath.workerStopCh, ath.namespace)
 	defer func() {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
@@ -1821,7 +1828,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 				"PanicStack", st)
 			activityMetricsScope.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
-			result, err = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr, ath.dataConverter), nil
+			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
+				ath.dataConverter, ath.namespace)
 		}
 	}()
 
@@ -1860,7 +1868,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagError, err,
 		)
 	}
-	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err, ath.dataConverter), nil
+	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
+		ath.dataConverter, ath.namespace), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

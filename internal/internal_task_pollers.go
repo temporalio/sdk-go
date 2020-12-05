@@ -988,7 +988,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
-	dataConverter converter.DataConverter) interface{} {
+	dataConverter converter.DataConverter, namespace string) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -999,7 +999,8 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 		return &workflowservice.RespondActivityTaskCompletedRequest{
 			TaskToken: taskToken,
 			Result:    result,
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 
 	var canceledErr *CanceledError
@@ -1007,18 +1008,21 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
 			Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 	if errors.Is(err, context.Canceled) {
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
 		TaskToken: taskToken,
 		Failure:   convertErrorToFailure(err, dataConverter),
-		Identity:  identity}
+		Identity:  identity,
+		Namespace: namespace}
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,

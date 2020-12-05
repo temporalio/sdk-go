@@ -61,6 +61,7 @@ const (
 	defaultTestRunID            = "default-test-run-id"
 	defaultTestWorkflowTypeName = "default-test-workflow-type-name"
 	workflowTypeNotSpecified    = "workflow-type-not-specified"
+	testNamesapce               = "default"
 
 	// These are copied from service implementation
 	reservedTaskQueuePrefix = "/__temporal_sys/"
@@ -960,7 +961,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 				tagActivityID, activityID)
 			return
 		}
-		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err, env.GetDataConverter())
+		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
+			env.GetDataConverter(), testNamesapce)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
