@@ -118,7 +118,6 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
-		// For global registration consider activity.Register
 		RegisterActivity(a interface{})
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
