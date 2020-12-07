@@ -352,7 +352,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
-		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
+		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
 	}
 
 	workflowMetricsScope.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))

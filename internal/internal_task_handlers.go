@@ -1475,7 +1475,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	// for query task
 	if task.Query != nil {
-		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{TaskToken: task.TaskToken}
+		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
+			TaskToken: task.TaskToken,
+			Namespace: wth.namespace,
+		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
@@ -1573,16 +1576,19 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
 		BinaryChecksum:             getBinaryChecksum(),
 		QueryResults:               queryResults,
+		Namespace:                  wth.namespace,
 	}
 }
 
-func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter) *workflowservice.RespondWorkflowTaskFailedRequest {
+func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
+	namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
 	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
 		Failure:        convertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
+		Namespace:      namespace,
 	}
 }
 
