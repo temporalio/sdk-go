@@ -713,6 +713,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 	task := &workflowTask{
 		task:            response,
 		historyIterator: historyIterator,
+		laRetryCh:       make(chan *localActivityTask, 1),
 	}
 	return task
 }

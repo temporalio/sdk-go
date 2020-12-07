@@ -617,6 +617,10 @@ func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel_Repla
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
+	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries", ts.workflows.WorkflowWithLocalActivityRetries, nil))
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
 	if !ts.config.IsStickyOff {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))

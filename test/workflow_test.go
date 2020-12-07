@@ -801,6 +801,19 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	return nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		InitialInterval:    50 * time.Millisecond,
+		BackoffCoefficient: 1.1,
+		MaximumInterval:    time.Second * 5,
+		MaximumAttempts:    0,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	activities := Activities{}
+	return workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2).Get(ctx, nil)
+}
+
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
@@ -1075,6 +1088,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SimplestWorkflow)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetries)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)

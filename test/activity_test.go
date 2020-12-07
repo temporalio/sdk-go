@@ -102,6 +102,14 @@ func (a *Activities) fail(_ context.Context) error {
 	return errFailOnPurpose
 }
 
+func (a *Activities) failNTimes(_ context.Context, times int) error {
+	a.append("failNTimes")
+	if a.invokedCount("failNTimes") > times {
+		return nil
+	}
+	return errFailOnPurpose
+}
+
 func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string) error {
 	a.append("inspectActivityInfo")
 	info := activity.GetInfo(ctx)
@@ -138,6 +146,18 @@ func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.invocations = append(a.invocations, name)
+}
+
+func (a *Activities) invokedCount(name string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var res = 0
+	for i := range a.invocations {
+		if a.invocations[i] == name {
+			res++
+		}
+	}
+	return res
 }
 
 func (a *Activities) invoked() []string {
@@ -203,6 +223,7 @@ func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration
 	worker.RegisterActivityWithOptions(a.fail, activity.RegisterOptions{Name: "Fail", DisableAlreadyRegisteredCheck: true})
+	worker.RegisterActivityWithOptions(a.failNTimes, activity.RegisterOptions{Name: "FailNTimes", DisableAlreadyRegisteredCheck: true})
 	// Check prefix
 	worker.RegisterActivityWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 	worker.RegisterActivityWithOptions(a.InspectActivityInfo, activity.RegisterOptions{Name: "inspectActivityInfo"})
