@@ -472,7 +472,7 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCanceledBeforeSent:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
