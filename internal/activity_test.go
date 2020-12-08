@@ -43,8 +43,9 @@ import (
 
 type activityTestSuite struct {
 	suite.Suite
-	mockCtrl *gomock.Controller
-	service  *workflowservicemock.MockWorkflowServiceClient
+	mockCtrl  *gomock.Controller
+	service   *workflowservicemock.MockWorkflowServiceClient
+	namespace string
 }
 
 func TestActivityTestSuite(t *testing.T) {
@@ -55,6 +56,7 @@ func TestActivityTestSuite(t *testing.T) {
 func (s *activityTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.namespace = "default"
 }
 
 func (s *activityTestSuite) TearDownTest() {
@@ -63,7 +65,8 @@ func (s *activityTestSuite) TearDownTest() {
 
 func (s *activityTestSuite) TestActivityHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 1*time.Second, make(chan struct{}))
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -74,7 +77,8 @@ func (s *activityTestSuite) TestActivityHeartbeat() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 1*time.Second, make(chan struct{}))
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -90,7 +94,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 1*time.Second, make(chan struct{}))
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -105,7 +110,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 1*time.Second, make(chan struct{}))
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -120,7 +126,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 
 func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 2*time.Second, make(chan struct{}))
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		2*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker,
 		logger:         getLogger()})
@@ -135,7 +142,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 
 	// No HB timeout configured.
 	service2 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, tally.NoopScope, cancel, 0, make(chan struct{}))
+	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, tally.NoopScope, cancel,
+		0, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker2,
 		logger:         getLogger()})
@@ -148,7 +156,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	// simulate batch picks before expiry.
 	waitCh := make(chan struct{})
 	service3 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, tally.NoopScope, cancel, 2*time.Second, make(chan struct{}))
+	invoker3 := newServiceInvoker([]byte("task-token"), "identity", service3, tally.NoopScope, cancel,
+		2*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker3,
 		logger:         getLogger()})
@@ -178,7 +187,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	// simulate batch picks before expiry, without any progress specified.
 	waitCh2 := make(chan struct{})
 	service4 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
-	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, tally.NoopScope, cancel, 2*time.Second, make(chan struct{}))
+	invoker4 := newServiceInvoker([]byte("task-token"), "identity", service4, tally.NoopScope, cancel,
+		2*time.Second, make(chan struct{}), s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		serviceInvoker: invoker4,
 		logger:         getLogger()})
@@ -202,7 +212,8 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {
 	ctx, cancel := context.WithCancel(context.Background())
 	workerStopChannel := make(chan struct{})
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel, 5*time.Second, workerStopChannel)
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, tally.NoopScope, cancel,
+		5*time.Second, workerStopChannel, s.namespace)
 	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{serviceInvoker: invoker})
 
 	heartBeatDetail := "testDetails"

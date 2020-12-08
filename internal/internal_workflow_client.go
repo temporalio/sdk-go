@@ -620,7 +620,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 			return err0
 		}
 	}
-	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter)
+	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter, wc.namespace)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
 }
 
