@@ -991,6 +991,8 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	// to correctly incrementing counter before adding the command.
 	h.getNextID()
 	h.addCommand(command)
+	// LA markers should be the first command executed
+	h.orderedCommands.MoveToFront(h.commands[command.getID()])
 	return command
 }
 

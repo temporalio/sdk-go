@@ -149,9 +149,8 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
 	require.Equal(t, 2, len(commands))
-	// TODO: UUUUGH
-	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, commands[1].GetCommandType())
-	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_RECORD_MARKER, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[1].GetCommandType())
 }
 
 func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {

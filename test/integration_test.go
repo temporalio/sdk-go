@@ -582,6 +582,34 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingRepl
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestLocalActivityStartedAtSameTimeAsTimerCancel() {
+	wfID := "test-wf-local-activity-start-with-timer-cancel"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.WorkflowExecutionTimeout = 5 * time.Second
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts,
+		ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel)
+	ts.Nil(err)
+
+	<-time.After(1 * time.Second)
+	err = ts.client.SignalWorkflow(ctx, wfID, run.GetRunID(), "signal", "")
+	ts.NoError(err)
+	var res *bool
+	err = run.Get(ctx, &res)
+	ts.NoError(err)
+	ts.True(*res)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityStartedAtSameTimeAsTimerCancel_Replay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/la-same-time-as-cancel.json")
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
 	if !ts.config.IsStickyOff {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))

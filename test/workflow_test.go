@@ -754,6 +754,35 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	return "", nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityStartWhenTimerCancel(ctx workflow.Context) (bool, error) {
+	timerCtx, cancelTimer := workflow.WithCancel(ctx)
+	laOpts := w.defaultLocalActivityOptions()
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		InitialInterval:    50 * time.Millisecond,
+		BackoffCoefficient: 1.1,
+		MaximumInterval:    time.Second * 5,
+		MaximumAttempts:    0,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	activities := Activities{}
+	// Start a timer
+	_ = workflow.NewTimer(timerCtx, time.Second*3)
+
+	// On signal, start local activity and cancel timer simultaneously
+	sigChan := workflow.GetSignalChannel(ctx, "signal")
+	var signal string
+	if channelActive := sigChan.Receive(ctx, &signal); channelActive {
+		localActivityFut := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2)
+		cancelTimer()
+		err := localActivityFut.Get(ctx, nil)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
 func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
 	ao := w.defaultLocalActivityOptions()
 	ao.ScheduleToCloseTimeout = 10 * time.Second
@@ -1054,6 +1083,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.SignalWorkflow)
