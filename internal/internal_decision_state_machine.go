@@ -83,6 +83,7 @@ type (
 		attributes *commandpb.ScheduleActivityTaskCommandAttributes
 	}
 
+	// Exists to handle the narrow case of cancelling an activity before we've sent the command to start it
 	cancelActivityStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.RequestCancelActivityTaskCommandAttributes
@@ -93,6 +94,7 @@ type (
 		attributes *commandpb.StartTimerCommandAttributes
 	}
 
+	// Exists to handle the narrow case of cancelling a timer before we've sent the command to start it
 	cancelTimerCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.CancelTimerCommandAttributes
@@ -408,9 +410,12 @@ func (d *commandStateMachineBase) cancel() {
 	case commandStateCreated:
 		d.moveState(commandStateCanceledBeforeSent, eventCancel)
 	case commandStateCommandSent:
-		d.moveState(commandStateCancellationCommandSent, eventCancel)
+		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
 	case commandStateInitiated:
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
+		// The cancel command is only actually added if we haven't yet initiated the command, which is the purpose of
+		// the `cancelActivityStateMachine` and `cancelTimerCommandStateMachine` machines.
+		d.helper.incrementNextCommandEventID()
 	default:
 		d.failStateTransition(eventCancel)
 	}
@@ -420,7 +425,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 	switch d.state {
 	case commandStateCommandSent:
 		d.moveState(commandStateInitiated, eventInitiated)
-	case commandStateCanceledBeforeInitiated, commandStateCanceledBeforeSent, commandStateCancellationCommandSent:
+	case commandStateCanceledBeforeInitiated, commandStateCanceledBeforeSent:
 		d.moveState(commandStateCanceledAfterInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
@@ -429,7 +434,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 
 func (d *commandStateMachineBase) handleInitiationFailedEvent() {
 	switch d.state {
-	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated, commandStateCancellationCommandSent:
+	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated:
 		d.moveState(commandStateCompleted, eventInitiationFailed)
 	default:
 		d.failStateTransition(eventInitiationFailed)
@@ -490,6 +495,12 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
 		return command
+	case commandStateCanceledAfterInitiated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
+		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
+			ScheduledEventId: d.scheduleID,
+		}}
+		return command
 	default:
 		return nil
 	}
@@ -513,7 +524,7 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 
 func (d *activityCommandStateMachine) cancel() {
 	switch d.state {
-	case commandStateCreated, commandStateCommandSent:
+	case commandStateCreated:
 		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
 			ScheduledEventId: d.scheduleID,
 		}
@@ -526,7 +537,7 @@ func (d *activityCommandStateMachine) cancel() {
 
 func (d *timerCommandStateMachine) cancel() {
 	switch d.state {
-	case commandStateCreated, commandStateCommandSent, commandStateInitiated:
+	case commandStateCreated:
 		attribs := &commandpb.CancelTimerCommandAttributes{
 			TimerId: d.attributes.TimerId,
 		}
@@ -566,6 +577,12 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
+		return command
+	case commandStateCanceledAfterInitiated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
+		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
+			TimerId: d.attributes.TimerId,
+		}}
 		return command
 	default:
 		return nil

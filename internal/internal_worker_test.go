@@ -710,20 +710,20 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(10),
 		createTestEventWorkflowTaskCompleted(11, &historypb.WorkflowTaskCompletedEventAttributes{}),
-		createTestEventActivityTaskScheduled(12, &historypb.ActivityTaskScheduledEventAttributes{
-			ActivityId:   "12",
-			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
-			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-		}),
-		createTestEventActivityTaskCancelRequested(13, &historypb.ActivityTaskCancelRequestedEventAttributes{
+		createTestEventActivityTaskCancelRequested(12, &historypb.ActivityTaskCancelRequestedEventAttributes{
 			ScheduledEventId:             5,
 			WorkflowTaskCompletedEventId: 11,
 		}),
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
 		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
-			ScheduledEventId: 12,
+			ScheduledEventId: 13,
 		}),
 		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
-			ScheduledEventId: 12,
+			ScheduledEventId: 13,
 			StartedEventId:   14,
 		}),
 		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
