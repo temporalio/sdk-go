@@ -62,9 +62,10 @@ const (
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
-		logger   log.Logger
-		service  *workflowservicemock.MockWorkflowServiceClient
-		registry *registry
+		logger    log.Logger
+		service   *workflowservicemock.MockWorkflowServiceClient
+		registry  *registry
+		namespace string
 	}
 )
 
@@ -131,6 +132,7 @@ func (t *TaskHandlersTestSuite) SetupTest() {
 func (t *TaskHandlersTestSuite) SetupSuite() {
 	t.logger = ilog.NewDefaultLogger()
 	registerWorkflows(t.registry)
+	t.namespace = "default"
 }
 
 func TestTaskHandlersTestSuite(t *testing.T) {
@@ -1354,13 +1356,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil,
-		"Test_Temporal_Invoker",
-		mockService,
-		tally.NoopScope,
-		func() {},
-		0,
-		make(chan struct{}))
+		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
+		make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 	t.NotNil(heartbeatErr)
@@ -1377,13 +1374,8 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	cancelHandler := func() { called = true }
 
 	temporalInvoker := newServiceInvoker(
-		nil,
-		"Test_Temporal_Invoker",
-		mockService,
-		tally.NoopScope,
-		cancelHandler,
-		0,
-		make(chan struct{}))
+		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
+		0, make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
 	t.NotNil(heartbeatErr)
