@@ -549,6 +549,13 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
 	ts.EqualValues("HELLO", wfResult)
 }
 
+func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/cancel-timer-after-activity.json")
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)
@@ -582,8 +589,8 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingRepl
 	ts.NoError(err)
 }
 
-func (ts *IntegrationTestSuite) TestLocalActivityStartedAtSameTimeAsTimerCancel() {
-	wfID := "test-wf-local-activity-start-with-timer-cancel"
+func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel() {
+	wfID := "test-activity-start-with-timer-cancel"
 	wfOpts := ts.startWorkflowOptions(wfID)
 	wfOpts.WorkflowExecutionTimeout = 5 * time.Second
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
@@ -603,10 +610,10 @@ func (ts *IntegrationTestSuite) TestLocalActivityStartedAtSameTimeAsTimerCancel(
 	ts.True(*res)
 }
 
-func (ts *IntegrationTestSuite) TestLocalActivityStartedAtSameTimeAsTimerCancel_Replay() {
+func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/la-same-time-as-cancel.json")
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/activity-same-time-as-cancel.json")
 	ts.NoError(err)
 }
 

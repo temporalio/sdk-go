@@ -756,14 +756,7 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 
 func (w *Workflows) WorkflowWithLocalActivityStartWhenTimerCancel(ctx workflow.Context) (bool, error) {
 	timerCtx, cancelTimer := workflow.WithCancel(ctx)
-	laOpts := w.defaultLocalActivityOptions()
-	laOpts.RetryPolicy = &internal.RetryPolicy{
-		InitialInterval:    50 * time.Millisecond,
-		BackoffCoefficient: 1.1,
-		MaximumInterval:    time.Second * 5,
-		MaximumAttempts:    0,
-	}
-	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	activities := Activities{}
 	// Start a timer
 	_ = workflow.NewTimer(timerCtx, time.Second*3)
@@ -772,7 +765,7 @@ func (w *Workflows) WorkflowWithLocalActivityStartWhenTimerCancel(ctx workflow.C
 	sigChan := workflow.GetSignalChannel(ctx, "signal")
 	var signal string
 	if channelActive := sigChan.Receive(ctx, &signal); channelActive {
-		localActivityFut := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2)
+		localActivityFut := workflow.ExecuteActivity(ctx, activities.Echo, 0, 0)
 		cancelTimer()
 		err := localActivityFut.Get(ctx, nil)
 		if err != nil {
