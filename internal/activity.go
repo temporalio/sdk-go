@@ -255,11 +255,16 @@ func WithActivityTask(
 	scheduleToCloseTimeout := common.DurationValue(task.GetScheduleToCloseTimeout())
 	startToCloseTimeout := common.DurationValue(task.GetStartToCloseTimeout())
 	heartbeatTimeout := common.DurationValue(task.GetHeartbeatTimeout())
-	scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+
 	startToCloseDeadline := started.Add(startToCloseTimeout)
-	// Minimum of the two deadlines.
-	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
-		deadline = scheduleToCloseDeadline
+	if scheduleToCloseTimeout > 0 {
+		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+		// Minimum of the two deadlines.
+		if scheduleToCloseDeadline.Before(startToCloseDeadline) {
+			deadline = scheduleToCloseDeadline
+		} else {
+			deadline = startToCloseDeadline
+		}
 	} else {
 		deadline = startToCloseDeadline
 	}
