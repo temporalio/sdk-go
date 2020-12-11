@@ -805,6 +805,65 @@ func createHistoryForCancelTimerTests(workflowType string) []*historypb.HistoryE
 	}
 }
 
+func cancelTimerAfterActivityWorkflow(ctx Context) error {
+	timerCtx1, cancelFunc1 := WithCancel(ctx)
+	_ = NewTimer(timerCtx1, 3*time.Second)
+	// Start an activity
+	fut := ExecuteActivity(ctx, "testActivity")
+	// Cancel timer
+	cancelFunc1()
+	// Then wait on the activity
+	err := fut.Get(ctx, nil)
+	return err
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowCancelTimerAfterActivity() {
+	testEvents := createHistoryForCancelTimerAfterActivity("cancelTimerAfterActivityWorkflow")
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(cancelTimerAfterActivityWorkflow)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func createHistoryForCancelTimerAfterActivity(workflowType string) []*historypb.HistoryEvent {
+	taskQueue := "taskQueue1"
+	return []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventTimerStarted(5, 5),
+		createTestEventActivityTaskScheduled(6, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "6",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventTimerCanceled(7, 5),
+		createTestEventActivityTaskStarted(8, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 6,
+		}),
+		createTestEventActivityTaskCompleted(9, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 6,
+			StartedEventId:   8,
+		}),
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(11),
+		createTestEventWorkflowTaskCompleted(12, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 10,
+			StartedEventId:   11,
+		}),
+		createTestEventWorkflowExecutionCompleted(13, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 12,
+		}),
+	}
+}
+
 func testReplayWorkflowCancelChildWorkflow(ctx Context) error {
 	childCtx1, cancelFunc1 := WithCancel(ctx)
 
