@@ -46,9 +46,11 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 	d := h.startTimer(attributes)
 	require.Equal(t, commandStateCreated, d.getState())
 	h.cancelTimer(TimerID{timerID})
-	require.Equal(t, commandStateCompleted, d.getState())
+	require.Equal(t, commandStateCanceledBeforeSent, d.getState())
 	commands := h.getCommands(true)
-	require.Equal(t, 0, len(commands))
+	require.Equal(t, 2, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[1].GetCommandType())
 }
 
 func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
@@ -91,14 +93,16 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, 1, len(commands))
 	require.Equal(t, enumspb.COMMAND_TYPE_START_TIMER, commands[0].GetCommandType())
 	h.cancelTimer(TimerID{timerID})
-	require.Equal(t, commandStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getCommands(true)))
-	h.handleTimerStarted(timerID)
-	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
+	require.Equal(t, commandStateCancellationCommandSent, d.getState())
 	commands = h.getCommands(true)
 	require.Equal(t, 1, len(commands))
 	require.Equal(t, enumspb.COMMAND_TYPE_CANCEL_TIMER, commands[0].GetCommandType())
-	require.Equal(t, commandStateCancellationCommandSent, d.getState())
+	// The timer ends up being started after we issued a cancel command
+	h.handleTimerStarted(timerID)
+	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
+	commands = h.getCommands(true)
+	require.Equal(t, 0, len(commands))
+	// Oops it completed anyway, fine, we're done.
 	h.handleTimerClosed(timerID)
 	require.Equal(t, commandStateCompletedAfterCancellationCommandSent, d.getState())
 }
@@ -191,13 +195,13 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 	d := h.scheduleActivityTask(scheduleID, attributes)
 	require.Equal(t, commandStateCreated, d.getState())
 
-	// cancel before command sent, this will put command state machine directly into completed state
+	// Cancel before command sent. We will send the command and the cancellation.
 	h.requestCancelActivityTask(activityID)
-	require.Equal(t, commandStateCompleted, d.getState())
-
-	// there should be no commands needed to be send
+	require.Equal(t, commandStateCanceledBeforeSent, d.getState())
 	commands := h.getCommands(true)
-	require.Equal(t, 0, len(commands))
+	require.Equal(t, 2, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[1].GetCommandType())
 }
 
 func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
@@ -219,15 +223,16 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
-	require.Equal(t, commandStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getCommands(true)))
+	require.Equal(t, commandStateCancellationCommandSent, d.getState())
+	commands = h.getCommands(true)
+	require.Equal(t, 1, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
 
 	// activity scheduled
 	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
-	require.Equal(t, 1, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, 0, len(commands))
 
 	// activity canceled
 	h.handleActivityTaskCanceled(activityID, scheduleID)
@@ -254,15 +259,16 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 
 	// cancel activity
 	h.requestCancelActivityTask(activityID)
-	require.Equal(t, commandStateCanceledBeforeInitiated, d.getState())
-	require.Equal(t, 0, len(h.getCommands(true)))
+	require.Equal(t, commandStateCancellationCommandSent, d.getState())
+	commands = h.getCommands(true)
+	require.Equal(t, 1, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
 
 	// activity scheduled
 	h.handleActivityTaskScheduled(activityID, scheduleID)
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 	commands = h.getCommands(true)
-	require.Equal(t, 1, len(commands))
-	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, 0, len(commands))
 
 	// activity completed after cancel
 	h.handleActivityTaskClosed(activityID, scheduleID)
@@ -434,21 +440,15 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	require.Equal(t, 1, len(commands))
 	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION, commands[0].GetCommandType())
 
-	// invalid: start child workflow failed after it was already started
-	err = runAndCatchPanic(func() {
-		h.handleStartChildWorkflowExecutionFailed(workflowID)
-	})
-	require.NotNil(t, err)
+	// cancel request initiated
+	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
+	require.Equal(t, commandStateCancellationCommandSent, d.getState())
 
 	// invalid: child workflow initiated again
 	err = runAndCatchPanic(func() {
 		h.handleStartChildWorkflowExecutionInitiated(workflowID)
 	})
 	require.NotNil(t, err)
-
-	// cancel request initiated
-	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
-	require.Equal(t, commandStateCancellationCommandSent, d.getState())
 
 	// child workflow completed
 	h.handleChildWorkflowExecutionClosed(workflowID)

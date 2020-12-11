@@ -1174,9 +1174,11 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(1, len(response.Commands))
-	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[0].GetCommandType())
-	t.NotNil(response.Commands[0].GetCompleteWorkflowExecutionCommandAttributes())
+	t.Equal(3, len(response.Commands))
+	t.Equal(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, response.Commands[0].GetCommandType())
+	t.Equal(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, response.Commands[1].GetCommandType())
+	t.Equal(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, response.Commands[2].GetCommandType())
+	t.NotNil(response.Commands[2].GetCompleteWorkflowExecutionCommandAttributes())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
