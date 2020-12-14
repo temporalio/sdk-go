@@ -1236,7 +1236,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 			if laFailures > 2 {
 				return nil
 			}
-			laFailures += 1
+			laFailures++
 			return errors.New("fail number " + strconv.Itoa(laFailures))
 		}).Get(ctx, nil)
 		workflowComplete = true
