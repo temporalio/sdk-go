@@ -562,10 +562,12 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	command := wc.commandsHelper.cancelTimer(timerID)
 	timer := command.getData().(*scheduledTimer)
-	if timer.handled {
-		return
+	if timer != nil {
+		if timer.handled {
+			return
+		}
+		timer.handle(nil, ErrCanceled)
 	}
-	timer.handle(nil, ErrCanceled)
 	wc.logger.Debug("RequestCancelTimer", tagTimerID, timerID)
 }
 

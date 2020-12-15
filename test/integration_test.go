@@ -542,6 +542,20 @@ func (ts *IntegrationTestSuite) TestCancelTimer() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
+	var wfResult string
+	err := ts.executeWorkflow("test-cancel-timer-after-activity", ts.workflows.CancelTimerAfterActivity, &wfResult)
+	ts.NoError(err)
+	ts.EqualValues("HELLO", wfResult)
+}
+
+func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/cancel-timer-after-activity.json")
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)
@@ -572,6 +586,34 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelLocalActivitiesUsingRepl
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelLocalActivities, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/parallel-local-activities.json")
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel() {
+	wfID := "test-activity-start-with-timer-cancel"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.WorkflowExecutionTimeout = 5 * time.Second
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts,
+		ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel)
+	ts.Nil(err)
+
+	<-time.After(1 * time.Second)
+	err = ts.client.SignalWorkflow(ctx, wfID, run.GetRunID(), "signal", "")
+	ts.NoError(err)
+	var res *bool
+	err = run.Get(ctx, &res)
+	ts.NoError(err)
+	ts.True(*res)
+}
+
+func (ts *IntegrationTestSuite) TestActivityStartedAtSameTimeAsTimerCancel_Replay() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithLocalActivityStartWhenTimerCancel, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replaytests/activity-same-time-as-cancel.json")
 	ts.NoError(err)
 }
 
@@ -709,6 +751,24 @@ func (ts *IntegrationTestSuite) TestFailurePropagation() {
 	var errDeets *string
 	ts.NoError(canceledErr.Details(&errDeets))
 	ts.EqualValues("finished OK", *errDeets)
+}
+
+func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandDoesNotCausePanic() {
+	const wfID = "test-timer-cancel-concurrent-with-other-cmd"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.WorkflowTaskTimeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.SignalWithStartWorkflow(ctx, wfID, "signal", "", wfOpts, ts.workflows.CancelTimerConcurrentWithOtherCommandWorkflow)
+	ts.Nil(err)
+	if err != nil {
+		ilog.NewDefaultLogger().Error("Unable to execute workflow {}", err)
+	}
+
+	var result int
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

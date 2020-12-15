@@ -413,7 +413,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity A Failed.", "Error", err)
 			return
 		}
 
@@ -434,7 +434,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity B Failed.", "Error", err)
 		}
 	})
 
@@ -451,7 +451,7 @@ func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) 
 		var ans string
 		err := activityF.Get(activityCtx, &ans)
 		if err != nil {
-			workflow.GetLogger(activityCtx).Info("Activity Failed.", "Error", err)
+			workflow.GetLogger(activityCtx).Info("Activity C Failed.", "Error", err)
 		}
 	})
 
@@ -497,6 +497,24 @@ func (w *Workflows) CancelTimer(ctx workflow.Context) ([]string, error) {
 	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
 
 	return []string{"toUpper"}, nil
+}
+
+func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, error) {
+	timerCtx1, cancelFunc1 := workflow.WithCancel(ctx)
+
+	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
+	// Start an activity
+	activityCtx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 1 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+	})
+	var res string
+	fut := workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello")
+	// Cancel timer
+	cancelFunc1()
+
+	err := fut.Get(activityCtx2, &res)
+	return res, err
 }
 
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
@@ -736,6 +754,28 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	return "", nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityStartWhenTimerCancel(ctx workflow.Context) (bool, error) {
+	timerCtx, cancelTimer := workflow.WithCancel(ctx)
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	activities := Activities{}
+	// Start a timer
+	_ = workflow.NewTimer(timerCtx, time.Second*3)
+
+	// On signal, start local activity and cancel timer simultaneously
+	sigChan := workflow.GetSignalChannel(ctx, "signal")
+	var signal string
+	if channelActive := sigChan.Receive(ctx, &signal); channelActive {
+		localActivityFut := workflow.ExecuteActivity(ctx, activities.Echo, 0, 0)
+		cancelTimer()
+		err := localActivityFut.Get(ctx, nil)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
 func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workflow.Context) error {
 	ao := w.defaultLocalActivityOptions()
 	ao.ScheduleToCloseTimeout = 10 * time.Second
@@ -960,6 +1000,45 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	return retme, nil
 }
 
+func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (int, error) {
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	logger := workflow.GetLogger(ctx)
+	logger.Info("CancelTimerConcurrentWithOtherCommandWorkflow workflow started")
+
+	childCtx, cancelHandler := workflow.WithCancel(ctx)
+	selector := workflow.NewSelector(ctx)
+
+	var result int
+	var err error
+	var a Activities
+	selector.AddReceive(workflow.GetSignalChannel(childCtx, "signal"), func(c workflow.ReceiveChannel, more bool) {
+		var signal string
+		if channelActive := c.Receive(ctx, &signal); channelActive {
+			cancelHandler() // in this case the timer will be canceled
+			err = workflow.ExecuteActivity(ctx, a.Echo, 0, 1).Get(ctx, &result)
+		}
+	})
+	selector.AddFuture(workflow.NewTimer(childCtx, time.Second*5), func(future workflow.Future) {
+		err = fmt.Errorf("timeout reached, no signal within allowed duration")
+	})
+	// Block until finished
+	selector.Select(ctx)
+
+	if err != nil {
+		logger.Error("Activity failed.", "Error", err)
+		return 0, err
+	}
+
+	logger.Info("HelloWorld workflow completed.", "result", result)
+
+	return result, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -976,6 +1055,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
 	worker.RegisterWorkflow(w.CancelTimer)
+	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
@@ -996,10 +1076,12 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
+	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
