@@ -1251,8 +1251,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if options.StickyCacheSize > 0 {
 		cacheSize = options.StickyCacheSize
 	} else {
-		// TODO: Fetch default from where?
-		cacheSize = 10000
+		cacheSize = defaultStickyCacheSize
 	}
 	cache := newWorkerCache(cacheSize)
 	workerParams := workerExecutionParameters{
