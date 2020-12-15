@@ -228,7 +228,6 @@ func EnableVerboseLogging(enable bool) {
 	internal.EnableVerboseLogging(enable)
 }
 
-// TODO: This doesn't really make sense any more
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
 // between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
 // is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
@@ -236,6 +235,7 @@ func EnableVerboseLogging(enable bool) {
 // is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
 // between workers running within same process. This must be called before any worker is started. If not called, the
 // default size of 10K (might change in future) will be used.
+// TODO: This doesn't really make sense any more
 func SetStickyWorkflowCacheSize(cacheSize int) {
 	//internal.SetStickyWorkflowCacheSize(cacheSize)
 }
