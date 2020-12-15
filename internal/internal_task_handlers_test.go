@@ -50,7 +50,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -411,6 +410,18 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 
 var testWorkflowTaskTaskqueue = "tq1"
 
+func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
+	cache := newWorkerCache(10)
+	return workerExecutionParameters{
+		TaskQueue: testWorkflowTaskTaskqueue,
+		Namespace: testNamespace,
+		Identity:  "test-id-1",
+		Logger:    t.logger,
+		cache:     &cache,
+		Tracer:    opentracing.NoopTracer{},
+	}
+}
+
 func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(params workerExecutionParameters) {
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
@@ -427,21 +438,12 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
-	params := workerExecutionParameters{
-		TaskQueue: testWorkflowTaskTaskqueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
-	params := workerExecutionParameters{
-		TaskQueue:     testWorkflowTaskTaskqueue,
-		Identity:      "test-id-1",
-		Logger:        t.logger,
-		DataConverter: iconverter.NewTestDataConverter(),
-	}
+	params := t.getTestWorkerExecutionParams()
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
 
@@ -465,12 +467,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventWorkflowTaskStarted(13),
 	}
 	task := createWorkflowTask(testEvents, 8, "BinaryChecksumWorkflow")
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
@@ -506,12 +503,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 		createTestEventWorkflowTaskStarted(8),
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
@@ -553,12 +545,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
 		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 	}
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 
 	// first make progress on the workflow
@@ -599,12 +586,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 		createTestEventWorkflowTaskStarted(8),
 		createTestEventWorkflowExecutionSignaled(9, "test-signal"),
 	}
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 
 	// query after first workflow task (notice the previousStartEventID is always the last eventID for query task)
 	task := createQueryTask(testEvents[0:3], 3, "HelloWorld_Workflow", queryType)
@@ -654,25 +636,19 @@ func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expected
 }
 
 func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
-	taskQueue := "taskQueue"
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
 		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
-			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		}),
 	}
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	// now change the history event so it does not match to command produced via replay
@@ -688,26 +664,20 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	t.Contains(err.Error(), "nondeterministic")
 
 	// There should be nothing in the cache.
-	t.EqualValues(getWorkflowCache().Size(), 0)
+	t.EqualValues(params.cache.workflowCache.Size(), 0)
 }
 
 func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
-	taskQueue := "taskQueue"
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
-		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(7),
 	}
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	for _, startEventID := range []int64{0, 3} {
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -722,35 +692,29 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		t.Contains(err.Error(), "missing history events")
 
 		// There should be nothing in the cache.
-		t.EqualValues(getWorkflowCache().Size(), 0)
+		t.EqualValues(params.cache.workflowCache.Size(), 0)
 	}
 }
 
 func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
-	taskQueue := "taskQueue"
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskFailed(4, &historypb.WorkflowTaskFailedEventAttributes{ScheduledEventId: 2}),
-		createTestEventWorkflowTaskScheduled(5, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(5, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(6),
 		createTestEventWorkflowTaskCompleted(7, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 5}),
 		createTestEventActivityTaskScheduled(8, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "0",
 			ActivityType: &commonpb.ActivityType{Name: "pkg.Greeter_Activity"},
-			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		}),
-		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskStarted(10),
 	}
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	testCases := []struct {
 		startedEventID         int64
@@ -762,7 +726,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	}
 
 	for i, tc := range testCases {
-		cacheSize := getWorkflowCache().Size()
+		cacheSize := params.cache.workflowCache.Size()
 
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
@@ -778,12 +742,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 			t.Error(err, "testcase %v failed", i)
 			t.Nil(request)
 			t.Contains(err.Error(), "premature end of stream")
-			t.EqualValues(getWorkflowCache().Size(), cacheSize)
+			t.EqualValues(params.cache.workflowCache.Size(), cacheSize)
 			continue
 		}
 
 		t.NoError(err, "testcase %v failed", i)
-		t.EqualValues(getWorkflowCache().Size(), cacheSize+1)
+		t.EqualValues(params.cache.workflowCache.Size(), cacheSize+1)
 	}
 }
 
@@ -824,13 +788,8 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		createTestEventWorkflowTaskStarted(3),
 	}
 
-	params := workerExecutionParameters{
-		Namespace:              testNamespace,
-		TaskQueue:              taskQueue,
-		Identity:               "test-id-1",
-		Logger:                 ilog.NewNopLogger(),
-		DisableStickyExecution: disableSticky,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.DisableStickyExecution = disableSticky
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task := createWorkflowTask(testEvents, 0, workflowName)
@@ -838,10 +797,11 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	t.Nil(err)
 
 	if !params.DisableStickyExecution {
+		// TODO: This ain't true any more. Clean up.
 		// 1. We can't set cache size in the test to 1, otherwise other tests will break.
 		// 2. We need to make sure cache is empty when the test is completed,
 		// So manually trigger a delete.
-		getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
+		params.cache.workflowCache.Delete(task.WorkflowExecution.GetRunId())
 	}
 	// Make sure the workflow coroutine has exited.
 	<-doneCh
@@ -849,7 +809,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	t.Equal(expectedValue, value)
 
 	// There should be nothing in the cache.
-	t.EqualValues(0, getWorkflowCache().Size())
+	t.EqualValues(0, params.cache.workflowCache.Size())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
@@ -867,14 +827,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	}
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	stopC := make(chan struct{})
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-		WorkerStopChannel:   stopC,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
+	params.WorkerStopChannel = stopC
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -930,13 +885,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 		createTestEventWorkflowTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 3, "ReturnPanicWorkflow")
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -957,13 +907,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 	}
 	task := createWorkflowTask(testEvents, 3, "PanicWorkflow")
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	_, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -973,7 +918,6 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
-	taskQueue := "taskQueue"
 	parentID := "parentID"
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
@@ -992,7 +936,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.NoError(err)
 	startedEventAttributes := &historypb.WorkflowExecutionStartedEventAttributes{
 		Input:                    lastCompletionResult,
-		TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
+		TaskQueue:                &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		ParentWorkflowExecution:  parentExecution,
 		CronSchedule:             cronSchedule,
 		ContinuedExecutionRunId:  continuedRunID,
@@ -1007,13 +951,8 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		createTestEventWorkflowExecutionStarted(1, startedEventAttributes),
 	}
 	task := createWorkflowTask(testEvents, 3, workflowType)
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -1025,7 +964,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	attr := r.Commands[0].GetCompleteWorkflowExecutionCommandAttributes()
 	var result WorkflowInfo
 	t.NoError(converter.GetDefaultDataConverter().FromPayloads(attr.Result, &result))
-	t.EqualValues(taskQueue, result.TaskQueueName)
+	t.EqualValues(testWorkflowTaskTaskqueue, result.TaskQueueName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
 	t.EqualValues(cronSchedule, result.CronSchedule)
@@ -1040,18 +979,12 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
-	taskQueue := "taskQueue"
-	params := workerExecutionParameters{
-		Namespace:           testNamespace,
-		TaskQueue:           taskQueue,
-		Identity:            "test-id-1",
-		Logger:              ilog.NewNopLogger(),
-		WorkflowPanicPolicy: BlockWorkflow,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = BlockWorkflow
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 	}
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
@@ -1065,11 +998,10 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	t.Contains(err.Error(), "invalid query workflow task")
 
 	// There should be nothing in the cache.
-	t.EqualValues(getWorkflowCache().Size(), 0)
+	t.EqualValues(params.cache.workflowCache.Size(), 0)
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
-	taskQueue := "tq1"
 	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := converter.GetDefaultDataConverter().ToPayloads(2)
 	t.NoError(err)
@@ -1077,7 +1009,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.NoError(err)
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue},
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 			Input:     numberOfSignalsToComplete,
 		}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -1095,12 +1027,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	}
 	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "QuerySignalWorkflow", queries, false)
 
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
@@ -1142,7 +1069,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
 
 	// clean up workflow left in cache
-	getWorkflowCache().Delete(task.WorkflowExecution.RunId)
+	params.cache.workflowCache.Delete(task.WorkflowExecution.RunId)
 }
 
 func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*querypb.WorkflowQueryResult, actual map[string]*querypb.WorkflowQueryResult) {
@@ -1155,20 +1082,14 @@ func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*que
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	// Schedule an activity and see if we complete workflow.
-	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_WorkflowCancel")
 
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
@@ -1183,20 +1104,14 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	// Schedule a command activity and see if we complete workflow.
-	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
 	task.NextPageToken = []byte("token")
 
-	params := workerExecutionParameters{
-		Namespace: testNamespace,
-		TaskQueue: taskQueue,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-	}
+	params := t.getTestWorkerExecutionParams()
 
 	nextEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowTaskStarted(3),
@@ -1256,14 +1171,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 
 	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
 	stopCh := make(chan struct{})
-	params := workerExecutionParameters{
-		Namespace:         testNamespace,
-		TaskQueue:         testWorkflowTaskTaskqueue,
-		Identity:          "test-id-1",
-		Logger:            t.logger,
-		Tracer:            opentracing.NoopTracer{},
-		WorkerStopChannel: stopCh,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkerStopChannel = stopCh
 	defer close(stopCh)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -1438,11 +1347,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 
 	for i, d := range deadlineTests {
 		a.d = d.actWaitDuration
-		wep := workerExecutionParameters{
-			Logger:        t.logger,
-			DataConverter: converter.GetDefaultDataConverter(),
-			Tracer:        opentracing.NoopTracer{},
-		}
+		wep := t.getTestWorkerExecutionParams()
 		activityHandler := newActivityTaskHandler(mockService, wep, registry)
 		pats := &workflowservice.PollActivityTaskQueueResponse{
 			Attempt:   1,
@@ -1495,14 +1400,10 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	workerStopCh := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
-	wep := workerExecutionParameters{
-		Logger:            t.logger,
-		DataConverter:     converter.GetDefaultDataConverter(),
-		UserContext:       ctx,
-		UserContextCancel: cancel,
-		WorkerStopChannel: workerStopCh,
-		Tracer:            opentracing.NoopTracer{},
-	}
+	wep := t.getTestWorkerExecutionParams()
+	wep.UserContext = ctx
+	wep.UserContextCancel = cancel
+	wep.WorkerStopChannel = workerStopCh
 	activityHandler := newActivityTaskHandler(mockService, wep, registry)
 	now := time.Now()
 	pats := &workflowservice.PollActivityTaskQueueResponse{

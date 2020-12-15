@@ -52,7 +52,6 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
@@ -122,6 +121,7 @@ type (
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
+	// TODO: Possibly can pass through ref to cache
 	workflowTaskHandlerImpl struct {
 		namespace              string
 		metricsScope           tally.Scope
@@ -136,6 +136,7 @@ type (
 		dataConverter          converter.DataConverter
 		contextPropagators     []ContextPropagator
 		tracer                 opentracing.Tracer
+		cache                  *workerCache
 	}
 
 	activityProvider func(name string) activity
@@ -399,64 +400,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		dataConverter:          params.DataConverter,
 		contextPropagators:     params.ContextPropagators,
 		tracer:                 params.Tracer,
+		cache:                  params.cache,
 	}
-}
-
-// TODO: need a better eviction policy based on memory usage
-var workflowCache cache.Cache
-var stickyCacheSize = defaultStickyCacheSize
-var initCacheOnce sync.Once
-var stickyCacheLock sync.Mutex
-
-// SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
-// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
-// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
-// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
-// between workers running within same process. This must be called before any worker is started. If not called, the
-// default size of 10K (might change in future) will be used.
-func SetStickyWorkflowCacheSize(cacheSize int) {
-	stickyCacheLock.Lock()
-	defer stickyCacheLock.Unlock()
-	if workflowCache != nil {
-		panic("cache already created, please set cache size before worker starts.")
-	}
-	stickyCacheSize = cacheSize
-}
-
-func getWorkflowCache() cache.Cache {
-	initCacheOnce.Do(func() {
-		stickyCacheLock.Lock()
-		defer stickyCacheLock.Unlock()
-		workflowCache = cache.New(stickyCacheSize, &cache.Options{
-			RemovedFunc: func(cachedEntity interface{}) {
-				wc := cachedEntity.(*workflowExecutionContextImpl)
-				wc.onEviction()
-			},
-		})
-	})
-	return workflowCache
-}
-
-func getWorkflowContext(runID string) *workflowExecutionContextImpl {
-	o := getWorkflowCache().Get(runID)
-	if o == nil {
-		return nil
-	}
-	wc := o.(*workflowExecutionContextImpl)
-	return wc
-}
-
-func putWorkflowContext(runID string, wc *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
-	existing, err := getWorkflowCache().PutIfNotExist(runID, wc)
-	if err != nil {
-		return nil, err
-	}
-	return existing.(*workflowExecutionContextImpl), nil
-}
-
-func removeWorkflowContext(runID string) {
-	getWorkflowCache().Delete(runID)
 }
 
 func newWorkflowExecutionContext(
@@ -482,8 +427,9 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
+		cache := w.wth.cache.getWorkflowCache()
+		if cache.Exist(w.workflowInfo.WorkflowExecution.RunID) {
+			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 		} else {
 			// sticky is disabled, manually clear the workflow state.
 			w.clearState()
@@ -656,7 +602,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
-		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(getWorkflowCache().Size()))
+		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.getWorkflowCache().Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -666,7 +612,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 
 	workflowContext = nil
 	if task.Query == nil || (task.Query != nil && !isFullHistory) {
-		workflowContext = getWorkflowContext(runID)
+		workflowContext = wth.cache.getWorkflowContext(runID)
 	}
 
 	if workflowContext != nil {
@@ -696,7 +642,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 		}
 
 		if !wth.disableStickyExecution && task.Query == nil {
-			workflowContext, _ = putWorkflowContext(runID, workflowContext)
+			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
 		}
 		workflowContext.Lock()
 	}

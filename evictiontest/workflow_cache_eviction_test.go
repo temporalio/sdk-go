@@ -138,7 +138,6 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	}
 	// pick 5 as cache size because it's not too big and not too small.
 	cacheSize := 5
-	internal.SetStickyWorkflowCacheSize(cacheSize)
 	// once for workflow worker because we disable activity worker
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
 	// feed our worker exactly *cacheSize* "legit" workflow tasks
@@ -160,7 +159,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 
 	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
 
-	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{})
+	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{StickyCacheSize: cacheSize})
 	// this is an arbitrary workflow we use for this test
 	// NOTE: a simple helloworld that doesn't execute an activity
 	// won't work because the workflow will simply just complete

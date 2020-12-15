@@ -125,6 +125,7 @@ type (
 		activityTaskHandler ActivityTaskHandler
 	}
 
+	// TODO: This is maybe best place to init sticky cache and pass it down
 	// workerExecutionParameters defines worker configure/execution options.
 	workerExecutionParameters struct {
 		// Namespace name.
@@ -199,6 +200,9 @@ type (
 		ContextPropagators []ContextPropagator
 
 		Tracer opentracing.Tracer
+
+		// Pointer to the shared worker cache
+		cache *workerCache
 	}
 )
 
@@ -1152,11 +1156,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
+	cache := newWorkerCache(10000)
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    loger,
+		cache:     &cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1241,6 +1247,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
+	var cacheSize int
+	if options.StickyCacheSize > 0 {
+		cacheSize = options.StickyCacheSize
+	} else {
+		// TODO: Fetch default from where?
+		cacheSize = 10000
+	}
+	cache := newWorkerCache(cacheSize)
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,
@@ -1265,6 +1279,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
+		cache:                                 &cache,
 	}
 
 	ensureRequiredParams(&workerParams)
