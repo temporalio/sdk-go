@@ -1333,7 +1333,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		t.Fail("did not get expected 1st call to record heartbeat")
 	}
 
-	heartbeatErr = temporalInvoker.Heartbeat(context.Background(),  nil, false)
+	heartbeatErr = temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NoError(heartbeatErr)
 
 	select {
