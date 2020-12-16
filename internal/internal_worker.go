@@ -1302,10 +1302,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	// activity types.
-	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	var activityWorker *activityWorker
+	if !options.LocalActivityWorkerOnly {
+		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	}
 
 	var sessionWorker *sessionWorker
-	if options.EnableSessionWorker {
+	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
 		sessionWorker = newSessionWorker(client.workflowService, workerParams, nil, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
