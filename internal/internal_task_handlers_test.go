@@ -1324,7 +1324,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		heartBeatTimeout: time.Second,
 	}
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NoError(heartbeatErr)
 
 	select {
@@ -1333,7 +1333,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		t.Fail("did not get expected 1st call to record heartbeat")
 	}
 
-	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr = temporalInvoker.Heartbeat(context.Background(),  nil, false)
 	t.NoError(heartbeatErr)
 
 	select {
@@ -1359,7 +1359,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
 		make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1377,7 +1377,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
 		0, make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)
