@@ -34,7 +34,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -85,6 +84,9 @@ type (
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
+		// This channel must be initialized with a one-size buffer and is used to indicate when
+		// it is time for a local activity to be retried
+		laRetryCh chan *localActivityTask
 	}
 
 	// activityTask wraps a activity task.
@@ -105,10 +107,7 @@ type (
 		workflowInfo      *WorkflowInfo
 		wth               *workflowTaskHandlerImpl
 
-		// eventHandler is changed to a atomic.Value as a temporally bug fix for local activity
-		// retry issue (github issue #915). Therefore, when accessing/modifying this field, the
-		// mutex should still be held.
-		eventHandler atomic.Value
+		eventHandler *workflowExecutionEventHandler
 
 		isWorkflowCompleted bool
 		result              *commonpb.Payloads
@@ -494,15 +493,10 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 }
 
 func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEventHandlerImpl {
-	eventHandler := w.eventHandler.Load()
-	if eventHandler == nil {
+	if w.eventHandler == nil {
 		return nil
 	}
-	eventHandlerImpl, ok := eventHandler.(*workflowExecutionEventHandlerImpl)
-	if !ok {
-		panic("unknown type for workflow execution event handler")
-	}
-	return eventHandlerImpl
+	return (*w.eventHandler).(*workflowExecutionEventHandlerImpl)
 }
 
 func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
@@ -569,7 +563,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 		// Set isReplay to true to prevent user code in defer guarded by !isReplaying() from running
 		eventHandler.isReplay = true
 		eventHandler.Close()
-		w.eventHandler.Store((*workflowExecutionEventHandlerImpl)(nil))
+		w.eventHandler = nil
 	}
 }
 
@@ -586,7 +580,8 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.contextPropagators,
 		w.wth.tracer,
 	)
-	w.eventHandler.Store(eventHandler)
+
+	w.eventHandler = &eventHandler
 }
 
 func resetHistory(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) (*historypb.History, error) {
@@ -825,6 +820,24 @@ processWorkflowLoop:
 						delayDuration = 0
 						continue heartbeatLoop
 
+					case laRetry := <-workflowTask.laRetryCh:
+						eventHandler := workflowContext.getEventHandler()
+
+						// if workflow task heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
+						if eventHandler == nil {
+							break processWorkflowLoop
+						}
+
+						if _, ok := eventHandler.pendingLaTasks[laRetry.activityID]; !ok {
+							break processWorkflowLoop
+						}
+
+						laRetry.attempt++
+
+						if !wth.laTunnel.sendTask(laRetry) {
+							laRetry.attempt--
+						}
+
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
 						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
@@ -1029,25 +1042,8 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	if retryBackoff > 0 && retryBackoff <= w.workflowInfo.WorkflowTaskTimeout {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
-			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
-			// currently this is solved by changing eventHandler to an atomic.Value. Ideally, this retry timer should be
-			// part of the event loop for processing the workflow task.
-			eventHandler := w.getEventHandler()
-
-			// if workflow task heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
-			if eventHandler == nil {
-				return
-			}
-
-			if _, ok := eventHandler.pendingLaTasks[lar.task.activityID]; !ok {
-				return
-			}
-
-			lar.task.attempt++
-
-			if !w.laTunnel.sendTask(lar.task) {
-				lar.task.attempt--
-			}
+			// Send retry signal
+			lar.task.workflowTask.laRetryCh <- lar.task
 		})
 		return true
 	}
