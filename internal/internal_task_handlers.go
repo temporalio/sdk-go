@@ -1650,7 +1650,7 @@ type temporalInvoker struct {
 	namespace           string
 }
 
-func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching bool) error {
+func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -1660,7 +1660,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 		return nil
 	}
 
-	isActivityCanceled, err := i.internalHeartBeat(details)
+	isActivityCanceled, err := i.internalHeartBeat(ctx, details)
 
 	// If the activity is canceled, the activity can ignore the cancellation and do its work
 	// and complete. Our cancellation is co-operative, so we will try to heartbeat.
@@ -1704,7 +1704,7 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 				// locked again in the Hearbeat() method. This possible that a heartbeat call from
 				// user activity grabs the lock first and calls internalHeartBeat before this
 				// batching goroutine, which means some activity progress will be lost.
-				_ = i.Heartbeat(*detailsToReport, false)
+				_ = i.Heartbeat(ctx, *detailsToReport, false)
 			}
 		}()
 	}
@@ -1712,13 +1712,13 @@ func (i *temporalInvoker) Heartbeat(details *commonpb.Payloads, skipBatching boo
 	return err
 }
 
-func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, error) {
+func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *commonpb.Payloads) (bool, error) {
 	isActivityCanceled := false
 	timeout := i.heartBeatTimeout
 	if timeout <= 0 {
 		timeout = defaultHeartBeatInterval
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	err := recordActivityHeartbeat(ctx, i.service, i.metricsScope, i.identity, i.taskToken, details)
@@ -1741,14 +1741,14 @@ func (i *temporalInvoker) internalHeartBeat(details *commonpb.Payloads) (bool, e
 	return isActivityCanceled, err
 }
 
-func (i *temporalInvoker) Close(flushBufferedHeartbeat bool) {
+func (i *temporalInvoker) Close(ctx context.Context, flushBufferedHeartbeat bool) {
 	i.Lock()
 	defer i.Unlock()
 	close(i.closeCh)
 	if i.hbBatchEndTimer != nil {
 		i.hbBatchEndTimer.Stop()
 		if flushBufferedHeartbeat && i.lastDetailsToReport != nil {
-			_, _ = i.internalHeartBeat(*i.lastDetailsToReport)
+			_, _ = i.internalHeartBeat(ctx, *i.lastDetailsToReport)
 			i.lastDetailsToReport = nil
 		}
 	}
@@ -1800,15 +1800,16 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.service, ath.metricsScope, cancel, common.DurationValue(t.GetHeartbeatTimeout()),
 		ath.workerStopCh, ath.namespace)
-	defer func() {
-		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
-		invoker.Close(!activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
-	}()
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
 	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+
+	defer func() {
+		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
+		invoker.Close(ctx, !activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
+	}()
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
@@ -1907,10 +1908,14 @@ func recordActivityHeartbeat(
 	taskToken []byte,
 	details *commonpb.Payloads,
 ) error {
+
+	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
 		Details:   details,
-		Identity:  identity}
+		Identity:  identity,
+		Namespace: namespace,
+	}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	heartbeatErr := backoff.Retry(ctx,
