@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"runtime"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -35,10 +36,11 @@ import (
 // A shared cache workers can use to store workflow state. The cache is expected to be initialized with the first worker
 // to be instantiated, and freed with the last worker to terminate. IE: All workers have a pointer to it.
 type workerCache struct {
-	workflowCache cache.Cache
+	workflowCache *cache.Cache
 }
 
-var workflowCache *workerCache
+// Don't touch this except via methods on workerCache. Holds shared workflow cache.
+var workflowCache cache.Cache
 var stickyCacheSize = defaultStickyCacheSize
 var stickyCacheLock sync.Mutex
 
@@ -61,25 +63,36 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 	stickyCacheSize = cacheSize
 }
 
-// Returns a pointer to the workerCache, and increases the outstanding refcount by one. Callers *must* call
-// workerCache.Close when done.
-func getWorkflowCache() *workerCache {
+// Returns a pointer to the workerCache, and increases the outstanding refcount by one. Instances of
+// workerCache decrement the refcounter as a hook to runtime.SetFinalizer
+func getWorkerCache() *workerCache {
 	rcount := workerRefcount.Load()
 	if rcount == 0 {
 		stickyCacheLock.Lock()
 		defer stickyCacheLock.Unlock()
-		workflowCache = &workerCache{workflowCache: cache.New(stickyCacheSize, &cache.Options{
+		newcache := cache.New(stickyCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
 				wc.onEviction()
 			},
-		})}
+		})
+		workflowCache = newcache
 	}
 	workerRefcount.Add(1)
-	return workflowCache
+	newWorkerCache := workerCache{
+		&workflowCache,
+	}
+	runtime.SetFinalizer(&newWorkerCache, func(wc *workerCache) {
+		wc.close()
+	})
+	return &newWorkerCache
 }
 
-func (wc *workerCache) Close() {
+func (wc *workerCache) getWorkflowCache() cache.Cache {
+	return *wc.workflowCache
+}
+
+func (wc *workerCache) close() {
 	rcount := workerRefcount.Sub(1)
 	if rcount == 0 {
 		// Delete cache if no more outstanding references
@@ -90,7 +103,7 @@ func (wc *workerCache) Close() {
 }
 
 func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
-	o := wc.workflowCache.Get(runID)
+	o := (*wc.workflowCache).Get(runID)
 	if o == nil {
 		return nil
 	}
@@ -99,7 +112,7 @@ func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContex
 }
 
 func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
-	existing, err := wc.workflowCache.PutIfNotExist(runID, wec)
+	existing, err := (*wc.workflowCache).PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err
 	}
@@ -107,5 +120,5 @@ func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 }
 
 func (wc *workerCache) removeWorkflowContext(runID string) {
-	wc.workflowCache.Delete(runID)
+	(*wc.workflowCache).Delete(runID)
 }

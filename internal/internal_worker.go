@@ -346,7 +346,6 @@ func (ww *workflowWorker) Stop() {
 	// TODO: remove the stop methods in favor of the workerStopChannel
 	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
-	ww.executionParameters.cache.Close()
 }
 
 func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -1159,8 +1158,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
-	cache := getWorkflowCache()
-	defer cache.Close()
+	cache := getWorkerCache()
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
@@ -1251,7 +1249,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
-	cache := getWorkflowCache()
+	cache := getWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,

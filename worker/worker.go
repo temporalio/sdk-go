@@ -234,9 +234,8 @@ func EnableVerboseLogging(enable bool) {
 // is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
 // between workers running within same process. This must be called before any worker is started. If not called, the
 // default size of 10K (might change in future) will be used.
-// TODO: This doesn't really make sense any more
 func SetStickyWorkflowCacheSize(cacheSize int) {
-	//internal.SetStickyWorkflowCacheSize(cacheSize)
+	internal.SetStickyWorkflowCacheSize(cacheSize)
 }
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).

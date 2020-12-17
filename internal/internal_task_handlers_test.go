@@ -411,7 +411,7 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 var testWorkflowTaskTaskqueue = "tq1"
 
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
-	cache := getWorkflowCache()
+	cache := getWorkerCache()
 	return workerExecutionParameters{
 		TaskQueue: testWorkflowTaskTaskqueue,
 		Namespace: testNamespace,
@@ -655,7 +655,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-	// will fail as it can't find laTunnel in getWorkflowCache().
+	// will fail as it can't find laTunnel in getWorkerCache().
 	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -664,7 +664,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	t.Contains(err.Error(), "nondeterministic")
 
 	// There should be nothing in the cache.
-	t.EqualValues(params.cache.workflowCache.Size(), 0)
+	t.EqualValues(params.cache.getWorkflowCache().Size(), 0)
 }
 
 func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
@@ -683,7 +683,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-		// will fail as it can't find laTunnel in getWorkflowCache().
+		// will fail as it can't find laTunnel in getWorkerCache().
 		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -692,7 +692,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		t.Contains(err.Error(), "missing history events")
 
 		// There should be nothing in the cache.
-		t.EqualValues(params.cache.workflowCache.Size(), 0)
+		t.EqualValues(params.cache.getWorkflowCache().Size(), 0)
 	}
 }
 
@@ -726,7 +726,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	}
 
 	for i, tc := range testCases {
-		cacheSize := params.cache.workflowCache.Size()
+		cacheSize := params.cache.getWorkflowCache().Size()
 
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
@@ -734,7 +734,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		task.History.Events = task.History.Events[:len(task.History.Events)-2]
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-		// will fail as it can't find laTunnel in getWorkflowCache().
+		// will fail as it can't find laTunnel in getWorkerCache().
 		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -742,12 +742,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 			t.Error(err, "testcase %v failed", i)
 			t.Nil(request)
 			t.Contains(err.Error(), "premature end of stream")
-			t.EqualValues(params.cache.workflowCache.Size(), cacheSize)
+			t.EqualValues(params.cache.getWorkflowCache().Size(), cacheSize)
 			continue
 		}
 
 		t.NoError(err, "testcase %v failed", i)
-		t.EqualValues(params.cache.workflowCache.Size(), cacheSize+1)
+		t.EqualValues(params.cache.getWorkflowCache().Size(), cacheSize+1)
 	}
 }
 
@@ -801,7 +801,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		// 1. We can't set cache size in the test to 1, otherwise other tests will break.
 		// 2. We need to make sure cache is empty when the test is completed,
 		// So manually trigger a delete.
-		params.cache.workflowCache.Delete(task.WorkflowExecution.GetRunId())
+		params.cache.getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
 	}
 	// Make sure the workflow coroutine has exited.
 	<-doneCh
@@ -809,7 +809,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	t.Equal(expectedValue, value)
 
 	// There should be nothing in the cache.
-	t.EqualValues(0, params.cache.workflowCache.Size())
+	t.EqualValues(0, params.cache.getWorkflowCache().Size())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
@@ -842,7 +842,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-	// will fail as it can't find laTunnel in getWorkflowCache().
+	// will fail as it can't find laTunnel in getWorkerCache().
 	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, stopC)
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Error(err)
@@ -998,7 +998,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	t.Contains(err.Error(), "invalid query workflow task")
 
 	// There should be nothing in the cache.
-	t.EqualValues(params.cache.workflowCache.Size(), 0)
+	t.EqualValues(params.cache.getWorkflowCache().Size(), 0)
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
@@ -1069,7 +1069,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	t.assertQueryResultsEqual(expectedQueryResults, response.QueryResults)
 
 	// clean up workflow left in cache
-	params.cache.workflowCache.Delete(task.WorkflowExecution.RunId)
+	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
 }
 
 func (t *TaskHandlersTestSuite) assertQueryResultsEqual(expected map[string]*querypb.WorkflowQueryResult, actual map[string]*querypb.WorkflowQueryResult) {
