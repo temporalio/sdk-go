@@ -1177,14 +1177,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 
 	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
 	stopCh := make(chan struct{})
-	params := workerExecutionParameters{
-		Namespace:         testNamespace,
-		TaskQueue:         testWorkflowTaskTaskqueue,
-		Identity:          "test-id-1",
-		Logger:            t.logger,
-		Tracer:            opentracing.NoopTracer{},
-		WorkerStopChannel: stopCh,
-	}
+	params := t.getTestWorkerExecutionParams()
+	params.WorkerStopChannel = stopCh
 	defer close(stopCh)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
