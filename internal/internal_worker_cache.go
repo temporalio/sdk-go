@@ -25,35 +25,72 @@
 package internal
 
 import (
+	"sync"
+
+	"go.uber.org/atomic"
+
 	"go.temporal.io/sdk/internal/common/cache"
 )
 
-// A shared cache workers can use to store workflow state
+// A shared cache workers can use to store workflow state. The cache is expected to be initialized with the first worker
+// to be instantiated, and freed with the last worker to terminate. IE: All workers have a pointer to it.
 type workerCache struct {
 	workflowCache cache.Cache
 }
 
-// Returns a cache with the provided size
-func newWorkerCache(size int) workerCache {
-	return workerCache{
-		workflowCache: cache.New(size, &cache.Options{
+var workflowCache *workerCache
+var stickyCacheSize = defaultStickyCacheSize
+var stickyCacheLock sync.Mutex
+
+// Holds the number of outstanding references to the cache so we can zero it out if all workers are dead
+var workerRefcount atomic.Int32
+
+// SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
+// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
+// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
+// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
+// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
+// between workers running within same process. This must be called before any worker is started. If not called, the
+// default size of 10K (might change in future) will be used.
+func SetStickyWorkflowCacheSize(cacheSize int) {
+	stickyCacheLock.Lock()
+	defer stickyCacheLock.Unlock()
+	if workflowCache != nil {
+		panic("cache already created, please set cache size before worker starts.")
+	}
+	stickyCacheSize = cacheSize
+}
+
+// Returns a pointer to the workerCache, and increases the outstanding refcount by one. Callers *must* call
+// workerCache.Close when done.
+func getWorkflowCache() *workerCache {
+	rcount := workerRefcount.Load()
+	if rcount == 0 {
+		stickyCacheLock.Lock()
+		defer stickyCacheLock.Unlock()
+		workflowCache = &workerCache{workflowCache: cache.New(stickyCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
-				wec := cachedEntity.(*workflowExecutionContextImpl)
-				wec.onEviction()
+				wc := cachedEntity.(*workflowExecutionContextImpl)
+				wc.onEviction()
 			},
-		}),
+		})}
+	}
+	workerRefcount.Add(1)
+	return workflowCache
+}
+
+func (wc *workerCache) Close() {
+	rcount := workerRefcount.Sub(1)
+	if rcount == 0 {
+		// Delete cache if no more outstanding references
+		stickyCacheLock.Lock()
+		defer stickyCacheLock.Unlock()
+		workflowCache = nil
 	}
 }
 
-// TODO: Cache sharing -- should be maintained? Why are multiple workers in the same proc a thing?
-//   generally update docstring
-
-func (wc *workerCache) getWorkflowCache() cache.Cache {
-	return wc.workflowCache
-}
-
 func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
-	o := wc.getWorkflowCache().Get(runID)
+	o := wc.workflowCache.Get(runID)
 	if o == nil {
 		return nil
 	}
@@ -62,7 +99,7 @@ func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContex
 }
 
 func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
-	existing, err := wc.getWorkflowCache().PutIfNotExist(runID, wec)
+	existing, err := wc.workflowCache.PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err
 	}
@@ -70,5 +107,5 @@ func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 }
 
 func (wc *workerCache) removeWorkflowContext(runID string) {
-	wc.getWorkflowCache().Delete(runID)
+	wc.workflowCache.Delete(runID)
 }

@@ -125,7 +125,6 @@ type (
 		activityTaskHandler ActivityTaskHandler
 	}
 
-	// TODO: This is maybe best place to init sticky cache and pass it down
 	// workerExecutionParameters defines worker configure/execution options.
 	workerExecutionParameters struct {
 		// Namespace name.
@@ -347,6 +346,7 @@ func (ww *workflowWorker) Stop() {
 	// TODO: remove the stop methods in favor of the workerStopChannel
 	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
+	ww.executionParameters.cache.Close()
 }
 
 func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -453,6 +453,9 @@ func (aw *activityWorker) Start() error {
 func (aw *activityWorker) Stop() {
 	close(aw.stopC)
 	aw.worker.Stop()
+	// TODO: Should probably just put handle on workflow worker?
+	// Because the cache pointer is in the parameters, not held by a specific worker, we need only close it from
+	// one place, otherwise we would double-decrement the refcount.
 }
 
 type registry struct {
@@ -1156,13 +1159,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
-	cache := newWorkerCache(10000)
+	cache := getWorkflowCache()
+	defer cache.Close()
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    loger,
-		cache:     &cache,
+		cache:     cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1247,13 +1251,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
-	var cacheSize int
-	if options.StickyCacheSize > 0 {
-		cacheSize = options.StickyCacheSize
-	} else {
-		cacheSize = defaultStickyCacheSize
-	}
-	cache := newWorkerCache(cacheSize)
+	cache := getWorkflowCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,
@@ -1278,7 +1276,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
-		cache:                                 &cache,
+		cache:                                 cache,
 	}
 
 	ensureRequiredParams(&workerParams)

@@ -411,13 +411,13 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 var testWorkflowTaskTaskqueue = "tq1"
 
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
-	cache := newWorkerCache(10)
+	cache := getWorkflowCache()
 	return workerExecutionParameters{
 		TaskQueue: testWorkflowTaskTaskqueue,
 		Namespace: testNamespace,
 		Identity:  "test-id-1",
 		Logger:    t.logger,
-		cache:     &cache,
+		cache:     cache,
 		Tracer:    opentracing.NoopTracer{},
 	}
 }

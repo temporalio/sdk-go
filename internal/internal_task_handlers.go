@@ -121,7 +121,6 @@ type (
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
-	// TODO: Possibly can pass through ref to cache
 	workflowTaskHandlerImpl struct {
 		namespace              string
 		metricsScope           tally.Scope
@@ -427,8 +426,7 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		cache := w.wth.cache.getWorkflowCache()
-		if cache.Exist(w.workflowInfo.WorkflowExecution.RunID) {
+		if w.wth.cache.workflowCache.Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 		} else {
 			// sticky is disabled, manually clear the workflow state.
@@ -602,7 +600,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
-		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.getWorkflowCache().Size()))
+		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.workflowCache.Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()

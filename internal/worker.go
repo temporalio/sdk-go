@@ -106,9 +106,6 @@ type (
 		// default: false
 		DisableStickyExecution bool
 
-		// TODO: Document. This implies separate cache per worker. If we want shared cache, need some strategy for that
-		StickyCacheSize int
-
 		// Optional: Sticky schedule to start timeout.
 		// The resolution is seconds. See details about StickyExecution on the comments for DisableStickyExecution.
 		// default: 5s
