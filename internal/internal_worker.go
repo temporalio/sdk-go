@@ -831,14 +831,26 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil || env.dataConverter == nil {
+		return converter.GetDefaultDataConverter()
+	}
+	return env.dataConverter
+}
+
+func getNamespaceFromActivityCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	return env.workflowNamespace
+}
+
+func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return converter.GetDefaultDataConverter()
+		return nil
 	}
-	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
-	if info.dataConverter == nil {
-		return converter.GetDefaultDataConverter()
-	}
-	return info.dataConverter
+	return ctx.Value(activityEnvContextKey).(*activityEnvironment)
 }
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.

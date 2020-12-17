@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1129,6 +1130,97 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	t.NotNil(response)
 }
 
+func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
+	backoffInterval := 10 * time.Millisecond
+	workflowComplete := false
+	laFailures := 0
+
+	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
+		ao := LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:    backoffInterval,
+				BackoffCoefficient: 1.1,
+				MaximumInterval:    time.Minute,
+				MaximumAttempts:    5,
+			},
+		}
+		ctx = WithLocalActivityOptions(ctx, ao)
+
+		err := ExecuteLocalActivity(ctx, func() error {
+			if laFailures > 2 {
+				return nil
+			}
+			laFailures++
+			return errors.New("fail number " + strconv.Itoa(laFailures))
+		}).Get(ctx, nil)
+		workflowComplete = true
+		return err
+	}
+	t.registry.RegisterWorkflowWithOptions(
+		retryLocalActivityWorkflowFunc,
+		RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflow"},
+	)
+
+	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
+	now := time.Now()
+	onesec := 5 * time.Second
+	workflowTaskStartedEvent.EventTime = &now
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowTaskTimeout: &onesec,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
+		),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		workflowTaskStartedEvent,
+	}
+
+	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
+	stopCh := make(chan struct{})
+	params := workerExecutionParameters{
+		Namespace:         testNamespace,
+		TaskQueue:         testWorkflowTaskTaskqueue,
+		Identity:          "test-id-1",
+		Logger:            t.logger,
+		Tracer:            opentracing.NoopTracer{},
+		WorkerStopChannel: stopCh,
+	}
+	defer close(stopCh)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
+	t.True(ok)
+	taskHandlerImpl.laTunnel = laTunnel
+
+	laTaskPoller := newLocalActivityPoller(params, laTunnel)
+	go func() {
+		for {
+			task, _ := laTaskPoller.PollTask()
+			_ = laTaskPoller.ProcessTask(task)
+			// Quit after we've polled enough times
+			if laFailures == 4 {
+				return
+			}
+		}
+	}()
+
+	laResultCh := make(chan *localActivityResult)
+	laRetryCh := make(chan *localActivityTask)
+	response, err := taskHandler.ProcessWorkflowTask(
+		&workflowTask{
+			task:       task,
+			laResultCh: laResultCh,
+			laRetryCh:  laRetryCh,
+		},
+		nil)
+	t.NotNil(response)
+	t.NoError(err)
+	// wait long enough for wf to complete
+	time.Sleep(backoffInterval * 3)
+	t.True(workflowComplete)
+}
+
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
 	backoffInterval := 1 * time.Second
 	workflowComplete := false
@@ -1153,7 +1245,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	}
 	t.registry.RegisterWorkflowWithOptions(
 		retryLocalActivityWorkflowFunc,
-		RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflow"},
+		RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflowHBFail"},
 	)
 
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
@@ -1169,7 +1261,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 		workflowTaskStartedEvent,
 	}
 
-	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
+	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflowHBFail")
 	stopCh := make(chan struct{})
 	params := t.getTestWorkerExecutionParams()
 	params.WorkerStopChannel = stopCh
@@ -1233,7 +1325,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		heartBeatTimeout: time.Second,
 	}
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NoError(heartbeatErr)
 
 	select {
@@ -1242,7 +1334,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		t.Fail("did not get expected 1st call to record heartbeat")
 	}
 
-	heartbeatErr = temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr = temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NoError(heartbeatErr)
 
 	select {
@@ -1268,7 +1360,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
 		make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1286,7 +1378,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
 		0, make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(nil, false)
+	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)

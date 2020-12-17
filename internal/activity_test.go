@@ -138,7 +138,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
-	invoker.Close(false)
+	invoker.Close(ctx, false)
 
 	// No HB timeout configured.
 	service2 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
@@ -151,7 +151,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).Times(1)
 	RecordActivityHeartbeat(ctx, "testDetails")
 	RecordActivityHeartbeat(ctx, "testDetails")
-	invoker2.Close(false)
+	invoker2.Close(ctx, false)
 
 	// simulate batch picks before expiry.
 	waitCh := make(chan struct{})
@@ -182,7 +182,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	RecordActivityHeartbeat(ctx, "testDetails3")
 	RecordActivityHeartbeat(ctx, "testDetails-expected")
 	<-waitCh
-	invoker3.Close(false)
+	invoker3.Close(ctx, false)
 
 	// simulate batch picks before expiry, without any progress specified.
 	waitCh2 := make(chan struct{})
@@ -206,7 +206,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	RecordActivityHeartbeat(ctx, nil)
 	RecordActivityHeartbeat(ctx, nil)
 	<-waitCh2
-	invoker4.Close(false)
+	invoker4.Close(ctx, false)
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {
