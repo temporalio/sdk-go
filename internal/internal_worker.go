@@ -452,9 +452,6 @@ func (aw *activityWorker) Start() error {
 func (aw *activityWorker) Stop() {
 	close(aw.stopC)
 	aw.worker.Stop()
-	// TODO: Should probably just put handle on workflow worker?
-	// Because the cache pointer is in the parameters, not held by a specific worker, we need only close it from
-	// one place, otherwise we would double-decrement the refcount.
 }
 
 type registry struct {
