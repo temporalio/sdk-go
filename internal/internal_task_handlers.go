@@ -1043,7 +1043,11 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
 			// Send retry signal
-			lar.task.workflowTask.laRetryCh <- lar.task
+			select {
+			case lar.task.workflowTask.laRetryCh <- lar.task:
+			case <-lar.task.workflowTask.doneCh:
+				// Task is already done. Abort retrying.
+			}
 		})
 		return true
 	}

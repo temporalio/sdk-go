@@ -807,11 +807,23 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 		InitialInterval:    50 * time.Millisecond,
 		BackoffCoefficient: 1.1,
 		MaximumInterval:    time.Second * 5,
-		MaximumAttempts:    0,
 	}
 	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
 	activities := Activities{}
-	return workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2).Get(ctx, nil)
+
+	var futures []workflow.Future
+	for i := 1; i <= 10; i++ {
+		la := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2, i)
+		futures = append(futures, la)
+	}
+
+	for _, fut := range futures {
+		err := fut.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
