@@ -34,20 +34,25 @@ import (
 // Each worker can use an instance of workerCache to hold cached data. The contents of this struct should always
 // be pointers for any data shared with other workers, and owned values for any instance-specific caches.
 type workerCache struct {
+	sharedCache *sharedWorkerCache
+}
+
+// A container for data workers in this process may want to share with eachother
+type sharedWorkerCache struct {
+	// Count of live workers
+	workerRefcount int
+
+	// A cache workers can use to store workflow state.
 	workflowCache *cache.Cache
 }
 
-// A shared cache workers can use to store workflow state. The cache is expected to be initialized with the first worker
-// to be instantiated, and freed with the last worker to terminate. IE: All workers have a pointer to it.
-//
-// Don't touch this except via methods on workerCache.
-var workflowCache cache.Cache
-var stickyCacheSize = defaultStickyCacheSize
-var stickyCacheLock sync.Mutex
-
-// Holds the number of outstanding workerCache instances so we can zero out shared caches if all workers are dead. Lock
-// should be held while manipulating.
-var workerRefcount int
+// A shared cache workers can use to store state. The cache is expected to be initialized with the first worker to be
+// instantiated. IE: All workers have a pointer to it. The pointer itself is never made nil, but when the refcount
+// reaches zero, the shared caches inside of it will be nilled out. Do not manipulate without holding
+// sharedWorkerCacheLock
+var sharedWorkerCachePtr = &sharedWorkerCache{}
+var sharedWorkerCacheLock sync.Mutex
+var desiredWorkflowCacheSize = defaultStickyCacheSize
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
 // between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
@@ -57,54 +62,66 @@ var workerRefcount int
 // between workers running within same process. This must be called before any worker is started. If not called, the
 // default size of 10K (might change in future) will be used.
 func SetStickyWorkflowCacheSize(cacheSize int) {
-	stickyCacheLock.Lock()
-	defer stickyCacheLock.Unlock()
-	if workflowCache != nil {
+	sharedWorkerCacheLock.Lock()
+	defer sharedWorkerCacheLock.Unlock()
+	if sharedWorkerCachePtr.workflowCache != nil {
 		panic("cache already created, please set cache size before worker starts.")
 	}
-	stickyCacheSize = cacheSize
+	desiredWorkflowCacheSize = cacheSize
 }
 
 // Creates a new workerCache, and increases workerRefcount by one. Instances of workerCache decrement the refcounter as
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
 // workerCache, shared caches will be cleared
-func newWorkerCache() workerCache {
-	stickyCacheLock.Lock()
-	defer stickyCacheLock.Unlock()
-	if workerRefcount == 0 {
-		newcache := cache.New(stickyCacheSize, &cache.Options{
+func newWorkerCache() *workerCache {
+	return _newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock)
+}
+
+// This private version allows us to test functionality without affecting the global shared cache
+func _newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *workerCache {
+	lock.Lock()
+	defer lock.Unlock()
+
+	if storeIn == nil {
+		panic("Provided sharedWorkerCache pointer must not be nil")
+	}
+
+	if storeIn.workerRefcount == 0 {
+		newcache := cache.New(desiredWorkflowCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
 				wc.onEviction()
 			},
 		})
-		workflowCache = newcache
+		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0}
 	}
-	workerRefcount++
+	storeIn.workerRefcount++
 	newWorkerCache := workerCache{
-		&workflowCache,
+		sharedCache: storeIn,
 	}
 	runtime.SetFinalizer(&newWorkerCache, func(wc *workerCache) {
-		wc.close()
+		wc.close(lock)
 	})
-	return newWorkerCache
+	return &newWorkerCache
 }
 
-func (wc workerCache) getWorkflowCache() cache.Cache {
-	return *wc.workflowCache
+func (wc *workerCache) getWorkflowCache() cache.Cache {
+	return *wc.sharedCache.workflowCache
 }
 
-func (wc workerCache) close() {
-	stickyCacheLock.Lock()
-	defer stickyCacheLock.Unlock()
-	if workerRefcount == 0 {
+func (wc *workerCache) close(lock *sync.Mutex) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	wc.sharedCache.workerRefcount--
+	if wc.sharedCache.workerRefcount == 0 {
 		// Delete cache if no more outstanding references
-		workflowCache = nil
+		wc.sharedCache.workflowCache = nil
 	}
 }
 
-func (wc workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
-	o := (*wc.workflowCache).Get(runID)
+func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
+	o := (*wc.sharedCache.workflowCache).Get(runID)
 	if o == nil {
 		return nil
 	}
@@ -112,14 +129,14 @@ func (wc workerCache) getWorkflowContext(runID string) *workflowExecutionContext
 	return wec
 }
 
-func (wc workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
-	existing, err := (*wc.workflowCache).PutIfNotExist(runID, wec)
+func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
+	existing, err := (*wc.sharedCache.workflowCache).PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err
 	}
 	return existing.(*workflowExecutionContextImpl), nil
 }
 
-func (wc workerCache) removeWorkflowContext(runID string) {
-	(*wc.workflowCache).Delete(runID)
+func (wc *workerCache) removeWorkflowContext(runID string) {
+	(*wc.sharedCache.workflowCache).Delete(runID)
 }

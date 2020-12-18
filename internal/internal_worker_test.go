@@ -1095,7 +1095,7 @@ func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
 		Identity:      "identity",
 		Logger:        getLogger(),
 		DataConverter: iconverter.NewTestDataConverter(),
-		cache:         &cache,
+		cache:         cache,
 	}
 	s.testWorkflowTaskHandlerHelper(params)
 }

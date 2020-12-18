@@ -1173,7 +1173,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    loger,
-		cache:     &cache,
+		cache:     cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1283,7 +1283,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
-		cache:                                 &cache,
+		cache:                                 cache,
 	}
 
 	ensureRequiredParams(&workerParams)

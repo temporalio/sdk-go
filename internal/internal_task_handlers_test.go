@@ -418,7 +418,7 @@ func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionPa
 		Namespace: testNamespace,
 		Identity:  "test-id-1",
 		Logger:    t.logger,
-		cache:     &cache,
+		cache:     cache,
 		Tracer:    opentracing.NoopTracer{},
 	}
 }
