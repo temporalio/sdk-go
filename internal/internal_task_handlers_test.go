@@ -412,13 +412,13 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 var testWorkflowTaskTaskqueue = "tq1"
 
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
-	cache := getWorkerCache()
+	cache := newWorkerCache()
 	return workerExecutionParameters{
 		TaskQueue: testWorkflowTaskTaskqueue,
 		Namespace: testNamespace,
 		Identity:  "test-id-1",
 		Logger:    t.logger,
-		cache:     cache,
+		cache:     &cache,
 		Tracer:    opentracing.NoopTracer{},
 	}
 }
@@ -656,7 +656,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-	// will fail as it can't find laTunnel in getWorkerCache().
+	// will fail as it can't find laTunnel in newWorkerCache().
 	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -684,7 +684,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 		task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-		// will fail as it can't find laTunnel in getWorkerCache().
+		// will fail as it can't find laTunnel in newWorkerCache().
 		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -735,7 +735,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		task.History.Events = task.History.Events[:len(task.History.Events)-2]
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-		// will fail as it can't find laTunnel in getWorkerCache().
+		// will fail as it can't find laTunnel in newWorkerCache().
 		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -843,7 +843,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
-	// will fail as it can't find laTunnel in getWorkerCache().
+	// will fail as it can't find laTunnel in newWorkerCache().
 	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, stopC)
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Error(err)

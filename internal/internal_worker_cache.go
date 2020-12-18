@@ -28,24 +28,26 @@ import (
 	"runtime"
 	"sync"
 
-	"go.uber.org/atomic"
-
 	"go.temporal.io/sdk/internal/common/cache"
 )
 
-// A shared cache workers can use to store workflow state. The cache is expected to be initialized with the first worker
-// to be instantiated, and freed with the last worker to terminate. IE: All workers have a pointer to it.
+// Each worker can use an instance of workerCache to hold cached data. The contents of this struct should always
+// be pointers for any data shared with other workers, and owned values for any instance-specific caches.
 type workerCache struct {
 	workflowCache *cache.Cache
 }
 
-// Don't touch this except via methods on workerCache. Holds shared workflow cache.
+// A shared cache workers can use to store workflow state. The cache is expected to be initialized with the first worker
+// to be instantiated, and freed with the last worker to terminate. IE: All workers have a pointer to it.
+//
+// Don't touch this except via methods on workerCache.
 var workflowCache cache.Cache
 var stickyCacheSize = defaultStickyCacheSize
 var stickyCacheLock sync.Mutex
 
-// Holds the number of outstanding references to the cache so we can zero it out if all workers are dead
-var workerRefcount atomic.Int32
+// Holds the number of outstanding workerCache instances so we can zero out shared caches if all workers are dead. Lock
+// should be held while manipulating.
+var workerRefcount int
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
 // between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
@@ -63,13 +65,13 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 	stickyCacheSize = cacheSize
 }
 
-// Returns a pointer to the workerCache, and increases the outstanding refcount by one. Instances of
-// workerCache decrement the refcounter as a hook to runtime.SetFinalizer
-func getWorkerCache() *workerCache {
-	rcount := workerRefcount.Load()
-	if rcount == 0 {
-		stickyCacheLock.Lock()
-		defer stickyCacheLock.Unlock()
+// Creates a new workerCache, and increases workerRefcount by one. Instances of workerCache decrement the refcounter as
+// a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
+// workerCache, shared caches will be cleared
+func newWorkerCache() workerCache {
+	stickyCacheLock.Lock()
+	defer stickyCacheLock.Unlock()
+	if workerRefcount == 0 {
 		newcache := cache.New(stickyCacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
@@ -78,31 +80,30 @@ func getWorkerCache() *workerCache {
 		})
 		workflowCache = newcache
 	}
-	workerRefcount.Add(1)
+	workerRefcount++
 	newWorkerCache := workerCache{
 		&workflowCache,
 	}
 	runtime.SetFinalizer(&newWorkerCache, func(wc *workerCache) {
 		wc.close()
 	})
-	return &newWorkerCache
+	return newWorkerCache
 }
 
-func (wc *workerCache) getWorkflowCache() cache.Cache {
+func (wc workerCache) getWorkflowCache() cache.Cache {
 	return *wc.workflowCache
 }
 
-func (wc *workerCache) close() {
-	rcount := workerRefcount.Sub(1)
-	if rcount == 0 {
+func (wc workerCache) close() {
+	stickyCacheLock.Lock()
+	defer stickyCacheLock.Unlock()
+	if workerRefcount == 0 {
 		// Delete cache if no more outstanding references
-		stickyCacheLock.Lock()
-		defer stickyCacheLock.Unlock()
 		workflowCache = nil
 	}
 }
 
-func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
+func (wc workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
 	o := (*wc.workflowCache).Get(runID)
 	if o == nil {
 		return nil
@@ -111,7 +112,7 @@ func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContex
 	return wec
 }
 
-func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
+func (wc workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
 	existing, err := (*wc.workflowCache).PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err
@@ -119,6 +120,6 @@ func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 	return existing.(*workflowExecutionContextImpl), nil
 }
 
-func (wc *workerCache) removeWorkflowContext(runID string) {
+func (wc workerCache) removeWorkflowContext(runID string) {
 	(*wc.workflowCache).Delete(runID)
 }
