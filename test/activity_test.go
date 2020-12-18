@@ -27,6 +27,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -102,9 +103,10 @@ func (a *Activities) fail(_ context.Context) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) failNTimes(_ context.Context, times int) error {
-	a.append("failNTimes")
-	if a.invokedCount("failNTimes") > times {
+func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
+	invokeid := "failNTimes" + strconv.Itoa(id)
+	a.append(invokeid)
+	if a.invokedCount(invokeid) > times {
 		return nil
 	}
 	return errFailOnPurpose
