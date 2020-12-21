@@ -1167,7 +1167,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
-	cache := newWorkerCache()
+	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
@@ -1258,7 +1258,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
-	cache := newWorkerCache()
+	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,

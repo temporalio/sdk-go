@@ -73,12 +73,12 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 // Creates a new workerCache, and increases workerRefcount by one. Instances of workerCache decrement the refcounter as
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
 // workerCache, shared caches will be cleared
-func newWorkerCache() *workerCache {
-	return _newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock)
+func NewWorkerCache() *workerCache {
+	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock)
 }
 
 // This private version allows us to test functionality without affecting the global shared cache
-func _newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *workerCache {
+func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *workerCache {
 	lock.Lock()
 	defer lock.Unlock()
 
