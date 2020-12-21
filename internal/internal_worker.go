@@ -201,7 +201,7 @@ type (
 		Tracer opentracing.Tracer
 
 		// Pointer to the shared worker cache
-		cache *workerCache
+		cache *WorkerCache
 	}
 )
 

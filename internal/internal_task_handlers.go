@@ -134,7 +134,7 @@ type (
 		dataConverter          converter.DataConverter
 		contextPropagators     []ContextPropagator
 		tracer                 opentracing.Tracer
-		cache                  *workerCache
+		cache                  *WorkerCache
 	}
 
 	activityProvider func(name string) activity

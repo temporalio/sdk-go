@@ -31,9 +31,9 @@ import (
 	"go.temporal.io/sdk/internal/common/cache"
 )
 
-// Each worker can use an instance of workerCache to hold cached data. The contents of this struct should always
-// be pointers for any data shared with other workers, and owned values for any instance-specific caches.
-type workerCache struct {
+// A WorkerCache instance is held by each worker to hold cached data. The contents of this struct should always be
+// pointers for any data shared with other workers, and owned values for any instance-specific caches.
+type WorkerCache struct {
 	sharedCache *sharedWorkerCache
 }
 
@@ -70,15 +70,15 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 	desiredWorkflowCacheSize = cacheSize
 }
 
-// Creates a new workerCache, and increases workerRefcount by one. Instances of workerCache decrement the refcounter as
+// NewWorkerCache Creates a new WorkerCache, and increases workerRefcount by one. Instances of WorkerCache decrement the refcounter as
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
-// workerCache, shared caches will be cleared
-func NewWorkerCache() *workerCache {
+// WorkerCache, shared caches will be cleared
+func NewWorkerCache() *WorkerCache {
 	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock)
 }
 
 // This private version allows us to test functionality without affecting the global shared cache
-func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *workerCache {
+func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *WorkerCache {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -96,20 +96,20 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *workerCache {
 		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0}
 	}
 	storeIn.workerRefcount++
-	newWorkerCache := workerCache{
+	newWorkerCache := WorkerCache{
 		sharedCache: storeIn,
 	}
-	runtime.SetFinalizer(&newWorkerCache, func(wc *workerCache) {
+	runtime.SetFinalizer(&newWorkerCache, func(wc *WorkerCache) {
 		wc.close(lock)
 	})
 	return &newWorkerCache
 }
 
-func (wc *workerCache) getWorkflowCache() cache.Cache {
+func (wc *WorkerCache) getWorkflowCache() cache.Cache {
 	return *wc.sharedCache.workflowCache
 }
 
-func (wc *workerCache) close(lock *sync.Mutex) {
+func (wc *WorkerCache) close(lock *sync.Mutex) {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -120,7 +120,7 @@ func (wc *workerCache) close(lock *sync.Mutex) {
 	}
 }
 
-func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
+func (wc *WorkerCache) getWorkflowContext(runID string) *workflowExecutionContextImpl {
 	o := (*wc.sharedCache.workflowCache).Get(runID)
 	if o == nil {
 		return nil
@@ -129,7 +129,7 @@ func (wc *workerCache) getWorkflowContext(runID string) *workflowExecutionContex
 	return wec
 }
 
-func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
+func (wc *WorkerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
 	existing, err := (*wc.sharedCache.workflowCache).PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err
@@ -137,6 +137,6 @@ func (wc *workerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 	return existing.(*workflowExecutionContextImpl), nil
 }
 
-func (wc *workerCache) removeWorkflowContext(runID string) {
+func (wc *WorkerCache) removeWorkflowContext(runID string) {
 	(*wc.sharedCache.workflowCache).Delete(runID)
 }
