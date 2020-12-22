@@ -96,40 +96,40 @@ func NewActivityStateMachine() *ActivityStateMachine {
 	fsmDef := BuildStateMachine("ActivityStateMachine", stateCreated, []State{stateCompleted, stateFailed, stateTimedOut, stateCanceled})
 	fsmDef.add(stateCreated, ExplicitEventSchedule, stateScheduleCommandCreated)
 
-	fsmDef.add(stateScheduleCommandCreated, CommandEvent{enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK}, stateScheduleCommandCreated)
-	fsmDef.add(stateScheduleCommandCreated, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED}, stateScheduledEventRecorded)
+	fsmDef.addCommand(stateScheduleCommandCreated, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, stateScheduleCommandCreated)
+	fsmDef.addEvent(stateScheduleCommandCreated, enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED, stateScheduledEventRecorded)
 	fsmDef.add(stateScheduleCommandCreated, ExplicitEventCancel, stateCanceled)
 
-	fsmDef.add(stateScheduledEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED}, stateStarted)
-	fsmDef.add(stateScheduledEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT}, stateTimedOut)
+	fsmDef.addEvent(stateScheduledEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED, stateStarted)
+	fsmDef.addEvent(stateScheduledEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT, stateTimedOut)
 	fsmDef.add(stateScheduledEventRecorded, ExplicitEventCancel, stateScheduledActivityCancelCommandCreated)
 
-	fsmDef.add(stateStarted, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED}, stateCompleted)
-	fsmDef.add(stateStarted, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED}, stateFailed)
-	fsmDef.add(stateStarted, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT}, stateTimedOut)
+	fsmDef.addEvent(stateStarted, enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED, stateCompleted)
+	fsmDef.addEvent(stateStarted, enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED, stateFailed)
+	fsmDef.addEvent(stateStarted, enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT, stateTimedOut)
 	fsmDef.add(stateStarted, ExplicitEventCancel, stateStartedActivityCancelCommandCreated)
 
-	fsmDef.add(stateScheduledActivityCancelCommandCreated, CommandEvent{enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK},
+	fsmDef.addCommand(stateScheduledActivityCancelCommandCreated, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK,
 		stateScheduledActivityCancelCommandCreated)
-	fsmDef.add(stateScheduledActivityCancelCommandCreated, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED},
+	fsmDef.addEvent(stateScheduledActivityCancelCommandCreated, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED,
 		stateScheduledActivityCancelEventRecorded)
 
-	fsmDef.add(stateScheduledActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED},
+	fsmDef.addEvent(stateScheduledActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED,
 		stateCanceled)
-	fsmDef.add(stateScheduledActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED},
+	fsmDef.addEvent(stateScheduledActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED,
 		stateStartedActivityCancelEventRecorded)
-	fsmDef.add(stateScheduledActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT},
+	fsmDef.addEvent(stateScheduledActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT,
 		stateTimedOut)
 
-	fsmDef.add(stateStartedActivityCancelCommandCreated, CommandEvent{enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK},
+	fsmDef.addCommand(stateStartedActivityCancelCommandCreated, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK,
 		stateStartedActivityCancelCommandCreated)
-	fsmDef.add(stateStartedActivityCancelCommandCreated, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED},
+	fsmDef.addEvent(stateStartedActivityCancelCommandCreated, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED,
 		stateStartedActivityCancelEventRecorded)
 
-	fsmDef.add(stateStartedActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED}, stateFailed)
-	fsmDef.add(stateStartedActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED}, stateCompleted)
-	fsmDef.add(stateStartedActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT}, stateTimedOut)
-	fsmDef.add(stateStartedActivityCancelEventRecorded, HistoricalEvent{enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED}, stateCanceled)
+	fsmDef.addEvent(stateStartedActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED, stateFailed)
+	fsmDef.addEvent(stateStartedActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED, stateCompleted)
+	fsmDef.addEvent(stateStartedActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT, stateTimedOut)
+	fsmDef.addEvent(stateStartedActivityCancelEventRecorded, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED, stateCanceled)
 
 	asm := ActivityStateMachine{
 		definition: &fsmDef,

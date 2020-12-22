@@ -26,6 +26,8 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+
+	enumspb "go.temporal.io/api/enums/v1"
 )
 
 type State interface {
@@ -66,6 +68,28 @@ func BuildStateMachine(name string, initialState State, finalStates []State) Sta
 		finalStates:  finalStates,
 		transitions:  make(map[Transition]TransitionAction),
 	}
+}
+
+func (d *StateMachineDefinition) addEvent(from State, event enumspb.EventType, to State) {
+	trans := Transition{event: HistoricalEvent{event}, from: from}
+
+	_, isPresent := d.transitions[trans]
+	if isPresent {
+		panic("Transition already exists in machine definition!")
+	}
+
+	d.transitions[trans] = TransitionAction{dest: to}
+}
+
+func (d *StateMachineDefinition) addCommand(from State, command enumspb.CommandType, to State) {
+	trans := Transition{event: CommandEvent{command}, from: from}
+
+	_, isPresent := d.transitions[trans]
+	if isPresent {
+		panic("Transition already exists in machine definition!")
+	}
+
+	d.transitions[trans] = TransitionAction{dest: to}
 }
 
 func (d *StateMachineDefinition) add(from State, event MachineEvent, to State) {
