@@ -789,14 +789,6 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
-	t.testSideEffectDeferHelper(false)
-}
-
-func (t *TaskHandlersTestSuite) TestSideEffectDefer_NonSticky() {
-	t.testSideEffectDeferHelper(true)
-}
-
-func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	value := "should not be modified"
 	expectedValue := value
 	doneCh := make(chan struct{})
@@ -812,7 +804,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		_ = Sleep(ctx, 1*time.Second)
 		return nil
 	}
-	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-Sticky=%v", disableSticky)
+	workflowName := "SideEffectDeferWorkflow"
 	t.registry.RegisterWorkflowWithOptions(
 		workflowFunc,
 		RegisterWorkflowOptions{Name: workflowName},
@@ -826,11 +818,10 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	}
 
 	params := workerExecutionParameters{
-		Namespace:              testNamespace,
-		TaskQueue:              taskQueue,
-		Identity:               "test-id-1",
-		Logger:                 ilog.NewNopLogger(),
-		DisableStickyExecution: disableSticky,
+		Namespace: testNamespace,
+		TaskQueue: taskQueue,
+		Identity:  "test-id-1",
+		Logger:    ilog.NewNopLogger(),
 	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
@@ -838,12 +829,10 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	_, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Nil(err)
 
-	if !params.DisableStickyExecution {
-		// 1. We can't set cache size in the test to 1, otherwise other tests will break.
-		// 2. We need to make sure cache is empty when the test is completed,
-		// So manually trigger a delete.
-		getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
-	}
+	// 1. We can't set cache size in the test to 1, otherwise other tests will break.
+	// 2. We need to make sure cache is empty when the test is completed,
+	// So manually trigger a delete.
+	getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
 	// Make sure the workflow coroutine has exited.
 	<-doneCh
 	// The side effect op should not be executed.

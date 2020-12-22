@@ -174,9 +174,6 @@ type (
 		// Context cancel function to cancel user context
 		UserContextCancel context.CancelFunc
 
-		// Disable sticky execution
-		DisableStickyExecution bool
-
 		StickyScheduleToStartTimeout time.Duration
 
 		// WorkflowPanicPolicy is used for configuring how client's workflow task handler deals with workflow
@@ -1269,7 +1266,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
 		UserContext:                           backgroundActivityContext,
 		UserContextCancel:                     backgroundActivityContextCancel,
-		DisableStickyExecution:                options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,

@@ -141,7 +141,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	options := worker.Options{
-		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
 		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
@@ -622,9 +621,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
-	if !ts.config.IsStickyOff {
-		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
-	}
+	ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {

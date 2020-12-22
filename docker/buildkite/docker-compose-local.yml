@@ -27,7 +27,7 @@ services:
         aliases:
           - temporal
 
-  integ-test-sticky-off:
+  integ-test:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
@@ -36,7 +36,7 @@ services:
       - -e
       - -c
       - |
-        make integ_test_sticky_off
+        make integ_test
     environment:
       - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
@@ -47,29 +47,7 @@ services:
     networks:
       services-network:
         aliases:
-          - integ-test-sticky-off
-
-  integ-test-sticky-on:
-    build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
-    command:
-      - /bin/sh
-      - -e
-      - -c
-      - |
-        make integ_test_sticky_on
-    environment:
-      - "SERVICE_ADDR=temporal:7233"
-      - "GO111MODULE=on"
-    depends_on:
-      - temporal
-    volumes:
-      - ../../:/go/src/go.temporal.io/sdk
-    networks:
-      services-network:
-        aliases:
-          - integ-test-sticky-on
+          - integ-test
 
   unit-test:
     build:

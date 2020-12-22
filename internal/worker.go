@@ -104,6 +104,9 @@ type (
 		// will clear the stickiness for that workflow execution and automatically reschedule a new workflow task that
 		// is available for any worker to pick up and resume the progress.
 		// default: false
+		//
+		// Deprecated: DisableStickyExecution harms performance and complicates library code. It will be removed soon,
+		// and setting it to true does nothing.
 		DisableStickyExecution bool
 
 		// Optional: Sticky schedule to start timeout.
