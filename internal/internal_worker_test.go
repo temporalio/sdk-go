@@ -1089,11 +1089,13 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 }
 
 func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
+	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
 		DataConverter: iconverter.NewTestDataConverter(),
+		cache:         cache,
 	}
 	s.testWorkflowTaskHandlerHelper(params)
 }

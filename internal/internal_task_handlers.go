@@ -34,7 +34,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -52,7 +51,6 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/backoff"
-	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
@@ -85,6 +83,9 @@ type (
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
+		// This channel must be initialized with a one-size buffer and is used to indicate when
+		// it is time for a local activity to be retried
+		laRetryCh chan *localActivityTask
 	}
 
 	// activityTask wraps a activity task.
@@ -105,10 +106,7 @@ type (
 		workflowInfo      *WorkflowInfo
 		wth               *workflowTaskHandlerImpl
 
-		// eventHandler is changed to a atomic.Value as a temporally bug fix for local activity
-		// retry issue (github issue #915). Therefore, when accessing/modifying this field, the
-		// mutex should still be held.
-		eventHandler atomic.Value
+		eventHandler *workflowExecutionEventHandler
 
 		isWorkflowCompleted bool
 		result              *commonpb.Payloads
@@ -136,6 +134,7 @@ type (
 		dataConverter          converter.DataConverter
 		contextPropagators     []ContextPropagator
 		tracer                 opentracing.Tracer
+		cache                  *WorkerCache
 	}
 
 	activityProvider func(name string) activity
@@ -399,64 +398,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		dataConverter:          params.DataConverter,
 		contextPropagators:     params.ContextPropagators,
 		tracer:                 params.Tracer,
+		cache:                  params.cache,
 	}
-}
-
-// TODO: need a better eviction policy based on memory usage
-var workflowCache cache.Cache
-var stickyCacheSize = defaultStickyCacheSize
-var initCacheOnce sync.Once
-var stickyCacheLock sync.Mutex
-
-// SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
-// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
-// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
-// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
-// between workers running within same process. This must be called before any worker is started. If not called, the
-// default size of 10K (might change in future) will be used.
-func SetStickyWorkflowCacheSize(cacheSize int) {
-	stickyCacheLock.Lock()
-	defer stickyCacheLock.Unlock()
-	if workflowCache != nil {
-		panic("cache already created, please set cache size before worker starts.")
-	}
-	stickyCacheSize = cacheSize
-}
-
-func getWorkflowCache() cache.Cache {
-	initCacheOnce.Do(func() {
-		stickyCacheLock.Lock()
-		defer stickyCacheLock.Unlock()
-		workflowCache = cache.New(stickyCacheSize, &cache.Options{
-			RemovedFunc: func(cachedEntity interface{}) {
-				wc := cachedEntity.(*workflowExecutionContextImpl)
-				wc.onEviction()
-			},
-		})
-	})
-	return workflowCache
-}
-
-func getWorkflowContext(runID string) *workflowExecutionContextImpl {
-	o := getWorkflowCache().Get(runID)
-	if o == nil {
-		return nil
-	}
-	wc := o.(*workflowExecutionContextImpl)
-	return wc
-}
-
-func putWorkflowContext(runID string, wc *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
-	existing, err := getWorkflowCache().PutIfNotExist(runID, wc)
-	if err != nil {
-		return nil, err
-	}
-	return existing.(*workflowExecutionContextImpl), nil
-}
-
-func removeWorkflowContext(runID string) {
-	getWorkflowCache().Delete(runID)
 }
 
 func newWorkflowExecutionContext(
@@ -482,8 +425,8 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
+		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
+			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 		} else {
 			// sticky is disabled, manually clear the workflow state.
 			w.clearState()
@@ -494,15 +437,10 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 }
 
 func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEventHandlerImpl {
-	eventHandler := w.eventHandler.Load()
-	if eventHandler == nil {
+	if w.eventHandler == nil {
 		return nil
 	}
-	eventHandlerImpl, ok := eventHandler.(*workflowExecutionEventHandlerImpl)
-	if !ok {
-		panic("unknown type for workflow execution event handler")
-	}
-	return eventHandlerImpl
+	return (*w.eventHandler).(*workflowExecutionEventHandlerImpl)
 }
 
 func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
@@ -569,7 +507,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 		// Set isReplay to true to prevent user code in defer guarded by !isReplaying() from running
 		eventHandler.isReplay = true
 		eventHandler.Close()
-		w.eventHandler.Store((*workflowExecutionEventHandlerImpl)(nil))
+		w.eventHandler = nil
 	}
 }
 
@@ -586,7 +524,8 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.contextPropagators,
 		w.wth.tracer,
 	)
-	w.eventHandler.Store(eventHandler)
+
+	w.eventHandler = &eventHandler
 }
 
 func resetHistory(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) (*historypb.History, error) {
@@ -656,7 +595,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
 			workflowContext.laTunnel = wth.laTunnel
 		}
-		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(getWorkflowCache().Size()))
+		workflowMetricsScope.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.getWorkflowCache().Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -666,7 +605,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 
 	workflowContext = nil
 	if task.Query == nil || (task.Query != nil && !isFullHistory) {
-		workflowContext = getWorkflowContext(runID)
+		workflowContext = wth.cache.getWorkflowContext(runID)
 	}
 
 	if workflowContext != nil {
@@ -696,7 +635,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 		}
 
 		if !wth.disableStickyExecution && task.Query == nil {
-			workflowContext, _ = putWorkflowContext(runID, workflowContext)
+			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
 		}
 		workflowContext.Lock()
 	}
@@ -824,6 +763,24 @@ processWorkflowLoop:
 					case <-heartbeatTimer.C:
 						delayDuration = 0
 						continue heartbeatLoop
+
+					case laRetry := <-workflowTask.laRetryCh:
+						eventHandler := workflowContext.getEventHandler()
+
+						// if workflow task heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
+						if eventHandler == nil {
+							break processWorkflowLoop
+						}
+
+						if _, ok := eventHandler.pendingLaTasks[laRetry.activityID]; !ok {
+							break processWorkflowLoop
+						}
+
+						laRetry.attempt++
+
+						if !wth.laTunnel.sendTask(laRetry) {
+							laRetry.attempt--
+						}
 
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
@@ -1029,24 +986,11 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	if retryBackoff > 0 && retryBackoff <= w.workflowInfo.WorkflowTaskTimeout {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
-			// TODO: this should not be a separate goroutine as it introduces race condition when accessing eventHandler.
-			// currently this is solved by changing eventHandler to an atomic.Value. Ideally, this retry timer should be
-			// part of the event loop for processing the workflow task.
-			eventHandler := w.getEventHandler()
-
-			// if workflow task heartbeat failed, the workflow execution context will be cleared and eventHandler will be nil
-			if eventHandler == nil {
-				return
-			}
-
-			if _, ok := eventHandler.pendingLaTasks[lar.task.activityID]; !ok {
-				return
-			}
-
-			lar.task.attempt++
-
-			if !w.laTunnel.sendTask(lar.task) {
-				lar.task.attempt--
+			// Send retry signal
+			select {
+			case lar.task.workflowTask.laRetryCh <- lar.task:
+			case <-lar.task.workflowTask.doneCh:
+				// Task is already done. Abort retrying.
 			}
 		})
 		return true
