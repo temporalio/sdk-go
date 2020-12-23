@@ -150,6 +150,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.EnableSessionWorker = true
 	}
 
+	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
+		options.LocalActivityWorkerOnly = true
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -688,8 +692,18 @@ func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 	ts.Nil(err)
 }
 
+func (ts *IntegrationTestSuite) TestInspectActivityInfoLocalActivityWorkerOnly() {
+	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
+	ts.Error(err)
+}
+
 func (ts *IntegrationTestSuite) TestInspectLocalActivityInfo() {
 	err := ts.executeWorkflow("test-local-activity-info", ts.workflows.InspectLocalActivityInfo, nil)
+	ts.Nil(err)
+}
+
+func (ts *IntegrationTestSuite) TestInspectLocalActivityInfoLocalActivityWorkerOnly() {
+	err := ts.executeWorkflow("test-local-activity-info-local-activity-worker-only", ts.workflows.InspectLocalActivityInfo, nil)
 	ts.Nil(err)
 }
 

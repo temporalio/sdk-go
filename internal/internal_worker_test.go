@@ -1089,11 +1089,13 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 }
 
 func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
+	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
 		Logger:        getLogger(),
 		DataConverter: iconverter.NewTestDataConverter(),
+		cache:         cache,
 	}
 	s.testWorkflowTaskHandlerHelper(params)
 }
@@ -1990,6 +1992,45 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	activityWorker := aggWorker.activityWorker
 	require.Len(t, activityWorker.executionParameters.ContextPropagators, 0)
 	assertWorkerExecutionParamsEqual(t, expected, activityWorker.executionParameters)
+}
+
+func TestLocalActivityWorkerOnly(t *testing.T) {
+	client := &WorkflowClient{}
+	taskQueue := "worker-options-tq"
+	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
+
+	workflowWorker := aggWorker.workflowWorker
+	require.True(t, workflowWorker.executionParameters.Identity != "")
+	require.NotNil(t, workflowWorker.executionParameters.Logger)
+	require.NotNil(t, workflowWorker.executionParameters.MetricsScope)
+	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
+
+	expected := workerExecutionParameters{
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             taskQueue,
+		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
+		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
+		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
+		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
+		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
+		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                         converter.GetDefaultDataConverter(),
+		Tracer:                                opentracing.NoopTracer{},
+		Logger:                                workflowWorker.executionParameters.Logger,
+		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
+		Identity:                              workflowWorker.executionParameters.Identity,
+		UserContext:                           workflowWorker.executionParameters.UserContext,
+	}
+
+	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
+
+	activityWorker := aggWorker.activityWorker
+	require.Nil(t, activityWorker)
+	sessionWorker := aggWorker.sessionWorker
+	require.Nil(t, sessionWorker)
 }
 
 func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParameters, paramsB workerExecutionParameters) {
