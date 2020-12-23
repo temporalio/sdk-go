@@ -442,33 +442,11 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
+	mockerr := serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
+		Return(nil, mockerr).Times(1)
 
-	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
-	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(s.dataConverter, workflowResult)
-	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
-		History: &historypb.History{
-			Events: []*historypb.HistoryEvent{
-				{
-					EventType: eventType,
-					Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
-						Result: encodedResult,
-					}},
-				},
-			},
-		},
-		NextPageToken: nil,
-	}
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).
-		Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
-		workflowID := getRequest.Execution.WorkflowId
-		s.NotEmpty(workflowID)
-	})
-
-	workflowRun, err := s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                       workflowID,
@@ -478,64 +456,8 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 			WorkflowIDReusePolicy:    workflowIDReusePolicy,
 		}, workflowType,
 	)
-	s.Nil(err)
-	s.Equal(workflowRun.GetID(), workflowID)
-	s.Equal(workflowRun.GetRunID(), runID)
-	decodedResult := time.Minute
-	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Nil(err)
-	s.Equal(workflowResult, decodedResult)
-}
-
-func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError_RawHistory() {
-	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
-
-	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
-	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(converter.GetDefaultDataConverter(), workflowResult)
-	events := []*historypb.HistoryEvent{
-		{
-			EventType: eventType,
-			Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
-				Result: encodedResult,
-			}},
-		},
-	}
-
-	blobData := serializeEvents(events)
-
-	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
-		RawHistory: []*commonpb.DataBlob{
-			blobData,
-		},
-		NextPageToken: nil,
-	}
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).
-		Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
-		workflowID := getRequest.Execution.WorkflowId
-		s.NotNil(workflowID)
-		s.NotEmpty(workflowID)
-	})
-
-	workflowRun, err := s.workflowClient.ExecuteWorkflow(
-		context.Background(),
-		StartWorkflowOptions{
-			ID:                    workflowID,
-			TaskQueue:             taskqueue,
-			WorkflowRunTimeout:    timeoutInSeconds * time.Second,
-			WorkflowTaskTimeout:   timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy: workflowIDReusePolicy,
-		}, workflowType,
-	)
-	s.Nil(err)
-	s.Equal(workflowRun.GetID(), workflowID)
-	s.Equal(workflowRun.GetRunID(), runID)
-	decodedResult := time.Minute
-	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Nil(err)
-	s.Equal(workflowResult, decodedResult)
+	s.Error(err)
+	s.Equal(mockerr, err)
 }
 
 // Test for the bug in ExecuteWorkflow.

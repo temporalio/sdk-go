@@ -262,12 +262,7 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	var workflowID string
 	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
 	if err != nil {
-		if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
-			runID = e.RunId
-			workflowID = options.ID
-		} else {
-			return nil, err
-		}
+		return nil, err
 	} else {
 		runID = executionInfo.RunID
 		workflowID = executionInfo.ID
