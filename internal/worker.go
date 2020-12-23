@@ -144,6 +144,11 @@ type (
 		// Optional: Specifies factories used to instantiate workflow interceptor chain
 		// The chain is instantiated per each replay of a workflow execution
 		WorkflowInterceptorChainFactories []WorkflowInterceptor
+
+		// Optional: If set to true worker would only handle workflow tasks and local activities.
+		// Non-local activities will not be executed by this worker.
+		// default: false
+		LocalActivityWorkerOnly bool
 	}
 )
 

@@ -275,6 +275,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 
 	doneCh := make(chan struct{})
 	laResultCh := make(chan *localActivityResult)
+	laRetryCh := make(chan *localActivityTask)
 	// close doneCh so local activity worker won't get blocked forever when trying to send back result to laResultCh.
 	defer close(doneCh)
 
@@ -283,6 +284,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		startTime := time.Now()
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
+		task.laRetryCh = laRetryCh
 		completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(
 			task,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
@@ -297,6 +299,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
+				task.laRetryCh = laRetryCh
 				return task, nil
 			},
 		)
@@ -713,7 +716,6 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 	task := &workflowTask{
 		task:            response,
 		historyIterator: historyIterator,
-		laRetryCh:       make(chan *localActivityTask, 1),
 	}
 	return task
 }
