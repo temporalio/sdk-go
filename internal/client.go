@@ -436,7 +436,8 @@ type (
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
-		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run.
+		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
+		// rather than erroring a WorkflowRun instance representing the current or last run will be returned.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
