@@ -396,6 +396,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflo
 	specialstr := uuid.New()
 	wfOpts := ts.startWorkflowOptions("test-workflow-id-reuse-reject-dupes-no-children-" + specialstr)
 	wfOpts.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
+	wfOpts.WorkflowExecutionErrorWhenAlreadyStarted = true
 
 	var result []string
 	err := ts.executeWorkflowWithOption(

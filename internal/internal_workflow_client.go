@@ -262,10 +262,19 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	var workflowID string
 	executionInfo, err := wc.StartWorkflow(ctx, options, workflow, args...)
 	if err != nil {
-		return nil, err
+		if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
+			if options.WorkflowExecutionErrorWhenAlreadyStarted {
+				return nil, err
+			}
+			runID = e.RunId
+			workflowID = options.ID
+		} else {
+			return nil, err
+		}
+	} else {
+		runID = executionInfo.RunID
+		workflowID = executionInfo.ID
 	}
-	runID = executionInfo.RunID
-	workflowID = executionInfo.ID
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		fnName, _ := getWorkflowFunctionName(wc.registry, workflow)
