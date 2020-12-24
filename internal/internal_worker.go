@@ -196,6 +196,9 @@ type (
 		ContextPropagators []ContextPropagator
 
 		Tracer opentracing.Tracer
+
+		// Pointer to the shared worker cache
+		cache *WorkerCache
 	}
 )
 
@@ -1161,11 +1164,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
+	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    loger,
+		cache:     cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1250,6 +1255,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
+	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,
@@ -1273,6 +1279,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
+		cache:                                 cache,
 	}
 
 	ensureRequiredParams(&workerParams)
@@ -1298,10 +1305,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	// activity types.
-	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	var activityWorker *activityWorker
+	if !options.LocalActivityWorkerOnly {
+		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	}
 
 	var sessionWorker *sessionWorker
-	if options.EnableSessionWorker {
+	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
 		sessionWorker = newSessionWorker(client.workflowService, workerParams, nil, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
