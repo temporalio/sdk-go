@@ -396,6 +396,33 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
+	specialstr := uuid.New()
+	wfOpts := ts.startWorkflowOptions("test-workflow-id-reuse-reject-dupes-no-children-" + specialstr)
+	wfOpts.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
+	wfOpts.WorkflowExecutionErrorWhenAlreadyStarted = true
+
+	var result []string
+	err := ts.executeWorkflowWithOption(
+		wfOpts,
+		ts.workflows.Basic,
+		&result,
+	)
+	ts.NoError(err)
+
+	var result2 []string
+	err = ts.executeWorkflowWithOption(
+		wfOpts,
+		ts.workflows.Basic,
+		&result2,
+	)
+	ts.Error(err)
+	var returnedErr *serviceerror.WorkflowExecutionAlreadyStarted
+	ok := errors.As(err, &returnedErr)
+	ts.True(ok)
+	ts.True(strings.HasPrefix(returnedErr.Error(), "Workflow execution already finished"))
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	var result string
 	err := ts.executeWorkflow(
