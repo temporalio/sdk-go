@@ -140,6 +140,7 @@ func (wc *WorkerCache) removeWorkflowContext(runID string) {
 	(*wc.sharedCache.workflowCache).Delete(runID)
 }
 
+// WorkflowCacheIsBypassed returns true if the workflow cache size is zero
 func (wc *WorkerCache) WorkflowCacheIsBypassed() bool {
 	if wc == nil {
 		// If cache isn't initialized, it *will* be bypassed if desired size is zero.
