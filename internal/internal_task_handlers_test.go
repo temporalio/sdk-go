@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -753,9 +754,19 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
+	t.testSideEffectDeferHelper(false)
+}
+
+func (t *TaskHandlersTestSuite) TestSideEffectDefer_NonSticky() {
+	t.testSideEffectDeferHelper(true)
+}
+
+func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	value := "should not be modified"
 	expectedValue := value
 	doneCh := make(chan struct{})
+	var myWorkerCachePtr = &sharedWorkerCache{}
+	var myWorkerCacheLock sync.Mutex
 
 	workflowFunc := func(ctx Context) error {
 		defer func() {
@@ -768,7 +779,7 @@ func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
 		_ = Sleep(ctx, 1*time.Second)
 		return nil
 	}
-	workflowName := "SideEffectDeferWorkflow"
+	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-Sticky=%v", disableSticky)
 	t.registry.RegisterWorkflowWithOptions(
 		workflowFunc,
 		RegisterWorkflowOptions{Name: workflowName},
@@ -782,18 +793,17 @@ func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
 	}
 
 	params := t.getTestWorkerExecutionParams()
-	params.DisableStickyExecution = disableSticky
+	if disableSticky {
+		params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, 0)
+	} else {
+		params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, 1)
+	}
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task := createWorkflowTask(testEvents, 0, workflowName)
 	_, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Nil(err)
 
-	// TODO: This ain't true any more. Clean up.
-		//1. We can't set cache size in the test to 1, otherwise other tests will break.
-	// 2. We need to make sure cache is empty when the test is completed,
-	// So manually trigger a delete.
-	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.GetRunId())
 	// Make sure the workflow coroutine has exited.
 	<-doneCh
 	// The side effect op should not be executed.

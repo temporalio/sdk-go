@@ -41,6 +41,7 @@ type (
 	// Config contains the integration test configuration
 	Config struct {
 		ServiceAddr string
+		IsStickyOff bool
 		Debug       bool
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -51,9 +52,13 @@ type (
 func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr: client.DefaultHostPort,
+		IsStickyOff: true,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
+	}
+	if so := getEnvStickyOff(); so != "" {
+		cfg.IsStickyOff = so == "true"
 	}
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
@@ -63,6 +68,10 @@ func NewConfig() Config {
 
 func getEnvServiceAddr() string {
 	return strings.TrimSpace(os.Getenv("SERVICE_ADDR"))
+}
+
+func getEnvStickyOff() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("STICKY_OFF")))
 }
 
 func getDebug() string {

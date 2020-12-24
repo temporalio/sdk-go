@@ -105,8 +105,8 @@ type (
 		// is available for any worker to pick up and resume the progress.
 		// default: false
 		//
-		// Deprecated: DisableStickyExecution harms performance and complicates library code. It will be removed soon,
-		// and setting it to true does nothing.
+		// Deprecated: DisableStickyExecution harms performance. It will be removed soon. See SetStickyWorkflowCacheSize
+		// instead.
 		DisableStickyExecution bool
 
 		// Optional: Sticky schedule to start timeout.
