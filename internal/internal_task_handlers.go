@@ -1816,6 +1816,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
+			tagAttempt, t.Attempt,
 			tagError, err,
 		)
 	}

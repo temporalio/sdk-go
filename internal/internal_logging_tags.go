@@ -44,4 +44,5 @@ const (
 	tagResult            = "Result"
 	tagError             = "Error"
 	tagStackTrace        = "StackTrace"
+	tagAttempt           = "Attempt"
 )
