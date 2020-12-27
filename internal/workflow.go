@@ -87,11 +87,30 @@ type (
 	// Selector must be used instead of native go select by workflow code.
 	// Create through workflow.NewSelector(ctx).
 	Selector interface {
+		// AddReceive registers a callback function to be called when a channel has a message to receive.
+		// The callback is called when Select(ctx) is called.
+		// The message is expected be consumed by the callback function
 		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
+		// AddSend registers a callback function to be called when sending message to channel is not going to block.
+		// The callback is called when Select(ctx) is called.
+		// The sending message to the channel is expected to be done by the callback function
 		AddSend(c SendChannel, v interface{}, f func()) Selector
+		// AddFuture registers a callback function to be called when a future is ready.
+		// The callback is called when Select(ctx) is called.
+		// The callback is called once per ready future even if Select is called multiple times for the same
+		// Selector instance.
 		AddFuture(future Future, f func(f Future)) Selector
+		// AddDefault register callback function to be called if none of other branches matched.
+		// The callback is called when Select(ctx) is called.
+		// When the default branch is registered Select never blocks.
 		AddDefault(f func())
+		// Select checks if any of the registered branches satisfies its condition blocking if necessary.
+		// When a branch becomes eligible its callback is invoked.
+		// If multiple branches are eligible only one of them (picked randomly) is invoked per Select call.
+		// It is OK to call Select multiple times for the same Selector instance.
 		Select(ctx Context)
+		// HasPending returns true if call to Select is guaranteed to not block.
+		HasPending() bool
 	}
 
 	// WaitGroup must be used instead of native go sync.WaitGroup by

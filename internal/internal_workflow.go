@@ -599,6 +599,14 @@ func getState(ctx Context) *coroutineState {
 	return state
 }
 
+func (c *channelImpl) CanReceiveWithoutBlocking() bool {
+	return c.recValue != nil || len(c.buffer) > 0 || len(c.blockedSends) > 0
+}
+
+func (c *channelImpl) CanSendWithoutBlocking() bool {
+	return len(c.buffer) < c.size || len(c.blockedReceives) > 0
+}
+
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 	state := getState(ctx)
 	hasResult := false
@@ -1033,6 +1041,19 @@ func (s *selectorImpl) AddFuture(future Future, f func(future Future)) Selector 
 
 func (s *selectorImpl) AddDefault(f func()) {
 	s.defaultFunc = &f
+}
+
+func (s *selectorImpl) HasPending() bool {
+	for _, pair := range s.cases {
+		if pair.receiveFunc != nil && pair.channel.CanReceiveWithoutBlocking() {
+			return true
+		} else if pair.sendFunc != nil && pair.channel.CanSendWithoutBlocking() {
+			return true
+		} else if pair.futureFunc != nil && pair.future.IsReady() {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *selectorImpl) Select(ctx Context) {
