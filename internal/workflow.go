@@ -89,7 +89,9 @@ type (
 	Selector interface {
 		// AddReceive registers a callback function to be called when a channel has a message to receive.
 		// The callback is called when Select(ctx) is called.
-		// The message is expected be consumed by the callback function
+		// The message is expected be consumed by the callback function.
+		// The branch is automatically removed after the channel is closed and callback function is called once
+		// with more parameter set to false.
 		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
 		// AddSend registers a callback function to be called when sending message to channel is not going to block.
 		// The callback is called when Select(ctx) is called.

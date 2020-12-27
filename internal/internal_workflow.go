@@ -600,7 +600,7 @@ func getState(ctx Context) *coroutineState {
 }
 
 func (c *channelImpl) CanReceiveWithoutBlocking() bool {
-	return c.recValue != nil || len(c.buffer) > 0 || len(c.blockedSends) > 0
+	return c.recValue != nil || len(c.buffer) > 0 || len(c.blockedSends) > 0 || c.closed
 }
 
 func (c *channelImpl) CanSendWithoutBlocking() bool {
@@ -1093,6 +1093,8 @@ func (s *selectorImpl) Select(ctx Context) {
 				// c.RecValue != nil and breaks the nil check at the beginning of receiveAsyncImpl
 				if more {
 					c.recValue = &v
+				} else {
+					pair.receiveFunc = nil
 				}
 				f(c, more)
 				return
