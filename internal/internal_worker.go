@@ -888,7 +888,7 @@ func (aw *AggregatedWorker) Start() error {
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if len(aw.registry.getRegisteredWorkflowTypes()) == 0 {
-			aw.logger.Info("No workflows registered. Skipping workflow worker start")
+			aw.logger.Debug("No workflows registered. Skipping workflow worker start")
 		} else {
 			if err := aw.workflowWorker.Start(); err != nil {
 				return err
@@ -897,7 +897,7 @@ func (aw *AggregatedWorker) Start() error {
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		if len(aw.registry.getRegisteredActivities()) == 0 {
-			aw.logger.Info("No activities registered. Skipping activity worker start")
+			aw.logger.Debug("No activities registered. Skipping activity worker start")
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.

@@ -75,13 +75,8 @@ func PurgeStickyWorkflowCache() {
 	sharedWorkerCacheLock.Lock()
 	defer sharedWorkerCacheLock.Unlock()
 
-	if sharedWorkerCachePtr.workerRefcount != 0 {
-		*sharedWorkerCachePtr.workflowCache = cache.New(desiredWorkflowCacheSize, &cache.Options{
-			RemovedFunc: func(cachedEntity interface{}) {
-				wc := cachedEntity.(*workflowExecutionContextImpl)
-				wc.onEviction()
-			},
-		})
+	if sharedWorkerCachePtr.workflowCache != nil {
+		(*sharedWorkerCachePtr.workflowCache).Clear()
 	}
 }
 
