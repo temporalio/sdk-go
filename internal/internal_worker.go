@@ -1286,6 +1286,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		cache:                                 cache,
 	}
 
+	if options.Identity != "" {
+		workerParams.Identity = options.Identity
+	}
+
 	ensureRequiredParams(&workerParams)
 	workerParams.Logger = ilog.With(workerParams.Logger,
 		tagNamespace, client.namespace,
