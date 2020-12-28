@@ -431,9 +431,16 @@ type (
 		WorkflowTaskTimeout time.Duration
 
 		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedup logic if set to RejectDuplicate.
+		// for dedupe logic if set to RejectDuplicate.
 		// Optional: defaulted to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
+
+		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
+		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
+		// rather than erroring a WorkflowRun instance representing the current or last run will be returned.
+		//
+		// Optional: defaults to false
+		WorkflowExecutionErrorWhenAlreadyStarted bool
 
 		// RetryPolicy - Optional retry policy for workflow. If a retry policy is specified, in case of workflow failure
 		// server will start new workflow execution if needed based on the retry policy.
