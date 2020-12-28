@@ -238,6 +238,11 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 	internal.SetStickyWorkflowCacheSize(cacheSize)
 }
 
+// PurgeStickyWorkflowCache resets the sticky workflow cache. This must be called only when all workers are stopped.
+func PurgeStickyWorkflowCache() {
+	internal.PurgeStickyWorkflowCache()
+}
+
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
 // The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
 // workflow task completed by a binary will be associated as a auto-reset point for the binary. So that when a customer wants to
