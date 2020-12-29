@@ -145,9 +145,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
 
-	if ts.config.IsStickyOff {
-		worker.SetStickyWorkflowCacheSize(0)
-	}
+	worker.SetStickyWorkflowCacheSize(ts.config.maxStickyCacheSize)
 
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
@@ -656,7 +654,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
-	if !ts.config.IsStickyOff {
+	if ts.config.maxStickyCacheSize > 0 {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
 	}
 }

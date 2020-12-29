@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,9 +41,9 @@ import (
 type (
 	// Config contains the integration test configuration
 	Config struct {
-		ServiceAddr string
-		IsStickyOff bool
-		Debug       bool
+		ServiceAddr        string
+		maxStickyCacheSize int
+		Debug              bool
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey string
@@ -51,14 +52,18 @@ type (
 // NewConfig creates new Config instance
 func NewConfig() Config {
 	cfg := Config{
-		ServiceAddr: client.DefaultHostPort,
-		IsStickyOff: true,
+		ServiceAddr:        client.DefaultHostPort,
+		maxStickyCacheSize: 10000,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
-	if so := getEnvStickyOff(); so != "" {
-		cfg.IsStickyOff = so == "true"
+	if siz := getEnvCacheSize(); siz != "" {
+		asInt, err := strconv.Atoi(siz)
+		if err != nil {
+			panic("Sticky cache size must be an integer, was: " + siz)
+		}
+		cfg.maxStickyCacheSize = asInt
 	}
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
@@ -70,8 +75,8 @@ func getEnvServiceAddr() string {
 	return strings.TrimSpace(os.Getenv("SERVICE_ADDR"))
 }
 
-func getEnvStickyOff() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("STICKY_OFF")))
+func getEnvCacheSize() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("STICKY_CACHE_SIZE")))
 }
 
 func getDebug() string {
