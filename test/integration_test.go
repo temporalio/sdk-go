@@ -580,6 +580,13 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
 	ts.EqualValues("HELLO", wfResult)
 }
 
+func (ts *IntegrationTestSuite) TestCancelChildWfAfterTimer() {
+	var wfResult string
+	err := ts.executeWorkflow("test-cancel-child-workflow-after-timer", ts.workflows.TestCancelChildWorkflowAfterTimer, &wfResult)
+	ts.NoError(err)
+	ts.EqualValues("yay", wfResult)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})

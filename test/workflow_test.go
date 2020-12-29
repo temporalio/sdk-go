@@ -517,6 +517,27 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 	return res, err
 }
 
+func (w *Workflows) TestCancelChildWorkflowAfterTimer(ctx workflow.Context) (string, error) {
+	timerCtx1, _ := workflow.WithCancel(ctx)
+
+	_ = workflow.NewTimer(timerCtx1, 3*time.Second)
+	// Start a child workflow
+	childCtx1, cancelChild := workflow.WithCancel(ctx)
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+	}
+	childCtx1 = workflow.WithChildOptions(childCtx1, opts)
+	childWf := workflow.ExecuteChildWorkflow(childCtx1, w.sleep, 30*time.Second)
+	// Cancel child wf
+	cancelChild()
+
+	print("Bruh")
+	_ = childWf.Get(ctx, nil)
+	print("done")
+	return "yay", nil
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -1081,6 +1102,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
+	worker.RegisterWorkflow(w.TestCancelChildWorkflowAfterTimer)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)

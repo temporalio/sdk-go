@@ -155,6 +155,7 @@ const (
 	commandStateCompletedAfterCancellationCommandSent commandState = 8
 	commandStateCompleted                             commandState = 9
 	commandStateCanceledBeforeSent                    commandState = 10
+	commandStateCancellationCommandAccepted           commandState = 11
 )
 
 const (
@@ -170,15 +171,16 @@ const (
 )
 
 const (
-	eventCancel           = "cancel"
-	eventCommandSent      = "handleCommandSent"
-	eventInitiated        = "handleInitiatedEvent"
-	eventInitiationFailed = "handleInitiationFailedEvent"
-	eventStarted          = "handleStartedEvent"
-	eventCompletion       = "handleCompletionEvent"
-	eventCancelInitiated  = "handleCancelInitiatedEvent"
-	eventCancelFailed     = "handleCancelFailedEvent"
-	eventCanceled         = "handleCanceledEvent"
+	eventCancel                                   = "cancel"
+	eventCommandSent                              = "handleCommandSent"
+	eventInitiated                                = "handleInitiatedEvent"
+	eventInitiationFailed                         = "handleInitiationFailedEvent"
+	eventStarted                                  = "handleStartedEvent"
+	eventCompletion                               = "handleCompletionEvent"
+	eventCancelInitiated                          = "handleCancelInitiatedEvent"
+	eventCancelFailed                             = "handleCancelFailedEvent"
+	eventCanceled                                 = "handleCanceledEvent"
+	eventExternalWorkflowExecutionCancelRequested = "handleExternalWorkflowExecutionCancelRequested"
 )
 
 const (
@@ -472,7 +474,7 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCancellationCommandAccepted:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
@@ -654,6 +656,10 @@ func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 	switch d.state {
 	case commandStateStarted:
 		d.moveState(commandStateCompleted, eventCanceled)
+	case commandStateCancellationCommandSent:
+		// We've sent the command but haven't seen the server accept the cancellation. We must ensure this command hangs
+		// around, because it is possible for the child workflow to be canceled before we've seen the event.
+		d.moveState(commandStateCompletedAfterCancellationCommandSent, eventCanceled)
 	default:
 		d.commandStateMachineBase.handleCanceledEvent()
 	}
@@ -661,7 +667,7 @@ func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 
 func (d *childWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case commandStateStarted, commandStateCanceledAfterStarted:
+	case commandStateStarted, commandStateCanceledAfterStarted, commandStateCompletedAfterCancellationCommandSent:
 		d.moveState(commandStateCompleted, eventCompletion)
 	default:
 		d.commandStateMachineBase.handleCompletionEvent()
@@ -1077,7 +1083,14 @@ func (h *commandsHelper) handleExternalWorkflowExecutionCancelRequested(initiate
 	cancellationID, isExternal := h.scheduledEventIDToCancellationID[initiatedeventID]
 	if !isExternal {
 		command = h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
-		// no state change for child workflow, it is still in CancellationCommandSent
+		asChildWfCmd := command.(*childWorkflowCommandStateMachine)
+		if asChildWfCmd.getState() == commandStateCompletedAfterCancellationCommandSent {
+			// Now we're really done.
+			command.handleCompletionEvent()
+		} else {
+			// We're in the cancellation command sent stage - new state to indicate we have seen the cancel accepted
+			asChildWfCmd.moveState(commandStateCancellationCommandAccepted, eventExternalWorkflowExecutionCancelRequested)
+		}
 	} else {
 		// this is cancellation for external workflow
 		command = h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
