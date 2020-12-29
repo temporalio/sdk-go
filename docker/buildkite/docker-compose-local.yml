@@ -49,7 +49,7 @@ services:
         aliases:
           - integ-test-zero-cache
 
-  integ-test-sticky-on:
+  integ-test-normal-cache:
     build:
       context: ../../
       dockerfile: ./docker/buildkite/Dockerfile
@@ -58,7 +58,7 @@ services:
       - -e
       - -c
       - |
-        make integ_test_sticky_on
+        make integ_test_normal_cache
     environment:
       - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
@@ -69,7 +69,7 @@ services:
     networks:
       services-network:
         aliases:
-          - integ-test-sticky-on
+          - integ-test-normal-cache
 
   unit-test:
     build:

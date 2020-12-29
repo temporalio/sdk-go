@@ -45,19 +45,19 @@ unit-test: $(BUILD)/dummy
 		cat $(COVER_ROOT)/"$$dir"/cover.out | grep -v "mode: atomic" >> $(UT_COVER_FILE); \
 	done;
 
-integration-test-sticky-off: $(BUILD)/dummy
+integration-test-zero-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
 		STICKY_CACHE_SIZE=0 go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_ZERO_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-integration-test-sticky-on: $(BUILD)/dummy
+integration-test-normal-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
 		go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-test: unit-test integration-test-sticky-off integration-test-sticky-on
+test: unit-test integration-test-zero-cache integration-test-normal-cache
 
 $(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_ZERO_CACHE_COVER_FILE) $(INTEG_NORMAL_CACHE_COVER_FILE)
 	@echo "mode: atomic" > $(COVER_ROOT)/cover.out

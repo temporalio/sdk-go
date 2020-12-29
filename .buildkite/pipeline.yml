@@ -21,11 +21,11 @@ steps:
           run: unit-test
           config: docker/buildkite/docker-compose.yml
 
-  - label: ":golang: integration-test-sticky-off"
+  - label: ":golang: integration-test-zero-cache"
     agents:
       queue: "default"
       docker: "*"
-    command: "make integration-test-sticky-off"
+    command: "make integration-test-zero-cache"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
@@ -36,11 +36,11 @@ steps:
           run: integ-test
           config: docker/buildkite/docker-compose.yml
 
-  - label: ":golang: integration-test-sticky-on"
+  - label: ":golang: integration-test-normal-cache"
     agents:
       queue: "default"
       docker: "*"
-    command: "make integration-test-sticky-on"
+    command: "make integration-test-normal-cache"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
