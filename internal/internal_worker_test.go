@@ -864,18 +864,6 @@ func createHistoryForCancelTimerAfterActivity(workflowType string) []*historypb.
 	}
 }
 
-func cancelTimerAfterChildWorkflow_Workflow(ctx Context) error {
-	timerCtx1, cancelFunc1 := WithCancel(ctx)
-	_ = NewTimer(timerCtx1, 3*time.Second)
-	// Start an activity
-	fut := ExecuteActivity(ctx, "testActivity")
-	// Cancel timer
-	cancelFunc1()
-	// Then wait on the activity
-	err := fut.Get(ctx, nil)
-	return err
-}
-
 func testReplayWorkflowCancelChildWorkflow(ctx Context) error {
 	childCtx1, cancelFunc1 := WithCancel(ctx)
 
