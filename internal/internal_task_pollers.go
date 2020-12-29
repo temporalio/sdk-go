@@ -353,6 +353,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
 		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
@@ -514,8 +515,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
 				tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
 				tagActivityType, activityType,
-				"PanicError", fmt.Sprintf("%v", p),
-				"PanicStack", st)
+				tagAttempt, task.attempt,
+				tagPanicError, fmt.Sprintf("%v", p),
+				tagPanicStack, st)
 			activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = &localActivityResult{

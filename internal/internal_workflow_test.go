@@ -903,7 +903,13 @@ func bufferedChanWithSelectorWorkflowTest(ctx Context, bufferSize int) error {
 	selector.AddSend(selectedCh, dummy, func() {})
 	selector.AddSend(bufferedCh, dummy, func() {})
 	// 2. When select is called, callback for the second send will be added to bufferedCh's blockedSends
+	if selector.HasPending() {
+		panic("HasPending should be true")
+	}
 	selector.Select(ctx)
+	if selector.HasPending() {
+		panic("HasPending should be true")
+	}
 
 	// Make sure no coroutine blocks
 	done.Receive(ctx, nil)
