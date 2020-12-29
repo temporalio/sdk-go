@@ -140,11 +140,10 @@ func (wc *WorkerCache) removeWorkflowContext(runID string) {
 	(*wc.sharedCache.workflowCache).Delete(runID)
 }
 
-// WorkflowCacheIsBypassed returns true if the workflow cache size is zero
-func (wc *WorkerCache) WorkflowCacheIsBypassed() bool {
+// MaxCacheSize returns the maximum allowed size of the sticky cache
+func (wc *WorkerCache) MaxCacheSize() int {
 	if wc == nil {
-		// If cache isn't initialized, it *will* be bypassed if desired size is zero.
-		return desiredWorkflowCacheSize == 0
+		return desiredWorkflowCacheSize
 	}
-	return wc.sharedCache.maxWorkflowCacheSize <= 0
+	return wc.sharedCache.maxWorkflowCacheSize
 }

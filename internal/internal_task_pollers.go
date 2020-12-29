@@ -95,7 +95,7 @@ type (
 		pendingStickyPollCount  int
 		stickyBacklog           int64
 		requestLock             sync.Mutex
-		stickyCacheDisabled     bool
+		stickyCacheSize         int
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -233,7 +233,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		dataConverter:                params.DataConverter,
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
-		stickyCacheDisabled:          params.cache.WorkflowCacheIsBypassed(),
+		stickyCacheSize:              params.cache.MaxCacheSize(),
 	}
 }
 
@@ -387,7 +387,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 					}
 				}
 			case *workflowservice.RespondWorkflowTaskCompletedRequest:
-				if request.StickyAttributes == nil && !wtp.stickyCacheDisabled {
+				if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
 					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
 						WorkerTaskQueue: &taskqueuepb.TaskQueue{
 							Name: getWorkerTaskQueue(wtp.stickyUUID),
@@ -601,7 +601,7 @@ WaitResult:
 }
 
 func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
-	if wtp.stickyCacheDisabled {
+	if wtp.stickyCacheSize <= 0 {
 		return
 	}
 
@@ -615,7 +615,7 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 }
 
 func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind, backlogCountHint int64) {
-	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheDisabled {
+	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -634,7 +634,7 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
 	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
-	if !wtp.stickyCacheDisabled {
+	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++

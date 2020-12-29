@@ -754,14 +754,14 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
-	t.testSideEffectDeferHelper(false)
+	t.testSideEffectDeferHelper(1)
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_NonSticky() {
-	t.testSideEffectDeferHelper(true)
+	t.testSideEffectDeferHelper(0)
 }
 
-func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
+func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	value := "should not be modified"
 	expectedValue := value
 	doneCh := make(chan struct{})
@@ -779,7 +779,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 		_ = Sleep(ctx, 1*time.Second)
 		return nil
 	}
-	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-Sticky=%v", disableSticky)
+	workflowName := fmt.Sprintf("SideEffectDeferWorkflow-CacheSize=%d", cacheSize)
 	t.registry.RegisterWorkflowWithOptions(
 		workflowFunc,
 		RegisterWorkflowOptions{Name: workflowName},
@@ -793,11 +793,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(disableSticky bool) {
 	}
 
 	params := t.getTestWorkerExecutionParams()
-	if disableSticky {
-		params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, 0)
-	} else {
-		params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, 1)
-	}
+	params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task := createWorkflowTask(testEvents, 0, workflowName)
