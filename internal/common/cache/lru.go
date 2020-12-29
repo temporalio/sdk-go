@@ -172,6 +172,22 @@ func (c *lru) Size() int {
 	return len(c.byKey)
 }
 
+// Clear clears the cache.
+func (c *lru) Clear() {
+	c.mut.Lock()
+	defer c.mut.Unlock()
+
+	for key, elt := range c.byKey {
+		if elt != nil {
+			entry := c.byAccess.Remove(elt).(*cacheEntry)
+			if c.rmFunc != nil {
+				go c.rmFunc(entry.value)
+			}
+			delete(c.byKey, key)
+		}
+	}
+}
+
 // Put puts a new value associated with a given key, returning the existing value (if present)
 // allowUpdate flag is used to control overwrite behavior if the value exists
 func (c *lru) putInternal(key string, value interface{}, allowUpdate bool) (interface{}, error) {

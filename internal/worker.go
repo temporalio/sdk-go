@@ -149,6 +149,10 @@ type (
 		// Non-local activities will not be executed by this worker.
 		// default: false
 		LocalActivityWorkerOnly bool
+
+		// Optional: If set overwrites the client level Identify value.
+		// default: client identity
+		Identity string
 	}
 )
 
