@@ -674,6 +674,16 @@ func (d *childWorkflowCommandStateMachine) handleCompletionEvent() {
 	}
 }
 
+func (d *childWorkflowCommandStateMachine) handleExternalWorkflowExecutionCancelRequested() {
+	if d.getState() == commandStateCompletedAfterCancellationCommandSent {
+		// Now we're really done.
+		d.handleCompletionEvent()
+	} else {
+		// We should be in the cancellation command sent stage - new state to indicate we have seen the cancel accepted
+		d.moveState(commandStateCancellationCommandAccepted, eventExternalWorkflowExecutionCancelRequested)
+	}
+}
+
 func (d *naiveCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
 	case commandStateCreated:
@@ -1084,13 +1094,7 @@ func (h *commandsHelper) handleExternalWorkflowExecutionCancelRequested(initiate
 	if !isExternal {
 		command = h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
 		asChildWfCmd := command.(*childWorkflowCommandStateMachine)
-		if asChildWfCmd.getState() == commandStateCompletedAfterCancellationCommandSent {
-			// Now we're really done.
-			command.handleCompletionEvent()
-		} else {
-			// We're in the cancellation command sent stage - new state to indicate we have seen the cancel accepted
-			asChildWfCmd.moveState(commandStateCancellationCommandAccepted, eventExternalWorkflowExecutionCancelRequested)
-		}
+		asChildWfCmd.handleExternalWorkflowExecutionCancelRequested()
 	} else {
 		// this is cancellation for external workflow
 		command = h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
