@@ -1081,7 +1081,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
-	worker.RegisterWorkflow(w.TestCancelChildWorkflowAfterTimer)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
