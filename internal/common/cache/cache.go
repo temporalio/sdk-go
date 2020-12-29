@@ -53,6 +53,9 @@ type Cache interface {
 
 	// Size returns the number of entries currently stored in the Cache
 	Size() int
+
+	// Clear clears the cache.
+	Clear()
 }
 
 // Options control the behavior of the cache

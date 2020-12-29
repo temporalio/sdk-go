@@ -272,6 +272,7 @@ func WithActivityTask(
 	logger = ilog.With(logger,
 		tagActivityID, task.ActivityId,
 		tagActivityType, task.ActivityType.Name,
+		tagAttempt, task.Attempt,
 		tagWorkflowType, task.WorkflowType.Name,
 		tagWorkflowID, task.WorkflowExecution.WorkflowId,
 		tagRunID, task.WorkflowExecution.RunId,

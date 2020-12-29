@@ -69,6 +69,16 @@ func SetStickyWorkflowCacheSize(cacheSize int) {
 	desiredWorkflowCacheSize = cacheSize
 }
 
+// PurgeStickyWorkflowCache resets the sticky workflow cache. This must be called only when all workers are stopped.
+func PurgeStickyWorkflowCache() {
+	sharedWorkerCacheLock.Lock()
+	defer sharedWorkerCacheLock.Unlock()
+
+	if sharedWorkerCachePtr.workflowCache != nil {
+		(*sharedWorkerCachePtr.workflowCache).Clear()
+	}
+}
+
 // NewWorkerCache Creates a new WorkerCache, and increases workerRefcount by one. Instances of WorkerCache decrement the refcounter as
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
 // WorkerCache, shared caches will be cleared

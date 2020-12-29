@@ -378,7 +378,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 
 	// cancel request accepted
 	h.handleExternalWorkflowExecutionCancelRequested(initiatedEventID, workflowID)
-	require.Equal(t, commandStateCancellationCommandSent, d.getState())
+	require.Equal(t, commandStateCancellationCommandAccepted, d.getState())
 
 	// child workflow canceled
 	h.handleChildWorkflowExecutionCanceled(workflowID)
@@ -459,6 +459,39 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 		h.handleChildWorkflowExecutionCanceled(workflowID)
 	})
 	require.NotNil(t, err)
+}
+
+func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
+	t.Parallel()
+	namespace := "test-namespace"
+	workflowID := "test-workflow-id"
+	runID := ""
+	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{
+		WorkflowId: workflowID,
+	}
+	cancellationID := ""
+	initiatedEventID := int64(28)
+	h := newCommandsHelper()
+
+	// start child workflow
+	h.startChildWorkflowExecution(attributes)
+	// send command
+	h.getCommands(true)
+	// child workflow initiated
+	h.handleStartChildWorkflowExecutionInitiated(workflowID)
+	h.handleChildWorkflowExecutionStarted(workflowID)
+	// cancel child workflow after child workflow is started
+	h.requestCancelExternalWorkflowExecution(namespace, workflowID, runID, cancellationID, true)
+	// send cancel request
+	h.getCommands(true)
+	h.handleRequestCancelExternalWorkflowExecutionInitiated(initiatedEventID, workflowID, cancellationID)
+	// Now, the unusual part. The cancellation happens before we get the external cancel request
+	h.handleChildWorkflowExecutionCanceled(workflowID)
+	// Oh no, server took a bit.
+	err := runAndCatchPanic(func() {
+		h.handleExternalWorkflowExecutionCancelRequested(initiatedEventID, workflowID)
+	})
+	require.Nil(t, err)
 }
 
 func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
