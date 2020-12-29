@@ -200,6 +200,7 @@ func newWorkflowExecutionEventHandler(
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,
+			tagAttempt, workflowInfo.Attempt,
 		),
 		&context.isReplay,
 		&context.enableLoggingInReplay)
