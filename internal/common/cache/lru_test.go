@@ -158,3 +158,28 @@ func TestRemovedFuncWithTTL(t *testing.T) {
 		t.Error("RemovedFunc did not send true on channel ch")
 	}
 }
+
+func TestClear(t *testing.T) {
+	ch := make(chan bool)
+	cache := New(5, &Options{
+		TTL: time.Millisecond * 50,
+		RemovedFunc: func(i interface{}) {
+			_, ok := i.(*testing.T)
+			assert.True(t, ok)
+			ch <- true
+		},
+	})
+
+	cache.Put("A", t)
+	assert.Equal(t, t, cache.Get("A"))
+	cache.Clear()
+	assert.Nil(t, cache.Get("A"))
+
+	timeout := time.NewTimer(time.Millisecond * 300)
+	select {
+	case b := <-ch:
+		assert.True(t, b)
+	case <-timeout.C:
+		t.Error("Clear did not send true on channel ch")
+	}
+}
