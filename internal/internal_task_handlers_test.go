@@ -753,11 +753,11 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	}
 }
 
-func (t *TaskHandlersTestSuite) TestSideEffectDefer_Sticky() {
+func (t *TaskHandlersTestSuite) TestSideEffectDefer() {
 	t.testSideEffectDeferHelper(1)
 }
 
-func (t *TaskHandlersTestSuite) TestSideEffectDefer_NonSticky() {
+func (t *TaskHandlersTestSuite) TestSideEffectDefer_NoCache() {
 	t.testSideEffectDeferHelper(0)
 }
 

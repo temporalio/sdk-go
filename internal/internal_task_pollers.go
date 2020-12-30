@@ -233,7 +233,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		dataConverter:                params.DataConverter,
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
-		stickyCacheSize:              params.cache.MaxCacheSize(),
+		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 	}
 }
 

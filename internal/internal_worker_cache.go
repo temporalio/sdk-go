@@ -150,8 +150,8 @@ func (wc *WorkerCache) removeWorkflowContext(runID string) {
 	(*wc.sharedCache.workflowCache).Delete(runID)
 }
 
-// MaxCacheSize returns the maximum allowed size of the sticky cache
-func (wc *WorkerCache) MaxCacheSize() int {
+// MaxWorkflowCacheSize returns the maximum allowed size of the sticky cache
+func (wc *WorkerCache) MaxWorkflowCacheSize() int {
 	if wc == nil {
 		return desiredWorkflowCacheSize
 	}

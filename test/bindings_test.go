@@ -153,7 +153,7 @@ func (ts *AsyncBindingsTestSuite) SetupTest() {
 	ts.seq++
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	options := worker.Options{
-		DisableStickyExecution: ts.config.maxStickyCacheSize <= 0,
+		DisableStickyExecution: ts.config.maxWorkflowCacheSize <= 0,
 	}
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.worker.RegisterWorkflow(SimplestWorkflow)

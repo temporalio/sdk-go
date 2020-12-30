@@ -420,7 +420,7 @@ func (w *workflowExecutionContextImpl) Lock() {
 
 func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
-		(w.wth.cache.MaxCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
+		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
@@ -633,7 +633,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 			return
 		}
 
-		if wth.cache.MaxCacheSize() > 0 && task.Query == nil {
+		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
 			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
 		}
 		workflowContext.Lock()

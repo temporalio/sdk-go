@@ -41,9 +41,9 @@ import (
 type (
 	// Config contains the integration test configuration
 	Config struct {
-		ServiceAddr        string
-		maxStickyCacheSize int
-		Debug              bool
+		ServiceAddr          string
+		maxWorkflowCacheSize int
+		Debug                bool
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey string
@@ -52,8 +52,8 @@ type (
 // NewConfig creates new Config instance
 func NewConfig() Config {
 	cfg := Config{
-		ServiceAddr:        client.DefaultHostPort,
-		maxStickyCacheSize: 10000,
+		ServiceAddr:          client.DefaultHostPort,
+		maxWorkflowCacheSize: 10000,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
@@ -63,7 +63,7 @@ func NewConfig() Config {
 		if err != nil {
 			panic("Sticky cache size must be an integer, was: " + siz)
 		}
-		cfg.maxStickyCacheSize = asInt
+		cfg.maxWorkflowCacheSize = asInt
 	}
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
@@ -76,7 +76,7 @@ func getEnvServiceAddr() string {
 }
 
 func getEnvCacheSize() string {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("STICKY_CACHE_SIZE")))
+	return strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE")))
 }
 
 func getDebug() string {
