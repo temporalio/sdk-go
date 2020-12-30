@@ -54,7 +54,7 @@ integration-test-zero-cache: $(BUILD)/dummy
 integration-test-normal-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
-		go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./... || exit 1; \
+		go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_NORMAL_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
 test: unit-test integration-test-zero-cache integration-test-normal-cache
