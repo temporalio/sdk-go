@@ -45,12 +45,12 @@ func (s *WorkerCacheSuite) TestCreateAndFree() {
 	cachePtr := &sharedWorkerCache{}
 	var lock sync.Mutex
 
-	cache := newWorkerCache(cachePtr, &lock)
+	cache := newWorkerCache(cachePtr, &lock, 10)
 	s.NotNil(cache)
 	s.NotNil(cachePtr)
 	s.NotNil(cachePtr.workflowCache)
 	s.Equal(cachePtr.workerRefcount, 1)
-	cache2 := newWorkerCache(cachePtr, &lock)
+	cache2 := newWorkerCache(cachePtr, &lock, 10)
 	s.NotNil(cache2)
 	s.NotNil(cachePtr.workflowCache)
 	s.Equal(cachePtr.workerRefcount, 2)

@@ -141,10 +141,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	options := worker.Options{
-		DisableStickyExecution:            ts.config.IsStickyOff,
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
 		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
+
+	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
@@ -653,7 +654,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
-	if !ts.config.IsStickyOff {
+	if ts.config.maxWorkflowCacheSize > 0 {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
 	}
 }

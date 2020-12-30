@@ -44,6 +44,8 @@ type sharedWorkerCache struct {
 
 	// A cache workers can use to store workflow state.
 	workflowCache *cache.Cache
+	// Max size for the cache
+	maxWorkflowCacheSize int
 }
 
 // A shared cache workers can use to store state. The cache is expected to be initialized with the first worker to be
@@ -52,21 +54,18 @@ type sharedWorkerCache struct {
 // sharedWorkerCacheLock
 var sharedWorkerCachePtr = &sharedWorkerCache{}
 var sharedWorkerCacheLock sync.Mutex
+
+// Must be set before spawning any workers
 var desiredWorkflowCacheSize = defaultStickyCacheSize
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
-// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
-// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
-// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
-// between workers running within same process. This must be called before any worker is started. If not called, the
-// default size of 10K (might change in future) will be used.
+// between workflow tasks of a specific workflow execution to a specific worker. The benefit of sticky execution is that
+// the workflow does not have to reconstruct state by replaying history from the beginning. The cache is shared between
+// workers running within same process. This must be called before any worker is started. If not called, the default
+// size of 10K (which may change) will be used.
 func SetStickyWorkflowCacheSize(cacheSize int) {
 	sharedWorkerCacheLock.Lock()
 	defer sharedWorkerCacheLock.Unlock()
-	if sharedWorkerCachePtr.workflowCache != nil {
-		panic("cache already created, please set cache size before worker starts.")
-	}
 	desiredWorkflowCacheSize = cacheSize
 }
 
@@ -84,11 +83,11 @@ func PurgeStickyWorkflowCache() {
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
 // WorkerCache, shared caches will be cleared
 func NewWorkerCache() *WorkerCache {
-	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock)
+	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
 // This private version allows us to test functionality without affecting the global shared cache
-func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *WorkerCache {
+func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int) *WorkerCache {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -97,13 +96,13 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex) *WorkerCache {
 	}
 
 	if storeIn.workerRefcount == 0 {
-		newcache := cache.New(desiredWorkflowCacheSize, &cache.Options{
+		newcache := cache.New(cacheSize, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
 				wc.onEviction()
 			},
 		})
-		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0}
+		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0, maxWorkflowCacheSize: cacheSize}
 	}
 	storeIn.workerRefcount++
 	newWorkerCache := WorkerCache{
@@ -149,4 +148,12 @@ func (wc *WorkerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 
 func (wc *WorkerCache) removeWorkflowContext(runID string) {
 	(*wc.sharedCache.workflowCache).Delete(runID)
+}
+
+// MaxWorkflowCacheSize returns the maximum allowed size of the sticky cache
+func (wc *WorkerCache) MaxWorkflowCacheSize() int {
+	if wc == nil {
+		return desiredWorkflowCacheSize
+	}
+	return wc.sharedCache.maxWorkflowCacheSize
 }

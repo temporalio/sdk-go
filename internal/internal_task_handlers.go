@@ -121,20 +121,19 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace              string
-		metricsScope           tally.Scope
-		ppMgr                  pressurePointMgr
-		logger                 log.Logger
-		identity               string
-		enableLoggingInReplay  bool
-		disableStickyExecution bool
-		registry               *registry
-		laTunnel               *localActivityTunnel
-		workflowPanicPolicy    WorkflowPanicPolicy
-		dataConverter          converter.DataConverter
-		contextPropagators     []ContextPropagator
-		tracer                 opentracing.Tracer
-		cache                  *WorkerCache
+		namespace             string
+		metricsScope          tally.Scope
+		ppMgr                 pressurePointMgr
+		logger                log.Logger
+		identity              string
+		enableLoggingInReplay bool
+		registry              *registry
+		laTunnel              *localActivityTunnel
+		workflowPanicPolicy   WorkflowPanicPolicy
+		dataConverter         converter.DataConverter
+		contextPropagators    []ContextPropagator
+		tracer                opentracing.Tracer
+		cache                 *WorkerCache
 	}
 
 	activityProvider func(name string) activity
@@ -386,19 +385,18 @@ func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:              params.Namespace,
-		logger:                 params.Logger,
-		ppMgr:                  ppMgr,
-		metricsScope:           params.MetricsScope,
-		identity:               params.Identity,
-		enableLoggingInReplay:  params.EnableLoggingInReplay,
-		disableStickyExecution: params.DisableStickyExecution,
-		registry:               registry,
-		workflowPanicPolicy:    params.WorkflowPanicPolicy,
-		dataConverter:          params.DataConverter,
-		contextPropagators:     params.ContextPropagators,
-		tracer:                 params.Tracer,
-		cache:                  params.cache,
+		namespace:             params.Namespace,
+		logger:                params.Logger,
+		ppMgr:                 ppMgr,
+		metricsScope:          params.MetricsScope,
+		identity:              params.Identity,
+		enableLoggingInReplay: params.EnableLoggingInReplay,
+		registry:              registry,
+		workflowPanicPolicy:   params.WorkflowPanicPolicy,
+		dataConverter:         params.DataConverter,
+		contextPropagators:    params.ContextPropagators,
+		tracer:                params.Tracer,
+		cache:                 params.cache,
 	}
 }
 
@@ -421,7 +419,8 @@ func (w *workflowExecutionContextImpl) Lock() {
 }
 
 func (w *workflowExecutionContextImpl) Unlock(err error) {
-	if err != nil || w.err != nil || w.isWorkflowCompleted || (w.wth.disableStickyExecution && !w.hasPendingLocalActivityWork()) {
+	if err != nil || w.err != nil || w.isWorkflowCompleted ||
+		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
@@ -634,7 +633,7 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 			return
 		}
 
-		if !wth.disableStickyExecution && task.Query == nil {
+		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
 			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
 		}
 		workflowContext.Lock()
