@@ -517,16 +517,16 @@ func Test_ContinueAsNewError(t *testing.T) {
 	err = errors.Unwrap(workflowErr)
 	var continueAsNewErr *ContinueAsNewError
 	require.True(t, errors.As(err, &continueAsNewErr))
-	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType().Name)
+	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType.Name)
 
-	input := continueAsNewErr.params.Input
+	input := continueAsNewErr.Input
 	var intArg int
 	var stringArg string
 	err = dataConverter.FromPayloads(input, &intArg, &stringArg)
 	require.NoError(t, err)
 	require.Equal(t, a1, intArg)
 	require.Equal(t, a2, stringArg)
-	require.Equal(t, header, continueAsNewErr.params.Header)
+	require.Equal(t, header, continueAsNewErr.Header)
 }
 
 type coolError struct{}

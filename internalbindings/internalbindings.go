@@ -70,4 +70,6 @@ type (
 	ResultHandler = internal.ResultHandler
 	// TimerID uniquely identifies timer
 	TimerID = internal.TimerID
+	// ContinueAsNewError used by a workflow to request continue as new
+	ContinueAsNewError = internal.ContinueAsNewError
 )

@@ -1463,12 +1463,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsScope.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:        &commonpb.WorkflowType{Name: contErr.params.WorkflowType.Name},
-			Input:               contErr.params.Input,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:  &contErr.params.WorkflowRunTimeout,
-			WorkflowTaskTimeout: &contErr.params.WorkflowTaskTimeout,
-			Header:              contErr.params.Header,
+			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:               contErr.Input,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:  &contErr.WorkflowRunTimeout,
+			WorkflowTaskTimeout: &contErr.WorkflowTaskTimeout,
+			Header:              contErr.Header,
 			Memo:                workflowContext.workflowInfo.Memo,
 			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
 		}}
