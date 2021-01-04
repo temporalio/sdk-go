@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -164,9 +165,14 @@ type (
 
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
-		wfn    interface{}
-		args   []interface{}
-		params *ExecuteWorkflowParams
+		//params *ExecuteWorkflowParams
+		WorkflowType             *WorkflowType
+		Input                    *commonpb.Payloads
+		Header                   *commonpb.Header
+		TaskQueueName            string
+		WorkflowExecutionTimeout time.Duration
+		WorkflowRunTimeout       time.Duration
+		WorkflowTaskTimeout      time.Duration
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -406,14 +412,15 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		panic(err)
 	}
 
-	params := &ExecuteWorkflowParams{
-		WorkflowOptions: *options,
-		WorkflowType:    workflowType,
-		Input:           input,
-		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
-		attempt:         1,
+	return &ContinueAsNewError{
+		WorkflowType:             workflowType,
+		Input:                    input,
+		Header:                   getWorkflowHeader(ctx, options.ContextPropagators),
+		TaskQueueName:            options.TaskQueueName,
+		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       options.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 	}
-	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
 
 // Error from error interface.
@@ -558,16 +565,6 @@ func (e *ContinueAsNewError) Error() string {
 
 func (e *ContinueAsNewError) message() string {
 	return "continue as new"
-}
-
-// WorkflowType return WorkflowType of the new run
-func (e *ContinueAsNewError) WorkflowType() *WorkflowType {
-	return e.params.WorkflowType
-}
-
-// Args return workflow argument of the new run
-func (e *ContinueAsNewError) Args() []interface{} {
-	return e.args
 }
 
 // newTerminatedError creates NewTerminatedError instance

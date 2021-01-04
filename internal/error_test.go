@@ -492,7 +492,8 @@ func Test_ContinueAsNewError(t *testing.T) {
 		return NewContinueAsNewError(ctx, continueAsNewWfName, a1, a2)
 	}
 
-	headerValue, err := converter.GetDefaultDataConverter().ToPayload("test-data")
+	dataConverter := converter.GetDefaultDataConverter()
+	headerValue, err := dataConverter.ToPayload("test-data")
 	assert.NoError(t, err)
 	header := &commonpb.Header{
 		Fields: map[string]*commonpb.Payload{"test": headerValue},
@@ -516,16 +517,16 @@ func Test_ContinueAsNewError(t *testing.T) {
 	err = errors.Unwrap(workflowErr)
 	var continueAsNewErr *ContinueAsNewError
 	require.True(t, errors.As(err, &continueAsNewErr))
-	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType().Name)
+	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType.Name)
 
-	args := continueAsNewErr.Args()
-	intArg, ok := args[0].(int)
-	require.True(t, ok)
+	input := continueAsNewErr.Input
+	var intArg int
+	var stringArg string
+	err = dataConverter.FromPayloads(input, &intArg, &stringArg)
+	require.NoError(t, err)
 	require.Equal(t, a1, intArg)
-	stringArg, ok := args[1].(string)
-	require.True(t, ok)
 	require.Equal(t, a2, stringArg)
-	require.Equal(t, header, continueAsNewErr.params.Header)
+	require.Equal(t, header, continueAsNewErr.Header)
 }
 
 type coolError struct{}
