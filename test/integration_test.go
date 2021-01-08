@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -202,11 +203,15 @@ func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
 	wfOpts.WorkflowRunTimeout = 5 * time.Minute
 	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.Deadlocked, &expected)
-	ts.Error(err)
-	var applicationErr *temporal.ApplicationError
-	ok := errors.As(err, &applicationErr)
-	ts.True(ok)
-	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+	if os.Getenv("TEMPORAL_DEBUG_MODE") == "true" {
+		ts.NoError(err)
+	} else {
+		ts.Error(err)
+		var applicationErr *temporal.ApplicationError
+		ok := errors.As(err, &applicationErr)
+		ts.True(ok)
+		ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+	}
 }
 
 func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {

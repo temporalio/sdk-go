@@ -29,6 +29,8 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"math"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -260,6 +262,7 @@ var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 var stackBuf [100000]byte
+var debugMode = os.Getenv("TEMPORAL_DEBUG_MODE") == "true"
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -864,7 +867,11 @@ func (s *coroutineState) call() {
 		return false // unblock
 	}
 
-	deadlockTimer := time.NewTimer(time.Second)
+	deadlockDetectorTimeout := time.Second
+	if debugMode {
+		deadlockDetectorTimeout = math.MaxInt64
+	}
+	deadlockTimer := time.NewTimer(deadlockDetectorTimeout)
 	defer func() { deadlockTimer.Stop() }()
 
 	select {
