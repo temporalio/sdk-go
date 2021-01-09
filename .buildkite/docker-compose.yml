@@ -29,12 +29,12 @@ services:
 
   build:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
@@ -42,15 +42,15 @@ services:
 
   integ-test:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
     depends_on:
       - temporal
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
@@ -58,12 +58,12 @@ services:
 
   unit-test:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
@@ -71,8 +71,8 @@ services:
 
   coverage-report:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - CI
       - BUILDKITE
@@ -94,7 +94,7 @@ services:
       - COVERALLS_TOKEN
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
       - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
 
 networks:
