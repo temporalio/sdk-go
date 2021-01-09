@@ -31,7 +31,11 @@
 // Always talk to Temporal team before building anything on top of them.
 package internalbindings
 
-import "go.temporal.io/sdk/internal"
+import (
+	failurepb "go.temporal.io/api/failure/v1"
+	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
+)
 
 type (
 	// WorkflowType information
@@ -73,3 +77,13 @@ type (
 	// ContinueAsNewError used by a workflow to request continue as new
 	ContinueAsNewError = internal.ContinueAsNewError
 )
+
+// ConvertErrorToFailure converts Go error to the correspondent Failure protobuf.
+func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
+	return internal.ConvertErrorToFailure(err, dc)
+}
+
+// ConvertFailureToError converts Failure protobuf to the correspondent Go error.
+func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
+	return internal.ConvertFailureToError(failure, dc)
+}

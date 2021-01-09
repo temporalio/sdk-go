@@ -1167,7 +1167,7 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
-		err = convertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
+		err = ConvertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
