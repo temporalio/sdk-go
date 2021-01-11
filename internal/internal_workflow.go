@@ -262,7 +262,7 @@ var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 var stackBuf [100000]byte
-var debugMode = os.Getenv("TEMPORAL_DEBUG_MODE") == "true"
+var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {

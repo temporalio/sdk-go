@@ -203,7 +203,7 @@ func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 	wfOpts.WorkflowTaskTimeout = 5 * time.Second
 	wfOpts.WorkflowRunTimeout = 5 * time.Minute
 	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.Deadlocked, &expected)
-	if os.Getenv("TEMPORAL_DEBUG_MODE") == "true" {
+	if os.Getenv("TEMPORAL_DEBUG") != "" {
 		ts.NoError(err)
 	} else {
 		ts.Error(err)
