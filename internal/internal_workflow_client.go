@@ -311,10 +311,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	var runIDCell util.OnceCell
 	if runID == "" {
 		fetcher := func() string {
-			execData, err := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
-			if err != nil {
-				wc.logger.Error("error while fetching workflow execution info", err)
-			}
+			execData, _ := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
 			wei := execData.GetWorkflowExecutionInfo()
 			if wei != nil {
 				execution := wei.GetExecution()
