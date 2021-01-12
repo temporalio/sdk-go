@@ -319,7 +319,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 			if wei != nil {
 				execution := wei.GetExecution()
 				if execution != nil {
-					return wei.GetExecution().RunId
+					return execution.RunId
 				}
 			}
 			return ""
