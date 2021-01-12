@@ -92,7 +92,7 @@ type (
 		// GetID return workflow ID, which will be same as StartWorkflowOptions.ID if provided.
 		GetID() string
 
-		// GetRunID return the first started workflow run ID (please see below)
+		// GetRunID return the first started workflow run ID (please see below) - empty string if no such run
 		GetRunID() string
 
 		// Get will fill the workflow execution result to valuePtr,
@@ -315,7 +315,14 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 			if err != nil {
 				wc.logger.Error("error while fetching workflow execution info", err)
 			}
-			return execData.GetWorkflowExecutionInfo().GetExecution().RunId
+			wei := execData.GetWorkflowExecutionInfo()
+			if wei != nil {
+				execution := wei.GetExecution()
+				if execution != nil {
+					return wei.GetExecution().RunId
+				}
+			}
+			return ""
 		}
 		runIDCell = util.LazyOnceCell(fetcher)
 	} else {
