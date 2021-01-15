@@ -32,6 +32,7 @@ import (
 	"time"
 
 	workflowpb "go.temporal.io/api/workflow/v1"
+
 	ilog "go.temporal.io/sdk/internal/log"
 
 	"github.com/golang/mock/gomock"
@@ -950,6 +951,18 @@ func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
 		"",
 	)
 	s.Equal(runID, workflowRunNoRunID.GetRunID())
+}
+
+func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
+	describeResp := &workflowservice.DescribeWorkflowExecutionResponse{
+		WorkflowExecutionInfo: nil}
+	s.workflowServiceClient.EXPECT().DescribeWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+	workflowRunNoRunID := s.workflowClient.GetWorkflow(
+		context.Background(),
+		workflowID,
+		"",
+	)
+	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
