@@ -31,7 +31,7 @@ var (
 
 		// Only one proto converter (JSON or regular) should be used because they check for the same proto.Message interface.
 		NewProtoJSONPayloadConverter(),
-		// NewProtoPayloadConverter(),
+		NewProtoPayloadConverter(),
 
 		NewJSONPayloadConverter(),
 	)
