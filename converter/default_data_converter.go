@@ -29,9 +29,12 @@ var (
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 
-		// Only one proto converter (JSON or regular) should be used because they check for the same proto.Message interface.
+		// Order is important here. Both ProtoJsonPayload and ProtoPayload converters check for the same proto.Message
+		// interface. The first match (ProtoJsonPayload in this case) will always be used for serialization.
+		// Deserialization is controlled by metadata, therefore both converters can deserialize corresponding data format
+		// (JSON or binary proto).
 		NewProtoJSONPayloadConverter(),
-		// NewProtoPayloadConverter(),
+		NewProtoPayloadConverter(),
 
 		NewJSONPayloadConverter(),
 	)
