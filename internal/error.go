@@ -722,8 +722,8 @@ func getErrType(err error) string {
 	return t.Name()
 }
 
-// convertErrorToFailure converts error to failure.
-func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
+// ConvertErrorToFailure converts error to failure.
+func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
 	if err == nil {
 		return nil
 	}
@@ -815,13 +815,13 @@ func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fai
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	failure.Cause = convertErrorToFailure(errors.Unwrap(err), dc)
+	failure.Cause = ConvertErrorToFailure(errors.Unwrap(err), dc)
 
 	return failure
 }
 
-// convertFailureToError converts failure to error.
-func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
+// ConvertFailureToError converts failure to error.
+func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
 	if failure == nil {
 		return nil
 	}
@@ -839,7 +839,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 				failure.GetMessage(),
 				applicationFailureInfo.GetType(),
 				applicationFailureInfo.GetNonRetryable(),
-				convertFailureToError(failure.GetCause(), dc),
+				ConvertFailureToError(failure.GetCause(), dc),
 				details)
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
@@ -851,14 +851,14 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 		err = NewTimeoutError(
 			failure.GetMessage(),
 			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 			lastHeartbeatDetails)
 	} else if failure.GetTerminatedFailureInfo() != nil {
 		err = newTerminatedError()
 	} else if failure.GetServerFailureInfo() != nil {
-		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
+		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), ConvertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(failure.GetMessage(), "", true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), "", true, ConvertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(
@@ -868,7 +868,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 			activityTaskInfoFailure.GetActivityType(),
 			activityTaskInfoFailure.GetActivityId(),
 			activityTaskInfoFailure.GetRetryState(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 		)
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
 		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
@@ -880,13 +880,13 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
 			childWorkflowExecutionFailureInfo.GetRetryState(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 		)
 	}
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "", false, ConvertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {
