@@ -26,6 +26,8 @@ package test_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -81,31 +83,61 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
-			parameters := bindings.ExecuteActivityParams{
+			parameters1 := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
 					TaskQueueName:       env.WorkflowInfo().TaskQueueName,
 					StartToCloseTimeout: 10 * time.Second,
 					ActivityID:          "id1",
 				},
-				ActivityType: bindings.ActivityType{Name: "SingleActivity"},
+				ActivityType: bindings.ActivityType{Name: "Activity1"},
 				Input:        input,
 			}
-			_ = env.ExecuteActivity(parameters, d.addCallback(func(result *commonpb.Payloads, err error) {
-				childParams := bindings.ExecuteWorkflowParams{
-					WorkflowOptions: bindings.WorkflowOptions{
-						TaskQueueName: env.WorkflowInfo().TaskQueueName,
-						WorkflowID:    "ID1",
-					},
-					WorkflowType: &bindings.WorkflowType{Name: "ChildWorkflow"},
-					Input:        result,
-				}
-				env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
-					var childResult string
-					_ = converter.GetDefaultDataConverter().FromPayloads(r, &childResult)
-					result := childResult + signalInput
-					encodedResult, _ := converter.GetDefaultDataConverter().ToPayloads(result)
-					env.Complete(encodedResult, err)
-				}), func(r bindings.WorkflowExecution, e error) {})
+			parameters2 := bindings.ExecuteActivityParams{
+				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
+					TaskQueueName:       env.WorkflowInfo().TaskQueueName,
+					StartToCloseTimeout: 10 * time.Second,
+					ActivityID:          "id2",
+					RetryPolicy:         &commonpb.RetryPolicy{MaximumAttempts: 1},
+				},
+				ActivityType: bindings.ActivityType{Name: "ActivityThatFails"},
+				Input:        input,
+			}
+			_ = env.ExecuteActivity(parameters1, d.addCallback(func(result1 *commonpb.Payloads, err error) {
+				env.ExecuteActivity(parameters2, d.addCallback(func(result2 *commonpb.Payloads, err error) {
+					err = errors.Unwrap(err) // unwrap activity error
+					if err == nil {
+						env.Complete(nil, errors.New("error expected"))
+						return
+					}
+					failure := bindings.ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+					if failure == nil {
+						env.Complete(nil, errors.New("failure expected"))
+						return
+					}
+					if failure.GetApplicationFailureInfo() == nil {
+						env.Complete(nil, errors.New("application failure expected"))
+						return
+					}
+					if failure.GetMessage() != err.Error() {
+						env.Complete(nil, fmt.Errorf("error message '%v' doesn't match failure message '%v'", err.Error(), failure.GetMessage()))
+						return
+					}
+					childParams := bindings.ExecuteWorkflowParams{
+						WorkflowOptions: bindings.WorkflowOptions{
+							TaskQueueName: env.WorkflowInfo().TaskQueueName,
+							WorkflowID:    "ID1",
+						},
+						WorkflowType: &bindings.WorkflowType{Name: "ChildWorkflow"},
+						Input:        result1,
+					}
+					env.ExecuteChildWorkflow(childParams, d.addCallback(func(r *commonpb.Payloads, err error) {
+						var childResult string
+						_ = converter.GetDefaultDataConverter().FromPayloads(r, &childResult)
+						result := childResult + signalInput
+						encodedResult, _ := converter.GetDefaultDataConverter().ToPayloads(result)
+						env.Complete(encodedResult, err)
+					}), func(r bindings.WorkflowExecution, e error) {})
+				}))
 			}))
 		}))
 	})
@@ -133,8 +165,12 @@ func (d *SingleActivityWorkflowDefinition) StackTrace() string {
 func (d *SingleActivityWorkflowDefinition) Close() {
 }
 
-func SingleActivity(ctx context.Context, name string) (string, error) {
+func Activity1(ctx context.Context, name string) (string, error) {
 	return "Hello " + name, nil
+}
+
+func ActivityThatFails(ctx context.Context) error {
+	return errors.New("simulated failure")
 }
 
 func ChildWorkflow(ctx workflow.Context, greeting string) (string, error) {
