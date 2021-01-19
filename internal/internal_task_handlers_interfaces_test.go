@@ -76,7 +76,7 @@ func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.Pol
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	if err != nil {
-		failure := convertErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil), converter.GetDefaultDataConverter())
+		failure := ConvertErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil), converter.GetDefaultDataConverter())
 		return &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Failure:   failure,

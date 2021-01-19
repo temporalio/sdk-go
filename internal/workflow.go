@@ -1399,7 +1399,7 @@ func GetLastError(ctx Context) error {
 
 func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
 	info := wc.GetWorkflowInfo(ctx)
-	return convertFailureToError(info.lastFailure, wc.env.GetDataConverter())
+	return ConvertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
 
 // WithActivityOptions adds all options to the copy of the context.
