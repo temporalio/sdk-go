@@ -32,6 +32,7 @@
 package internalbindings
 
 import (
+	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -86,4 +87,9 @@ func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fai
 // ConvertFailureToError converts Failure protobuf to the correspondent Go error.
 func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
 	return internal.ConvertFailureToError(failure, dc)
+}
+
+// GetLastCompletionResult returns last completion result from workflow.
+func GetLastCompletionResult(env WorkflowEnvironment) *commonpb.Payloads {
+	return internal.GetLastCompletionResultFromWorkflowInfo(env.WorkflowInfo())
 }
