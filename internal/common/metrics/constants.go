@@ -82,7 +82,7 @@ const (
 	WorkerTypeTagName       = "worker_type"
 	WorkflowTypeNameTagName = "workflow_type"
 	ActivityTypeNameTagName = "activity_type"
-	TaskQueueTagName        = "taskqueue"
+	TaskQueueTagName        = "task_queue"
 	OperationTagName        = "operation"
 )
 
