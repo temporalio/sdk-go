@@ -25,6 +25,8 @@
 package workflow
 
 import (
+	"errors"
+
 	"github.com/uber-go/tally"
 
 	"go.temporal.io/sdk/converter"
@@ -477,4 +479,10 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+// IsContinueAsNewError return if the err is a ContinueAsNewError
+func IsContinueAsNewError(err error) bool {
+	var continueAsNewErr *ContinueAsNewError
+	return errors.As(err, &continueAsNewErr)
 }
