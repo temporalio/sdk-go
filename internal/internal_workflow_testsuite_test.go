@@ -940,49 +940,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 	s.Equal(expected, history)
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancel_WeirdTransition_Repro() {
-	wfChildFn := func(ctx Context) error {
-		GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
-		return nil
-	}
-	wfFn := func(ctx Context) error {
-
-		var childWorkflowID string
-		err := SetQueryHandler(ctx, "child-workflow-id", func(input []byte) (string, error) {
-			return childWorkflowID, nil
-		})
-		if err != nil {
-			return err
-		}
-
-		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Second * 2}
-		ctx = WithChildWorkflowOptions(ctx, cwo)
-
-		childWorkflowFuture := ExecuteChildWorkflow(ctx, wfChildFn)
-
-		//var childWorkflowExecution WorkflowExecution
-		//err = childWorkflowFuture.GetChildWorkflowExecution().Get(ctx, &childWorkflowExecution)
-		//if err != nil {
-		//	return "", err
-		//}
-		//println("Braaap", childWorkflowExecution.ID)
-
-		var result string
-		err = childWorkflowFuture.Get(ctx, &result)
-		println("WHat?")
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	env := s.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(wfFn)
-	env.RegisterWorkflow(wfChildFn)
-	env.ExecuteWorkflow(wfFn)
-	s.True(env.IsWorkflowCompleted())
-	s.NoError(env.GetWorkflowError())
-}
-
 func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)

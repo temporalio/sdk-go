@@ -421,12 +421,10 @@ func (w *Workflows) ChildWorkflowCancelUnusualTransitionsRepro(ctx workflow.Cont
 	if err != nil {
 		return err
 	}
-	println("Braaap", childWorkflowExecution.ID)
 	childWorkflowID = childWorkflowExecution.ID
 
 	var result string
 	err = childWorkflowFuture.Get(ctx, &result)
-	println("WHat?")
 	if err != nil {
 		return err
 	}
