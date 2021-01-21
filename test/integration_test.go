@@ -600,6 +600,47 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
+	wfid := "test-cancel-child-workflow-unusual-transitions"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowCancelUnusualTransitionsRepro)
+	ts.NoError(err)
+
+	// Give it a sec to populate the query
+	<-time.After(1 * time.Second)
+
+	v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-workflow-id")
+	ts.NoError(err)
+
+	var childWorkflowID string
+	err = v.Get(&childWorkflowID)
+	ts.NoError(err)
+	ts.NotNil(childWorkflowID)
+	ts.NotEmpty(childWorkflowID)
+
+	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
+	ts.NoError(err)
+
+	err = ts.client.CancelWorkflow(context.Background(), run.GetID(), "")
+	ts.NoError(err)
+
+	err = ts.client.SignalWorkflow(
+		context.Background(),
+		childWorkflowID,
+		"",
+		"unblock",
+		nil,
+	)
+	ts.NoError(err)
+
+	// Synchronously wait for the workflow completion. Behind the scenes the SDK performs a long poll operation.
+	// If you need to wait for the workflow completion from another process use
+	// Client.GetWorkflow API to get an instance of a WorkflowRun.
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
 	ts.T().Skip(`Currently fails with "PanicError": "unknown command internal.commandID{commandType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
 	var expected []string
