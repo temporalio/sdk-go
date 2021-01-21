@@ -397,6 +397,39 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	err = ft.GetChildWorkflowExecution().Get(ctx, &childWE)
 	return childWE.ID, err
 }
+func (w *Workflows) childWorkflowWaitOnSignal(ctx workflow.Context) error {
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	return nil
+}
+
+func (w *Workflows) ChildWorkflowCancelUnusualTransitionsRepro(ctx workflow.Context) error {
+	var childWorkflowID string
+	err := workflow.SetQueryHandler(ctx, "child-workflow-id", func(input []byte) (string, error) {
+		return childWorkflowID, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	cwo := workflow.ChildWorkflowOptions{WorkflowRunTimeout: time.Second * 2}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+
+	childWorkflowFuture := workflow.ExecuteChildWorkflow(ctx, w.childWorkflowWaitOnSignal)
+
+	var childWorkflowExecution workflow.Execution
+	err = childWorkflowFuture.GetChildWorkflowExecution().Get(ctx, &childWorkflowExecution)
+	if err != nil {
+		return err
+	}
+	childWorkflowID = childWorkflowExecution.ID
+
+	var result string
+	err = childWorkflowFuture.Get(ctx, &result)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) {
 	ctx, cancelFunc := workflow.WithCancel(ctx)
@@ -1087,6 +1120,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.ChildWorkflowCancelUnusualTransitionsRepro)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
@@ -1111,6 +1145,7 @@ func (w *Workflows) register(worker worker.Worker) {
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
+	worker.RegisterWorkflow(w.childWorkflowWaitOnSignal)
 	worker.RegisterWorkflow(w.sleep)
 	worker.RegisterWorkflow(w.timer)
 }

@@ -221,8 +221,10 @@ func (d commandState) String() string {
 		return "Completed"
 	case commandStateCanceledBeforeSent:
 		return "CanceledBeforeSent"
+	case commandStateCancellationCommandAccepted:
+		return "CancellationCommandAccepted"
 	default:
-		return "Unknown"
+		return fmt.Sprintf("Unknown: %d", int32(d))
 	}
 }
 
@@ -667,7 +669,8 @@ func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 
 func (d *childWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case commandStateStarted, commandStateCanceledAfterStarted, commandStateCompletedAfterCancellationCommandSent:
+	case commandStateStarted, commandStateCanceledAfterStarted,
+		commandStateCompletedAfterCancellationCommandSent, commandStateCancellationCommandAccepted:
 		d.moveState(commandStateCompleted, eventCompletion)
 	default:
 		d.commandStateMachineBase.handleCompletionEvent()
