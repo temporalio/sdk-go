@@ -458,7 +458,7 @@ func (d *commandStateMachineBase) handleCompletionEvent() {
 func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
-	case commandStateCancellationCommandSent:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
 	// No state change
 	default:
 		d.failStateTransition(eventCancelInitiated)
