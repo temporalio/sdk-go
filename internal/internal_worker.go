@@ -574,6 +574,10 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		}
 		name := method.Name
 		if err := validateFnFormat(method.Type, false); err != nil {
+			if options.SkipInvalidStructFunctions {
+				continue
+			}
+
 			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
 		}
 		registerName := options.Name + name

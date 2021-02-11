@@ -87,6 +87,11 @@ func testInternalWorkerRegister(r *registry) {
 	r.RegisterActivity(testActivityReturnStructPtr)
 	r.RegisterActivity(testActivityReturnNilStructPtrPtr)
 	r.RegisterActivity(testActivityReturnStructPtrPtr)
+
+	r.RegisterActivityWithOptions(&testActivityStructWithFns{}, RegisterActivityOptions{
+		Name:                       "testActivityStructWithFns",
+		SkipInvalidStructFunctions: true,
+	})
 }
 
 func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
@@ -120,6 +125,11 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 	env.RegisterActivity(testActivityReturnStructPtr)
 	env.RegisterActivity(testActivityReturnNilStructPtrPtr)
 	env.RegisterActivity(testActivityReturnStructPtrPtr)
+
+	env.RegisterActivityWithOptions(&testActivityStructWithFns{}, RegisterActivityOptions{
+		Name:                       "testActivityStructWithFns",
+		SkipInvalidStructFunctions: true,
+	})
 }
 
 type internalWorkerTestSuite struct {
@@ -1643,6 +1653,10 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 	require.NoError(w.t, err, err)
 	require.Equal(w.t, testActivityResult{}, r2Struct)
 
+	f = ExecuteActivity(ctx, "testActivityStructWithFns_ValidActivity")
+	err = f.Get(ctx, nil)
+	require.NoError(w.t, err, err)
+
 	return []byte("Done"), nil
 }
 
@@ -1725,6 +1739,12 @@ func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 	r := &testActivityResult{Index: 10}
 	return &r, nil
 }
+
+type testActivityStructWithFns struct{}
+
+func (t *testActivityStructWithFns) ValidActivity(ctx context.Context) error { return nil }
+
+func (t *testActivityStructWithFns) InvalidActivity(ctx context.Context) { return }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
 	w := &activitiesCallingOptionsWorkflow{t: t}
