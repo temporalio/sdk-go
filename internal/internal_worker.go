@@ -531,7 +531,10 @@ func (r *registry) RegisterActivityWithOptions(
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		_ = r.registerActivityStructWithOptions(af, options)
+		registerErr := r.registerActivityStructWithOptions(af, options)
+		if registerErr != nil {
+			panic(registerErr)
+		}
 		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
