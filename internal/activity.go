@@ -271,9 +271,9 @@ func WithActivityTask(
 
 	logger = ilog.With(logger,
 		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.Name,
+		tagActivityType, task.ActivityType.GetName(),
 		tagAttempt, task.Attempt,
-		tagWorkflowType, task.WorkflowType.Name,
+		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.WorkflowId,
 		tagRunID, task.WorkflowExecution.RunId,
 	)
@@ -281,7 +281,7 @@ func WithActivityTask(
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: task.ActivityType.Name},
+		activityType:   ActivityType{Name: task.ActivityType.GetName()},
 		activityID:     task.ActivityId,
 		workflowExecution: WorkflowExecution{
 			RunID: task.WorkflowExecution.RunId,
