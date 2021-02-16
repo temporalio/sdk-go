@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -78,9 +79,14 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
 
+	interceptors := params.RequiredInterceptors
+	if atp := params.UserConnectionOptions.AuthorizationTokenProvider; atp != nil {
+		interceptors = append(interceptors, authorizationTokenInterceptor(atp))
+	}
+
 	return grpc.Dial(params.HostPort,
 		grpcSecurityOptions,
-		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
+		grpc.WithChainUnaryInterceptor(interceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
 		grpc.WithConnectParams(cp),
 	)
@@ -94,4 +100,15 @@ func errorInterceptor(ctx context.Context, method string, req, reply interface{}
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	err = serviceerror.FromStatus(status.Convert(err))
 	return err
+}
+
+func authorizationTokenInterceptor(atp AuthorizationTokenProvider) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		token, err := atp(ctx)
+		if err != nil {
+			return err
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", token)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }

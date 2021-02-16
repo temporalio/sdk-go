@@ -62,6 +62,10 @@ type (
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
 
+	// AuthorizationTokenProvider is a function that can be provided to ConnectionOptions, returning a token that will
+	// be injected into the authorization metadata
+	AuthorizationTokenProvider = internal.AuthorizationTokenProvider
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 

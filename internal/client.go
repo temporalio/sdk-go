@@ -393,9 +393,10 @@ type (
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
 	ConnectionOptions struct {
-		TLS                *tls.Config
-		DisableHealthCheck bool
-		HealthCheckTimeout time.Duration
+		TLS                        *tls.Config
+		DisableHealthCheck         bool
+		HealthCheckTimeout         time.Duration
+		AuthorizationTokenProvider AuthorizationTokenProvider
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
