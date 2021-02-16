@@ -297,7 +297,7 @@ func WithActivityTask(
 		attempt:          task.GetAttempt(),
 		heartbeatDetails: task.HeartbeatDetails,
 		workflowType: &WorkflowType{
-			Name: task.WorkflowType.Name,
+			Name: task.WorkflowType.GetName(),
 		},
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
