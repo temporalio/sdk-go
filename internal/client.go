@@ -390,7 +390,7 @@ type (
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
 
-		// Optional: HeadersProvider is getting invoked on every outgoing gRPC request and gives user ability to
+		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
 		HeadersProvider HeadersProvider
 	}
