@@ -72,9 +72,13 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 
 type authHeadersProvider struct {
 	token string
+	err   error
 }
 
 func (a authHeadersProvider) GetHeaders(context.Context) (map[string]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
 	headers := make(map[string]string)
 	headers["authorization"] = a.token
 	return headers, nil
@@ -91,6 +95,13 @@ func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
 			if md.Get("authorization")[0] != "test-auth-token" {
 				return errors.New("auth token hasn't been set")
 			}
+			return nil
+		}))
+}
+
+func TestHeadersProvider_Error(t *testing.T) {
+	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(context.Background(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return nil
 		}))
 }
