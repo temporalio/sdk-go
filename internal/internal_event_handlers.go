@@ -1186,6 +1186,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		lamd.Backoff = lar.backoff
 	} else {
 		details[localActivityMarkerResultDetailsName] = lar.result
+		if details[localActivityMarkerResultDetailsName] == nil {
+			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
+		}
 	}
 
 	// encode marker data
