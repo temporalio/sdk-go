@@ -116,10 +116,10 @@ func TestToStrings(t *testing.T) {
 
 	want := []string{
 		"dGVzdA",
-		"[hello world]",
-		"hello world",
+		`["hello","world"]`,
+		`"hello world"`,
 		"42",
-		"{A:hi B:3}",
+		`{"A":"hi","B":3}`,
 	}
 
 	require.Equal(t, want, got)

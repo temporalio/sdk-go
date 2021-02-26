@@ -389,6 +389,15 @@ type (
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
+
+		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
+		// set custom request headers. This can be used to set auth headers for example.
+		HeadersProvider HeadersProvider
+	}
+
+	// HeadersProvider returns a map of gRPC headers that should be used on every request.
+	HeadersProvider interface {
+		GetHeaders(ctx context.Context) (map[string]string, error)
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -569,7 +578,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }

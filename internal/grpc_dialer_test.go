@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/gogo/status"
@@ -34,6 +35,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestErrorWrapper_SimpleError(t *testing.T) {
@@ -66,4 +68,50 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	weasErr := svcerr.(*serviceerror.WorkflowExecutionAlreadyStarted)
 	require.Equal("rId", weasErr.RunId)
 	require.Equal("srId", weasErr.StartRequestId)
+}
+
+type authHeadersProvider struct {
+	token string
+	err   error
+}
+
+func (a authHeadersProvider) GetHeaders(context.Context) (map[string]string, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	headers := make(map[string]string)
+	headers["authorization"] = a.token
+	return headers, nil
+}
+
+func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
+	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(context.Background(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			md, ok := metadata.FromOutgoingContext(ctx)
+			if !ok {
+				return errors.New("unable to get outgoing context metadata")
+			}
+			require.Equal(t, 1, len(md.Get("authorization")))
+			if md.Get("authorization")[0] != "test-auth-token" {
+				return errors.New("auth token hasn't been set")
+			}
+			return nil
+		}))
+}
+
+func TestHeadersProvider_Error(t *testing.T) {
+	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(context.Background(), "method", "request", "reply", nil,
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+			return nil
+		}))
+}
+
+func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
+	interceptors := requiredInterceptors(nil, nil)
+	require.Equal(t, 2, len(interceptors))
+}
+
+func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
+	interceptors := requiredInterceptors(nil, authHeadersProvider{token: "test-auth-token"})
+	require.Equal(t, 3, len(interceptors))
 }
