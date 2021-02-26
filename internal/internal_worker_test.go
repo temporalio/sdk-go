@@ -1744,7 +1744,7 @@ type testActivityStructWithFns struct{}
 
 func (t *testActivityStructWithFns) ValidActivity(ctx context.Context) error { return nil }
 
-func (t *testActivityStructWithFns) InvalidActivity(ctx context.Context) { return }
+func (t *testActivityStructWithFns) InvalidActivity(ctx context.Context) {}
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
 	w := &activitiesCallingOptionsWorkflow{t: t}
