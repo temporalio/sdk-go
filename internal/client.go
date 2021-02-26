@@ -405,6 +405,20 @@ type (
 		TLS                *tls.Config
 		DisableHealthCheck bool
 		HealthCheckTimeout time.Duration
+		// Enables keep alive ping from client to the server, which can help drop abruptly closed connections faster.
+		EnableKeepAliveCheck bool
+		// After a duration of this time if the client doesn't see any activity it
+		// pings the server to see if the transport is still alive.
+		// If set below 10s, a minimum value of 10s will be used instead.
+		KeepAliveTime time.Duration
+		// After having pinged for keepalive check, the client waits for a duration
+		// of Timeout and if no activity is seen even after that the connection is
+		// closed.
+		KeepAliveTimeout time.Duration
+		// If true, client sends keepalive pings even with no active RPCs. If false,
+		// when there are no active RPCs, Time and Timeout will be ignored and no
+		// keepalive pings will be sent.
+		KeepAlivePermitWithoutStream bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
