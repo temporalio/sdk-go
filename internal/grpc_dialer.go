@@ -79,23 +79,25 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	}
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
-
-	// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
-	// gracefully. Client would ping the server periodically and expect replies withing the specified timeout.
-	// Learn more by reading https://github.com/grpc/grpc/blob/master/doc/keepalive.md
-	var kap = keepalive.ClientParameters{
-		Time:                30 * time.Second,
-		Timeout:             15 * time.Second,
-		PermitWithoutStream: true,
-	}
-
-	return grpc.Dial(params.HostPort,
+	opts := []grpc.DialOption{
 		grpcSecurityOptions,
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
 		grpc.WithConnectParams(cp),
-		grpc.WithKeepaliveParams(kap),
-	)
+	}
+
+	if params.UserConnectionOptions.EnableKeepAliveCheck {
+		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
+		// gracefully. Client would ping the server periodically and expect replies withing the specified timeout.
+		// Learn more by reading https://github.com/grpc/grpc/blob/master/doc/keepalive.md
+		var kap = keepalive.ClientParameters{
+			Time:                params.UserConnectionOptions.KeepAliveTime,
+			Timeout:             params.UserConnectionOptions.KeepAliveTimeout,
+			PermitWithoutStream: params.UserConnectionOptions.KeepAlivePermitWithoutStream,
+		}
+		opts = append(opts, grpc.WithKeepaliveParams(kap))
+	}
+	return grpc.Dial(params.HostPort, opts...)
 }
 
 func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider) []grpc.UnaryClientInterceptor {
