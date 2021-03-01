@@ -1476,7 +1476,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		metricsScope.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
-		failure := convertErrorToFailure(workflowContext.err, wth.dataConverter)
+		failure := ConvertErrorToFailure(workflowContext.err, wth.dataConverter)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
 		}}
@@ -1532,7 +1532,7 @@ func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataC
 	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
-		Failure:        convertErrorToFailure(err, dataConverter),
+		Failure:        ConvertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
 		Namespace:      namespace,

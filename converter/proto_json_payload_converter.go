@@ -159,7 +159,6 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 // ToString converts payload object into human readable string.
 func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
-	// We can't do anything better here.
 	return string(payload.GetData())
 }
 

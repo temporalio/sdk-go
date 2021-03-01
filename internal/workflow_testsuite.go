@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -763,6 +762,6 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 
 // AssertExpectations  asserts that everything specified with OnActivity
 // in fact called as expected.  Calls may have occurred in any order.
-func (e *TestWorkflowEnvironment) AssertExpectations(t *testing.T) bool {
+func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 	return e.mock.AssertExpectations(t)
 }

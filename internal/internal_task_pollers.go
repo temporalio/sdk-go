@@ -1025,7 +1025,7 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
 		TaskToken: taskToken,
-		Failure:   convertErrorToFailure(err, dataConverter),
+		Failure:   ConvertErrorToFailure(err, dataConverter),
 		Identity:  identity,
 		Namespace: namespace}
 }
@@ -1073,6 +1073,6 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
-		Failure:    convertErrorToFailure(err, dataConverter),
+		Failure:    ConvertErrorToFailure(err, dataConverter),
 		Identity:   identity}
 }

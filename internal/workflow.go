@@ -1399,7 +1399,7 @@ func GetLastError(ctx Context) error {
 
 func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
 	info := wc.GetWorkflowInfo(ctx)
-	return convertFailureToError(info.lastFailure, wc.env.GetDataConverter())
+	return ConvertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
 
 // WithActivityOptions adds all options to the copy of the context.
@@ -1504,4 +1504,9 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
+}
+
+// GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
+func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
+	return info.lastCompletionResult
 }

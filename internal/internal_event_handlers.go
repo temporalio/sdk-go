@@ -987,7 +987,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
 		attributes.GetRetryState(),
-		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+		ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 
 	activity.handle(nil, activityTaskErr)
@@ -1003,7 +1003,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	timeoutError := convertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
+	timeoutError := ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
 
 	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
@@ -1151,7 +1151,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if failure != nil {
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
-			lar.Err = convertFailureToError(failure, weh.GetDataConverter())
+			lar.Err = ConvertFailureToError(failure, weh.GetDataConverter())
 		} else {
 			var result *commonpb.Payloads
 			var ok bool
@@ -1186,6 +1186,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		lamd.Backoff = lar.backoff
 	} else {
 		details[localActivityMarkerResultDetailsName] = lar.result
+		if details[localActivityMarkerResultDetailsName] == nil {
+			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
+		}
 	}
 
 	// encode marker data
@@ -1200,7 +1203,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
-			Failure:    convertErrorToFailure(lar.err, weh.GetDataConverter()),
+			Failure:    ConvertErrorToFailure(lar.err, weh.GetDataConverter()),
 			Details:    details,
 		}},
 	}
@@ -1290,7 +1293,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		convertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+		ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

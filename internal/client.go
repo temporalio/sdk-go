@@ -389,6 +389,15 @@ type (
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
+
+		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
+		// set custom request headers. This can be used to set auth headers for example.
+		HeadersProvider HeadersProvider
+	}
+
+	// HeadersProvider returns a map of gRPC headers that should be used on every request.
+	HeadersProvider interface {
+		GetHeaders(ctx context.Context) (map[string]string, error)
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -396,6 +405,20 @@ type (
 		TLS                *tls.Config
 		DisableHealthCheck bool
 		HealthCheckTimeout time.Duration
+		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
+		EnableKeepAliveCheck bool
+		// After a duration of this time if the client doesn't see any activity it
+		// pings the server to see if the transport is still alive.
+		// If set below 10s, a minimum value of 10s will be used instead.
+		KeepAliveTime time.Duration
+		// After having pinged for keepalive check, the client waits for a duration
+		// of Timeout and if no activity is seen even after that the connection is
+		// closed.
+		KeepAliveTimeout time.Duration
+		// If true, client sends keepalive pings even with no active RPCs. If false,
+		// when there are no active RPCs, Time and Timeout will be ignored and no
+		// keepalive pings will be sent.
+		KeepAlivePermitWithoutStream bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -569,7 +592,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
