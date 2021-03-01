@@ -89,7 +89,7 @@ func testInternalWorkerRegister(r *registry) {
 	r.RegisterActivity(testActivityReturnStructPtrPtr)
 
 	r.RegisterActivityWithOptions(&testActivityStructWithFns{}, RegisterActivityOptions{
-		Name:                       "testActivityStructWithFns",
+		Name:                       "testActivityStructWithFns_",
 		SkipInvalidStructFunctions: true,
 	})
 }
@@ -127,7 +127,7 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 	env.RegisterActivity(testActivityReturnStructPtrPtr)
 
 	env.RegisterActivityWithOptions(&testActivityStructWithFns{}, RegisterActivityOptions{
-		Name:                       "testActivityStructWithFns",
+		Name:                       "testActivityStructWithFns_",
 		SkipInvalidStructFunctions: true,
 	})
 }
@@ -1742,9 +1742,21 @@ func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 
 type testActivityStructWithFns struct{}
 
-func (t *testActivityStructWithFns) ValidActivity(ctx context.Context) error { return nil }
+func (t *testActivityStructWithFns) ValidActivity(context.Context) error { return nil }
 
-func (t *testActivityStructWithFns) InvalidActivity(ctx context.Context) {}
+func (t *testActivityStructWithFns) InvalidActivity(context.Context) {}
+
+func testRegisterStructWithInvalidFnsWithoutSkipFails() {
+	registry := newRegistry()
+	registry.RegisterActivityWithOptions(&testActivityStructWithFns{}, RegisterActivityOptions{
+		Name:                       "testActivityStructWithFns_",
+		SkipInvalidStructFunctions: false,
+	})
+}
+
+func TestRegisterStructWithInvalidFnsWithoutSkipFails(t *testing.T) {
+	assert.Panics(t, testRegisterStructWithInvalidFnsWithoutSkipFails)
+}
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
 	w := &activitiesCallingOptionsWorkflow{t: t}
