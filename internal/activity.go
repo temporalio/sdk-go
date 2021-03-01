@@ -69,7 +69,8 @@ type (
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
 
-		// When registering a struct with activities - skip functions that are not valid activities
+		// When registering a struct with activities, skip functions that are not valid activities. If false,
+		// registration panics.
 		SkipInvalidStructFunctions bool
 	}
 
