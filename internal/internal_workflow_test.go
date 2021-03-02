@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -841,6 +842,35 @@ func (s *WorkflowUnitTest) Test_CloseChannelInSelectWorkflow() {
 	env.ExecuteWorkflow(closeChannelInSelectTest)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
+}
+
+var selectDoesntLoopForeverCounter uint64
+
+func (s *WorkflowUnitTest) selectDoesntLoopForever(ctx Context) error {
+	cancelCtx, cancelFunc := WithCancel(ctx)
+	selector := NewSelector(ctx)
+
+	cancelFunc()
+	selector.AddReceive(cancelCtx.Done(), func(c ReceiveChannel, more bool) {
+		res := c.Receive(ctx, nil)
+		s.Assert().Equal(false, res)
+		s.Assert().Equal(false, more)
+	})
+
+	for {
+		selector.Select(ctx)
+		atomic.AddUint64(&selectDoesntLoopForeverCounter, 1)
+	}
+}
+
+func (s *WorkflowUnitTest) Test_SelectDoesntLoopForever() {
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(s.selectDoesntLoopForever)
+	s.True(env.IsWorkflowCompleted())
+	// Hits workflow timeout, since it blocked "forever"
+	s.Error(env.GetWorkflowError())
+	// The loop over the select should have blocked
+	s.Equal(uint64(1), selectDoesntLoopForeverCounter)
 }
 
 func bufferedChanWorkflowTest(ctx Context, bufferSize int) error {
