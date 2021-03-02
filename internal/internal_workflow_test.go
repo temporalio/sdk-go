@@ -846,13 +846,15 @@ func (s *WorkflowUnitTest) Test_CloseChannelInSelectWorkflow() {
 
 var selectDoesntLoopForeverCounter uint64
 
-func selectDoesntLoopForever(ctx Context) error {
+func (s *WorkflowUnitTest) selectDoesntLoopForever(ctx Context) error {
 	cancelCtx, cancelFunc := WithCancel(ctx)
 	selector := NewSelector(ctx)
 
 	cancelFunc()
 	selector.AddReceive(cancelCtx.Done(), func(c ReceiveChannel, more bool) {
-		c.Receive(ctx, nil)
+		res := c.Receive(ctx, nil)
+		s.Assert().Equal(false, res)
+		s.Assert().Equal(false, more)
 	})
 
 	for {
@@ -863,7 +865,7 @@ func selectDoesntLoopForever(ctx Context) error {
 
 func (s *WorkflowUnitTest) Test_SelectDoesntLoopForever() {
 	env := s.NewTestWorkflowEnvironment()
-	env.ExecuteWorkflow(selectDoesntLoopForever)
+	env.ExecuteWorkflow(s.selectDoesntLoopForever)
 	s.True(env.IsWorkflowCompleted())
 	// Hits workflow timeout, since it blocked "forever"
 	s.Error(env.GetWorkflowError())
