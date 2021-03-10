@@ -811,6 +811,14 @@ func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStarte
 
 func (h *commandsHelper) getNextID() int64 {
 	// First check if we have a GetVersion marker in the lookup map
+	h.incrementNextCommandEventIdIfVersionMarker()
+	if h.nextCommandEventID == 0 {
+		panic("Attempt to generate a command before processing WorkflowTaskStarted event")
+	}
+	return h.nextCommandEventID
+}
+
+func (h *commandsHelper) incrementNextCommandEventIdIfVersionMarker() {
 	if _, ok := h.versionMarkerLookup[h.nextCommandEventID]; ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
 		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
@@ -819,10 +827,6 @@ func (h *commandsHelper) getNextID() int64 {
 		h.incrementNextCommandEventID()
 		h.incrementNextCommandEventID()
 	}
-	if h.nextCommandEventID == 0 {
-		panic("Attempt to generate a command before processing WorkflowTaskStarted event")
-	}
-	return h.nextCommandEventID
 }
 
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
@@ -844,6 +848,7 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 	h.commands[command.getID()] = element
 
 	// Every time new command is added increment the counter used for generating ID
+	h.incrementNextCommandEventIdIfVersionMarker()
 	h.incrementNextCommandEventID()
 }
 
