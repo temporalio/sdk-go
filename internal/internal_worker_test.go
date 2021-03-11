@@ -1164,7 +1164,7 @@ func testReplayWorkflowCancelWorkflowWhileSleepingWithActivities(ctx Context) er
 	defer func() {
 		// When workflow is canceled, it has to get a new disconnected context to execute any activities
 		newCtx, _ := NewDisconnectedContext(ctx)
-		err := ExecuteActivity(newCtx, "testInfiniteActivity").Get(ctx, nil)
+		err := ExecuteActivity(newCtx, testInfiniteActivity).Get(ctx, nil)
 		if err != nil {
 			panic("Cleanup activity errored")
 		}
@@ -1894,7 +1894,6 @@ func testInfiniteActivity(ctx context.Context) error {
 	for {
 		select {
 		case <-time.After(1 * time.Second):
-			//activity.RecordHeartbeat(ctx, "")
 		case <-ctx.Done():
 			return nil
 		}
