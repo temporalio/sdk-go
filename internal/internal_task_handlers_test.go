@@ -156,7 +156,7 @@ func createTestEventWorkflowExecutionStarted(eventID int64, attr *historypb.Work
 		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
 }
 
-func createTestEventLocalActivity(eventID int64, attr *historypb.MarkerRecordedEventAttributes) *historypb.HistoryEvent {
+func createTestEventMarkerRecorded(eventID int64, attr *historypb.MarkerRecordedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_MARKER_RECORDED,

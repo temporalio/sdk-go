@@ -174,6 +174,16 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	}
 }
 
+func (s *internalWorkerTestSuite) createSideEffectMarkerDataForTest(payloads *commonpb.Payloads,
+	sideEffectID int64) map[string]*commonpb.Payloads {
+	idPayload, err := s.dataConverter.ToPayloads(sideEffectID)
+	s.NoError(err)
+	return map[string]*commonpb.Payloads{
+		sideEffectMarkerDataName: payloads,
+		sideEffectMarkerIDName:   idPayload,
+	}
+}
+
 func getLogger() log.Logger {
 	return ilog.NewDefaultLogger()
 }
@@ -306,12 +316,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("1"),
 			WorkflowTaskCompletedEventId: 4,
 		}),
-		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("2"),
 			WorkflowTaskCompletedEventId: 4,
@@ -428,12 +438,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalAndRemoteActivi
 		createTestEventVersionMarker(5, 4, "change_id_A", Version(3)),
 		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "change_id_A", Version(3)),
 
-		createTestEventLocalActivity(7, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(7, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("1"),
 			WorkflowTaskCompletedEventId: 4,
 		}),
-		createTestEventLocalActivity(8, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(8, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("2"),
 			WorkflowTaskCompletedEventId: 4,
@@ -443,7 +453,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalAndRemoteActivi
 			ActivityType: &commonpb.ActivityType{Name: "testActivity"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
 		}),
-		createTestEventLocalActivity(10, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(10, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("3"),
 			WorkflowTaskCompletedEventId: 4,
@@ -664,6 +674,79 @@ func createHistoryForGetVersionTests(workflowType string) []*historypb.HistoryEv
 			WorkflowTaskCompletedEventId: 24,
 		}),
 	}
+}
+
+func testReplayWorkflowGetVersionWithSideEffect(ctx Context) error {
+	var uniqueID *string
+
+	v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
+	if v == 1 {
+		encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+			return "TEST-UNIQUE-ID"
+		})
+		err := encodedUID.Get(&uniqueID)
+		if err != nil {
+			return err
+		}
+	}
+
+	var result string
+	err := ExecuteActivity(ctx, "testActivityReturnString").Get(ctx, &result)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionWithSideEffect() {
+	taskQueue := "taskQueue1"
+	sideEffectPayloads, seErr := s.dataConverter.ToPayloads("TEST-UNIQUE-ID")
+	s.NoError(seErr)
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowGetVersionWithSideEffect"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventVersionMarker(5, 4, "UniqueID", Version(1)),
+		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "UniqueID", Version(1)),
+		createTestEventMarkerRecorded(7, &historypb.MarkerRecordedEventAttributes{
+			MarkerName:                   sideEffectMarkerName,
+			Details:                      s.createSideEffectMarkerDataForTest(sideEffectPayloads, 1),
+			WorkflowTaskCompletedEventId: 4,
+		}),
+		createTestEventActivityTaskScheduled(8, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "8",
+			ActivityType: &commonpb.ActivityType{Name: "testActivityReturnString"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(9, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 8,
+		}),
+		createTestEventActivityTaskCompleted(10, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 8,
+			StartedEventId:   9,
+		}),
+		createTestEventWorkflowTaskScheduled(11, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(12),
+		createTestEventWorkflowTaskCompleted(13, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 11,
+			StartedEventId:   12,
+		}),
+		createTestEventWorkflowExecutionCompleted(14, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 13,
+		}),
+	}
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowGetVersionWithSideEffect)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
 }
 
 func testReplayWorkflowCancelActivity(ctx Context) error {
@@ -1090,12 +1173,12 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("1"),
 			WorkflowTaskCompletedEventId: 4,
 		}),
-		createTestEventLocalActivity(6, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(6, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("2"),
 			WorkflowTaskCompletedEventId: 4,
@@ -1132,7 +1215,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 
-		createTestEventLocalActivity(5, &historypb.MarkerRecordedEventAttributes{
+		createTestEventMarkerRecorded(5, &historypb.MarkerRecordedEventAttributes{
 			MarkerName:                   localActivityMarkerName,
 			Details:                      s.createLocalActivityMarkerDataForTest("0"),
 			WorkflowTaskCompletedEventId: 4,
