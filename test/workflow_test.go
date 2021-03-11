@@ -587,7 +587,38 @@ func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, e
 	})
 	_ = workflow.ExecuteActivity(activityCtx2, "Prefix_ToUpper", "hello").Get(activityCtx2, nil)
 
-	return []string{"toUpperWithDelay", "toUpper"}, nil
+	return []string{"toUpper"}, nil
+}
+
+func (w *Workflows) CancelMultipleCommandsOverMultipleTasks(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	// We want this "cleanup" activity to be run when the whole workflow is cancelled
+	defer func() {
+		// When workflow is canceled, it has to get a new disconnected context to execute any activities
+		newCtx, _ := workflow.NewDisconnectedContext(ctx)
+		err := workflow.ExecuteActivity(newCtx, "Prefix_ToUpper", "hello").Get(newCtx, nil)
+		if err != nil {
+			panic("Cleanup activity error")
+		}
+	}()
+
+	// Start multiple timers that will be canceled when the workflow is
+	_ = workflow.NewTimer(ctx, time.Minute*10)
+	_ = workflow.NewTimer(ctx, time.Minute*10)
+	// Throw in a side effect for fun
+	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return "hi!"
+	})
+	// Actually wait on a real timer to trigger a wf task
+	_ = workflow.Sleep(ctx, time.Millisecond*500)
+	// More timers we expect to get cancelled
+	_ = workflow.NewTimer(ctx, time.Minute*10)
+	_ = workflow.NewTimer(ctx, time.Minute*10)
+
+	// We need to be cancelled by test runner here
+	_ = workflow.Sleep(ctx, time.Minute*10)
+
+	return nil
 }
 
 func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
@@ -1142,6 +1173,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
+	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
