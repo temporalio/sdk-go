@@ -610,6 +610,47 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	s.Nil(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+
+		qerr := SetQueryHandler(ctx, "test-query", func() (string, error) {
+			return "queryresult", nil
+		})
+
+		if qerr != nil {
+			return qerr
+		}
+		var uniqueID *string
+
+		v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
+		if v == 1 {
+			encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+				return "TEST-UNIQUE-ID"
+			})
+			err := encodedUID.Get(&uniqueID)
+			if err != nil {
+				return err
+			}
+		}
+
+		f := ExecuteActivity(ctx, testActivityHello, "msg1")
+		err := f.Get(ctx, nil) // wait for result
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(testActivityHello)
+
+	env.ExecuteWorkflow(workflowFn)
+	_, err := env.QueryWorkflow("test-query")
+	s.NoError(err)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
