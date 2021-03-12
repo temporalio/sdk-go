@@ -28,32 +28,28 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// NopLogger is Logger implementation that doesn't produce any logs.
-type NopLogger struct {
+// NoopLogger is Logger implementation that doesn't produce any logs.
+type NoopLogger struct {
 }
 
-// NewNopLogger creates new instance of NopLogger.
-func NewNopLogger() *NopLogger {
-	return &NopLogger{}
+// NewNopLogger creates new instance of NoopLogger.
+func NewNopLogger() *NoopLogger {
+	return &NoopLogger{}
 }
 
 // Debug does nothing.
-func (l *NopLogger) Debug(msg string, keyvals ...interface{}) {
-}
+func (l *NoopLogger) Debug(string, ...interface{}) {}
 
 // Info does nothing.
-func (l *NopLogger) Info(msg string, keyvals ...interface{}) {
-}
+func (l *NoopLogger) Info(string, ...interface{}) {}
 
 // Warn does nothing.
-func (l *NopLogger) Warn(msg string, keyvals ...interface{}) {
-}
+func (l *NoopLogger) Warn(string, ...interface{}) {}
 
 // Error does nothing.
-func (l *NopLogger) Error(msg string, keyvals ...interface{}) {
-}
+func (l *NoopLogger) Error(string, ...interface{}) {}
 
-// With returns new NopLogger.
-func (l *NopLogger) With(keyvals ...interface{}) log.Logger {
+// With returns new NoopLogger.
+func (l *NoopLogger) With(...interface{}) log.Logger {
 	return NewNopLogger()
 }
