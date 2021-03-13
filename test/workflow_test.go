@@ -602,21 +602,19 @@ func (w *Workflows) CancelMultipleCommandsOverMultipleTasks(ctx workflow.Context
 		}
 	}()
 
-	// Start multiple timers that will be canceled when the workflow is
-	_ = workflow.NewTimer(ctx, time.Minute*10)
+	// Start a timer that will be canceled when the workflow is
 	_ = workflow.NewTimer(ctx, time.Minute*10)
 	// Throw in a side effect for fun
 	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
 		return "hi!"
 	})
-	// Include a timer we cancel accross the wf task
+	// Include a timer we cancel across the wf task
 	timerCtx, cancelTimer := workflow.WithCancel(ctx)
 	_ = workflow.NewTimer(timerCtx, time.Second*3)
 	// Actually wait on a real timer to trigger a wf task
 	_ = workflow.Sleep(ctx, time.Millisecond*500)
 	cancelTimer()
-	// More timers we expect to get cancelled
-	_ = workflow.NewTimer(ctx, time.Minute*10)
+	// Another timers we expect to get cancelled
 	_ = workflow.NewTimer(ctx, time.Minute*10)
 
 	// Include a timer we cancel immediately
