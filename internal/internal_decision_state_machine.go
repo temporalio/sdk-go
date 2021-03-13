@@ -417,7 +417,7 @@ func (d *commandStateMachineBase) cancel() {
 		d.moveState(commandStateCancellationCommandSent, eventCancel)
 	case commandStateInitiated:
 		if d.helper.workflowExecutionIsCancelling {
-			d.helper.commandsCancelledDuringWFCancellation += 1
+			d.helper.commandsCancelledDuringWFCancellation++
 		}
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
 	default:
