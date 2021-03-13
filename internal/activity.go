@@ -35,7 +35,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
 
@@ -273,7 +272,7 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = ilog.With(logger,
+	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
 		tagActivityType, task.ActivityType.GetName(),
 		tagAttempt, task.Attempt,
