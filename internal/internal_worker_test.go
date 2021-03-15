@@ -199,7 +199,7 @@ func testReplayWorkflow(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func testReplayWorkflowLocalActivity(ctx Context) error {
@@ -217,7 +217,7 @@ func testReplayWorkflowLocalActivity(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func testReplayWorkflowFromFile(ctx Context) error {
@@ -233,7 +233,7 @@ func testReplayWorkflowFromFile(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func testReplayWorkflowFromFileParent(ctx Context) error {
@@ -366,7 +366,7 @@ func testReplayWorkflowGetVersion(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion() {
@@ -421,7 +421,7 @@ func testReplayWorkflowLocalAndRemoteActivity(ctx Context) error {
 		panic("Failed workflow")
 	}
 
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalAndRemoteActivity() {
@@ -511,7 +511,7 @@ func testReplayWorkflowGetVersionReplacedChangeID(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_ReplacedChangeID() {
@@ -545,7 +545,7 @@ func testReplayWorkflowGetVersionRemoved(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionRemoved() {
@@ -589,7 +589,7 @@ func testReplayWorkflowGetVersionAddNewBefore(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_AddNewBefore() {
@@ -766,7 +766,7 @@ func testReplayWorkflowCancelActivity(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity() {
@@ -843,7 +843,7 @@ func testReplayWorkflowCancelTimer(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelTimer() {
@@ -907,7 +907,10 @@ func cancelTimerAfterActivityWorkflow(ctx Context) error {
 	cancelFunc1()
 	// Then wait on the activity
 	err := fut.Get(ctx, nil)
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowCancelTimerAfterActivity() {
@@ -975,7 +978,7 @@ func testReplayWorkflowCancelChildWorkflow(ctx Context) error {
 		getLogger().Error("activity failed with error.", tagError, err)
 		panic("Failed workflow")
 	}
-	return err
+	return nil
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelChildWorkflow() {

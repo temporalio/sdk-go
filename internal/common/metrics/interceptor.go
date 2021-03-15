@@ -46,6 +46,9 @@ func NewScopeInterceptor(defaultScope tally.Scope) grpc.UnaryClientInterceptor {
 		rs.recordStart()
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		rs.recordEnd(err)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 }

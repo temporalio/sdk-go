@@ -105,7 +105,10 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 			sessionState: sessionStateOpen,
 		})
 		_, err := CreateSession(sessionCtx, s.sessionOptions)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()

@@ -2123,7 +2123,10 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	args := []interface{}{attributes}
 	env.mock.MethodCalled(mockMethod, args...)
 
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) converter.EncodedValue {

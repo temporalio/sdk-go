@@ -417,7 +417,10 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				panic("unknown request type from ProcessWorkflowTask()")
 			}
 
-			return err1
+			if err1 != nil {
+				return err1
+			}
+			return nil
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	return
@@ -774,7 +777,10 @@ func newGetHistoryPageFunc(
 					Execution:     execution,
 					NextPageToken: nextPageToken,
 				})
-				return err1
+				if err1 != nil {
+					return err1
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 		if err != nil {
 			return nil, nil, err
@@ -929,7 +935,10 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		reportErr = backoff.Retry(ctx,
@@ -938,7 +947,10 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 				defer cancel()
 
 				_, err := service.RespondActivityTaskFailed(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		reportErr = backoff.Retry(ctx,
@@ -947,7 +959,10 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
 	return reportErr
@@ -968,7 +983,10 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
 		reportErr = backoff.Retry(ctx,
@@ -977,7 +995,10 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 				defer cancel()
 
 				_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 		reportErr = backoff.Retry(ctx,
@@ -986,7 +1007,10 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 				defer cancel()
 
 				_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)
-				return err
+				if err != nil {
+					return err
+				}
+				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
 	return reportErr

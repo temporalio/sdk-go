@@ -923,7 +923,10 @@ func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
 			fmt.Println(event.String())
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {

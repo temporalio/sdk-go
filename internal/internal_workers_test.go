@@ -230,7 +230,10 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 
 		err = ExecuteLocalActivity(ctx, localActivitySleep, time.Second).Get(ctx, nil)
 		isWorkflowCompleted = true
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	taskQueue := "long-running-workflow-task-tq"
@@ -368,7 +371,10 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 
 		err = ExecuteLocalActivity(ctx, localActivitySleep, time.Second).Get(ctx, nil)
 		isWorkflowCompleted = true
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	taskQueue := "multiple-local-activities-tq"

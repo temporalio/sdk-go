@@ -131,7 +131,10 @@ func (ts *AsyncBindingsTestSuite) executeWorkflowWithOption(
 			fmt.Println(event.String())
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ts *AsyncBindingsTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {

@@ -117,7 +117,7 @@ RetryLoop:
 			timer := time.NewTimer(next)
 			select {
 			case <-ctxDone:
-				return err
+				return err // returns the last error, don't check for nil/return nil
 			case <-timer.C:
 				continue RetryLoop
 			}

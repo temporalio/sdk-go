@@ -1151,7 +1151,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 			return errors.New("fail number " + strconv.Itoa(laFailures))
 		}).Get(ctx, nil)
 		workflowComplete = true
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	t.registry.RegisterWorkflowWithOptions(
 		retryLocalActivityWorkflowFunc,
@@ -1231,7 +1234,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 			return errors.New("some random error")
 		}).Get(ctx, nil)
 		workflowComplete = true
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	t.registry.RegisterWorkflowWithOptions(
 		retryLocalActivityWorkflowFunc,

@@ -466,7 +466,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		f := ExecuteActivity(ctx, testActivityHeartbeat, "msg1", time.Second*10)
 		err := f.Get(ctx, nil) // wait for result
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -597,7 +600,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 		}
 		f := ExecuteActivity(ctx, testActivityHello, "msg1")
 		err := f.Get(ctx, nil) // wait for result
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -636,7 +642,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
 
 		f := ExecuteActivity(ctx, testActivityHello, "msg1")
 		err := f.Get(ctx, nil) // wait for result
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1344,7 +1353,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 		s.Equal(1, len(changeVersions))
 		s.Equal("test_change_id-2", changeVersions[0])
 
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1629,7 +1641,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFriendlyName() {
 			return err
 		}
 		err = ExecuteActivity(ctx, "foo", "friendly_name").Get(ctx, &result)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1660,7 +1675,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowFriendlyName() {
 			return err
 		}
 		err = ExecuteChildWorkflow(ctx, "testWorkflowHello").Get(ctx, &result)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1780,7 +1798,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
 		var result string
 		fut := ExecuteActivity(ctx, getFunctionName(testActivityHello), "friendly_name")
 		err := fut.Get(ctx, &result)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -1825,7 +1846,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 			return err
 		}
 		state = stateDone
-		return err
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -2097,7 +2118,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_CancelChildWorkflow() {
 		fmt.Println("####")
 		fmt.Println(err)
 		fmt.Println("####")
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	workflowFn := func(ctx Context) error {
@@ -2977,7 +3001,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_CronWorkflow() {
 			// err will be nil
 		}).Select(ctx)
 
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -3091,7 +3118,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityGoexit() {
 		}
 		ctx = WithActivityOptions(ctx, ao)
 		err := ExecuteActivity(ctx, fn).Get(ctx, nil)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -3139,7 +3169,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 		}
 		ctx = WithActivityOptions(ctx, ao)
 		err := ExecuteActivity(ctx, timeoutFn).Get(ctx, nil)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	wfEnv := s.NewTestWorkflowEnvironment()
@@ -3199,7 +3232,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 		}
 		ctx = WithActivityOptions(ctx, ao)
 		err := ExecuteActivity(ctx, timeoutFn).Get(ctx, nil)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	wfEnv := s.NewTestWorkflowEnvironment()

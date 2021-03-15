@@ -1660,7 +1660,10 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 		}()
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *commonpb.Payloads) (bool, error) {
@@ -1881,7 +1884,10 @@ func recordActivityHeartbeat(
 
 			var err error
 			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(grpcCtx, request)
-			return err
+			if err != nil {
+				return err
+			}
+			return nil
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
@@ -1915,7 +1921,10 @@ func recordActivityHeartbeatByID(
 
 			var err error
 			heartbeatResponse, err = service.RecordActivityTaskHeartbeatById(grpcCtx, request)
-			return err
+			if err != nil {
+				return err
+			}
+			return nil
 		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {

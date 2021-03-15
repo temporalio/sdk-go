@@ -809,8 +809,9 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	if err != nil {
 		c.env.GetLogger().Error(fmt.Sprintf("Deserialization error. Corrupted signal received on channel %s.", c.name), tagError, err)
 		c.env.GetMetricsScope().Counter(metrics.CorruptedSignalsCounter).Inc(1)
+		return err
 	}
-	return err
+	return nil
 }
 
 // initialYield called at the beginning of the coroutine execution
