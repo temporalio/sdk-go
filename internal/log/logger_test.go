@@ -75,3 +75,16 @@ func TestReplayLogger(t *testing.T) {
 	assert.Contains(t, logger.Lines(), "INFO  normal2 info\n")
 	assert.Contains(t, logger.Lines(), "INFO  replay2 info\n")
 }
+
+func TestReplayLogger_With(t *testing.T) {
+	logger := NewMemoryLogger()
+	isReplay, enableLoggingInReplay := false, false
+	replayLogger := NewReplayLogger(logger, &isReplay, &enableLoggingInReplay)
+	withReplayLogger := log.With(replayLogger, "p1", 1, "p2", "v2")
+	withReplayLogger.Info("message", "p3", float64(3))
+	logger.Info("message2", "p4", 4)
+
+	withReplayLogger.Info("message")
+	assert.Equal(t, "INFO  message p1 1 p2 v2 p3 3\n", logger.Lines()[0])
+	assert.Equal(t, "INFO  message2 p4 4\n", logger.Lines()[1])
+}
